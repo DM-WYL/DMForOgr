@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Class for representing a whole feature, and layer schemas.
@@ -16,6 +15,7 @@
 #define OGR_FEATURE_H_INCLUDED
 
 #include "cpl_atomic_ops.h"
+#include "gdal_fwd.h"
 #include "ogr_featurestyle.h"
 #include "ogr_geometry.h"
 #include "ogr_geomcoordinateprecision.h"
@@ -32,32 +32,6 @@
  *
  * Simple feature classes.
  */
-
-#ifndef DEFINE_OGRFeatureH
-/*! @cond Doxygen_Suppress */
-#define DEFINE_OGRFeatureH
-/*! @endcond */
-#ifdef DEBUG
-typedef struct OGRFieldDefnHS *OGRFieldDefnH;
-typedef struct OGRFeatureDefnHS *OGRFeatureDefnH;
-typedef struct OGRFeatureHS *OGRFeatureH;
-typedef struct OGRStyleTableHS *OGRStyleTableH;
-#else
-/** Opaque type for a field definition (OGRFieldDefn) */
-typedef void *OGRFieldDefnH;
-/** Opaque type for a feature definition (OGRFeatureDefn) */
-typedef void *OGRFeatureDefnH;
-/** Opaque type for a feature (OGRFeature) */
-typedef void *OGRFeatureH;
-/** Opaque type for a style table (OGRStyleTable) */
-typedef void *OGRStyleTableH;
-#endif
-/** Opaque type for a geometry field definition (OGRGeomFieldDefn) */
-typedef struct OGRGeomFieldDefnHS *OGRGeomFieldDefnH;
-
-/** Opaque type for a field domain definition (OGRFieldDomain) */
-typedef struct OGRFieldDomainHS *OGRFieldDomainH;
-#endif /* DEFINE_OGRFeatureH */
 
 class OGRStyleTable;
 
@@ -108,6 +82,9 @@ class CPL_DLL OGRFieldDefn
     int bNullable;
     int bUnique;
 
+    // Used by drivers (GPKG) to track generated fields
+    bool m_bGenerated = false;
+
     std::string m_osDomainName{};  // field domain name. Might be empty
 
     std::string m_osComment{};  // field comment. Might be empty
@@ -119,6 +96,12 @@ class CPL_DLL OGRFieldDefn
     OGRFieldDefn(const char *, OGRFieldType);
     explicit OGRFieldDefn(const OGRFieldDefn *);
     ~OGRFieldDefn();
+
+    // Copy constructor
+    OGRFieldDefn(const OGRFieldDefn &oOther);
+
+    // Copy assignment operator
+    OGRFieldDefn &operator=(const OGRFieldDefn &oOther);
 
     void SetName(const char *);
 
@@ -141,6 +124,7 @@ class CPL_DLL OGRFieldDefn
 
     void SetType(OGRFieldType eTypeIn);
     static const char *GetFieldTypeName(OGRFieldType);
+    static OGRFieldType GetFieldTypeByName(const char *);
 
     OGRFieldSubType GetSubType() const
     {
@@ -149,6 +133,7 @@ class CPL_DLL OGRFieldDefn
 
     void SetSubType(OGRFieldSubType eSubTypeIn);
     static const char *GetFieldSubTypeName(OGRFieldSubType);
+    static OGRFieldSubType GetFieldSubTypeByName(const char *);
 
     OGRJustification GetJustify() const
     {
@@ -208,6 +193,29 @@ class CPL_DLL OGRFieldDefn
     int IsUnique() const
     {
         return bUnique;
+    }
+
+    /**
+     * @brief Return whether the field is a generated field.
+     *
+     * At time of writing, only the GeoPackage and PG drivers fill that information. Consequently,
+     * only a returned value equal to TRUE can be fully trusted.
+     * @return TRUE if the field is a generated field, FALSE otherwise.
+     * @since GDAL 3.11
+     */
+    bool IsGenerated() const
+    {
+        return m_bGenerated;
+    }
+
+    /**
+     * @brief SetGenerated set the field generated status.
+     * @param bGeneratedIn TRUE if the field is a generated field, FALSE otherwise.
+     * @since GDAL 3.11
+     */
+    void SetGenerated(bool bGeneratedIn)
+    {
+        m_bGenerated = bGeneratedIn;
     }
 
     void SetUnique(int bUniqueIn);
@@ -278,9 +286,6 @@ class CPL_DLL OGRFieldDefn
     /*! @endcond */
 
     TemporaryUnsealer GetTemporaryUnsealer();
-
-  private:
-    CPL_DISALLOW_COPY_ASSIGN(OGRFieldDefn)
 };
 
 #ifdef GDAL_COMPILATION
@@ -347,6 +352,12 @@ class CPL_DLL OGRGeomFieldDefn
     OGRGeomFieldDefn(const char *pszNameIn, OGRwkbGeometryType eGeomTypeIn);
     explicit OGRGeomFieldDefn(const OGRGeomFieldDefn *);
     virtual ~OGRGeomFieldDefn();
+
+    // Copy constructor
+    OGRGeomFieldDefn(const OGRGeomFieldDefn &oOther);
+
+    // Copy assignment operator
+    OGRGeomFieldDefn &operator=(const OGRGeomFieldDefn &oOther);
 
     void SetName(const char *);
 
@@ -441,9 +452,6 @@ class CPL_DLL OGRGeomFieldDefn
     /*! @endcond */
 
     TemporaryUnsealer GetTemporaryUnsealer();
-
-  private:
-    CPL_DISALLOW_COPY_ASSIGN(OGRGeomFieldDefn)
 };
 
 #ifdef GDAL_COMPILATION
@@ -533,53 +541,53 @@ class CPL_DLL OGRFeatureDefn
      *
      * Note: fields should not be added or removed while iterating over them.
      */
-    struct CPL_DLL Fields
+    template <class OwnerT, class ChildT> struct CPL_DLL Fields
     {
       private:
-        OGRFeatureDefn *m_poFDefn;
+        OwnerT m_poFDefn;
 
       public:
-        inline explicit Fields(OGRFeatureDefn *poFDefn) : m_poFDefn(poFDefn)
+        inline explicit Fields(OwnerT poFDefn) : m_poFDefn(poFDefn)
         {
         }
 
-        struct CPL_DLL ConstIterator
+        struct CPL_DLL Iterator
         {
           private:
-            OGRFeatureDefn *m_poFDefn;
+            OwnerT m_poFDefn;
             int m_nIdx;
 
           public:
-            inline ConstIterator(OGRFeatureDefn *poFDefn, int nIdx)
+            inline Iterator(OwnerT poFDefn, int nIdx)
                 : m_poFDefn(poFDefn), m_nIdx(nIdx)
             {
             }
 
-            inline const OGRFieldDefn *operator*() const
+            inline ChildT operator*() const
             {
                 return m_poFDefn->GetFieldDefn(m_nIdx);
             }
 
-            inline ConstIterator &operator++()
+            inline Iterator &operator++()
             {
                 m_nIdx++;
                 return *this;
             }
 
-            inline bool operator!=(const ConstIterator &it) const
+            inline bool operator!=(const Iterator &it) const
             {
                 return m_nIdx != it.m_nIdx;
             }
         };
 
-        inline ConstIterator begin()
+        inline Iterator begin()
         {
-            return ConstIterator(m_poFDefn, 0);
+            return Iterator(m_poFDefn, 0);
         }
 
-        inline ConstIterator end()
+        inline Iterator end()
         {
-            return ConstIterator(m_poFDefn, m_poFDefn->GetFieldCount());
+            return Iterator(m_poFDefn, m_poFDefn->GetFieldCount());
         }
 
         inline size_t size() const
@@ -587,18 +595,16 @@ class CPL_DLL OGRFeatureDefn
             return static_cast<std::size_t>(m_poFDefn->GetFieldCount());
         }
 
-        inline OGRFieldDefn *operator[](size_t i)
-        {
-            return m_poFDefn->GetFieldDefn(static_cast<int>(i));
-        }
-
-        inline const OGRFieldDefn *operator[](size_t i) const
+        inline ChildT operator[](size_t i)
         {
             return m_poFDefn->GetFieldDefn(static_cast<int>(i));
         }
     };
 
     //! @endcond
+
+    /** Return type of GetFields() */
+    using NonConstFields = Fields<OGRFeatureDefn *, OGRFieldDefn *>;
 
     /** Return an object that can be used to iterate over non-geometry fields.
         \verbatim
@@ -610,9 +616,27 @@ class CPL_DLL OGRFeatureDefn
 
         @since GDAL 3.7
      */
-    inline Fields GetFields()
+    inline NonConstFields GetFields()
     {
-        return Fields(this);
+        return NonConstFields(this);
+    }
+
+    /** Return type of GetFields() const */
+    using ConstFields = Fields<const OGRFeatureDefn *, const OGRFieldDefn *>;
+
+    /** Return an object that can be used to iterate over non-geometry fields.
+        \verbatim
+        for( const auto* poFieldDefn: poFeatureDefn->GetFields() )
+        {
+            // do something
+        }
+        \endverbatim
+
+        @since GDAL 3.12
+     */
+    inline ConstFields GetFields() const
+    {
+        return ConstFields(this);
     }
 
     //! @cond Doxygen_Suppress
@@ -642,7 +666,30 @@ class CPL_DLL OGRFeatureDefn
 
     virtual void AddFieldDefn(const OGRFieldDefn *);
     virtual OGRErr DeleteFieldDefn(int iField);
+
+    /**
+     * @brief StealFieldDefn takes ownership of the field definition at index detaching
+     *        it from the feature definition.
+     * This is an advanced method designed to be only used for driver implementations.
+     * @param iField index of the field definition to detach.
+     * @return a unique pointer to the detached field definition or nullptr if the index is out of range.
+     * @since GDAL 3.11
+     */
+    virtual std::unique_ptr<OGRFieldDefn> StealFieldDefn(int iField);
+
+    virtual void AddFieldDefn(std::unique_ptr<OGRFieldDefn> &&poFieldDefn);
+
     virtual OGRErr ReorderFieldDefns(const int *panMap);
+
+    /**
+     * @brief StealGeomFieldDefn takes ownership of the the geometry field definition at index
+     *        detaching it from the feature definition.
+     * This is an advanced method designed to be only used for driver implementations.
+     * @param iField index of the geometry field definition to detach.
+     * @return a unique pointer to the detached geometry field definition or nullptr if the index is out of range.
+     * @since GDAL 3.11
+     */
+    virtual std::unique_ptr<OGRGeomFieldDefn> StealGeomFieldDefn(int iField);
 
     virtual int GetGeomFieldCount() const;
     virtual OGRGeomFieldDefn *GetGeomFieldDefn(int i);
@@ -654,53 +701,53 @@ class CPL_DLL OGRFeatureDefn
      *
      * Note: fields should not be added or removed while iterating over them.
      */
-    struct CPL_DLL GeomFields
+    template <class OwnerT, class ChildT> struct CPL_DLL GeomFields
     {
       private:
-        OGRFeatureDefn *m_poFDefn;
+        OwnerT m_poFDefn;
 
       public:
-        inline explicit GeomFields(OGRFeatureDefn *poFDefn) : m_poFDefn(poFDefn)
+        inline explicit GeomFields(OwnerT poFDefn) : m_poFDefn(poFDefn)
         {
         }
 
-        struct CPL_DLL ConstIterator
+        struct CPL_DLL Iterator
         {
           private:
-            OGRFeatureDefn *m_poFDefn;
+            OwnerT m_poFDefn;
             int m_nIdx;
 
           public:
-            inline ConstIterator(OGRFeatureDefn *poFDefn, int nIdx)
+            inline Iterator(OwnerT poFDefn, int nIdx)
                 : m_poFDefn(poFDefn), m_nIdx(nIdx)
             {
             }
 
-            inline const OGRGeomFieldDefn *operator*() const
+            inline ChildT operator*() const
             {
                 return m_poFDefn->GetGeomFieldDefn(m_nIdx);
             }
 
-            inline ConstIterator &operator++()
+            inline Iterator &operator++()
             {
                 m_nIdx++;
                 return *this;
             }
 
-            inline bool operator!=(const ConstIterator &it) const
+            inline bool operator!=(const Iterator &it) const
             {
                 return m_nIdx != it.m_nIdx;
             }
         };
 
-        inline ConstIterator begin()
+        inline Iterator begin()
         {
-            return ConstIterator(m_poFDefn, 0);
+            return Iterator(m_poFDefn, 0);
         }
 
-        inline ConstIterator end()
+        inline Iterator end()
         {
-            return ConstIterator(m_poFDefn, m_poFDefn->GetGeomFieldCount());
+            return Iterator(m_poFDefn, m_poFDefn->GetGeomFieldCount());
         }
 
         inline size_t size() const
@@ -708,18 +755,16 @@ class CPL_DLL OGRFeatureDefn
             return static_cast<std::size_t>(m_poFDefn->GetGeomFieldCount());
         }
 
-        inline OGRGeomFieldDefn *operator[](size_t i)
-        {
-            return m_poFDefn->GetGeomFieldDefn(static_cast<int>(i));
-        }
-
-        inline const OGRGeomFieldDefn *operator[](size_t i) const
+        inline ChildT operator[](size_t i) const
         {
             return m_poFDefn->GetGeomFieldDefn(static_cast<int>(i));
         }
     };
 
     //! @endcond
+
+    /** Return type of GetGeomFields() */
+    using NonConstGeomFields = GeomFields<OGRFeatureDefn *, OGRGeomFieldDefn *>;
 
     /** Return an object that can be used to iterate over geometry fields.
         \verbatim
@@ -731,9 +776,28 @@ class CPL_DLL OGRFeatureDefn
 
         @since GDAL 3.7
      */
-    inline GeomFields GetGeomFields()
+    inline NonConstGeomFields GetGeomFields()
     {
-        return GeomFields(this);
+        return NonConstGeomFields(this);
+    }
+
+    /** Return type of GetGeomFields() const */
+    using ConstGeomFields =
+        GeomFields<const OGRFeatureDefn *, const OGRGeomFieldDefn *>;
+
+    /** Return an object that can be used to iterate over geometry fields.
+        \verbatim
+        for( const auto* poGeomFieldDefn: poFeatureDefn->GetGeomFields() )
+        {
+            // do something
+        }
+        \endverbatim
+
+        @since GDAL 3.12
+     */
+    inline ConstGeomFields GetGeomFields() const
+    {
+        return ConstGeomFields(this);
     }
 
     virtual void AddGeomFieldDefn(const OGRGeomFieldDefn *);
@@ -877,7 +941,7 @@ class CPL_DLL OGRFeature
 {
   private:
     GIntBig nFID;
-    OGRFeatureDefn *poDefn;
+    const OGRFeatureDefn *poDefn;
     OGRGeometry **papoGeometries;
     OGRField *pauFields;
     char *m_pszNativeData;
@@ -895,7 +959,7 @@ class CPL_DLL OGRFeature
     bool CopySelfTo(OGRFeature *poNew) const;
 
   public:
-    explicit OGRFeature(OGRFeatureDefn *);
+    explicit OGRFeature(const OGRFeatureDefn *);
     virtual ~OGRFeature();
 
     /** Field value. */
@@ -1136,13 +1200,13 @@ class CPL_DLL OGRFeature
      * (dereference) more than one iterator step at a time, since you will get
      * a reference to the same object (FieldValue) at each iteration step.
      *
-     * <pre>
+     * \code{.cpp}
      * for( auto&& oField: poFeature )
      * {
      *      std::cout << oField.GetIndex() << "," << oField.GetName()<< ": " <<
      * oField.GetAsString() << std::endl;
      * }
-     * </pre>
+     * \endcode
      *
      * @since GDAL 2.3
      */
@@ -1153,19 +1217,23 @@ class CPL_DLL OGRFeature
     const FieldValue operator[](int iField) const;
     FieldValue operator[](int iField);
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wweak-vtables"
+#endif
+
     /** Exception raised by operator[](const char*) when a field is not found.
      */
     class FieldNotFoundException : public std::exception
     {
     };
 
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
     const FieldValue operator[](const char *pszFieldName) const;
     FieldValue operator[](const char *pszFieldName);
-
-    OGRFeatureDefn *GetDefnRef()
-    {
-        return poDefn;
-    }
 
     const OGRFeatureDefn *GetDefnRef() const
     {
@@ -1186,11 +1254,6 @@ class CPL_DLL OGRFeature
     int GetGeomFieldCount() const
     {
         return poDefn->GetGeomFieldCount();
-    }
-
-    OGRGeomFieldDefn *GetGeomFieldDefnRef(int iField)
-    {
-        return poDefn->GetGeomFieldDefn(iField);
     }
 
     const OGRGeomFieldDefn *GetGeomFieldDefnRef(int iField) const
@@ -1223,11 +1286,6 @@ class CPL_DLL OGRFeature
     }
 
     const OGRFieldDefn *GetFieldDefnRef(int iField) const
-    {
-        return poDefn->GetFieldDefn(iField);
-    }
-
-    OGRFieldDefn *GetFieldDefnRef(int iField)
     {
         return poDefn->GetFieldDefn(iField);
     }
@@ -1478,9 +1536,10 @@ class CPL_DLL OGRFeature
                          bool bUseISO8601ForDateTimeAsString = false);
 
     //! @cond Doxygen_Suppress
-    OGRErr RemapFields(OGRFeatureDefn *poNewDefn, const int *panRemapSource);
+    OGRErr RemapFields(const OGRFeatureDefn *poNewDefn,
+                       const int *panRemapSource);
     void AppendField();
-    OGRErr RemapGeomFields(OGRFeatureDefn *poNewDefn,
+    OGRErr RemapGeomFields(const OGRFeatureDefn *poNewDefn,
                            const int *panRemapSource);
     //! @endcond
 
@@ -1518,7 +1577,7 @@ class CPL_DLL OGRFeature
     void SetNativeData(const char *pszNativeData);
     void SetNativeMediaType(const char *pszNativeMediaType);
 
-    static OGRFeature *CreateFeature(OGRFeatureDefn *);
+    static OGRFeature *CreateFeature(const OGRFeatureDefn *);
     static void DestroyFeature(OGRFeature *);
 
     /** Convert a OGRFeature* to a OGRFeatureH.
@@ -1631,7 +1690,7 @@ class CPL_DLL OGRFieldDomain
      *
      * This is the same as the C function OGR_FldDomain_Destroy().
      */
-    virtual ~OGRFieldDomain() = 0;
+    virtual ~OGRFieldDomain();
 
     /** Clone.
      *
@@ -1831,15 +1890,7 @@ class CPL_DLL OGRRangeFieldDomain final : public OGRFieldDomain
                         const OGRField &sMin, bool bMinIsInclusive,
                         const OGRField &sMax, bool bMaxIsInclusive);
 
-    OGRRangeFieldDomain *Clone() const override
-    {
-        auto poDomain = new OGRRangeFieldDomain(
-            m_osName, m_osDescription, m_eFieldType, m_eFieldSubType, m_sMin,
-            m_bMinIsInclusive, m_sMax, m_bMaxIsInclusive);
-        poDomain->SetMergePolicy(m_eMergePolicy);
-        poDomain->SetSplitPolicy(m_eSplitPolicy);
-        return poDomain;
-    }
+    OGRRangeFieldDomain *Clone() const override;
 
     /** Get the minimum value.
      *
@@ -1908,14 +1959,7 @@ class CPL_DLL OGRGlobFieldDomain final : public OGRFieldDomain
                        OGRFieldType eFieldType, OGRFieldSubType eFieldSubType,
                        const std::string &osBlob);
 
-    OGRGlobFieldDomain *Clone() const override
-    {
-        auto poDomain = new OGRGlobFieldDomain(
-            m_osName, m_osDescription, m_eFieldType, m_eFieldSubType, m_osGlob);
-        poDomain->SetMergePolicy(m_eMergePolicy);
-        poDomain->SetSplitPolicy(m_eSplitPolicy);
-        return poDomain;
-    }
+    OGRGlobFieldDomain *Clone() const override;
 
     /** Get the glob expression.
      *
@@ -1940,7 +1984,7 @@ struct swq_evaluation_context;
 class CPL_DLL OGRFeatureQuery
 {
   private:
-    OGRFeatureDefn *poTargetDefn;
+    const OGRFeatureDefn *poTargetDefn;
     void *pSWQExpr;
     swq_evaluation_context *m_psContext = nullptr;
 
@@ -1951,7 +1995,8 @@ class CPL_DLL OGRFeatureQuery
 
     static int CanUseIndex(const swq_expr_node *, OGRLayer *);
 
-    OGRErr Compile(OGRLayer *, OGRFeatureDefn *, const char *, int bCheck,
+    OGRErr Compile(const OGRLayer *, const OGRFeatureDefn *, const char *,
+                   int bCheck,
                    swq_custom_func_registrar *poCustomFuncRegistrar);
 
     CPL_DISALLOW_COPY_ASSIGN(OGRFeatureQuery)
@@ -1960,9 +2005,9 @@ class CPL_DLL OGRFeatureQuery
     OGRFeatureQuery();
     ~OGRFeatureQuery();
 
-    OGRErr Compile(OGRLayer *, const char *, int bCheck = TRUE,
+    OGRErr Compile(const OGRLayer *, const char *, int bCheck = TRUE,
                    swq_custom_func_registrar *poCustomFuncRegistrar = nullptr);
-    OGRErr Compile(OGRFeatureDefn *, const char *, int bCheck = TRUE,
+    OGRErr Compile(const OGRFeatureDefn *, const char *, int bCheck = TRUE,
                    swq_custom_func_registrar *poCustomFuncRegistrar = nullptr);
     int Evaluate(OGRFeature *);
 

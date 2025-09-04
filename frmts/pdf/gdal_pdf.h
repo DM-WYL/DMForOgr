@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  PDF Translator
  * Purpose:  Definition of classes for OGR .pdf driver.
@@ -45,7 +44,7 @@
 #include "gdal_pam.h"
 #include "ogrsf_frmts.h"
 
-#include "ogr_mem.h"
+#include "memdataset.h"
 #include "pdfobject.h"
 
 #define PDFLIB_POPPLER 0
@@ -75,7 +74,7 @@ class OGRPDFLayer final : public OGRMemLayer
 
     void Fill(GDALPDFArray *poArray);
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     GDALDataset *GetDataset() override;
 };
@@ -99,7 +98,7 @@ class OGRPDFWritableLayer final : public OGRMemLayer
                         OGRSpatialReference *poSRS,
                         OGRwkbGeometryType eGeomType);
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
 
     GDALDataset *GetDataset() override;
@@ -193,7 +192,7 @@ class PDFDataset final : public GDALPamDataset
     double m_dfDPI = GDAL_DEFAULT_DPI;
     bool m_bHasCTM = false;
     std::array<double, 6> m_adfCTM = {{0, 0, 0, 0, 0, 0}};
-    std::array<double, 6> m_adfGeoTransform = {{0, 1, 0, 0, 0, 1}};
+    GDALGeoTransform m_gt{};
     bool m_bGeoTransformValid = false;
     int m_nGCPCount = 0;
     GDAL_GCP *m_pasGCPList = nullptr;
@@ -411,9 +410,9 @@ class PDFDataset final : public GDALPamDataset
                int nYSize = 0);
     virtual ~PDFDataset();
 
-    virtual CPLErr GetGeoTransform(double *) override;
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
-    virtual CPLErr SetGeoTransform(double *padfGeoTransform) override;
+    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
@@ -443,10 +442,10 @@ class PDFDataset final : public GDALPamDataset
                       GSpacing nPixelSpace, GSpacing nLineSpace,
                       GSpacing nBandSpace, GByte *pabyData);
 
-    virtual int GetLayerCount() override;
-    virtual OGRLayer *GetLayer(int) override;
+    int GetLayerCount() const override;
+    const OGRLayer *GetLayer(int) const override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     OGRGeometry *GetGeometryFromMCID(int nMCID);
 
@@ -539,12 +538,12 @@ class PDFWritableVectorDataset final : public GDALDataset
                                    const OGRGeomFieldDefn *poGeomFieldDefn,
                                    CSLConstList papszOptions) override;
 
-    virtual OGRErr SyncToDisk();
+    OGRErr SyncToDisk();
 
-    virtual int GetLayerCount() override;
-    virtual OGRLayer *GetLayer(int) override;
+    int GetLayerCount() const override;
+    const OGRLayer *GetLayer(int) const override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     static GDALDataset *Create(const char *pszName, int nXSize, int nYSize,
                                int nBands, GDALDataType eType,

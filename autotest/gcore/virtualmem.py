@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test GDALVirtualMem interface
@@ -15,12 +14,15 @@
 
 import sys
 
+import gdaltest
 import pytest
 
 from osgeo import gdal
 
 # All tests will be skipped if numpy unavailable or SKIP_VIRTUALMEM is set.
+gdaltest.importorskip_gdal_array()
 numpy = pytest.importorskip("numpy")
+
 pytestmark = pytest.mark.skipif(
     gdal.GetConfigOption("SKIP_VIRTUALMEM"), reason="SKIP_VIRTUALMEM is set in config"
 )

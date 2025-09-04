@@ -1,9 +1,6 @@
-FROM fedora:rawhide
+FROM fedora:rawhide@sha256:af660adb8de42682b494c7d102860c155466ba61cd850a8420e1ffad1764b1b7
 
-# FIXME: Exclude update of dnf&rpm themselves as this results in a no longer working dnf
-# cf https://github.com/OSGeo/gdal/actions/runs/9448190401/job/26021669415?pr=10173
-# Likely a transient issue with Fedora 41 dev cycle
-RUN dnf upgrade -y -x dnf -x rpm
+RUN dnf upgrade -y
 RUN dnf install -y --setopt=install_weak_deps=False proj-devel
 RUN dnf install -y clang make diffutils ccache cmake \
       libxml2-devel libxslt-devel expat-devel xerces-c-devel \
@@ -19,12 +16,13 @@ RUN dnf install -y clang make diffutils ccache cmake \
       mdbtools-devel mdbtools-odbc unixODBC-devel \
       armadillo-devel qhull-devel \
       hdf-devel hdf5-devel netcdf-devel \
+      muParser-devel \
       libpq-devel \
       libavif-devel \
       python3-setuptools python3-pip python3-devel python3-lxml swig \
-      glibc-gconv-extra
+      glibc-gconv-extra \
+      python3-jsonschema python3-pytest python3-pytest-env python3-pytest-sugar \
+      python3-pytest-benchmark python3-filelock
 
 COPY requirements.txt /tmp/
-# One of the dependencies of jsonschema 4.18 is rpds_py which requires a Rust compiler
-RUN python3 -m pip install "jsonschema<4.18"
-RUN python3 -m pip install -r /tmp/requirements.txt
+RUN PYTHON_CMD=python3 && $PYTHON_CMD -m pip install -r /tmp/requirements.txt

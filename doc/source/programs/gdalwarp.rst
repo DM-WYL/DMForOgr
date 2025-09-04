@@ -13,39 +13,7 @@ gdalwarp
 Synopsis
 --------
 
-.. code-block::
-
-   gdalwarp [--help] [--long-usage] [--help-general]
-            [--quiet] [-overwrite] [-of <output_format>] [-co <NAME>=<VALUE>]...
-            [-s_srs <srs_def>] [-t_srs <srs_def>]
-            [[-srcalpha]|[-nosrcalpha]]
-            [-dstalpha] [-tr <xres> <yres>|square] [-ts <width> <height>]
-            [-te <xmin> <ymin> <xmax> <ymax]
-            [-te_srs <srs_def>]
-            [-r near|bilinear|cubic|cubicspline|lanczos|average|rms|mode|min|max|med|q1|q3|sum]
-            [-ot Byte|Int8|[U]Int{16|32|64}|CInt{16|32}|[C]Float{32|64}]
-            <src_dataset_name>... <dst_dataset_name>
-
-   Advanced options:
-            [-wo <NAME>=<VALUE>]... [-multi]
-            [-s_coord_epoch <epoch>] [-t_coord_epoch <epoch>] [-ct <string>]
-            [[-tps]|[-rpc]|[-geoloc]]
-            [-order <1|2|3>] [-refine_gcps <tolerance> [<minimum_gcps>]]
-            [-to <NAME>=<VALUE>]...
-            [-et <err_threshold>] [-wm <memory_in_mb>]
-            [-srcnodata "<value>[ <value>]..."]
-            [-dstnodata "<value>[ <value>]..."] [-tap]
-            [-wt Byte|Int8|[U]Int{16|32|64}|CInt{16|32}|[C]Float{32|64}]
-            [-cutline <datasource>|<WKT>] [-cutline_srs <srs_def>]
-            [-cwhere <expression>]
-            [[-cl <layername>]|[-csql <query>]]
-            [-cblend <distance>] [-crop_to_cutline]
-            [-nomd] [-cvmd <meta_conflict_value>] [-setci]
-            [-oo <NAME>=<VALUE>]... [-doo <NAME>=<VALUE>]...
-            [-ovr <level>|AUTO|AUTO-<n>|NONE]
-            [[-vshift]|[-novshiftgrid]]
-            [-if <format>]... [-srcband <band>]... [-dstband <band>]...
-
+.. program-output:: gdalwarp --help-doc
 
 Description
 -----------
@@ -224,7 +192,7 @@ with control information.
     Refines the GCPs by automatically eliminating outliers.
     Outliers will be eliminated until minimum_gcps are left or when no outliers can be detected.
     The tolerance is passed to adjust when a GCP will be eliminated.
-    Not that GCP refinement only works with polynomial interpolation.
+    Note that GCP refinement only works with polynomial interpolation.
     The tolerance is in pixel units if no projection is available, otherwise it is in SRS units.
     If minimum_gcps is not provided, the minimum GCPs according to the polynomial model is used.
 
@@ -264,7 +232,8 @@ with control information.
     includes the minimum extent (edges lines/columns that are detected as
     blank, before actual warping, will be removed starting with GDAL 3.8).
     Alignment means that xmin / resx, ymin / resy,
-    xmax / resx and ymax / resy are integer values.
+    xmax / resx and ymax / resy are integer values. It does not necessarily
+    mean that the output grid aligns with the input grid.
 
 .. option:: -ts <width> <height>
 
@@ -534,6 +503,18 @@ of an individual source pixel is determined by the product of the weights
 determined for its row and column; the diagonal Cartesian distance is not
 calculated.
 
+Multiple input files
+--------------------
+
+When multiple inputs are provided to :program:`gdalwarp`, they are processed
+independently in the order they are listed. This may introduce edge effects
+near the boundaries of the input files, because output pixel values will be
+derived from the final input only. To avoid this, non-overlapping input
+files may first be combined into a :ref:`VRT file <raster.vrt>` (e.g., using
+:ref:`gdalbuildvrt`). This will allow :program:`gdalwarp` to use pixels
+from all inputs when calculating output pixel values.
+
+
 Writing to an existing file
 ---------------------------
 
@@ -568,7 +549,8 @@ The details of how it is taken into account depends on the resampling kernel:
 - for bilinear, cubic, cubicspline and lanczos, for each target pixel, the
   coordinate of its center is projected back to source coordinates and a
   corresponding source pixel is identified. If this source pixel is invalid, the
-  target pixel is considered as nodata.
+  target pixel is considered as nodata (in this case, valid pixels within the
+  kernel radius would not be considered).
   Given that those resampling kernels have a non-null kernel radius, this source
   pixel is just one among other several source pixels, and it might be possible
   that there are invalid values in those other contributing source pixels.

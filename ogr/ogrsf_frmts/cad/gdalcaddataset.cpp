@@ -24,10 +24,7 @@ class CADWrapperRasterBand : public GDALProxyRasterBand
 
   protected:
     virtual GDALRasterBand *
-    RefUnderlyingRasterBand(bool /* bForceOpen */) const override
-    {
-        return poBaseBand;
-    }
+    RefUnderlyingRasterBand(bool /* bForceOpen */) const override;
 
   public:
     explicit CADWrapperRasterBand(GDALRasterBand *poBaseBandIn)
@@ -42,16 +39,16 @@ class CADWrapperRasterBand : public GDALProxyRasterBand
     }
 };
 
+GDALRasterBand *
+CADWrapperRasterBand::RefUnderlyingRasterBand(bool /* bForceOpen */) const
+{
+    return poBaseBand;
+}
+
 GDALCADDataset::GDALCADDataset()
     : poCADFile(nullptr), papoLayers(nullptr), nLayers(0), poRasterDS(nullptr),
       poSpatialReference(nullptr)
 {
-    adfGeoTransform[0] = 0.0;
-    adfGeoTransform[1] = 1.0;
-    adfGeoTransform[2] = 0.0;
-    adfGeoTransform[3] = 0.0;
-    adfGeoTransform[4] = 0.0;
-    adfGeoTransform[5] = 1.0;
 }
 
 GDALCADDataset::~GDALCADDataset()
@@ -94,14 +91,13 @@ void GDALCADDataset::FillTransform(CADImage *pImage, double dfUnits)
     CADVector oSizePt = pImage->getImageSizeInPx();
     CADVector oInsPt = pImage->getVertInsertionPoint();
     CADVector oSizeUnitsPt = pImage->getPixelSizeInACADUnits();
-    adfGeoTransform[0] = oInsPt.getX();
-    adfGeoTransform[3] =
-        oInsPt.getY() + oSizePt.getY() * oSizeUnitsPt.getX() * dfMultiply;
-    adfGeoTransform[2] = 0.0;
-    adfGeoTransform[4] = 0.0;
+    m_gt[0] = oInsPt.getX();
+    m_gt[3] = oInsPt.getY() + oSizePt.getY() * oSizeUnitsPt.getX() * dfMultiply;
+    m_gt[2] = 0.0;
+    m_gt[4] = 0.0;
 
-    adfGeoTransform[1] = oSizeUnitsPt.getX() * dfMultiply;
-    adfGeoTransform[5] = -oSizeUnitsPt.getY() * dfMultiply;
+    m_gt[1] = oSizeUnitsPt.getX() * dfMultiply;
+    m_gt[5] = -oSizeUnitsPt.getY() * dfMultiply;
 }
 
 int GDALCADDataset::Open(GDALOpenInfo *poOpenInfo, CADFileIO *pFileIO,
@@ -226,11 +222,12 @@ int GDALCADDataset::Open(GDALOpenInfo *poOpenInfo, CADFileIO *pFileIO,
         {
             // TODO: Add support clipping region in neatline
             CPLString osImgFilename = pImage->getFilePath();
-            CPLString osImgPath = CPLGetPath(osImgFilename);
+            CPLString osImgPath = CPLGetPathSafe(osImgFilename);
             if (osImgPath.empty())
             {
-                osImgFilename = CPLFormFilename(CPLGetPath(osCADFilename),
-                                                osImgFilename, nullptr);
+                osImgFilename =
+                    CPLFormFilenameSafe(CPLGetPathSafe(osCADFilename).c_str(),
+                                        osImgFilename, nullptr);
             }
 
             if (!CPLCheckForFile(const_cast<char *>(osImgFilename.c_str()),
@@ -251,7 +248,7 @@ int GDALCADDataset::Open(GDALOpenInfo *poOpenInfo, CADFileIO *pFileIO,
                 return poOpenInfo->nOpenFlags & GDAL_OF_VECTOR;
             }
 
-            if (poRasterDS->GetGeoTransform(adfGeoTransform) != CE_None)
+            if (poRasterDS->GetGeoTransform(m_gt) != CE_None)
             {
                 // The external world file have priority
                 double dfUnits = 1.0;
@@ -296,7 +293,7 @@ int GDALCADDataset::Open(GDALOpenInfo *poOpenInfo, CADFileIO *pFileIO,
     return TRUE;
 }
 
-OGRLayer *GDALCADDataset::GetLayer(int iLayer)
+const OGRLayer *GDALCADDataset::GetLayer(int iLayer) const
 {
     if (iLayer < 0 || iLayer >= nLayers)
         return nullptr;
@@ -304,7 +301,7 @@ OGRLayer *GDALCADDataset::GetLayer(int iLayer)
         return papoLayers[iLayer];
 }
 
-int GDALCADDataset::TestCapability(const char *pszCap)
+int GDALCADDataset::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, ODsCCreateLayer) || EQUAL(pszCap, ODsCDeleteLayer))
         return FALSE;
@@ -323,9 +320,9 @@ char **GDALCADDataset::GetFileList()
 
     /* duplicated papszFileList = CSLAddString( papszFileList, osCADFilename
      * );*/
-    const char *pszPRJFilename = GetPrjFilePath();
-    if (nullptr != pszPRJFilename)
-        papszFileList = CSLAddString(papszFileList, pszPRJFilename);
+    const std::string osPRJFilename = GetPrjFilePath();
+    if (!osPRJFilename.empty())
+        papszFileList = CSLAddString(papszFileList, osPRJFilename.c_str());
 
     for (size_t i = 0; i < poCADFile->GetLayersCount(); ++i)
     {
@@ -394,11 +391,11 @@ const OGRSpatialReference *GDALCADDataset::GetSpatialRef() const
         }
         else
         {
-            const char *pszPRJFilename = GetPrjFilePath();
-            if (pszPRJFilename && pszPRJFilename[0])  // check if path exists
+            const std::string osPRJFilename = GetPrjFilePath();
+            if (!osPRJFilename.empty())  // check if path exists
             {
                 CPLPushErrorHandler(CPLQuietErrorHandler);
-                char **papszPRJData = CSLLoad(pszPRJFilename);
+                char **papszPRJData = CSLLoad(osPRJFilename.c_str());
                 CPLPopErrorHandler();
 
                 if (poSpatialReference->importFromESRI(papszPRJData) !=
@@ -419,22 +416,22 @@ const OGRSpatialReference *GDALCADDataset::GetSpatialRef() const
     return poSpatialReference;
 }
 
-const char *GDALCADDataset::GetPrjFilePath() const
+const std::string GDALCADDataset::GetPrjFilePath() const
 {
-    const char *pszPRJFilename = CPLResetExtension(osCADFilename, "prj");
-    if (CPLCheckForFile((char *)pszPRJFilename, nullptr) == TRUE)
-        return pszPRJFilename;
+    std::string osPRJFilename = CPLResetExtensionSafe(osCADFilename, "prj");
+    if (CPLCheckForFile(osPRJFilename.data(), nullptr) == TRUE)
+        return osPRJFilename;
 
-    pszPRJFilename = CPLResetExtension(osCADFilename, "PRJ");
-    if (CPLCheckForFile((char *)pszPRJFilename, nullptr) == TRUE)
-        return pszPRJFilename;
+    osPRJFilename = CPLResetExtensionSafe(osCADFilename, "PRJ");
+    if (CPLCheckForFile(osPRJFilename.data(), nullptr) == TRUE)
+        return osPRJFilename;
 
-    return "";
+    return std::string();
 }
 
-CPLErr GDALCADDataset::GetGeoTransform(double *padfGeoTransform)
+CPLErr GDALCADDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    memcpy(padfGeoTransform, adfGeoTransform, sizeof(double) * 6);
+    gt = m_gt;
     return CE_None;
 }
 

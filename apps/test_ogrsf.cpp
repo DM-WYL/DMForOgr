@@ -611,8 +611,8 @@ static int TestCreateLayer(GDALDriver *poDriver, OGRwkbGeometryType eGeomType)
     const char *pszExt = poDriver->GetMetadataItem(GDAL_DMD_EXTENSION);
 
     static int nCounter = 0;
-    CPLString osFilename =
-        CPLFormFilename("/vsimem", CPLSPrintf("test%d", ++nCounter), pszExt);
+    CPLString osFilename = CPLFormFilenameSafe(
+        "/vsimem", CPLSPrintf("test%d", ++nCounter), pszExt);
     GDALDataset *poDS = LOG_ACTION(
         poDriver->Create(osFilename, 0, 0, 0, GDT_Unknown, papszDSCO));
     if (poDS == nullptr)
@@ -822,9 +822,8 @@ static int TestCreateLayer(GDALDriver *poDriver, OGRwkbGeometryType eGeomType)
         const char *pszWKT = GetWKT(eGeomType);
         if (pszWKT != nullptr)
         {
-            OGRGeometry *poGeom = nullptr;
-            OGRGeometryFactory::createFromWkt(pszWKT, nullptr, &poGeom);
-            poFeature->SetGeometryDirectly(poGeom);
+            auto [poGeom, _] = OGRGeometryFactory::createFromWkt(pszWKT);
+            poFeature->SetGeometry(std::move(poGeom));
         }
 
         CPLErrorReset();
@@ -864,9 +863,8 @@ static int TestCreateLayer(GDALDriver *poDriver, OGRwkbGeometryType eGeomType)
         pszWKT = GetWKT(eOtherGeomType);
         if (pszWKT != nullptr)
         {
-            OGRGeometry *poGeom = nullptr;
-            OGRGeometryFactory::createFromWkt(pszWKT, nullptr, &poGeom);
-            poFeature->SetGeometryDirectly(poGeom);
+            auto [poGeom, _] = OGRGeometryFactory::createFromWkt(pszWKT);
+            poFeature->SetGeometry(std::move(poGeom));
         }
 
         CPLErrorReset();
@@ -915,9 +913,8 @@ static int TestCreateLayer(GDALDriver *poDriver, OGRwkbGeometryType eGeomType)
             pszWKT = GetWKT(eGeomType);
             if (pszWKT != nullptr)
             {
-                OGRGeometry *poGeom = nullptr;
-                OGRGeometryFactory::createFromWkt(pszWKT, nullptr, &poGeom);
-                poFeature->SetGeometryDirectly(poGeom);
+                auto [poGeom, _] = OGRGeometryFactory::createFromWkt(pszWKT);
+                poFeature->SetGeometry(std::move(poGeom));
             }
             CPLErrorReset();
             CPLPushErrorHandler(CPLQuietErrorHandler);
@@ -1019,8 +1016,8 @@ static int TestCreateLayer(GDALDriver *poDriver, OGRwkbGeometryType eGeomType)
     if (poLayer != nullptr)
     {
         /* Test creating empty layer */
-        osFilename = CPLFormFilename("/vsimem",
-                                     CPLSPrintf("test%d", ++nCounter), pszExt);
+        osFilename = CPLFormFilenameSafe(
+            "/vsimem", CPLSPrintf("test%d", ++nCounter), pszExt);
         poDS = LOG_ACTION(
             poDriver->Create(osFilename, 0, 0, 0, GDT_Unknown, nullptr));
         if (poDS != nullptr)
@@ -1062,7 +1059,7 @@ static int TestCreate(GDALDriver *poDriver, int bFromAllDrivers)
                                       poDriver->GetDescription())));
 
     const char *pszExt = poDriver->GetMetadataItem(GDAL_DMD_EXTENSION);
-    CPLString osFilename = CPLFormFilename("/foo", "test", pszExt);
+    CPLString osFilename = CPLFormFilenameSafe("/foo", "test", pszExt);
     CPLPushErrorHandler(CPLQuietErrorHandler);
     GDALDataset *poDS =
         LOG_ACTION(poDriver->Create(osFilename, 0, 0, 0, GDT_Unknown, nullptr));
@@ -1387,7 +1384,7 @@ static int TestBasic(GDALDataset *poDS, OGRLayer *poLayer)
 static int TestLayerErrorConditions(OGRLayer *poLyr)
 {
     int bRet = TRUE;
-    OGRFeature *poFeat = nullptr;
+    std::unique_ptr<OGRFeature> poFeat;
 
     CPLPushErrorHandler(CPLQuietErrorHandler);
 
@@ -1425,18 +1422,16 @@ static int TestLayerErrorConditions(OGRLayer *poLyr)
     }
 
     poLyr->ResetReading();
-    poFeat = poLyr->GetNextFeature();
+    poFeat.reset(poLyr->GetNextFeature());
     if (poFeat)
     {
         poFeat->SetFID(-10);
-        if (poLyr->SetFeature(poFeat) == OGRERR_NONE)
+        if (poLyr->SetFeature(poFeat.get()) == OGRERR_NONE)
         {
             printf("ERROR: SetFeature(-10) should have returned an error\n");
-            delete poFeat;
             bRet = FALSE;
             goto bye;
         }
-        delete poFeat;
     }
 
     if (poLyr->DeleteFeature(-10) == OGRERR_NONE)
@@ -1454,18 +1449,40 @@ static int TestLayerErrorConditions(OGRLayer *poLyr)
         goto bye;
     }
 
-    if (LOG_ACTION(poLyr->SetNextByIndex(-10)) != OGRERR_FAILURE)
+    if (LOG_ACTION(poLyr->SetNextByIndex(-1)) != OGRERR_NON_EXISTING_FEATURE)
     {
-        printf("ERROR: SetNextByIndex(-10) should have "
-               "returned OGRERR_FAILURE\n");
+        printf("ERROR: SetNextByIndex(-1) should have "
+               "returned OGRERR_NON_EXISTING_FEATURE\n");
+        bRet = FALSE;
+        goto bye;
+    }
+    if (LOG_ACTION(std::unique_ptr<OGRFeature>(poLyr->GetNextFeature())) !=
+        nullptr)
+    {
+        printf("ERROR: GetNextFeature() after SetNextByIndex(-1) "
+               "should have returned NULL\n");
         bRet = FALSE;
         goto bye;
     }
 
-    if (LOG_ACTION(poLyr->SetNextByIndex(2000000000)) == OGRERR_NONE &&
-        LOG_ACTION(poLyr->GetNextFeature()) != nullptr)
+    if (poFeat)
     {
-        printf("ERROR: SetNextByIndex(2000000000) and then GetNextFeature() "
+        poLyr->ResetReading();
+        poFeat.reset(poLyr->GetNextFeature());
+        if (!poFeat)
+        {
+            printf("ERROR: GetNextFeature() after SetNextByIndex(-1) and "
+                   "ResetReading() should have returned a non-NULL feature\n");
+            bRet = FALSE;
+            goto bye;
+        }
+    }
+
+    CPL_IGNORE_RET_VAL(LOG_ACTION(poLyr->SetNextByIndex(2000000000)));
+    if (LOG_ACTION(std::unique_ptr<OGRFeature>(poLyr->GetNextFeature())) !=
+        nullptr)
+    {
+        printf("ERROR: GetNextFeature() after SetNextByIndex(2000000000) "
                "should have returned NULL\n");
         bRet = FALSE;
         goto bye;
@@ -4057,14 +4074,16 @@ static int64_t CountFeaturesUsingArrowStream(OGRLayer *poLayer,
         if (nExpectedFID >= 0 && !bExpectedFIDFound)
         {
             bOK = false;
-            printf("ERROR: expected to find feature of id %" PRId64
+            printf("ERROR: CountFeaturesUsingArrowStream() :"
+                   "expected to find feature of id %" PRId64
                    ", but did not get it\n",
                    nExpectedFID);
         }
         if (nUnexpectedFID >= 0 && bUnexpectedFIDFound)
         {
             bOK = false;
-            printf("ERROR: expected *not* to find feature of id %" PRId64
+            printf("ERROR: CountFeaturesUsingArrowStream(): "
+                   "expected *not* to find feature of id %" PRId64
                    ", but did get it\n",
                    nUnexpectedFID);
         }
@@ -4207,8 +4226,17 @@ static int TestLayerGetArrowStream(OGRLayer *poLayer)
     stream.release(&stream);
     if (stream.release)
     {
-        printf("ERROR: stream.release should be NULL after release\n");
-        return false;
+        // Seems there's an issue in adbc_driver_bigquery implementation
+        if (EQUAL(CSLFetchNameValueDef(papszOpenOptions, "ADBC_DRIVER", ""),
+                  "adbc_driver_bigquery"))
+        {
+            printf("WARNING: stream.release should be NULL after release\n");
+        }
+        else
+        {
+            printf("ERROR: stream.release should be NULL after release\n");
+            return false;
+        }
     }
 
     const int64_t nFCClassic = poLayer->GetFeatureCount(true);
@@ -4434,6 +4462,25 @@ static int TestOGRLayer(GDALDataset *poDS, OGRLayer *poLayer, int bIsSQLLayer)
     /* -------------------------------------------------------------------- */
     if (LOG_ACTION(poLayer->TestCapability(OLCRandomWrite)))
     {
+        if (!poDS->GetDriver()->GetMetadataItem(GDAL_DCAP_UPDATE))
+        {
+            printf("ERROR: Driver %s does not declare GDAL_DCAP_UPDATE\n",
+                   poDS->GetDriver()->GetDescription());
+            bRet = false;
+        }
+        else
+        {
+            const char *pszItems =
+                poDS->GetDriver()->GetMetadataItem(GDAL_DMD_UPDATE_ITEMS);
+            if (!pszItems || !strstr(pszItems, "Features"))
+            {
+                printf("ERROR: Driver %s does not declare Features in "
+                       "GDAL_DMD_UPDATE_ITEMS\n",
+                       poDS->GetDriver()->GetDescription());
+                bRet = false;
+            }
+        }
+
         bRet &= TestOGRLayerRandomWrite(poLayer);
     }
 
@@ -4723,8 +4770,8 @@ static int TestVirtualIO(GDALDataset *poDS)
     for (const char *pszFilename : aosFileList)
     {
         if (pszFilename == aosFileList[0])
-            osPath = CPLGetPath(pszFilename);
-        else if (strcmp(osPath, CPLGetPath(pszFilename)) != 0)
+            osPath = CPLGetPathSafe(pszFilename);
+        else if (osPath != CPLGetPathSafe(pszFilename))
         {
             bAllPathIdentical = FALSE;
             break;
@@ -4734,7 +4781,7 @@ static int TestVirtualIO(GDALDataset *poDS)
     if (bAllPathIdentical && aosFileList.size() > 1)
     {
         osVirtPath =
-            CPLFormFilename("/vsimem", CPLGetFilename(osPath), nullptr);
+            CPLFormFilenameSafe("/vsimem", CPLGetFilename(osPath), nullptr);
         VSIMkdir(osVirtPath, 0666);
     }
     else
@@ -4742,22 +4789,22 @@ static int TestVirtualIO(GDALDataset *poDS)
 
     for (const char *pszFilename : aosFileList)
     {
-        const char *pszDestFile =
-            CPLFormFilename(osVirtPath, CPLGetFilename(pszFilename), nullptr);
-        /* CPLDebug("test_ogrsf", "Copying %s to %s", pszFilename, pszDestFile);
+        const std::string osDestFile = CPLFormFilenameSafe(
+            osVirtPath, CPLGetFilename(pszFilename), nullptr);
+        /* CPLDebug("test_ogrsf", "Copying %s to %s", pszFilename, osDestFile.c_str());
          */
-        CPLCopyFile(pszDestFile, pszFilename);
+        CPLCopyFile(osDestFile.c_str(), pszFilename);
     }
 
-    const char *pszVirtFile;
+    std::string osVirtFile;
     if (VSI_ISREG(sStat.st_mode))
-        pszVirtFile = CPLFormFilename(
+        osVirtFile = CPLFormFilenameSafe(
             osVirtPath, CPLGetFilename(poDS->GetDescription()), nullptr);
     else
-        pszVirtFile = osVirtPath;
-    CPLDebug("test_ogrsf", "Trying to open %s", pszVirtFile);
-    GDALDataset *poDS2 = LOG_ACTION(static_cast<GDALDataset *>(
-        GDALOpenEx(pszVirtFile, GDAL_OF_VECTOR, nullptr, nullptr, nullptr)));
+        osVirtFile = osVirtPath;
+    CPLDebug("test_ogrsf", "Trying to open %s", osVirtFile.c_str());
+    GDALDataset *poDS2 = LOG_ACTION(static_cast<GDALDataset *>(GDALOpenEx(
+        osVirtFile.c_str(), GDAL_OF_VECTOR, nullptr, nullptr, nullptr)));
     if (poDS2 != nullptr)
     {
         if (poDS->GetDriver()->GetMetadataItem(GDAL_DCAP_VIRTUALIO) == nullptr)
@@ -4792,8 +4839,9 @@ static int TestVirtualIO(GDALDataset *poDS)
 
     for (const char *pszFilename : aosFileList)
     {
-        VSIUnlink(
-            CPLFormFilename(osVirtPath, CPLGetFilename(pszFilename), nullptr));
+        VSIUnlink(CPLFormFilenameSafe(osVirtPath, CPLGetFilename(pszFilename),
+                                      nullptr)
+                      .c_str());
     }
 
     return bRet;

@@ -1,8 +1,6 @@
 <?xml version="1.0"?>
 <!--
 /******************************************************************************
- * $Id$
- *
  * Project:  netCDF driver
  * Purpose:  Schema of netCDF writer configuration files
  * Author:   Even Rouault, <even dot rouault at spatialys dot com>
@@ -35,7 +33,7 @@
                 </xs:element>
                 <xs:element name="Layer" type="layerType" minOccurs="0" maxOccurs="unbounded">
                     <xs:annotation><xs:documentation>
-                        Define layer specific settings for layer creaetion options, fields and attributes.
+                        Define layer specific settings for layer creation options, fields and attributes.
                     </xs:documentation></xs:annotation>
                 </xs:element>
             </xs:sequence>

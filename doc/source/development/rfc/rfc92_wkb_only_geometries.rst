@@ -158,7 +158,7 @@ Benchmarking
 bench_ogr_c_api
 ~~~~~~~~~~~~~~~
 
-The `bench_ogr_c_api <https://github.com/OSGeo/gdal/blob/master/perftests/bench_ogr_c_api.cpp>`_
+The bench_ogr_c_api :source_file:`perftests/bench_ogr_c_api.cpp`
 benchmark utility which uses the C API to iterate over features and get their WKB
 representation is enhanced with a `-wkb_only_geometry` switch to call
 OGR_L_RequestWKBOnlyGeometries().
@@ -194,7 +194,7 @@ runs in 15.8 second in WKBOnlyGeometry mode vs 19.1 second without it (master),
 hence a 17% speed-up.
 
 With spatial index creation enabled (multi-threaded), the wall clock time
-difference is within measurement noise. And for singe threaded creation, the
+difference is within measurement noise. And for single threaded creation, the
 WKBOnlyGeometry mode is 5% faster.
 
 Discussion

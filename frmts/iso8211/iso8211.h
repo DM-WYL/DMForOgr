@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  ISO 8211 Access
  * Purpose:  Main declarations for ISO 8211.
@@ -84,7 +83,13 @@ class CPL_ODLL DDFModule
     DDFRecord *ReadRecord();
     void Rewind(long nOffset = -1);
 
-    DDFFieldDefn *FindFieldDefn(const char *);
+    const DDFFieldDefn *FindFieldDefn(const char *) const;
+
+    DDFFieldDefn *FindFieldDefn(const char *name)
+    {
+        return const_cast<DDFFieldDefn *>(
+            const_cast<const DDFModule *>(this)->FindFieldDefn(name));
+    }
 
     /** Fetch the number of defined fields. */
 
@@ -264,8 +269,8 @@ class CPL_ODLL DDFFieldDefn
         return nSubfieldCount;
     }
 
-    DDFSubfieldDefn *GetSubfield(int i);
-    DDFSubfieldDefn *FindSubfieldDefn(const char *);
+    const DDFSubfieldDefn *GetSubfield(int i) const;
+    const DDFSubfieldDefn *FindSubfieldDefn(const char *) const;
 
     /**
      * Get the width of this field.  This function isn't normally used
@@ -343,6 +348,8 @@ class CPL_ODLL DDFFieldDefn
 
     int nSubfieldCount;
     DDFSubfieldDefn **papoSubfields;
+
+    CPL_DISALLOW_COPY_ASSIGN(DDFFieldDefn)
 };
 
 /************************************************************************/
@@ -395,13 +402,13 @@ class CPL_ODLL DDFSubfieldDefn
     }
 
     double ExtractFloatData(const char *pachData, int nMaxBytes,
-                            int *pnConsumedBytes);
+                            int *pnConsumedBytes) const;
     int ExtractIntData(const char *pachData, int nMaxBytes,
-                       int *pnConsumedBytes);
+                       int *pnConsumedBytes) const;
     const char *ExtractStringData(const char *pachData, int nMaxBytes,
-                                  int *pnConsumedBytes);
-    int GetDataLength(const char *, int, int *);
-    void DumpData(const char *pachData, int nMaxBytes, FILE *fp);
+                                  int *pnConsumedBytes) const;
+    int GetDataLength(const char *, int, int *) const;
+    void DumpData(const char *pachData, int nMaxBytes, FILE *fp) const;
 
     int FormatStringValue(char *pachData, int nBytesAvailable, int *pnBytesUsed,
                           const char *pszValue, int nValueLength = -1) const;
@@ -462,8 +469,8 @@ class CPL_ODLL DDFSubfieldDefn
     /*      Fetched string cache.  This is where we hold the values         */
     /*      returned from ExtractStringData().                              */
     /* -------------------------------------------------------------------- */
-    int nMaxBufChars;
-    char *pachBuffer;
+    mutable int nMaxBufChars;
+    mutable char *pachBuffer;
 };
 
 /************************************************************************/
@@ -496,10 +503,24 @@ class CPL_ODLL DDFRecord
         return nFieldCount;
     }
 
-    DDFField *FindField(const char *, int = 0);
-    DDFField *GetField(int);
+    const DDFField *FindField(const char *, int = 0) const;
 
-    int GetIntSubfield(const char *, int, const char *, int, int * = nullptr);
+    DDFField *FindField(const char *name, int i = 0)
+    {
+        return const_cast<DDFField *>(
+            const_cast<const DDFRecord *>(this)->FindField(name, i));
+    }
+
+    const DDFField *GetField(int) const;
+
+    DDFField *GetField(int i)
+    {
+        return const_cast<DDFField *>(
+            const_cast<const DDFRecord *>(this)->GetField(i));
+    }
+
+    int GetIntSubfield(const char *, int, const char *, int,
+                       int * = nullptr) const;
     double GetFloatSubfield(const char *, int, const char *, int,
                             int * = nullptr);
     const char *GetStringSubfield(const char *, int, const char *, int,
@@ -648,7 +669,8 @@ class CPL_ODLL DDFField
 
     void Dump(FILE *fp);
 
-    const char *GetSubfieldData(DDFSubfieldDefn *, int * = nullptr, int = 0);
+    const char *GetSubfieldData(const DDFSubfieldDefn *, int * = nullptr,
+                                int = 0) const;
 
     const char *GetInstanceData(int nInstance, int *pnSize);
 
@@ -667,10 +689,16 @@ class CPL_ODLL DDFField
         return nDataSize;
     }
 
-    int GetRepeatCount();
+    int GetRepeatCount() const;
 
     /** Fetch the corresponding DDFFieldDefn. */
     DDFFieldDefn *GetFieldDefn()
+    {
+        return poDefn;
+    }
+
+    /** Fetch the corresponding DDFFieldDefn. */
+    const DDFFieldDefn *GetFieldDefn() const
     {
         return poDefn;
     }

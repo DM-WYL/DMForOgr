@@ -62,6 +62,20 @@ build_fuzzer(
   -DREGISTER_FUNC=GDALRegister_GTiff
   -DGTIFF_USE_MMAP)
 
+function (build_gdal_specialized_fuzzer _format _registerFunc _memfile _gdalfile)
+  build_fuzzer(
+    NAME
+    ${_format}_fuzzer
+    SOURCES
+    gdal_fuzzer.cpp
+    DEFINITIONS
+    -DREGISTER_FUNC=${_registerFunc}
+    -DMEM_FILENAME="${_memfile}"
+    -DGDAL_FILENAME="${_gdalfile}")
+endfunction ()
+
+build_gdal_specialized_fuzzer(zarr GDALRegister_Zarr "/vsimem/test.tar" "/vsitar//vsimem/test.tar")
+
 function (build_ogr_specialized_fuzzer _format _registerFunc _memfile _gdalfile)
   build_fuzzer(
     NAME
@@ -73,9 +87,9 @@ function (build_ogr_specialized_fuzzer _format _registerFunc _memfile _gdalfile)
     -DMEM_FILENAME="${_memfile}"
     -DGDAL_FILENAME="${_gdalfile}")
 endfunction ()
+build_fuzzer(NAME gdal_algorithm_fuzzer SOURCES gdal_algorithm_fuzzer.cpp)
 
 build_ogr_specialized_fuzzer(dxf RegisterOGRDXF "/vsimem/test" "/vsimem/test")
-build_ogr_specialized_fuzzer(ogr_sdts RegisterOGRSDTS "/vsimem/test.tar" "/vsitar//vsimem/test.tar/TR01CATD.DDF")
 build_ogr_specialized_fuzzer(openfilegdb RegisterOGROpenFileGDB "/vsimem/test.gdb.tar" "/vsimem/test.gdb.tar")
 build_ogr_specialized_fuzzer(shape OGRRegisterAll "/vsimem/test.tar" "/vsitar//vsimem/test.tar/my.shp")
 build_ogr_specialized_fuzzer(mitab_mif OGRRegisterAll "/vsimem/test.tar" "/vsitar//vsimem/test.tar/my.mif")
@@ -120,9 +134,18 @@ build_gdal_specialized_fuzzer(aig GDALRegister_AIGrid "/vsimem/test.tar" "/vsita
 # mrf can use indirectly the GTiff driver
 build_gdal_specialized_fuzzer(mrf "GDALRegister_mrf();GDALRegister_GTiff" "/vsimem/test.tar"
                               "/vsitar//vsimem/test.tar/byte.mrf")
-build_gdal_specialized_fuzzer(gdal_sdts GDALRegister_SDTS "/vsimem/test.tar" "/vsitar//vsimem/test.tar/1107CATD.DDF")
 build_gdal_specialized_fuzzer(gdal_vrt GDALAllRegister "/vsimem/test.tar" "/vsitar//vsimem/test.tar/test.vrt")
 build_gdal_specialized_fuzzer(ers GDALRegister_ERS "/vsimem/test.tar" "/vsitar//vsimem/test.tar/test.ers")
+
+build_fuzzer(
+    NAME
+    libertiff_fuzzer
+    SOURCES
+    gdal_fuzzer.cpp
+    DEFINITIONS
+    -DREGISTER_FUNC=GDALRegister_LIBERTIFF
+    -DDRIVER_NAME="LIBERTIFF"
+)
 
 build_fuzzer(
   NAME

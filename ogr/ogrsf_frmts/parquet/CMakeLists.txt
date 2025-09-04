@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION ${GDAL_CMAKE_VERSION_MIN}...${GDAL_CMAKE_VERSION_
 if(NOT DEFINED PROJECT_SOURCE_DIR)
     # Standalone plugin building
     project(ogr_Parquet)
-    # The driver depends on some non expored headers. Make sure the version we
+    # The driver depends on some non exported headers. Make sure the version we
     # build against against is the same as this source tree.
     set(STRICT_VERSION_CHECK ON)
     include("${PROJECT_SOURCE_DIR}/../../../cmake/helpers/SetupStandalonePlugin.cmake" )
@@ -21,7 +21,6 @@ add_gdal_driver(TARGET ogr_Parquet
                 CORE_SOURCES
                         ogrparquetdrivercore.cpp
                 PLUGIN_CAPABLE
-                STRONG_CXX_WFLAGS
                 NO_SHARED_SYMBOL_WITH_CORE)
 
 if(NOT TARGET ogr_Parquet)
@@ -33,12 +32,11 @@ if (STANDALONE)
 target_compile_definitions(ogr_Parquet PRIVATE STANDALONE)
 target_include_directories(ogr_Parquet PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../port
                                                ${CMAKE_CURRENT_SOURCE_DIR}/../generic
-                                               ${CMAKE_CURRENT_SOURCE_DIR}/../mem
+                                               ${CMAKE_CURRENT_SOURCE_DIR}/../../frmts/mem
                                                ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 else()
-target_include_directories(ogr_Parquet PRIVATE $<TARGET_PROPERTY:ogrsf_generic,SOURCE_DIR>
-                                               $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
+target_include_directories(ogr_Parquet PRIVATE $<TARGET_PROPERTY:ogrsf_generic,SOURCE_DIR>)
 endif()
 
 if(${Parquet_VERSION} VERSION_GREATER_EQUAL 10.0)
@@ -71,4 +69,13 @@ if (GDAL_USE_ARROWDATASET)
         endif()
     endif()
     target_sources(ogr_Parquet PRIVATE ogrparquetdatasetlayer.cpp)
+endif()
+
+if (GDAL_USE_ARROWCOMPUTE)
+    target_compile_definitions(ogr_Parquet PRIVATE -DGDAL_USE_ARROWCOMPUTE)
+    if(ARROW_USE_STATIC_LIBRARIES)
+        gdal_target_link_libraries(ogr_Parquet PRIVATE ArrowCompute::arrow_compute_static)
+    else()
+        gdal_target_link_libraries(ogr_Parquet PRIVATE ArrowCompute::arrow_compute_shared)
+    endif()
 endif()

@@ -55,10 +55,20 @@
 
 #include "marfa.h"
 #include <cassert>
+#include <algorithm>
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation-unknown-command"
+#endif
 
 CPL_C_START
 #include <png.h>
 CPL_C_END
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 NAMESPACE_MRF_START
 
@@ -115,7 +125,8 @@ CPLErr PNG_Codec::DecompressPNG(buf_mgr &dst, buf_mgr &src)
 {
     const buf_mgr src_ori = src;
     png_bytep *png_rowp = nullptr;
-    volatile png_bytep *p_volatile_png_rowp = (volatile png_bytep *)&png_rowp;
+    volatile png_bytep *p_volatile_png_rowp =
+        reinterpret_cast<volatile png_bytep *>(&png_rowp);
 
     // pngp=png_create_read_struct(PNG_LIBPNG_VER_STRING,0,pngEH,pngWH);
     png_structp pngp = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr,
@@ -287,7 +298,7 @@ CPLErr PNG_Codec::CompressPNG(buf_mgr &dst, const buf_mgr &src)
     }
 
     png_set_IHDR(pngp, infop, img.pagesize.x, img.pagesize.y,
-                 GDALGetDataTypeSize(img.dt), png_ctype, PNG_INTERLACE_NONE,
+                 GDALGetDataTypeSizeBits(img.dt), png_ctype, PNG_INTERLACE_NONE,
                  PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
 
     // Optional, force certain filters only.  Makes it somewhat faster but worse
@@ -300,18 +311,10 @@ CPLErr PNG_Codec::CompressPNG(buf_mgr &dst, const buf_mgr &src)
     flags = png_get_asm_flags(pngp);
     mask = png_get_asm_flagmask(PNG_SELECT_READ | PNG_SELECT_WRITE);
     png_set_asm_flags(pngp, flags | mask);  // use flags &~mask to disable all
-
-    // Test that the MMX is compiled into PNG
-    // fprintf(stderr,"MMX support is %d\n", png_mmx_support());
-
 #endif
 
     // Let the quality control the compression level
-    // Start at level 1, level 0 means uncompressed
-    int zlvl = img.quality / 10;
-    if (0 == zlvl)
-        zlvl = 1;
-    png_set_compression_level(pngp, zlvl);
+    png_set_compression_level(pngp, std::clamp(img.quality / 10, 1, 9));
 
     // Custom strategy for zlib, set using the band option Z_STRATEGY
     if (deflate_flags & ZFLAG_SMASK)

@@ -39,8 +39,12 @@ class OGRGenSQLGeomFieldDefn final : public OGRGeomFieldDefn
         SetSpatialRef(poGeomFieldDefn->GetSpatialRef());
     }
 
+    ~OGRGenSQLGeomFieldDefn() override;
+
     int bForceGeomType;
 };
+
+OGRGenSQLGeomFieldDefn::~OGRGenSQLGeomFieldDefn() = default;
 
 /************************************************************************/
 /*               OGRGenSQLResultsLayerHasSpecialField()                 */
@@ -613,8 +617,13 @@ void OGRGenSQLResultsLayer::ResetReading()
 OGRErr OGRGenSQLResultsLayer::SetNextByIndex(GIntBig nIndex)
 
 {
+    m_bEOF = false;
+
     if (nIndex < 0)
-        return OGRERR_FAILURE;
+    {
+        m_bEOF = true;
+        return OGRERR_NON_EXISTING_FEATURE;
+    }
 
     swq_select *psSelectInfo = m_pSelectInfo.get();
 
@@ -623,7 +632,7 @@ OGRErr OGRGenSQLResultsLayer::SetNextByIndex(GIntBig nIndex)
         m_nIteratedFeatures = nIndex;
         if (m_nIteratedFeatures >= psSelectInfo->limit)
         {
-            return OGRERR_FAILURE;
+            return OGRERR_NON_EXISTING_FEATURE;
         }
     }
 
@@ -632,7 +641,7 @@ OGRErr OGRGenSQLResultsLayer::SetNextByIndex(GIntBig nIndex)
     if (nIndex > std::numeric_limits<GIntBig>::max() - psSelectInfo->offset)
     {
         m_bEOF = true;
-        return OGRERR_FAILURE;
+        return OGRERR_NON_EXISTING_FEATURE;
     }
     if (psSelectInfo->query_mode == SWQM_SUMMARY_RECORD ||
         psSelectInfo->query_mode == SWQM_DISTINCT_LIST || !m_anFIDIndex.empty())
@@ -651,35 +660,22 @@ OGRErr OGRGenSQLResultsLayer::SetNextByIndex(GIntBig nIndex)
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /************************************************************************/
 
-OGRErr OGRGenSQLResultsLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
-                                        int bForce)
+OGRErr OGRGenSQLResultsLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                                         bool bForce)
 
 {
     swq_select *psSelectInfo = m_pSelectInfo.get();
-
-    if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount() ||
-        GetLayerDefn()->GetGeomFieldDefn(iGeomField)->GetType() == wkbNone)
-    {
-        if (iGeomField != 0)
-        {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "Invalid geometry field index : %d", iGeomField);
-        }
-        return OGRERR_FAILURE;
-    }
 
     if (psSelectInfo->query_mode == SWQM_RECORDSET)
     {
         int iSrcGeomField = m_anGeomFieldToSrcGeomField[iGeomField];
         if (iSrcGeomField >= 0)
             return m_poSrcLayer->GetExtent(iSrcGeomField, psExtent, bForce);
-        else if (iGeomField == 0)
-            return OGRLayer::GetExtent(psExtent, bForce);
         else
-            return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
+            return OGRLayer::IGetExtent(iGeomField, psExtent, bForce);
     }
     else
         return OGRERR_FAILURE;
@@ -730,7 +726,7 @@ GIntBig OGRGenSQLResultsLayer::GetFeatureCount(int bForce)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRGenSQLResultsLayer::TestCapability(const char *pszCap)
+int OGRGenSQLResultsLayer::TestCapability(const char *pszCap) const
 
 {
     const swq_select *psSelectInfo = m_pSelectInfo.get();
@@ -821,7 +817,8 @@ int OGRGenSQLResultsLayer::TestCapability(const char *pszCap)
 /*                        ContainGeomSpecialField()                     */
 /************************************************************************/
 
-int OGRGenSQLResultsLayer::ContainGeomSpecialField(swq_expr_node *expr)
+int OGRGenSQLResultsLayer::ContainGeomSpecialField(
+    const swq_expr_node *expr) const
 {
     if (expr->eNodeType == SNT_COLUMN)
     {
@@ -855,7 +852,7 @@ int OGRGenSQLResultsLayer::ContainGeomSpecialField(swq_expr_node *expr)
 /*                           PrepareSummary()                           */
 /************************************************************************/
 
-bool OGRGenSQLResultsLayer::PrepareSummary()
+bool OGRGenSQLResultsLayer::PrepareSummary() const
 
 {
     swq_select *psSelectInfo = m_pSelectInfo.get();
@@ -870,7 +867,7 @@ bool OGRGenSQLResultsLayer::PrepareSummary()
     /*      Ensure our query parameters are in place on the source          */
     /*      layer.  And initialize reading.                                 */
     /* -------------------------------------------------------------------- */
-    ApplyFiltersToSource();
+    const_cast<OGRGenSQLResultsLayer *>(this)->ApplyFiltersToSource();
 
     /* -------------------------------------------------------------------- */
     /*      Ignore geometry reading if no spatial filter in place and that  */
@@ -1058,7 +1055,7 @@ bool OGRGenSQLResultsLayer::PrepareSummary()
     /*      Clear away the filters we have installed till a next run through*/
     /*      the features.                                                   */
     /* -------------------------------------------------------------------- */
-    ClearFilters();
+    const_cast<OGRGenSQLResultsLayer *>(this)->ClearFilters();
 
     /* -------------------------------------------------------------------- */
     /*      Now apply the values to the summary feature.  If we are in      */
@@ -1387,19 +1384,19 @@ static CPLString GetFilterForJoin(swq_expr_node *poExpr, OGRFeature *poSrcFeat,
                 const OGRField *psSrcField =
                     poSrcFeat->GetRawFieldRef(poExpr->field_index);
 
+                CPLString osRet;
                 switch (ePrimaryFieldType)
                 {
                     case OFTInteger:
-                        return CPLString().Printf("%d", psSrcField->Integer);
+                        osRet.Printf("%d", psSrcField->Integer);
                         break;
 
                     case OFTInteger64:
-                        return CPLString().Printf(CPL_FRMT_GIB,
-                                                  psSrcField->Integer64);
+                        osRet.Printf(CPL_FRMT_GIB, psSrcField->Integer64);
                         break;
 
                     case OFTReal:
-                        return CPLString().Printf("%.17g", psSrcField->Real);
+                        osRet.Printf("%.17g", psSrcField->Real);
                         break;
 
                     case OFTString:
@@ -1408,18 +1405,19 @@ static CPLString GetFilterForJoin(swq_expr_node *poExpr, OGRFeature *poSrcFeat,
                             psSrcField->String,
                             static_cast<int>(strlen(psSrcField->String)),
                             CPLES_SQL);
-                        CPLString osRes = "'";
-                        osRes += pszEscaped;
-                        osRes += "'";
+                        osRet = "'";
+                        osRet += pszEscaped;
+                        osRet += "'";
                         CPLFree(pszEscaped);
-                        return osRes;
+                        break;
                     }
-                    break;
 
                     default:
                         CPLAssert(false);
-                        return "";
+                        break;
                 }
+
+                return osRet;
             }
         }
 
@@ -1652,7 +1650,8 @@ std::unique_ptr<OGRFeature> OGRGenSQLResultsLayer::TranslateFeature(
             case SWQ_BOOLEAN:
             case SWQ_INTEGER:
             case SWQ_INTEGER64:
-                poDstFeat->SetField(iRegularField++, poResult->int_value);
+                poDstFeat->SetField(iRegularField++,
+                                    static_cast<GIntBig>(poResult->int_value));
                 break;
 
             case SWQ_FLOAT:
@@ -1661,8 +1660,8 @@ std::unique_ptr<OGRFeature> OGRGenSQLResultsLayer::TranslateFeature(
 
             case SWQ_GEOMETRY:
             {
-                OGRGenSQLGeomFieldDefn *poGeomFieldDefn =
-                    cpl::down_cast<OGRGenSQLGeomFieldDefn *>(
+                const OGRGenSQLGeomFieldDefn *poGeomFieldDefn =
+                    cpl::down_cast<const OGRGenSQLGeomFieldDefn *>(
                         poDstFeat->GetGeomFieldDefnRef(iGeomField));
                 if (poGeomFieldDefn->bForceGeomType &&
                     poResult->geometry_value != nullptr)
@@ -2051,7 +2050,7 @@ OGRGeometry *OGRGenSQLResultsLayer::GetSpatialFilter()
 /*                            GetLayerDefn()                            */
 /************************************************************************/
 
-OGRFeatureDefn *OGRGenSQLResultsLayer::GetLayerDefn()
+const OGRFeatureDefn *OGRGenSQLResultsLayer::GetLayerDefn() const
 
 {
     swq_select *psSelectInfo = m_pSelectInfo.get();
@@ -2765,17 +2764,14 @@ OGRErr OGRGenSQLResultsLayer::SetAttributeFilter(const char *pszAttributeFilter)
 }
 
 /************************************************************************/
-/*                       SetSpatialFilter()                             */
+/*                       ISetSpatialFilter()                            */
 /************************************************************************/
 
-void OGRGenSQLResultsLayer::SetSpatialFilter(int iGeomField,
-                                             OGRGeometry *poGeom)
+OGRErr OGRGenSQLResultsLayer::ISetSpatialFilter(int iGeomField,
+                                                const OGRGeometry *poGeom)
 {
     InvalidateOrderByIndex();
-    if (iGeomField == 0)
-        OGRLayer::SetSpatialFilter(poGeom);
-    else
-        OGRLayer::SetSpatialFilter(iGeomField, poGeom);
+    return OGRLayer::ISetSpatialFilter(iGeomField, poGeom);
 }
 
 /************************************************************************/

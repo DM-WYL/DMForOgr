@@ -1,5 +1,4 @@
 /*
- * $Id$
  *
  * python specific code for ogr bindings.
  */
@@ -54,9 +53,34 @@ def _WarnIfUserHasNotSpecifiedIfUsingExceptions():
 
         _WarnIfUserHasNotSpecifiedIfUsingExceptions()
 
+        user_input = None
+
+        if len(args) + len(kwargs) > 1:
+            # We could pass additional kwargs as options to SetFromUserInput,
+            # but that is not commonly needed and limits our ability to
+            # validate arguments here.
+            raise ValueError("Unexpected argument to SpatialReference")
+
+        if kwargs:
+            if "wkt" in kwargs:
+                user_input = kwargs["wkt"]
+            elif "name" in kwargs:
+                user_input = kwargs["name"]
+            elif "epsg" in kwargs:
+                user_input = f'EPSG:{kwargs["epsg"]}'
+            else:
+                raise ValueError("Unexpected argument to SpatialReference")
+
+        if args:
+            if type(args[0]) is dict:
+                import json
+                user_input = json.dumps(args[0])
+            else:
+                user_input = args[0]
+
         try:
             with ExceptionMgr(useExceptions=True):
-                this = _osr.new_SpatialReference(*args, **kwargs)
+                this = _osr.new_SpatialReference()
         finally:
             pass
         if hasattr(_osr, "SpatialReference_swiginit"):
@@ -68,6 +92,9 @@ def _WarnIfUserHasNotSpecifiedIfUsingExceptions():
                 self.this.append(this)
             except __builtin__.Exception:
                 self.this = this
+
+        if user_input:
+            self.SetFromUserInput(user_input)
 
   %}
 
@@ -137,11 +164,12 @@ def TransformPoint(self, *args):
     >>> vt_sp = osr.SpatialReference()
     >>> vt_sp.ImportFromEPSG(5646)
     0
-    >>> ct = osr.CoordinateTransformation(wgs84, ps)
-    >>> ct.TransformPoint(-72.58, 44.26)
-    (7390620.052019633, -51202148.77747277, 0.0)
-    >>> ct.TransformPoint(-72.58, 44.26, 103)
-    (7390620.052019633, -51202148.77747277, 103.0)
+    >>> ct = osr.CoordinateTransformation(wgs84, vt_sp)
+    >>> # Transform a point from WGS84 lat/long to Vermont State Plane easting/northing
+    >>> ct.TransformPoint(44.26, -72.58)
+    (1619458.1108559777, 641509.1883246159, 0.0)
+    >>> ct.TransformPoint(44.26, -72.58, 103)
+    (1619458.1108559777, 641509.1883246159, 103.0)
     """
 
     import collections.abc

@@ -5,6 +5,54 @@
 Past Releases
 =============
 
+* **2025-07-11** `gdal-3.11.2.tar.gz`_ `3.11.2 Release Notes`_ (`3.11.2 md5`_)
+
+.. _`3.11.2 Release Notes`: https://github.com/OSGeo/gdal/blob/v3.11.2/NEWS.md
+.. _`gdal-3.11.2.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.11.2/gdal-3.11.2.tar.gz
+.. _`3.11.2 md5`: https://github.com/OSGeo/gdal/releases/download/v3.11.2/gdal-3.11.2.tar.gz.md5
+
+* **2025-06-26** `gdal-3.11.1.tar.gz`_ `3.11.1 Release Notes`_ (`3.11.1 md5`_)
+
+.. _`3.11.1 Release Notes`: https://github.com/OSGeo/gdal/blob/v3.11.1/NEWS.md
+.. _`gdal-3.11.1.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.11.1/gdal-3.11.1.tar.gz
+.. _`3.11.1 md5`: https://github.com/OSGeo/gdal/releases/download/v3.11.1/gdal-3.11.1.tar.gz.md5
+
+* **2025-05-06** `gdal-3.11.0.tar.gz`_ `3.11.0 "Eganville" Release Notes`_ (`3.11.0 md5`_)
+
+.. _`3.11.0 "Eganville" Release Notes`: https://github.com/OSGeo/gdal/blob/v3.11.0/NEWS.md
+.. _`gdal-3.11.0.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.11.0/gdal-3.11.0.tar.gz
+.. _`3.11.0 md5`: https://github.com/OSGeo/gdal/releases/download/v3.11.0/gdal-3.11.0.tar.gz.md5
+
+* **2025-04-07** `gdal-3.10.3.tar.gz`_ `3.10.3 Release Notes`_ (`3.10.3 md5`_)
+
+.. _`3.10.3 Release Notes`: https://github.com/OSGeo/gdal/blob/v3.10.3/NEWS.md
+.. _`gdal-3.10.3.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.10.3/gdal-3.10.3.tar.gz
+.. _`3.10.3 md5`: https://github.com/OSGeo/gdal/releases/download/v3.10.3/gdal-3.10.3.tar.gz.md5
+
+* **2025-02-14** `gdal-3.10.2.tar.gz`_ `3.10.2 "Gulf of Mexico" Release Notes`_ (`3.10.2 md5`_)
+
+.. _`3.10.2 "Gulf of Mexico" Release Notes`: https://github.com/OSGeo/gdal/blob/v3.10.2/NEWS.md
+.. _`gdal-3.10.2.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.10.2/gdal-3.10.2.tar.gz
+.. _`3.10.2 md5`: https://github.com/OSGeo/gdal/releases/download/v3.10.2/gdal-3.10.2.tar.gz.md5
+
+* **2025-01-08** `gdal-3.10.1.tar.gz`_ `3.10.1 Release Notes`_ (`3.10.1 md5`_)
+
+.. _`3.10.1 Release Notes`: https://github.com/OSGeo/gdal/blob/v3.10.1/NEWS.md
+.. _`gdal-3.10.1.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.10.1/gdal-3.10.1.tar.gz
+.. _`3.10.1 md5`: https://github.com/OSGeo/gdal/releases/download/v3.10.1/gdal-3.10.1.tar.gz.md5
+
+* **2024-11-01** `gdal-3.10.0.tar.gz`_ `3.10.0 Release Notes`_ (`3.10.0 md5`_)
+
+.. _`3.10.0 Release Notes`: https://github.com/OSGeo/gdal/blob/v3.10.0/NEWS.md
+.. _`gdal-3.10.0.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.10.0/gdal-3.10.0.tar.gz
+.. _`3.10.0 md5`: https://github.com/OSGeo/gdal/releases/download/v3.10.0/gdal-3.10.0.tar.gz.md5
+
+* **2024-10-14** `gdal-3.9.3.tar.gz`_ `3.9.3 Release Notes`_ (`3.9.3 md5`_)
+
+.. _`3.9.3 Release Notes`: https://github.com/OSGeo/gdal/blob/v3.9.3/NEWS.md
+.. _`gdal-3.9.3.tar.gz`: https://github.com/OSGeo/gdal/releases/download/v3.9.3/gdal-3.9.3.tar.gz
+.. _`3.9.3 md5`: https://github.com/OSGeo/gdal/releases/download/v3.9.3/gdal-3.9.3.tar.gz.md5
+
 * **2024-08-16** `gdal-3.9.2.tar.gz`_ `3.9.2 Release Notes`_ (`3.9.2 md5`_)
 
 .. _`3.9.2 Release Notes`: https://github.com/OSGeo/gdal/blob/v3.9.2/NEWS.md

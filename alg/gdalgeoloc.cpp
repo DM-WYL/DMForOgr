@@ -74,10 +74,15 @@ static double UnshiftGeoX(const GDALGeoLocTransformInfo *psTransform,
 {
     if (!psTransform->bGeographicSRSWithMinus180Plus180LongRange)
         return dfX;
-    if (dfX > 180)
-        return dfX - 360;
-    if (dfX < -180)
-        return dfX + 360;
+    if (dfX > 180 || dfX < -180)
+    {
+        dfX = fmod(dfX + 180.0, 360.0);
+        if (dfX < 0)
+            dfX += 180.0;
+        else
+            dfX -= 180.0;
+        return dfX;
+    }
     return dfX;
 }
 
@@ -178,9 +183,10 @@ void GDALGeoLoc<Accessors>::LoadGeolocFinish(
         {
             for (int iX = iXStart; iX < iXEnd; ++iX)
             {
-                const auto dfX = pAccessors->geolocXAccessor.Get(iX, iY);
+                double dfX = pAccessors->geolocXAccessor.Get(iX, iY);
                 if (!psTransform->bHasNoData || dfX != psTransform->dfNoDataX)
                 {
+                    dfX = UnshiftGeoX(psTransform, dfX);
                     UpdateMinMax(psTransform, dfX,
                                  pAccessors->geolocYAccessor.Get(iX, iY));
                 }
@@ -191,10 +197,10 @@ void GDALGeoLoc<Accessors>::LoadGeolocFinish(
 
     // Check if the SRS is geographic and the geoloc longitudes are in
     // [-180,180]
-    psTransform->bGeographicSRSWithMinus180Plus180LongRange = false;
     const char *pszSRS = CSLFetchNameValue(papszGeolocationInfo, "SRS");
-    if (pszSRS && psTransform->dfMinX >= -180.0 &&
-        psTransform->dfMaxX <= 180.0 && !psTransform->bSwapXY)
+    if (!psTransform->bGeographicSRSWithMinus180Plus180LongRange && pszSRS &&
+        psTransform->dfMinX >= -180.0 && psTransform->dfMaxX <= 180.0 &&
+        !psTransform->bSwapXY)
     {
         OGRSpatialReference oSRS;
         psTransform->bGeographicSRSWithMinus180Plus180LongRange =
@@ -511,7 +517,7 @@ bool GDALGeoLoc<Accessors>::PixelLineToXY(
         }
         else
         {
-            dfX = dfGLX_0_0;
+            dfX = UnshiftGeoX(psTransform, dfGLX_0_0);
             dfY = dfGLY_0_0;
         }
         break;
@@ -536,7 +542,7 @@ bool GDALGeoLoc<Accessors>::PixelLineToXY(
         {
             return false;
         }
-        dfX = dfGLX;
+        dfX = UnshiftGeoX(psTransform, dfGLX);
         dfY = dfGLY;
         return true;
     }
@@ -589,6 +595,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
                                      double *padfY, double * /* padfZ */,
                                      int *panSuccess)
 {
+    int bSuccess = TRUE;
     GDALGeoLocTransformInfo *psTransform =
         static_cast<GDALGeoLocTransformInfo *>(pTransformArg);
 
@@ -607,6 +614,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
         {
             if (padfX[i] == HUGE_VAL || padfY[i] == HUGE_VAL)
             {
+                bSuccess = FALSE;
                 panSuccess[i] = FALSE;
                 continue;
             }
@@ -623,6 +631,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
             if (!PixelLineToXY(psTransform, dfGeoLocPixel, dfGeoLocLine,
                                padfX[i], padfY[i]))
             {
+                bSuccess = FALSE;
                 panSuccess[i] = FALSE;
                 padfX[i] = HUGE_VAL;
                 padfY[i] = HUGE_VAL;
@@ -653,7 +662,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
         const bool bGeolocMaxAccuracy = CPLTestBool(
             CPLGetConfigOption("GDAL_GEOLOC_USE_MAX_ACCURACY", "YES"));
 
-        // Keep those objects in this outer scope, so they are re-used, to
+        // Keep those objects in this outer scope, so they are reused, to
         // save memory allocations.
         OGRPoint oPoint;
         OGRLinearRing oRing;
@@ -665,6 +674,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
         {
             if (padfX[i] == HUGE_VAL || padfY[i] == HUGE_VAL)
             {
+                bSuccess = FALSE;
                 panSuccess[i] = FALSE;
                 continue;
             }
@@ -688,6 +698,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
                   dfBMX + 1 < psTransform->nBackMapWidth &&
                   dfBMY + 1 < psTransform->nBackMapHeight))
             {
+                bSuccess = FALSE;
                 panSuccess[i] = FALSE;
                 padfX[i] = HUGE_VAL;
                 padfY[i] = HUGE_VAL;
@@ -701,6 +712,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
             const auto fBMY_0_0 = pAccessors->backMapYAccessor.Get(iBMX, iBMY);
             if (fBMX_0_0 == INVALID_BMXY)
             {
+                bSuccess = FALSE;
                 panSuccess[i] = FALSE;
                 padfX[i] = HUGE_VAL;
                 padfY[i] = HUGE_VAL;
@@ -914,6 +926,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
             }
             if (!bDone)
             {
+                bSuccess = FALSE;
                 panSuccess[i] = FALSE;
                 padfX[i] = HUGE_VAL;
                 padfY[i] = HUGE_VAL;
@@ -924,7 +937,7 @@ int GDALGeoLoc<Accessors>::Transform(void *pTransformArg, int bDstToSrc,
         }
     }
 
-    return TRUE;
+    return bSuccess;
 }
 
 /*! @endcond */
@@ -1135,7 +1148,7 @@ bool GDALGeoLoc<Accessors>::GenerateBackMap(
         }
     };
 
-    // Keep those objects in this outer scope, so they are re-used, to
+    // Keep those objects in this outer scope, so they are reused, to
     // save memory allocations.
     OGRPoint oPoint;
     OGRLinearRing oRing;
@@ -1620,7 +1633,7 @@ static void *GDALCreateSimilarGeoLocTransformer(void *hTransformArg,
 /*                  GDALCreateGeolocationMetadata()                     */
 /************************************************************************/
 
-/** Synthetize the content of a GEOLOCATION metadata domain from a
+/** Synthesize the content of a GEOLOCATION metadata domain from a
  *  geolocation dataset.
  *
  *  This is used when doing gdalwarp -to GEOLOC_ARRAY=some.tif
@@ -1724,7 +1737,7 @@ CPLStringList GDALCreateGeolocationMetadata(GDALDatasetH hBaseDS,
     }
 
     std::string osDebugMsg;
-    osDebugMsg = "Synthetized GEOLOCATION metadata for ";
+    osDebugMsg = "Synthesized GEOLOCATION metadata for ";
     osDebugMsg += bIsSource ? "source" : "target";
     osDebugMsg += ":\n";
     for (int i = 0; i < aosMD.size(); ++i)
@@ -1788,6 +1801,11 @@ void *GDALCreateGeoLocTransformerEx(GDALDatasetH hBaseDS,
 
     psTransform->papszGeolocationInfo = CSLDuplicate(papszGeolocationInfo);
 
+    psTransform->bGeographicSRSWithMinus180Plus180LongRange =
+        CPLTestBool(CSLFetchNameValueDef(
+            papszTransformOptions,
+            "GEOLOC_NORMALIZE_LONGITUDE_MINUS_180_PLUS_180", "NO"));
+
     /* -------------------------------------------------------------------- */
     /*      Pull geolocation info from the options/metadata.                */
     /* -------------------------------------------------------------------- */
@@ -1817,9 +1835,11 @@ void *GDALCreateGeoLocTransformerEx(GDALDatasetH hBaseDS,
                 papszGeolocationInfo, "X_DATASET_RELATIVE_TO_SOURCE", "NO")) &&
             (hBaseDS != nullptr || pszSourceDataset))
         {
-            CPLString osFilename = CPLProjectRelativeFilename(
-                CPLGetDirname(pszSourceDataset ? pszSourceDataset
-                                               : GDALGetDescription(hBaseDS)),
+            const CPLString osFilename = CPLProjectRelativeFilenameSafe(
+                CPLGetDirnameSafe(pszSourceDataset
+                                      ? pszSourceDataset
+                                      : GDALGetDescription(hBaseDS))
+                    .c_str(),
                 pszDSName);
             psTransform->hDS_X =
                 GDALOpenShared(osFilename.c_str(), GA_ReadOnly);
@@ -1849,9 +1869,11 @@ void *GDALCreateGeoLocTransformerEx(GDALDatasetH hBaseDS,
                 papszGeolocationInfo, "Y_DATASET_RELATIVE_TO_SOURCE", "NO")) &&
             (hBaseDS != nullptr || pszSourceDataset))
         {
-            CPLString osFilename = CPLProjectRelativeFilename(
-                CPLGetDirname(pszSourceDataset ? pszSourceDataset
-                                               : GDALGetDescription(hBaseDS)),
+            const CPLString osFilename = CPLProjectRelativeFilenameSafe(
+                CPLGetDirnameSafe(pszSourceDataset
+                                      ? pszSourceDataset
+                                      : GDALGetDescription(hBaseDS))
+                    .c_str(),
                 pszDSName);
             psTransform->hDS_Y =
                 GDALOpenShared(osFilename.c_str(), GA_ReadOnly);

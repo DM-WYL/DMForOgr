@@ -193,6 +193,7 @@ static void PrintAlgorithmAndOptions(GDALGridAlgorithm eAlgorithm,
         case GGA_MetricAverageDistancePts:
         {
             const char *pszAlgName = "";
+            CPL_IGNORE_RET_VAL(pszAlgName);  // Make CSA happy
             switch (eAlgorithm)
             {
                 case GGA_MetricMinimum:
@@ -273,24 +274,25 @@ class GDALGridGeometryVisitor final : public OGRDefaultConstGeometryVisitor
 
     using OGRDefaultConstGeometryVisitor::visit;
 
-    void visit(const OGRPoint *p) override
-    {
-        if (poClipSrc && !p->Within(poClipSrc))
-            return;
-
-        if (iBurnField < 0 && std::isnan(p->getZ()))
-            return;
-
-        adfX.push_back(p->getX());
-        adfY.push_back(p->getY());
-        if (iBurnField < 0)
-            adfZ.push_back((p->getZ() + dfIncreaseBurnValue) *
-                           dfMultiplyBurnValue);
-        else
-            adfZ.push_back((dfBurnValue + dfIncreaseBurnValue) *
-                           dfMultiplyBurnValue);
-    }
+    void visit(const OGRPoint *p) override;
 };
+
+void GDALGridGeometryVisitor::visit(const OGRPoint *p)
+{
+    if (poClipSrc && !p->Within(poClipSrc))
+        return;
+
+    if (iBurnField < 0 && std::isnan(p->getZ()))
+        return;
+
+    adfX.push_back(p->getX());
+    adfY.push_back(p->getY());
+    if (iBurnField < 0)
+        adfZ.push_back((p->getZ() + dfIncreaseBurnValue) * dfMultiplyBurnValue);
+    else
+        adfZ.push_back((dfBurnValue + dfIncreaseBurnValue) *
+                       dfMultiplyBurnValue);
+}
 
 /************************************************************************/
 /*                            ProcessLayer()                            */
@@ -696,8 +698,8 @@ GDALDatasetH GDALGrid(const char *pszDest, GDALDatasetH hSrcDataset,
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Output driver `%s' not recognised.", osFormat.c_str());
-        fprintf(stderr, "The following format drivers are configured and "
-                        "support output:\n");
+        fprintf(stderr, "The following format drivers are enabled and "
+                        "support writing:\n");
         for (int iDr = 0; iDr < GDALGetDriverCount(); iDr++)
         {
             hDriver = GDALGetDriver(iDr);
@@ -733,18 +735,6 @@ GDALDatasetH GDALGrid(const char *pszDest, GDALDatasetH hSrcDataset,
     int nYSize;
     if (psOptions->dfXRes != 0 && psOptions->dfYRes != 0)
     {
-        if ((psOptions->dfXMax == psOptions->dfXMin) ||
-            (psOptions->dfYMax == psOptions->dfYMin))
-        {
-            CPLError(CE_Failure, CPLE_IllegalArg,
-                     "Invalid txe or tye parameters detected. Please check "
-                     "your -txe or -tye argument.");
-
-            if (pbUsageError)
-                *pbUsageError = TRUE;
-            return nullptr;
-        }
-
         double dfXSize = (std::fabs(psOptions->dfXMax - psOptions->dfXMin) +
                           (psOptions->dfXRes / 2.0)) /
                          psOptions->dfXRes;
@@ -886,10 +876,9 @@ GDALDatasetH GDALGrid(const char *pszDest, GDALDatasetH hSrcDataset,
     /* -------------------------------------------------------------------- */
     /*      Apply geotransformation matrix.                                 */
     /* -------------------------------------------------------------------- */
-    double adfGeoTransform[6] = {dfXMin, (dfXMax - dfXMin) / nXSize,
-                                 0.0,    dfYMin,
-                                 0.0,    (dfYMax - dfYMin) / nYSize};
-    poDstDS->SetGeoTransform(adfGeoTransform);
+    poDstDS->SetGeoTransform(
+        GDALGeoTransform(dfXMin, (dfXMax - dfXMin) / nXSize, 0.0, dfYMin, 0.0,
+                         (dfYMax - dfYMin) / nYSize));
 
     /* -------------------------------------------------------------------- */
     /*      Apply SRS definition if set.                                    */
@@ -1291,20 +1280,13 @@ GDALGridOptionsNew(char **papszArgv,
 
         if (auto oSpat = argParser->present<std::vector<double>>("-spat"))
         {
-            OGRLinearRing oRing;
             const double dfMinX = (*oSpat)[0];
             const double dfMinY = (*oSpat)[1];
             const double dfMaxX = (*oSpat)[2];
             const double dfMaxY = (*oSpat)[3];
 
-            oRing.addPoint(dfMinX, dfMinY);
-            oRing.addPoint(dfMinX, dfMaxY);
-            oRing.addPoint(dfMaxX, dfMaxY);
-            oRing.addPoint(dfMaxX, dfMinY);
-            oRing.addPoint(dfMinX, dfMinY);
-
-            auto poPolygon = std::make_unique<OGRPolygon>();
-            poPolygon->addRing(&oRing);
+            auto poPolygon =
+                std::make_unique<OGRPolygon>(dfMinX, dfMinY, dfMaxX, dfMaxY);
             psOptions->poSpatialFilter = std::move(poPolygon);
         }
 
@@ -1341,10 +1323,9 @@ GDALGridOptionsNew(char **papszArgv,
                       STARTS_WITH_CI(osVal.c_str(), "MULTIPOLYGON")) &&
                      VSIStatL(osVal.c_str(), &sStat) != 0)
             {
-                OGRGeometry *poGeom = nullptr;
-                OGRGeometryFactory::createFromWkt(osVal.c_str(), nullptr,
-                                                  &poGeom);
-                psOptions->poClipSrc.reset(poGeom);
+                psOptions->poClipSrc =
+                    OGRGeometryFactory::createFromWkt(osVal.c_str(), nullptr)
+                        .first;
                 if (psOptions->poClipSrc == nullptr)
                 {
                     CPLError(CE_Failure, CPLE_IllegalArg,
@@ -1406,6 +1387,15 @@ GDALGridOptionsNew(char **papszArgv,
             {
                 psOptions->poSpatialFilter = std::move(psOptions->poClipSrc);
             }
+        }
+
+        if (psOptions->dfXRes != 0 && psOptions->dfYRes != 0 &&
+            !(psOptions->bIsXExtentSet && psOptions->bIsYExtentSet))
+        {
+            CPLError(CE_Failure, CPLE_IllegalArg,
+                     "-txe ad -tye arguments must be provided when "
+                     "resolution is provided.");
+            return nullptr;
         }
 
         return psOptions.release();

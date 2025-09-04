@@ -11,7 +11,7 @@
  ****************************************************************************/
 
 #include "ogr_ods.h"
-#include "ogr_mem.h"
+#include "memdataset.h"
 #include "ogr_p.h"
 #include "cpl_conv.h"
 #include "cpl_vsi_error.h"
@@ -263,7 +263,7 @@ OGRErr OGRODSLayer::SetAttributeFilter(const char *pszQuery)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRODSLayer::TestCapability(const char *pszCap)
+int OGRODSLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCFastFeatureCount))
@@ -347,7 +347,7 @@ CPLErr OGRODSDataSource::Close()
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRODSDataSource::TestCapability(const char *pszCap)
+int OGRODSDataSource::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
@@ -370,10 +370,10 @@ int OGRODSDataSource::TestCapability(const char *pszCap)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRODSDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRODSDataSource::GetLayer(int iLayer) const
 
 {
-    AnalyseFile();
+    const_cast<OGRODSDataSource *>(this)->AnalyseFile();
     if (iLayer < 0 || iLayer >= nLayers)
         return nullptr;
 
@@ -384,9 +384,9 @@ OGRLayer *OGRODSDataSource::GetLayer(int iLayer)
 /*                            GetLayerCount()                           */
 /************************************************************************/
 
-int OGRODSDataSource::GetLayerCount()
+int OGRODSDataSource::GetLayerCount() const
 {
-    AnalyseFile();
+    const_cast<OGRODSDataSource *>(this)->AnalyseFile();
     return nLayers;
 }
 
@@ -814,8 +814,8 @@ static void ReserveAndLimitFieldCount(OGRLayer *poLayer,
                                       std::vector<std::string> &aosValues)
 {
     int nMaxCols = atoi(CPLGetConfigOption("OGR_ODS_MAX_FIELD_COUNT", "2000"));
-    // Arbitrary limit to please Coverity Scan that would complain about
-    // tainted_data to resize aosValues.
+    if (nMaxCols < 0)
+        nMaxCols = 0;
     constexpr int MAXCOLS_LIMIT = 1000000;
     if (nMaxCols > MAXCOLS_LIMIT)
         nMaxCols = MAXCOLS_LIMIT;
@@ -1234,8 +1234,9 @@ void OGRODSDataSource::endElementRow(
                         const OGRFieldType eValType = GetOGRFieldType(
                             apoCurLineValues[i].c_str(),
                             apoCurLineTypes[i].c_str(), eValSubType);
+                        OGRLayer *poCurLayerAsLayer = poCurLayer;
                         OGRFieldDefn *poFieldDefn =
-                            poCurLayer->GetLayerDefn()->GetFieldDefn(
+                            poCurLayerAsLayer->GetLayerDefn()->GetFieldDefn(
                                 static_cast<int>(i));
                         const OGRFieldType eFieldType = poFieldDefn->GetType();
                         if (eFieldType == OFTDateTime &&

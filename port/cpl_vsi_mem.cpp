@@ -17,14 +17,11 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
-#if HAVE_FCNTL_H
+
 #include <fcntl.h>
-#endif
-#if HAVE_SYS_STAT_H
-#include <sys/stat.h>
-#endif
 
 #include <algorithm>
 #include <atomic>
@@ -193,7 +190,7 @@ class VSIMemFilesystemHandler final : public VSIFilesystemHandler
     CPL_DISALLOW_COPY_ASSIGN(VSIMemFilesystemHandler)
 
   public:
-    std::map<CPLString, std::shared_ptr<VSIMemFile>> oFileList{};
+    std::map<std::string, std::shared_ptr<VSIMemFile>> oFileList{};
     CPLMutex *hMutex = nullptr;
 
     explicit VSIMemFilesystemHandler(const char *pszPrefix)
@@ -203,12 +200,9 @@ class VSIMemFilesystemHandler final : public VSIFilesystemHandler
 
     ~VSIMemFilesystemHandler() override;
 
-    // TODO(schwehr): Fix VSIFileFromMemBuffer so that using is not needed.
-    using VSIFilesystemHandler::Open;
-
-    VSIVirtualHandle *Open(const char *pszFilename, const char *pszAccess,
-                           bool bSetError,
-                           CSLConstList /* papszOptions */) override;
+    VSIVirtualHandleUniquePtr Open(const char *pszFilename,
+                                   const char *pszAccess, bool bSetError,
+                                   CSLConstList /* papszOptions */) override;
     int Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
              int nFlags) override;
     int Unlink(const char *pszFilename) override;
@@ -216,7 +210,8 @@ class VSIMemFilesystemHandler final : public VSIFilesystemHandler
     int Rmdir(const char *pszDirname) override;
     int RmdirRecursive(const char *pszDirname) override;
     char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
-    int Rename(const char *oldpath, const char *newpath) override;
+    int Rename(const char *oldpath, const char *newpath, GDALProgressFunc,
+               void *) override;
     GIntBig GetDiskFreeSpace(const char *pszDirname) override;
 
     static std::string NormalizePath(const std::string &in);
@@ -624,14 +619,13 @@ VSIMemFilesystemHandler::~VSIMemFilesystemHandler()
 /*                                Open()                                */
 /************************************************************************/
 
-VSIVirtualHandle *VSIMemFilesystemHandler::Open(const char *pszFilename,
-                                                const char *pszAccess,
-                                                bool bSetError,
-                                                CSLConstList /* papszOptions */)
+VSIVirtualHandleUniquePtr
+VSIMemFilesystemHandler::Open(const char *pszFilename, const char *pszAccess,
+                              bool bSetError, CSLConstList /* papszOptions */)
 
 {
     CPLMutexHolder oHolder(&hMutex);
-    const CPLString osFilename = NormalizePath(pszFilename);
+    const std::string osFilename = NormalizePath(pszFilename);
     if (osFilename.empty())
         return nullptr;
 
@@ -647,9 +641,10 @@ VSIVirtualHandle *VSIMemFilesystemHandler::Open(const char *pszFilename,
     /*      Get the filename we are opening, create if needed.              */
     /* -------------------------------------------------------------------- */
     std::shared_ptr<VSIMemFile> poFile = nullptr;
-    if (oFileList.find(osFilename) != oFileList.end())
+    const auto oIter = oFileList.find(osFilename);
+    if (oIter != oFileList.end())
     {
-        poFile = oFileList[osFilename];
+        poFile = oIter->second;
     }
 
     // If no file and opening in read, error out.
@@ -667,14 +662,14 @@ VSIVirtualHandle *VSIMemFilesystemHandler::Open(const char *pszFilename,
     // Create.
     if (poFile == nullptr)
     {
-        const char *pszFileDir = CPLGetPath(osFilename.c_str());
-        if (VSIMkdirRecursive(pszFileDir, 0755) == -1)
+        const std::string osFileDir = CPLGetPathSafe(osFilename.c_str());
+        if (VSIMkdirRecursive(osFileDir.c_str(), 0755) == -1)
         {
             if (bSetError)
             {
                 VSIError(VSIE_FileError,
                          "Could not create directory %s for writing",
-                         pszFileDir);
+                         osFileDir.c_str());
             }
             errno = ENOENT;
             return nullptr;
@@ -706,7 +701,7 @@ VSIVirtualHandle *VSIMemFilesystemHandler::Open(const char *pszFilename,
     /* -------------------------------------------------------------------- */
     /*      Setup the file handle on this file.                             */
     /* -------------------------------------------------------------------- */
-    VSIMemHandle *poHandle = new VSIMemHandle;
+    auto poHandle = std::make_unique<VSIMemHandle>();
 
     poHandle->poFile = poFile;
     poHandle->m_nOffset = 0;
@@ -729,7 +724,7 @@ VSIVirtualHandle *VSIMemFilesystemHandler::Open(const char *pszFilename,
         poHandle->m_nOffset = nOffset;
     }
 
-    return poHandle;
+    return VSIVirtualHandleUniquePtr(poHandle.release());
 }
 
 /************************************************************************/
@@ -742,11 +737,11 @@ int VSIMemFilesystemHandler::Stat(const char *pszFilename,
 {
     CPLMutexHolder oHolder(&hMutex);
 
-    const CPLString osFilename = NormalizePath(pszFilename);
+    const std::string osFilename = NormalizePath(pszFilename);
 
     memset(pStatBuf, 0, sizeof(VSIStatBufL));
 
-    if (osFilename + '/' == m_osPrefix || osFilename == m_osPrefix)
+    if (osFilename == m_osPrefix || osFilename + '/' == m_osPrefix)
     {
         pStatBuf->st_size = 0;
         pStatBuf->st_mode = S_IFDIR;
@@ -774,7 +769,16 @@ int VSIMemFilesystemHandler::Stat(const char *pszFilename,
     {
         pStatBuf->st_size = poFile->nLength;
         pStatBuf->st_mode = S_IFREG;
-        pStatBuf->st_mtime = poFile->mTime;
+        if (const char *mtime =
+                CPLGetConfigOption("CPL_VSI_MEM_MTIME", nullptr))
+        {
+            pStatBuf->st_mtime =
+                static_cast<time_t>(std::strtoll(mtime, nullptr, 10));
+        }
+        else
+        {
+            pStatBuf->st_mtime = poFile->mTime;
+        }
     }
 
     return 0;
@@ -798,7 +802,7 @@ int VSIMemFilesystemHandler::Unlink(const char *pszFilename)
 int VSIMemFilesystemHandler::Unlink_unlocked(const char *pszFilename)
 
 {
-    const CPLString osFilename = NormalizePath(pszFilename);
+    const std::string osFilename = NormalizePath(pszFilename);
 
     auto oIter = oFileList.find(osFilename);
     if (oIter == oFileList.end())
@@ -826,7 +830,7 @@ int VSIMemFilesystemHandler::Mkdir(const char *pszPathname, long /* nMode */)
 {
     CPLMutexHolder oHolder(&hMutex);
 
-    const CPLString osPathname = NormalizePath(pszPathname);
+    const std::string osPathname = NormalizePath(pszPathname);
     if (STARTS_WITH(osPathname.c_str(), szHIDDEN_DIRNAME))
     {
         if (osPathname.size() == strlen(szHIDDEN_DIRNAME))
@@ -1037,13 +1041,14 @@ char **VSIMemFilesystemHandler::ReadDirEx(const char *pszPath, int nMaxFiles)
 /************************************************************************/
 
 int VSIMemFilesystemHandler::Rename(const char *pszOldPath,
-                                    const char *pszNewPath)
+                                    const char *pszNewPath, GDALProgressFunc,
+                                    void *)
 
 {
     CPLMutexHolder oHolder(&hMutex);
 
-    const CPLString osOldPath = NormalizePath(pszOldPath);
-    const CPLString osNewPath = NormalizePath(pszNewPath);
+    const std::string osOldPath = NormalizePath(pszOldPath);
+    const std::string osNewPath = NormalizePath(pszNewPath);
     if (!STARTS_WITH(pszNewPath, m_osPrefix.c_str()))
         return -1;
 
@@ -1056,15 +1061,15 @@ int VSIMemFilesystemHandler::Rename(const char *pszOldPath,
         return -1;
     }
 
-    std::map<CPLString, std::shared_ptr<VSIMemFile>>::iterator it =
+    std::map<std::string, std::shared_ptr<VSIMemFile>>::iterator it =
         oFileList.find(osOldPath);
-    while (it != oFileList.end() && it->first.ifind(osOldPath) == 0)
+    while (it != oFileList.end() && it->first.find(osOldPath) == 0)
     {
-        const CPLString osRemainder = it->first.substr(osOldPath.size());
+        const std::string osRemainder = it->first.substr(osOldPath.size());
         if (osRemainder.empty() || osRemainder[0] == '/')
         {
-            const CPLString osNewFullPath = osNewPath + osRemainder;
-            Unlink_unlocked(osNewFullPath);
+            const std::string osNewFullPath = osNewPath + osRemainder;
+            Unlink_unlocked(osNewFullPath.c_str());
             oFileList[osNewFullPath] = it->second;
             it->second->osFilename = osNewFullPath;
             oFileList.erase(it++);
@@ -1223,11 +1228,12 @@ VSILFILE *VSIFileFromMemBuffer(const char *pszFilename, GByte *pabyData,
     // ownership of pabyData.
     if (!osFilename.empty())
     {
-        const char *pszFileDir = CPLGetPath(osFilename.c_str());
-        if (VSIMkdirRecursive(pszFileDir, 0755) == -1)
+        const std::string osFileDir = CPLGetPathSafe(osFilename.c_str());
+        if (VSIMkdirRecursive(osFileDir.c_str(), 0755) == -1)
         {
             VSIError(VSIE_FileError,
-                     "Could not create directory %s for writing", pszFileDir);
+                     "Could not create directory %s for writing",
+                     osFileDir.c_str());
             errno = ENOENT;
             return nullptr;
         }
@@ -1274,7 +1280,9 @@ VSILFILE *VSIFileFromMemBuffer(const char *pszFilename, GByte *pabyData,
  * This function returns a pointer to the memory buffer underlying a
  * virtual "in memory" file.  If bUnlinkAndSeize is TRUE the filesystem
  * object will be deleted, and ownership of the buffer will pass to the
- * caller otherwise the underlying file will remain in existence.
+ * caller, otherwise the underlying file will remain in existence.
+ * bUnlinkAndSeize should only be used for files that own their data
+ * (see the bTakeOwnership parameter of VSIFileFromMemBuffer).
  *
  * @param pszFilename the name of the file to grab the buffer of.
  * @param pnDataLength (file) length returned in this variable.
@@ -1293,7 +1301,7 @@ GByte *VSIGetMemFileBuffer(const char *pszFilename, vsi_l_offset *pnDataLength,
     if (pszFilename == nullptr)
         return nullptr;
 
-    const CPLString osFilename =
+    const std::string osFilename =
         VSIMemFilesystemHandler::NormalizePath(pszFilename);
 
     CPLMutexHolder oHolder(&poHandler->hMutex);

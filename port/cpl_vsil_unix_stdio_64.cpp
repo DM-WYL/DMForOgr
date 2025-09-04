@@ -51,9 +51,7 @@
 #include <cstring>
 #include <dirent.h>
 #include <errno.h>
-#if HAVE_FCNTL_H
 #include <fcntl.h>
-#endif
 #include <sys/stat.h>
 #ifdef HAVE_STATVFS
 #include <sys/statvfs.h>
@@ -145,6 +143,8 @@ static_assert(sizeof(VSIStatBufL::st_size) == sizeof(vsi_l_offset),
 /* ==================================================================== */
 /************************************************************************/
 
+struct VSIDIRUnixStdio;
+
 class VSIUnixStdioFilesystemHandler final : public VSIFilesystemHandler
 {
     CPL_DISALLOW_COPY_ASSIGN(VSIUnixStdioFilesystemHandler)
@@ -160,20 +160,27 @@ class VSIUnixStdioFilesystemHandler final : public VSIFilesystemHandler
     ~VSIUnixStdioFilesystemHandler() override;
 #endif
 
-    VSIVirtualHandle *Open(const char *pszFilename, const char *pszAccess,
-                           bool bSetError,
-                           CSLConstList /* papszOptions */) override;
+    VSIVirtualHandleUniquePtr Open(const char *pszFilename,
+                                   const char *pszAccess, bool bSetError,
+                                   CSLConstList /* papszOptions */) override;
+
+    VSIVirtualHandleUniquePtr
+    CreateOnlyVisibleAtCloseTime(const char *pszFilename,
+                                 bool bEmulationAllowed,
+                                 CSLConstList papszOptions) override;
+
     int Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
              int nFlags) override;
     int Unlink(const char *pszFilename) override;
-    int Rename(const char *oldpath, const char *newpath) override;
+    int Rename(const char *oldpath, const char *newpath, GDALProgressFunc,
+               void *) override;
     int Mkdir(const char *pszDirname, long nMode) override;
     int Rmdir(const char *pszDirname) override;
     char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
     GIntBig GetDiskFreeSpace(const char *pszDirname) override;
     int SupportsSparseFiles(const char *pszPath) override;
 
-    bool IsLocal(const char *pszPath) override;
+    bool IsLocal(const char *pszPath) const override;
     bool SupportsSequentialWrite(const char *pszPath,
                                  bool /* bAllowLocalTempFile */) override;
     bool SupportsRandomWrite(const char *pszPath,
@@ -181,6 +188,10 @@ class VSIUnixStdioFilesystemHandler final : public VSIFilesystemHandler
 
     VSIDIR *OpenDir(const char *pszPath, int nRecurseDepth,
                     const char *const *papszOptions) override;
+
+    static std::unique_ptr<VSIDIRUnixStdio>
+    OpenDirInternal(const char *pszPath, int nRecurseDepth,
+                    const char *const *papszOptions);
 
 #ifdef HAS_CASE_INSENSITIVE_FILE_SYSTEM
     std::string
@@ -200,6 +211,7 @@ class VSIUnixStdioFilesystemHandler final : public VSIFilesystemHandler
 
 class VSIUnixStdioHandle final : public VSIVirtualHandle
 {
+    friend class VSIUnixStdioFilesystemHandler;
     CPL_DISALLOW_COPY_ASSIGN(VSIUnixStdioHandle)
 
     FILE *fp = nullptr;
@@ -218,9 +230,17 @@ class VSIUnixStdioHandle final : public VSIVirtualHandle
     vsi_l_offset nTotalBytesRead = 0;
     VSIUnixStdioFilesystemHandler *poFS = nullptr;
 #endif
+
+    bool m_bCancelCreation = false;
+    std::string m_osFilenameToSetAtCloseTime{};
+#if !defined(__linux)
+    std::string m_osTmpFilename{};
+#endif
+
   public:
     VSIUnixStdioHandle(VSIUnixStdioFilesystemHandler *poFSIn, FILE *fpIn,
                        bool bReadOnlyIn, bool bModeAppendReadWriteIn);
+    ~VSIUnixStdioHandle() override;
 
     int Seek(vsi_l_offset nOffsetIn, int nWhence) override;
     vsi_l_offset Tell() override;
@@ -245,6 +265,11 @@ class VSIUnixStdioHandle final : public VSIVirtualHandle
     size_t PRead(void * /*pBuffer*/, size_t /* nSize */,
                  vsi_l_offset /*nOffset*/) const override;
 #endif
+
+    void CancelCreation() override
+    {
+        m_bCancelCreation = true;
+    }
 };
 
 /************************************************************************/
@@ -267,6 +292,15 @@ VSIUnixStdioHandle::VSIUnixStdioHandle(
 }
 
 /************************************************************************/
+/*                         ~VSIUnixStdioHandle()                        */
+/************************************************************************/
+
+VSIUnixStdioHandle::~VSIUnixStdioHandle()
+{
+    VSIUnixStdioHandle::Close();
+}
+
+/************************************************************************/
 /*                               Close()                                */
 /************************************************************************/
 
@@ -282,7 +316,48 @@ int VSIUnixStdioHandle::Close()
     poFS->AddToTotal(nTotalBytesRead);
 #endif
 
-    int ret = fclose(fp);
+    int ret = 0;
+
+#ifdef __linux
+    if (!m_bCancelCreation && !m_osFilenameToSetAtCloseTime.empty())
+    {
+        ret = fflush(fp);
+        if (ret == 0)
+        {
+            // As advised by "man 2 open" if the caller doesn't have the
+            // CAP_DAC_READ_SEARCH capability, which seems to be the default
+
+            char szPath[32];
+            const int fd = fileno(fp);
+            snprintf(szPath, sizeof(szPath), "/proc/self/fd/%d", fd);
+            ret =
+                linkat(AT_FDCWD, szPath, AT_FDCWD,
+                       m_osFilenameToSetAtCloseTime.c_str(), AT_SYMLINK_FOLLOW);
+            if (ret != 0)
+                CPLDebug("CPL", "linkat() failed with errno=%d", errno);
+        }
+    }
+#endif
+
+    int ret2 = fclose(fp);
+    if (ret == 0 && ret2 != 0)
+        ret = ret2;
+
+#if !defined(__linux)
+    if (!m_osFilenameToSetAtCloseTime.empty())
+    {
+        if (m_bCancelCreation)
+        {
+            ret = unlink(m_osFilenameToSetAtCloseTime.c_str());
+        }
+        else
+        {
+            ret = rename(m_osTmpFilename.c_str(),
+                         m_osFilenameToSetAtCloseTime.c_str());
+        }
+    }
+#endif
+
     fp = nullptr;
     return ret;
 }
@@ -709,7 +784,7 @@ VSIUnixStdioFilesystemHandler::~VSIUnixStdioFilesystemHandler()
 /*                                Open()                                */
 /************************************************************************/
 
-VSIVirtualHandle *
+VSIVirtualHandleUniquePtr
 VSIUnixStdioFilesystemHandler::Open(const char *pszFilename,
                                     const char *pszAccess, bool bSetError,
                                     CSLConstList /* papszOptions */)
@@ -735,13 +810,8 @@ VSIUnixStdioFilesystemHandler::Open(const char *pszFilename,
         strcmp(pszAccess, "rb") == 0 || strcmp(pszAccess, "r") == 0;
     const bool bModeAppendReadWrite =
         strcmp(pszAccess, "a+b") == 0 || strcmp(pszAccess, "a+") == 0;
-    VSIUnixStdioHandle *poHandle = new (std::nothrow)
-        VSIUnixStdioHandle(this, fp, bReadOnly, bModeAppendReadWrite);
-    if (poHandle == nullptr)
-    {
-        fclose(fp);
-        return nullptr;
-    }
+    auto poHandle = std::make_unique<VSIUnixStdioHandle>(this, fp, bReadOnly,
+                                                         bModeAppendReadWrite);
 
     errno = nError;
 
@@ -751,10 +821,73 @@ VSIUnixStdioFilesystemHandler::Open(const char *pszFilename,
     /* -------------------------------------------------------------------- */
     if (bReadOnly && CPLTestBool(CPLGetConfigOption("VSI_CACHE", "FALSE")))
     {
-        return VSICreateCachedFile(poHandle);
+        return VSIVirtualHandleUniquePtr(
+            VSICreateCachedFile(poHandle.release()));
     }
 
-    return poHandle;
+    return VSIVirtualHandleUniquePtr(poHandle.release());
+}
+
+/************************************************************************/
+/*                      CreateOnlyVisibleAtCloseTime()                  */
+/************************************************************************/
+
+VSIVirtualHandleUniquePtr
+VSIUnixStdioFilesystemHandler::CreateOnlyVisibleAtCloseTime(
+    const char *pszFilename, bool bEmulationAllowed, CSLConstList papszOptions)
+{
+#ifdef __linux
+    static bool bIsLinkatSupported = []()
+    {
+        // Check that /proc is accessible, since we will need it to run linkat()
+        struct stat statbuf;
+        return stat("/proc/self/fd", &statbuf) == 0;
+    }();
+
+    const int fd = bIsLinkatSupported
+                       ? open(CPLGetDirnameSafe(pszFilename).c_str(),
+                              O_TMPFILE | O_RDWR, 0666)
+                       : -1;
+    if (fd < 0)
+        return VSIFilesystemHandler::CreateOnlyVisibleAtCloseTime(
+            pszFilename, bEmulationAllowed, papszOptions);
+
+    FILE *fp = fdopen(fd, "wb+");
+    if (!fp)
+    {
+        close(fd);
+        return nullptr;
+    }
+
+    auto poHandle = std::make_unique<VSIUnixStdioHandle>(
+        this, fp, /* bReadOnly = */ false, /* bModeAppendReadWrite = */ false);
+    poHandle->m_osFilenameToSetAtCloseTime = pszFilename;
+    return VSIVirtualHandleUniquePtr(poHandle.release());
+#else
+    if (!bEmulationAllowed)
+        return nullptr;
+
+    std::string osTmpFilename = std::string(pszFilename).append("XXXXXX");
+    int fd = mkstemp(osTmpFilename.data());
+    if (fd < 0)
+    {
+        return VSIFilesystemHandler::CreateOnlyVisibleAtCloseTime(
+            pszFilename, bEmulationAllowed, papszOptions);
+    }
+
+    FILE *fp = fdopen(fd, "wb+");
+    if (!fp)
+    {
+        close(fd);
+        return nullptr;
+    }
+
+    auto poHandle = std::make_unique<VSIUnixStdioHandle>(
+        this, fp, /* bReadOnly = */ false, /* bModeAppendReadWrite = */ false);
+    poHandle->m_osTmpFilename = std::move(osTmpFilename);
+    poHandle->m_osFilenameToSetAtCloseTime = pszFilename;
+    return VSIVirtualHandleUniquePtr(poHandle.release());
+#endif
 }
 
 /************************************************************************/
@@ -782,7 +915,8 @@ int VSIUnixStdioFilesystemHandler::Unlink(const char *pszFilename)
 /************************************************************************/
 
 int VSIUnixStdioFilesystemHandler::Rename(const char *oldpath,
-                                          const char *newpath)
+                                          const char *newpath, GDALProgressFunc,
+                                          void *)
 
 {
     return rename(oldpath, newpath);
@@ -966,7 +1100,7 @@ bool VSIUnixStdioFilesystemHandler::IsLocal(const char *
 #ifdef __linux
                                                 pszPath
 #endif
-)
+) const
 {
 #ifdef __linux
     struct statfs sStatFS;
@@ -1006,7 +1140,7 @@ bool VSIUnixStdioFilesystemHandler::SupportsSequentialWrite(
     VSIStatBufL sStat;
     if (VSIStatL(pszPath, &sStat) == 0)
         return access(pszPath, W_OK) == 0;
-    return access(CPLGetDirname(pszPath), W_OK) == 0;
+    return access(CPLGetDirnameSafe(pszPath).c_str(), W_OK) == 0;
 }
 
 /************************************************************************/
@@ -1025,41 +1159,48 @@ bool VSIUnixStdioFilesystemHandler::SupportsRandomWrite(
 
 struct VSIDIRUnixStdio final : public VSIDIR
 {
+    struct DIRCloser
+    {
+        void operator()(DIR *d)
+        {
+            if (d)
+                closedir(d);
+        }
+    };
+
     CPLString osRootPath{};
     CPLString osBasePath{};
-    DIR *m_psDir = nullptr;
+    std::unique_ptr<DIR, DIRCloser> m_psDir{};
     int nRecurseDepth = 0;
     VSIDIREntry entry{};
-    std::vector<VSIDIRUnixStdio *> aoStackSubDir{};
-    VSIUnixStdioFilesystemHandler *poFS = nullptr;
+    std::vector<std::unique_ptr<VSIDIR>> aoStackSubDir{};
     std::string m_osFilterPrefix{};
     bool m_bNameAndTypeOnly = false;
 
-    explicit VSIDIRUnixStdio(VSIUnixStdioFilesystemHandler *poFSIn)
-        : poFS(poFSIn)
-    {
-    }
-
-    ~VSIDIRUnixStdio();
-
     const VSIDIREntry *NextDirEntry() override;
-
-    VSIDIRUnixStdio(const VSIDIRUnixStdio &) = delete;
-    VSIDIRUnixStdio &operator=(const VSIDIRUnixStdio &) = delete;
 };
 
 /************************************************************************/
-/*                        ~VSIDIRUnixStdio()                            */
+/*                        OpenDirInternal()                             */
 /************************************************************************/
 
-VSIDIRUnixStdio::~VSIDIRUnixStdio()
+/* static */
+std::unique_ptr<VSIDIRUnixStdio> VSIUnixStdioFilesystemHandler::OpenDirInternal(
+    const char *pszPath, int nRecurseDepth, const char *const *papszOptions)
 {
-    while (!aoStackSubDir.empty())
+    std::unique_ptr<DIR, VSIDIRUnixStdio::DIRCloser> psDir(opendir(pszPath));
+    if (psDir == nullptr)
     {
-        delete aoStackSubDir.back();
-        aoStackSubDir.pop_back();
+        return nullptr;
     }
-    closedir(m_psDir);
+    auto dir = std::make_unique<VSIDIRUnixStdio>();
+    dir->osRootPath = pszPath;
+    dir->nRecurseDepth = nRecurseDepth;
+    dir->m_psDir = std::move(psDir);
+    dir->m_osFilterPrefix = CSLFetchNameValueDef(papszOptions, "PREFIX", "");
+    dir->m_bNameAndTypeOnly = CPLTestBool(
+        CSLFetchNameValueDef(papszOptions, "NAME_AND_TYPE_ONLY", "NO"));
+    return dir;
 }
 
 /************************************************************************/
@@ -1070,19 +1211,7 @@ VSIDIR *VSIUnixStdioFilesystemHandler::OpenDir(const char *pszPath,
                                                int nRecurseDepth,
                                                const char *const *papszOptions)
 {
-    DIR *psDir = opendir(pszPath);
-    if (psDir == nullptr)
-    {
-        return nullptr;
-    }
-    VSIDIRUnixStdio *dir = new VSIDIRUnixStdio(this);
-    dir->osRootPath = pszPath;
-    dir->nRecurseDepth = nRecurseDepth;
-    dir->m_psDir = psDir;
-    dir->m_osFilterPrefix = CSLFetchNameValueDef(papszOptions, "PREFIX", "");
-    dir->m_bNameAndTypeOnly = CPLTestBool(
-        CSLFetchNameValueDef(papszOptions, "NAME_AND_TYPE_ONLY", "NO"));
-    return dir;
+    return OpenDirInternal(pszPath, nRecurseDepth, papszOptions).release();
 }
 
 /************************************************************************/
@@ -1098,16 +1227,15 @@ begin:
         if (!osCurFile.empty())
             osCurFile += '/';
         osCurFile += entry.pszName;
-        auto subdir = static_cast<VSIDIRUnixStdio *>(
-            poFS->VSIUnixStdioFilesystemHandler::OpenDir(
-                osCurFile, nRecurseDepth - 1, nullptr));
+        auto subdir = VSIUnixStdioFilesystemHandler::OpenDirInternal(
+            osCurFile, nRecurseDepth - 1, nullptr);
         if (subdir)
         {
             subdir->osRootPath = osRootPath;
             subdir->osBasePath = entry.pszName;
             subdir->m_osFilterPrefix = m_osFilterPrefix;
             subdir->m_bNameAndTypeOnly = m_bNameAndTypeOnly;
-            aoStackSubDir.push_back(subdir);
+            aoStackSubDir.push_back(std::move(subdir));
         }
         entry.nMode = 0;
     }
@@ -1119,17 +1247,11 @@ begin:
         {
             return l_entry;
         }
-        delete aoStackSubDir.back();
         aoStackSubDir.pop_back();
     }
 
-    while (true)
+    while (const auto *psEntry = readdir(m_psDir.get()))
     {
-        const auto *psEntry = readdir(m_psDir);
-        if (psEntry == nullptr)
-        {
-            return nullptr;
-        }
         // Skip . and ..entries
         if (psEntry->d_name[0] == '.' &&
             (psEntry->d_name[1] == '\0' ||
@@ -1215,11 +1337,11 @@ begin:
                 StatFile();
             }
 
-            break;
+            return &(entry);
         }
     }
 
-    return &(entry);
+    return nullptr;
 }
 
 #ifdef VSI_COUNT_BYTES_READ

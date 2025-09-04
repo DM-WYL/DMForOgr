@@ -32,19 +32,17 @@
 /* ==================================================================== */
 /************************************************************************/
 
-class PLLinkedDataset;
-
-class PLLinkedDataset
+struct PLLinkedDataset
 {
   public:
-    CPLString osKey;
-    GDALDataset *poDS;
-    PLLinkedDataset *psPrev;
-    PLLinkedDataset *psNext;
+    CPLString osKey{};
+    GDALDataset *poDS{};
+    PLLinkedDataset *psPrev{};
+    PLLinkedDataset *psNext{};
 
-    PLLinkedDataset() : poDS(nullptr), psPrev(nullptr), psNext(nullptr)
-    {
-    }
+    PLLinkedDataset() = default;
+
+    CPL_DISALLOW_COPY_ASSIGN(PLLinkedDataset)
 };
 
 class PLMosaicRasterBand;
@@ -53,36 +51,36 @@ class PLMosaicDataset final : public GDALPamDataset
 {
     friend class PLMosaicRasterBand;
 
-    int bMustCleanPersistent;
-    CPLString osCachePathRoot;
-    int bTrustCache;
-    CPLString osBaseURL;
-    CPLString osAPIKey;
-    CPLString osMosaic;
+    int bMustCleanPersistent{};
+    CPLString osCachePathRoot{};
+    int bTrustCache{};
+    CPLString osBaseURL{};
+    CPLString osAPIKey{};
+    CPLString osMosaic{};
     OGRSpatialReference m_oSRS{};
-    int nQuadSize;
-    CPLString osQuadsURL;
-    int bHasGeoTransform;
-    double adfGeoTransform[6];
-    int nZoomLevelMax;
-    int bUseTMSForMain;
-    std::vector<GDALDataset *> apoTMSDS;
+    int nQuadSize{};
+    CPLString osQuadsURL{};
+    int bHasGeoTransform{};
+    GDALGeoTransform m_gt{};
+    int nZoomLevelMax{};
+    int bUseTMSForMain{};
+    std::vector<GDALDataset *> apoTMSDS{};
     int nMetaTileXShift = 0;
     int nMetaTileYShift = 0;
     bool bQuadDownload = false;
 
-    int nCacheMaxSize;
-    std::map<CPLString, PLLinkedDataset *> oMapLinkedDatasets;
-    PLLinkedDataset *psHead;
-    PLLinkedDataset *psTail;
+    int nCacheMaxSize{};
+    std::map<CPLString, PLLinkedDataset *> oMapLinkedDatasets{};
+    PLLinkedDataset *psHead{};
+    PLLinkedDataset *psTail{};
     void FlushDatasetsCache();
     CPLString GetMosaicCachePath();
     void CreateMosaicCachePathIfNecessary();
 
-    int nLastMetaTileX;
-    int nLastMetaTileY;
+    int nLastMetaTileX{};
+    int nLastMetaTileY{};
     json_object *poLastItemsInformation = nullptr;
-    CPLString osLastRetGetLocationInfo;
+    CPLString osLastRetGetLocationInfo{};
     const char *GetLocationInfo(int nPixel, int nLine);
 
     char **GetBaseHTTPOptions();
@@ -95,6 +93,8 @@ class PLMosaicDataset final : public GDALPamDataset
     void InsertNewDataset(const CPLString &osKey, GDALDataset *poDS);
     GDALDataset *OpenAndInsertNewDataset(const CPLString &osTmpFilename,
                                          const CPLString &osTilename);
+
+    CPL_DISALLOW_COPY_ASSIGN(PLMosaicDataset)
 
   public:
     PLMosaicDataset();
@@ -114,7 +114,7 @@ class PLMosaicDataset final : public GDALPamDataset
     virtual CPLErr FlushCache(bool bAtClosing) override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
-    virtual CPLErr GetGeoTransform(double *padfGeoTransform) override;
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     GDALDataset *GetMetaTile(int tile_x, int tile_y);
 };
@@ -178,7 +178,7 @@ PLMosaicRasterBand::PLMosaicRasterBand(PLMosaicDataset *poDSIn, int nBandIn,
 CPLErr PLMosaicRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
                                       void *pImage)
 {
-    PLMosaicDataset *poMOSDS = reinterpret_cast<PLMosaicDataset *>(poDS);
+    PLMosaicDataset *poMOSDS = cpl::down_cast<PLMosaicDataset *>(poDS);
 
 #ifdef DEBUG_VERBOSE
     CPLDebug("PLMOSAIC", "IReadBlock(band=%d, x=%d, y=%d)", nBand, nBlockYOff,
@@ -225,7 +225,7 @@ CPLErr PLMosaicRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                      GSpacing nPixelSpace, GSpacing nLineSpace,
                                      GDALRasterIOExtraArg *psExtraArg)
 {
-    PLMosaicDataset *poMOSDS = reinterpret_cast<PLMosaicDataset *>(poDS);
+    PLMosaicDataset *poMOSDS = cpl::down_cast<PLMosaicDataset *>(poDS);
     if (poMOSDS->bUseTMSForMain && !poMOSDS->apoTMSDS.empty())
         return poMOSDS->apoTMSDS[0]->GetRasterBand(nBand)->RasterIO(
             eRWFlag, nXOff, nYOff, nXSize, nYSize, pData, nBufXSize, nBufYSize,
@@ -243,7 +243,7 @@ CPLErr PLMosaicRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 const char *PLMosaicRasterBand::GetMetadataItem(const char *pszName,
                                                 const char *pszDomain)
 {
-    PLMosaicDataset *poMOSDS = reinterpret_cast<PLMosaicDataset *>(poDS);
+    PLMosaicDataset *poMOSDS = cpl::down_cast<PLMosaicDataset *>(poDS);
     int nPixel, nLine;
     if (poMOSDS->bQuadDownload && pszName != nullptr && pszDomain != nullptr &&
         EQUAL(pszDomain, "LocationInfo") &&
@@ -261,7 +261,7 @@ const char *PLMosaicRasterBand::GetMetadataItem(const char *pszName,
 
 int PLMosaicRasterBand::GetOverviewCount()
 {
-    PLMosaicDataset *poGDS = reinterpret_cast<PLMosaicDataset *>(poDS);
+    PLMosaicDataset *poGDS = cpl::down_cast<PLMosaicDataset *>(poDS);
     return std::max(0, static_cast<int>(poGDS->apoTMSDS.size()) - 1);
 }
 
@@ -271,7 +271,7 @@ int PLMosaicRasterBand::GetOverviewCount()
 
 GDALRasterBand *PLMosaicRasterBand::GetOverview(int iOvrLevel)
 {
-    PLMosaicDataset *poGDS = reinterpret_cast<PLMosaicDataset *>(poDS);
+    PLMosaicDataset *poGDS = cpl::down_cast<PLMosaicDataset *>(poDS);
     if (iOvrLevel < 0 ||
         iOvrLevel >= static_cast<int>(poGDS->apoTMSDS.size()) - 1)
         return nullptr;
@@ -320,15 +320,9 @@ PLMosaicDataset::PLMosaicDataset()
       nLastMetaTileY(-1)
 {
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-    adfGeoTransform[0] = 0;
-    adfGeoTransform[1] = 1;
-    adfGeoTransform[2] = 0;
-    adfGeoTransform[3] = 0;
-    adfGeoTransform[4] = 0;
-    adfGeoTransform[5] = 1;
 
     SetMetadataItem("INTERLEAVE", "PIXEL", "IMAGE_STRUCTURE");
-    osCachePathRoot = CPLGetPath(CPLGenerateTempFilename(""));
+    osCachePathRoot = CPLGetPathSafe(CPLGenerateTempFilenameSafe("").c_str());
 }
 
 /************************************************************************/
@@ -409,6 +403,16 @@ char **PLMosaicDataset::GetBaseHTTPOptions()
 
     char **papszOptions =
         CSLAddString(nullptr, CPLSPrintf("PERSISTENT=PLMOSAIC:%p", this));
+
+    /* Ensure the PLMosaic driver uses a unique default user agent to help
+     * identify usage. */
+    CPLString osUserAgent = CPLGetConfigOption("GDAL_HTTP_USERAGENT", "");
+    if (osUserAgent.empty())
+        papszOptions = CSLAddString(
+            papszOptions, CPLSPrintf("USERAGENT=PLMosaic Driver GDAL/%d.%d.%d",
+                                     GDAL_VERSION_MAJOR, GDAL_VERSION_MINOR,
+                                     GDAL_VERSION_REV));
+
     /* Use basic auth, rather than Authorization headers since curl would
      * forward it to S3 */
     papszOptions =
@@ -626,7 +630,7 @@ GDALDataset *PLMosaicDataset::Open(GDALOpenInfo *poOpenInfo)
             GDALOpenInfo oOpenInfo(osMosaicConnectionString.c_str(),
                                    GA_ReadOnly);
             oOpenInfo.papszOpenOptions = poOpenInfo->papszOpenOptions;
-            poDS = reinterpret_cast<PLMosaicDataset *>(Open(&oOpenInfo));
+            poDS = cpl::down_cast<PLMosaicDataset *>(Open(&oOpenInfo));
             if (poDS)
                 poDS->SetDescription(osOldFilename);
         }
@@ -678,11 +682,8 @@ CPLString PLMosaicDataset::GetMosaicCachePath()
     if (!osCachePathRoot.empty())
     {
         const CPLString osCachePath(
-            CPLFormFilename(osCachePathRoot, "plmosaic_cache", nullptr));
-        const CPLString osMosaicPath(
-            CPLFormFilename(osCachePath, osMosaic, nullptr));
-
-        return osMosaicPath;
+            CPLFormFilenameSafe(osCachePathRoot, "plmosaic_cache", nullptr));
+        return CPLFormFilenameSafe(osCachePath, osMosaic, nullptr);
     }
     return "";
 }
@@ -696,9 +697,9 @@ void PLMosaicDataset::CreateMosaicCachePathIfNecessary()
     if (!osCachePathRoot.empty())
     {
         const CPLString osCachePath(
-            CPLFormFilename(osCachePathRoot, "plmosaic_cache", nullptr));
+            CPLFormFilenameSafe(osCachePathRoot, "plmosaic_cache", nullptr));
         const CPLString osMosaicPath(
-            CPLFormFilename(osCachePath, osMosaic, nullptr));
+            CPLFormFilenameSafe(osCachePath, osMosaic, nullptr));
 
         VSIStatBufL sStatBuf;
         if (VSIStatL(osMosaicPath, &sStatBuf) != 0)
@@ -857,12 +858,12 @@ int PLMosaicDataset::OpenMosaic()
         }
 
         bHasGeoTransform = TRUE;
-        adfGeoTransform[0] = GM_ORIGIN;
-        adfGeoTransform[1] = dfResolution;
-        adfGeoTransform[2] = 0;
-        adfGeoTransform[3] = -GM_ORIGIN;
-        adfGeoTransform[4] = 0;
-        adfGeoTransform[5] = -dfResolution;
+        m_gt[0] = GM_ORIGIN;
+        m_gt[1] = dfResolution;
+        m_gt[2] = 0;
+        m_gt[3] = -GM_ORIGIN;
+        m_gt[4] = 0;
+        m_gt[5] = -dfResolution;
         nRasterXSize = static_cast<int>(2 * -GM_ORIGIN / dfResolution + 0.5);
         nRasterYSize = nRasterXSize;
 
@@ -890,8 +891,8 @@ int PLMosaicDataset::OpenMosaic()
             ymin = floor(ymin / dfTileSize) * dfTileSize;
             xmax = ceil(xmax / dfTileSize) * dfTileSize;
             ymax = ceil(ymax / dfTileSize) * dfTileSize;
-            adfGeoTransform[0] = xmin;
-            adfGeoTransform[3] = ymax;
+            m_gt[0] = xmin;
+            m_gt[3] = ymax;
             nRasterXSize = static_cast<int>((xmax - xmin) / dfResolution + 0.5);
             nRasterYSize = static_cast<int>((ymax - ymin) / dfResolution + 0.5);
             nMetaTileXShift =
@@ -983,14 +984,12 @@ int PLMosaicDataset::OpenMosaic()
 
                     int nSrcXOff, nSrcYOff, nDstXOff, nDstYOff;
 
-                    nSrcXOff = static_cast<int>(
-                        0.5 +
-                        (adfGeoTransform[0] - GM_ORIGIN) / dfThisResolution);
+                    nSrcXOff = static_cast<int>(0.5 + (m_gt[0] - GM_ORIGIN) /
+                                                          dfThisResolution);
                     nDstXOff = 0;
 
-                    nSrcYOff = static_cast<int>(
-                        0.5 +
-                        (-GM_ORIGIN - adfGeoTransform[3]) / dfThisResolution);
+                    nSrcYOff = static_cast<int>(0.5 + (-GM_ORIGIN - m_gt[3]) /
+                                                          dfThisResolution);
                     nDstYOff = 0;
 
                     for (int iBand = 1; iBand <= 4; iBand++)
@@ -1160,9 +1159,9 @@ const OGRSpatialReference *PLMosaicDataset::GetSpatialRef() const
 /*                            GetGeoTransform()                         */
 /************************************************************************/
 
-CPLErr PLMosaicDataset::GetGeoTransform(double *padfGeoTransform)
+CPLErr PLMosaicDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    memcpy(padfGeoTransform, adfGeoTransform, 6 * sizeof(double));
+    gt = m_gt;
     return (bHasGeoTransform) ? CE_None : CE_Failure;
 }
 
@@ -1256,10 +1255,10 @@ GDALDataset *PLMosaicDataset::GetMetaTile(int tile_x, int tile_y)
 
         const CPLString osMosaicPath(GetMosaicCachePath());
         osTmpFilename =
-            CPLFormFilename(osMosaicPath,
-                            CPLSPrintf("%s_%s.tif", osMosaic.c_str(),
-                                       CPLGetFilename(osTilename)),
-                            nullptr);
+            CPLFormFilenameSafe(osMosaicPath,
+                                CPLSPrintf("%s_%s.tif", osMosaic.c_str(),
+                                           CPLGetFilename(osTilename)),
+                                nullptr);
         VSIStatBufL sStatBuf;
 
         CPLString osURL = osQuadsURL;

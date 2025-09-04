@@ -22,6 +22,10 @@
 int TileDBDriverIdentifySimplified(GDALOpenInfo *poOpenInfo)
 
 {
+    if (poOpenInfo->pszFilename[0] == 0)
+    {
+        return FALSE;
+    }
     if (STARTS_WITH_CI(poOpenInfo->pszFilename, "TILEDB:"))
     {
         return TRUE;
@@ -40,15 +44,18 @@ int TileDBDriverIdentifySimplified(GDALOpenInfo *poOpenInfo)
         return TRUE;
     }
 
-    if (!poOpenInfo->bIsDirectory)
+    if (!poOpenInfo->bIsDirectory &&
+        !STARTS_WITH_CI(poOpenInfo->pszFilename, "/VSI"))
     {
         return false;
     }
 
-    const bool bIsS3OrGS = STARTS_WITH_CI(poOpenInfo->pszFilename, "/VSIS3/") ||
-                           STARTS_WITH_CI(poOpenInfo->pszFilename, "/VSIGS/");
-    // If this is a /vsi virtual file systems, bail out, except if it is S3 or GS.
-    if (!bIsS3OrGS && STARTS_WITH(poOpenInfo->pszFilename, "/vsi"))
+    const bool bIsS3OrGSOrAz =
+        STARTS_WITH_CI(poOpenInfo->pszFilename, "/VSIS3/") ||
+        STARTS_WITH_CI(poOpenInfo->pszFilename, "/VSIGS/") ||
+        STARTS_WITH_CI(poOpenInfo->pszFilename, "/VSIAZ/");
+    // If this is a /vsi virtual file systems, bail out, except if it is AZ, S3 or GS.
+    if (!bIsS3OrGSOrAz && STARTS_WITH_CI(poOpenInfo->pszFilename, "/VSI"))
     {
         return false;
     }
@@ -79,6 +86,7 @@ void TileDBDriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->SetMetadataItem(GDAL_DCAP_CURVE_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_Z_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_SUBDATASETS, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CREATE_SUBDATASETS, "YES");
 
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_LAYER, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_FIELD, "YES");
@@ -263,6 +271,9 @@ void TileDBDriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATECOPY, "YES");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS, "RasterValues Features");
 
     poDriver->SetMetadataItem(
         "TILEDB_VERSION",

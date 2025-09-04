@@ -495,7 +495,7 @@ bool GMLASWriter::Write(GDALProgressFunc pfnProgress, void *pProgressData)
 
     // Write .xsd
     if (bWFS2FeatureCollection)
-        VSIUnlink(CPLResetExtension(m_osFilename, "xsd"));
+        VSIUnlink(CPLResetExtensionSafe(m_osFilename, "xsd").c_str());
     else if (bGenerateXSD && !WriteXSD(osOutXSDFilename, aoXSDs))
         return false;
 
@@ -579,7 +579,7 @@ bool GMLASWriter::WriteXSD(const CPLString &osXSDFilenameIn,
     const CPLString osXSDFilename(
         !osXSDFilenameIn.empty()
             ? osXSDFilenameIn
-            : CPLString(CPLResetExtension(m_osFilename, "xsd")));
+            : CPLString(CPLResetExtensionSafe(m_osFilename, "xsd")));
     VSILFILE *fpXSD = VSIFOpenL(osXSDFilename, "wb");
     if (fpXSD == nullptr)
     {
@@ -666,7 +666,7 @@ bool GMLASWriter::WriteXMLHeader(
     }
 
     // Delete potentially existing .gfs file
-    VSIUnlink(CPLResetExtension(m_osFilename, "gfs"));
+    VSIUnlink(CPLResetExtensionSafe(m_osFilename, "gfs").c_str());
 
     std::map<CPLString, CPLString> aoWrittenPrefixes;
     aoWrittenPrefixes[szXSI_PREFIX] = szXSI_URI;
@@ -723,8 +723,8 @@ bool GMLASWriter::WriteXMLHeader(
         const CPLString osXSDFilename(
             !osXSDFilenameIn.empty()
                 ? osXSDFilenameIn
-                : CPLString(
-                      CPLGetFilename(CPLResetExtension(m_osFilename, "xsd"))));
+                : CPLString(CPLGetFilename(
+                      CPLResetExtensionSafe(m_osFilename, "xsd").c_str())));
         osSchemaURI += m_osTargetNameSpace;
         osSchemaURI += " ";
         osSchemaURI += osXSDFilename;
@@ -1769,7 +1769,7 @@ bool GMLASWriter::WriteFieldRegular(
     {
         // Particular case for <a foo="bar" xsi:nil="true"/>
         VSIFPrintfL(m_fpXML.get(), " xsi:nil=\"true\">");
-        aoCurComponents = aoFieldComponents;
+        aoCurComponents = std::move(aoFieldComponents);
         bCurIsRegularField = true;
         return true;
     }
@@ -2405,7 +2405,10 @@ bool GMLASWriter::WriteFieldNoLink(
                 </xs:complexType>
             </xs:element>
             */
-            aoNewInitialContext = std::move(aoLayerComponents);
+            aoNewInitialContext = aoLayerComponents;
+            // so that Coverity doesn't ask to move it, which it won't like
+            // as this is an input argument
+            CPL_IGNORE_RET_VAL(aoLayerComponents);
         }
 
         WriteClosingAndStartingTags(aoCurComponents, aoNewInitialContext,
@@ -2804,10 +2807,11 @@ void GMLASWriter::PrintLine(VSILFILE *fp, const char *fmt, ...)
 class GMLASFakeDataset final : public GDALDataset
 {
   public:
-    GMLASFakeDataset()
-    {
-    }
+    GMLASFakeDataset() = default;
+    ~GMLASFakeDataset() override;
 };
+
+GMLASFakeDataset::~GMLASFakeDataset() = default;
 
 /************************************************************************/
 /*                        OGRGMLASDriverCreateCopy()                    */
@@ -2819,7 +2823,7 @@ GDALDataset *OGRGMLASDriverCreateCopy(const char *pszFilename,
                                       GDALProgressFunc pfnProgress,
                                       void *pProgressData)
 {
-    if (strcmp(CPLGetExtension(pszFilename), "xsd") == 0)
+    if (strcmp(CPLGetExtensionSafe(pszFilename).c_str(), "xsd") == 0)
     {
         CPLError(CE_Failure, CPLE_AppDefined, ".xsd extension is not valid");
         return nullptr;

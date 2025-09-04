@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Name:     typemaps_python.i
  * Project:  GDAL Python Interface
@@ -1544,6 +1543,7 @@ static PyObject* CSLToList( char** stringarray, bool *pbErr )
 
 OPTIONAL_POD(int,i);
 OPTIONAL_POD(GIntBig,L);
+OPTIONAL_POD(double, d);
 
 /*
  * Typedef const char * <- Any object.
@@ -1821,6 +1821,8 @@ static PyObject *XMLTreeToPyList( CPLXMLNode *psTree )
     {
         if( pszCallbackName == NULL || EQUAL(pszCallbackName,"CPLQuietErrorHandler") )
             $1 = CPLQuietErrorHandler;
+        else if( EQUAL(pszCallbackName,"CPLQuietWarningsErrorHandler") )
+            $1 = CPLQuietWarningsErrorHandler;
         else if( EQUAL(pszCallbackName,"CPLDefaultErrorHandler") )
             $1 = CPLDefaultErrorHandler;
         else if( EQUAL(pszCallbackName,"CPLLoggingErrorHandler") )
@@ -2467,6 +2469,41 @@ DecomposeSequenceOf4DCoordinates( PyObject *seq, int nCount, double *x, double *
     VSIFree(*$3);
 }
 
+%typemap(in) (GDALDataType eType)
+{
+    if (PyInt_Check($input))
+    {
+        $1 = static_cast<GDALDataType>(PyInt_AsLong($input));
+    }
+    else
+    {
+        PyObject* gdal_array = PyImport_ImportModule("osgeo.gdal_array");
+        if (gdal_array)
+        {
+            PyObject* dict = PyModule_GetDict(gdal_array);
+            PyObject* fn = PyDict_GetItemString(dict, "NumericTypeCodeToGDALTypeCode");
+            PyObject* type_code = PyObject_CallFunctionObjArgs(fn, $input, NULL);
+
+            Py_DECREF(gdal_array);
+            if (type_code && PyInt_Check(type_code))
+            {
+                $1 = static_cast<GDALDataType>(PyInt_AsLong(type_code));
+                Py_DECREF(type_code);
+            }
+            else
+            {
+                Py_XDECREF(type_code);
+                PyErr_SetString(PyExc_RuntimeError, "type must be a GDAL data type code or NumPy type");
+                SWIG_fail;
+            }
+        }
+        else
+        {
+            PyErr_SetString(PyExc_RuntimeError, "gdal_array module is not available; type must be a specified as a GDAL data type code");
+            SWIG_fail;
+        }
+    }
+}
 
 %typemap(in) (const char *utf8_path) (int bToFree = 0)
 {
@@ -2579,6 +2616,11 @@ DecomposeSequenceOf4DCoordinates( PyObject *seq, int nCount, double *x, double *
   {
     buf->format = (char*) "I";
     buf->itemsize = 4;
+  }
+  else if( *($3) == GDT_Float16 )
+  {
+    buf->format = (char*) "f";
+    buf->itemsize = 2;
   }
   else if( *($3) == GDT_Float32 )
   {
@@ -2749,7 +2791,8 @@ DecomposeSequenceOf4DCoordinates( PyObject *seq, int nCount, double *x, double *
                                     (*$1)[i]->dfEastLongitudeDeg,
                                     (*$1)[i]->dfNorthLatitudeDeg,
                                     (*$1)[i]->pszAreaName,
-                                    (*$1)[i]->pszProjectionMethod );
+                                    (*$1)[i]->pszProjectionMethod,
+                                    (*$1)[i]->pszCelestialBodyName );
 
     PyTuple_SetItem(dict, i,
        SWIG_NewPointerObj((void*)o,SWIGTYPE_p_OSRCRSInfo,1) );

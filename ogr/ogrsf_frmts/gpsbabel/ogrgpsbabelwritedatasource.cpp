@@ -22,10 +22,7 @@
 /*                    OGRGPSBabelWriteDataSource()                      */
 /************************************************************************/
 
-OGRGPSBabelWriteDataSource::OGRGPSBabelWriteDataSource()
-    : pszGPSBabelDriverName(nullptr), pszFilename(nullptr), poGPXDS(nullptr)
-{
-}
+OGRGPSBabelWriteDataSource::OGRGPSBabelWriteDataSource() = default;
 
 /************************************************************************/
 /*                  ~OGRGPSBabelWriteDataSource()                       */
@@ -159,7 +156,9 @@ int OGRGPSBabelWriteDataSource::Create(const char *pszNameIn,
         }
 
         pszGPSBabelDriverName = CPLStrdup(pszNameIn + 9);
-        *(strchr(pszGPSBabelDriverName, ':')) = '\0';
+        char *nextColon = strchr(pszGPSBabelDriverName, ':');
+        if (nextColon)
+            *nextColon = 0;
 
         pszFilename = CPLStrdup(pszSep + 1);
     }
@@ -173,7 +172,7 @@ int OGRGPSBabelWriteDataSource::Create(const char *pszNameIn,
     if (pszOptionUseTempFile == nullptr)
         pszOptionUseTempFile = CPLGetConfigOption("USE_TEMPFILE", nullptr);
     if (pszOptionUseTempFile && CPLTestBool(pszOptionUseTempFile))
-        osTmpFileName = CPLGenerateTempFilename(nullptr);
+        osTmpFileName = CPLGenerateTempFilenameSafe(nullptr);
     else
         osTmpFileName = VSIMemGenerateHiddenFilename("gpsbabel");
 
@@ -203,7 +202,7 @@ OGRLayer *OGRGPSBabelWriteDataSource::ICreateLayer(
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRGPSBabelWriteDataSource::TestCapability(const char *pszCap)
+int OGRGPSBabelWriteDataSource::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
@@ -216,7 +215,7 @@ int OGRGPSBabelWriteDataSource::TestCapability(const char *pszCap)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRGPSBabelWriteDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRGPSBabelWriteDataSource::GetLayer(int iLayer) const
 
 {
     if (poGPXDS)
@@ -229,7 +228,7 @@ OGRLayer *OGRGPSBabelWriteDataSource::GetLayer(int iLayer)
 /*                         GetLayerCount()                              */
 /************************************************************************/
 
-int OGRGPSBabelWriteDataSource::GetLayerCount()
+int OGRGPSBabelWriteDataSource::GetLayerCount() const
 
 {
     if (poGPXDS)

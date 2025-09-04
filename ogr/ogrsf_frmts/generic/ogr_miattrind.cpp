@@ -36,7 +36,7 @@ class OGRMIAttrIndex : public OGRAttrIndex
     int iIndex;
     TABINDFile *poINDFile;
     OGRMILayerAttrIndex *poLIndex;
-    OGRFieldDefn *poFldDefn;
+    const OGRFieldDefn *poFldDefn;
 
     int iField;
 
@@ -100,7 +100,7 @@ class OGRMILayerAttrIndex final : public OGRLayerAttrIndex
     OGRErr LoadConfigFromXML(const char *pszRawXML);
     void AddAttrInd(int iField, int iINDIndex);
 
-    OGRLayer *GetLayer()
+    const OGRLayer *GetLayer()
     {
         return poLayer;
     }
@@ -164,9 +164,11 @@ OGRErr OGRMILayerAttrIndex::Initialize(const char *pszIndexPathIn,
     if (STARTS_WITH_CI(pszIndexPathIn, "<OGRMILayerAttrIndex>"))
         return LoadConfigFromXML(pszIndexPathIn);
 
-    pszMetadataFilename = CPLStrdup(CPLResetExtension(pszIndexPathIn, "idm"));
+    pszMetadataFilename =
+        CPLStrdup(CPLResetExtensionSafe(pszIndexPathIn, "idm").c_str());
 
-    pszMIINDFilename = CPLStrdup(CPLResetExtension(pszIndexPathIn, "ind"));
+    pszMIINDFilename =
+        CPLStrdup(CPLResetExtensionSafe(pszIndexPathIn, "ind").c_str());
 
     /* -------------------------------------------------------------------- */
     /*      If a metadata file already exists, load it.                     */

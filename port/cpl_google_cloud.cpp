@@ -161,17 +161,17 @@ bool CPLIsMachinePotentiallyGCEInstance()
 /*                            GetGSHeaders()                            */
 /************************************************************************/
 
-static struct curl_slist *
-GetGSHeaders(const std::string &osPathForOption, const std::string &osVerb,
-             const struct curl_slist *psExistingHeaders,
-             const std::string &osCanonicalResource,
-             const std::string &osSecretAccessKey,
-             const std::string &osAccessKeyId, const std::string &osUserProject)
+static struct curl_slist *GetGSHeaders(const std::string &osPathForOption,
+                                       const std::string &osVerb,
+                                       struct curl_slist *psHeaders,
+                                       const std::string &osCanonicalResource,
+                                       const std::string &osSecretAccessKey,
+                                       const std::string &osAccessKeyId)
 {
     if (osSecretAccessKey.empty())
     {
         // GS_NO_SIGN_REQUEST=YES case
-        return nullptr;
+        return psHeaders;
     }
 
     std::string osDate = VSIGetPathSpecificOption(osPathForOption.c_str(),
@@ -182,19 +182,15 @@ GetGSHeaders(const std::string &osPathForOption, const std::string &osVerb,
     }
 
     std::map<std::string, std::string> oSortedMapHeaders;
-    if (!osUserProject.empty())
-        oSortedMapHeaders["x-goog-user-project"] = osUserProject;
     std::string osCanonicalizedHeaders(
         IVSIS3LikeHandleHelper::BuildCanonicalizedHeaders(
-            oSortedMapHeaders, psExistingHeaders, "x-goog-"));
+            oSortedMapHeaders, psHeaders, "x-goog-"));
 
     // See https://cloud.google.com/storage/docs/migrating
     std::string osStringToSign;
     osStringToSign += osVerb + "\n";
-    osStringToSign +=
-        CPLAWSGetHeaderVal(psExistingHeaders, "Content-MD5") + "\n";
-    osStringToSign +=
-        CPLAWSGetHeaderVal(psExistingHeaders, "Content-Type") + "\n";
+    osStringToSign += CPLAWSGetHeaderVal(psHeaders, "Content-MD5") + "\n";
+    osStringToSign += CPLAWSGetHeaderVal(psHeaders, "Content-Type") + "\n";
     osStringToSign += osDate + "\n";
     osStringToSign += osCanonicalizedHeaders;
     osStringToSign += osCanonicalResource;
@@ -213,18 +209,12 @@ GetGSHeaders(const std::string &osPathForOption, const std::string &osVerb,
     osAuthorization += pszBase64;
     CPLFree(pszBase64);
 
-    struct curl_slist *headers = nullptr;
-    headers =
-        curl_slist_append(headers, CPLSPrintf("Date: %s", osDate.c_str()));
-    headers = curl_slist_append(
-        headers, CPLSPrintf("Authorization: %s", osAuthorization.c_str()));
-    if (!osUserProject.empty())
-    {
-        headers =
-            curl_slist_append(headers, CPLSPrintf("x-goog-user-project: %s",
-                                                  osUserProject.c_str()));
-    }
-    return headers;
+    psHeaders =
+        curl_slist_append(psHeaders, CPLSPrintf("Date: %s", osDate.c_str()));
+    psHeaders = curl_slist_append(
+        psHeaders, CPLSPrintf("Authorization: %s", osAuthorization.c_str()));
+
+    return psHeaders;
 }
 
 /************************************************************************/
@@ -370,7 +360,7 @@ bool VSIGSHandleHelper::GetConfiguration(const std::string &osPathForOption,
                                                  "GS_ACCESS_KEY_ID", "");
         if (osAccessKeyId.empty())
         {
-            VSIError(VSIE_AWSInvalidCredentials,
+            VSIError(VSIE_InvalidCredentials,
                      "GS_ACCESS_KEY_ID configuration option not defined");
             bFirstTimeForDebugMessage = false;
             return false;
@@ -706,15 +696,21 @@ bool VSIGSHandleHelper::GetConfiguration(const std::string &osPathForOption,
     }
 
     CPLString osMsg;
-    osMsg.Printf("GS_SECRET_ACCESS_KEY+GS_ACCESS_KEY_ID, "
-                 "GS_OAUTH2_REFRESH_TOKEN or "
-                 "GOOGLE_APPLICATION_CREDENTIALS or "
-                 "GS_OAUTH2_PRIVATE_KEY+GS_OAUTH2_CLIENT_EMAIL and %s, "
-                 "or GS_NO_SIGN_REQUEST=YES configuration options not defined",
-                 osCredentials.c_str());
+    osMsg.Printf(
+        "No valid GCS credentials found. "
+        "For authenticated requests, you need to set "
+        "GS_SECRET_ACCESS_KEY, GS_ACCESS_KEY_ID, GS_OAUTH2_REFRESH_TOKEN, "
+        "GOOGLE_APPLICATION_CREDENTIALS, or other configuration "
+        "options, or create a %s file. Consult "
+        "https://gdal.org/en/stable/user/"
+        "virtual_file_systems.html#vsigs-google-cloud-storage-files "
+        "for more details. "
+        "For unauthenticated requests on public resources, set the "
+        "GS_NO_SIGN_REQUEST configuration option to YES.",
+        osCredentials.c_str());
 
     CPLDebug("GS", "%s", osMsg.c_str());
-    VSIError(VSIE_AWSInvalidCredentials, "%s", osMsg.c_str());
+    VSIError(VSIE_InvalidCredentials, "%s", osMsg.c_str());
     return false;
 }
 
@@ -787,30 +783,30 @@ bool VSIGSHandleHelper::UsesHMACKey() const
 
 struct curl_slist *
 VSIGSHandleHelper::GetCurlHeaders(const std::string &osVerb,
-                                  const struct curl_slist *psExistingHeaders,
-                                  const void *, size_t) const
+                                  struct curl_slist *psHeaders, const void *,
+                                  size_t) const
 {
     if (m_bUseAuthenticationHeader)
-        return nullptr;
+        return psHeaders;
+
+    if (!m_osUserProject.empty())
+    {
+        psHeaders =
+            curl_slist_append(psHeaders, CPLSPrintf("x-goog-user-project: %s",
+                                                    m_osUserProject.c_str()));
+    }
 
     if (m_oManager.GetAuthMethod() != GOA2Manager::NONE)
     {
         const std::string osBearer =
             GOA2ManagerCache::GetSingleton().GetBearer(m_oManager);
-        if (osBearer.empty())
-            return nullptr;
-
-        struct curl_slist *headers = nullptr;
-        headers = curl_slist_append(
-            headers, CPLSPrintf("Authorization: Bearer %s", osBearer.c_str()));
-
-        if (!m_osUserProject.empty())
+        if (!osBearer.empty())
         {
-            headers =
-                curl_slist_append(headers, CPLSPrintf("x-goog-user-project: %s",
-                                                      m_osUserProject.c_str()));
+            psHeaders = curl_slist_append(
+                psHeaders,
+                CPLSPrintf("Authorization: Bearer %s", osBearer.c_str()));
         }
-        return headers;
+        return psHeaders;
     }
 
     std::string osCanonicalResource(
@@ -825,9 +821,9 @@ VSIGSHandleHelper::GetCurlHeaders(const std::string &osVerb,
             osCanonicalResource += osQueryString;
     }
 
-    return GetGSHeaders("/vsigs/" + m_osBucketObjectKey, osVerb,
-                        psExistingHeaders, osCanonicalResource,
-                        m_osSecretAccessKey, m_osAccessKeyId, m_osUserProject);
+    return GetGSHeaders("/vsigs/" + m_osBucketObjectKey, osVerb, psHeaders,
+                        osCanonicalResource, m_osSecretAccessKey,
+                        m_osAccessKeyId);
 }
 
 /************************************************************************/

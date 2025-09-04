@@ -15,18 +15,7 @@ gdal_viewshed
 Synopsis
 --------
 
-.. code-block::
-
-   gdal_viewshed [--help] [--help-general] [-b <band>]
-                 [-a_nodata <value>] [-f <formatname>]
-                 [-oz <observer_height>] [-tz <target_height>] [-md <max_distance>]
-                 -ox <observer_x> -oy <observer_y>
-                 [-vv <visibility>] [-iv <invisibility>]
-                 [-ov <out_of_range>] [-cc <curvature_coef>]
-                 [-os <observer_spacing>] [-j <relative job count>]
-                 [-co <NAME>=<VALUE>]...
-                 [-q] [-om <output mode>]
-                 <src_filename> <dst_filename>
+.. program-output:: gdal_viewshed --help-doc
 
 Description
 -----------
@@ -151,6 +140,10 @@ Byte. With the -mode flag can also return a minimum visible height raster of typ
 
   DEM and GROUND will return a raster of type Float64 containing the minimum target
   height for target to be visible from the DEM surface or ground level respectively.
+  That is to say, if the minimum target height for the target to be visible at a
+  point is ``h`` and the value of the input raster at that point is ``E``,
+  for ``DEM``, ``E + h`` will be the output value.
+  For ``ground``, ``h`` will be output value.
   Flags -tz, -iv and -vv will be ignored.
 
   Cumulative (ACCUM) mode will create an eight bit raster the same size as the input raster
@@ -165,7 +158,7 @@ Byte. With the -mode flag can also return a minimum visible height raster of typ
 
 .. option:: -j <value>
 
-   Relative number of jobs to run at once. (only supported in cumulative mode) Default: 3
+   Number of jobs to run at once. (only supported in cumulative mode) Default: 3
 
 
 C API
@@ -173,22 +166,24 @@ C API
 
 Functionality of this utility can be done from C with :cpp:func:`GDALViewshedGenerate`.
 
-Example
--------
+Examples
+--------
 
-Screenshot of 2 combined viewshed analysis, with the yellow pixels showing the area that is
-visible from the both observation locations (the green dots), while the small green area is
-only visible from one location.
+.. example::
+
+   Screenshot of 2 combined viewshed analysis, with the yellow pixels showing the area that is
+   visible from the both observation locations (the green dots), while the small green area is
+   only visible from one location.
 
 
-.. figure:: ../../images/gdal_viewshed.png
+   .. figure:: ../../images/gdal_viewshed.png
 
 
-Create a viewshed raster with a radius of 500 for a person standing at location (-10147017, 5108065).
+   Create a viewshed raster with a radius of 500 for a person standing at location (-10147017, 5108065).
 
-.. code-block:: bash
+   .. code-block:: bash
 
-    gdal_viewshed -md 500 -ox -10147017 -oy 5108065 source.tif destination.tif
+       gdal_viewshed -md 500 -ox -10147017 -oy 5108065 source.tif destination.tif
 
 Reference
 ---------

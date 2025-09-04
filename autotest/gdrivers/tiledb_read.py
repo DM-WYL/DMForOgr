@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test basic read support for all datatypes from a TileDB array.
@@ -24,6 +23,11 @@ pytestmark = pytest.mark.require_driver("TileDB")
 def test_tiledb_open():
     ut = gdaltest.GDALTest("TileDB", "tiledb_array", 1, 4857)
     ut.testOpen()
+
+
+def test_tiledb_open_does_not_exist():
+    with pytest.raises(Exception, match="Failed to open"):
+        gdal.OpenEx("tiledb_does_not_exist_array", gdal.OF_READONLY, ["TileDB"])
 
 
 ###############################################################################

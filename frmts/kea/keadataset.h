@@ -1,5 +1,4 @@
 /*
- * $Id$
  *  keadataset.h
  *
  *  Created by Pete Bunting on 01/08/2012.
@@ -45,10 +44,10 @@ class KEADataset final : public GDALDataset
                                    void *pProgressData);
 
     // virtual methods for dealing with transform and projection
-    CPLErr GetGeoTransform(double *padfTransform) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 
-    CPLErr SetGeoTransform(double *padfTransform) override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
     // method to get a pointer to the imageio class

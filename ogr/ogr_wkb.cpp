@@ -1062,6 +1062,8 @@ void OGRWKBFixupCounterClockWiseExternalRing(GByte *pabyWkb, size_t nWKBSize)
 
 OGRWKBPointUpdater::OGRWKBPointUpdater() = default;
 
+OGRWKBPointUpdater::~OGRWKBPointUpdater() = default;
+
 /************************************************************************/
 /*              OGRWKBIntersectsPointSequencePessimistic()              */
 /************************************************************************/
@@ -1618,7 +1620,7 @@ size_t OGRWKTToWKBTranslator::TranslateWKT(void *pabyWKTStart, size_t nLength,
     }
 
     // General case going through a OGRGeometry
-    OGRGeometry *poGeometry = nullptr;
+    std::unique_ptr<OGRGeometry> poGeometry = nullptr;
     if (bCanAlterByteAfter)
     {
         // Slight optimization for all geometries but the final one, to
@@ -1628,7 +1630,7 @@ size_t OGRWKTToWKBTranslator::TranslateWKT(void *pabyWKTStart, size_t nLength,
         char *pszEnd = static_cast<char *>(pabyWKTStart) + nLength;
         const char chBackup = *pszEnd;
         *pszEnd = 0;
-        OGRGeometryFactory::createFromWkt(pszPtrStart, nullptr, &poGeometry);
+        poGeometry = OGRGeometryFactory::createFromWkt(pszPtrStart).first;
         // cppcheck-suppress selfAssignment
         *pszEnd = chBackup;
     }
@@ -1636,7 +1638,7 @@ size_t OGRWKTToWKBTranslator::TranslateWKT(void *pabyWKTStart, size_t nLength,
     {
         std::string osTmp;
         osTmp.assign(pszPtrStart, nLength);
-        OGRGeometryFactory::createFromWkt(osTmp.c_str(), nullptr, &poGeometry);
+        poGeometry = OGRGeometryFactory::createFromWkt(osTmp.c_str()).first;
     }
     if (!poGeometry)
     {
@@ -1651,6 +1653,5 @@ size_t OGRWKTToWKBTranslator::TranslateWKT(void *pabyWKTStart, size_t nLength,
         return static_cast<size_t>(-1);
     }
     poGeometry->exportToWkb(wkbNDR, pabyWKB, wkbVariantIso);
-    delete poGeometry;
     return nWKBSize;
 }

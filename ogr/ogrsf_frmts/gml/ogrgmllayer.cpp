@@ -129,6 +129,10 @@ OGRFeature *OGRGMLLayer::GetNextFeature()
         poDS->SetLastReadLayer(this);
     }
 
+    const bool bSkipCorruptedFeatures = CPLFetchBool(
+        poDS->GetOpenOptions(), "SKIP_CORRUPTED_FEATURES",
+        CPLTestBool(CPLGetConfigOption("GML_SKIP_CORRUPTED_FEATURES", "NO")));
+
     /* ==================================================================== */
     /*      Loop till we find and translate a feature meeting all our       */
     /*      requirements.                                                   */
@@ -357,21 +361,20 @@ OGRFeature *OGRGMLLayer::GetNextFeature()
             {
                 const CPLString osLastErrorMsg(CPLGetLastErrorMsg());
 
-                const bool bGoOn = CPLTestBool(
-                    CPLGetConfigOption("GML_SKIP_CORRUPTED_FEATURES", "NO"));
-
                 CPLError(
-                    bGoOn ? CE_Warning : CE_Failure, CPLE_AppDefined,
+                    bSkipCorruptedFeatures ? CE_Warning : CE_Failure,
+                    CPLE_AppDefined,
                     "Geometry of feature " CPL_FRMT_GIB
                     " %scannot be parsed: %s%s",
                     nFID, pszGML_FID ? CPLSPrintf("%s ", pszGML_FID) : "",
                     osLastErrorMsg.c_str(),
-                    bGoOn ? ". Skipping to next feature."
-                          : ". You may set the GML_SKIP_CORRUPTED_FEATURES "
-                            "configuration option to YES to skip to the next "
-                            "feature");
+                    bSkipCorruptedFeatures
+                        ? ". Skipping to next feature."
+                        : ". You may set the GML_SKIP_CORRUPTED_FEATURES "
+                          "configuration option to YES to skip to the next "
+                          "feature");
                 delete poGMLFeature;
-                if (bGoOn)
+                if (bSkipCorruptedFeatures)
                     continue;
                 return nullptr;
             }
@@ -603,10 +606,11 @@ GIntBig OGRGMLLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /************************************************************************/
 
-OGRErr OGRGMLLayer::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr OGRGMLLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                               bool bForce)
 
 {
     if (GetGeomType() == wkbNone)
@@ -627,7 +631,7 @@ OGRErr OGRGMLLayer::GetExtent(OGREnvelope *psExtent, int bForce)
         return OGRERR_NONE;
     }
 
-    return OGRLayer::GetExtent(psExtent, bForce);
+    return OGRLayer::IGetExtent(iGeomField, psExtent, bForce);
 }
 
 /************************************************************************/
@@ -669,7 +673,7 @@ OGRErr OGRGMLLayer::ICreateFeature(OGRFeature *poFeature)
     const bool bRemoveAppPrefix = poDS->RemoveAppPrefix();
     const bool bGMLFeatureCollection = poDS->GMLFeatureCollection();
 
-    if (!bWriter)
+    if (!bWriter || poDS->HasWriteError())
         return OGRERR_FAILURE;
 
     poFeature->FillUnsetWithDefault(TRUE, nullptr);
@@ -1091,14 +1095,14 @@ OGRErr OGRGMLLayer::ICreateFeature(OGRFeature *poFeature)
         poDS->PrintLine(fp, "</gml:featureMember>");
     }
 
-    return OGRERR_NONE;
+    return !poDS->HasWriteError() ? OGRERR_NONE : OGRERR_FAILURE;
 }
 
 /************************************************************************/
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRGMLLayer::TestCapability(const char *pszCap)
+int OGRGMLLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCSequentialWrite))

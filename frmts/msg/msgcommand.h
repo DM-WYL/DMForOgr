@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Purpose:  Interface of MSGCommand class. Parse the src_dataset string
  *           that is meant for the MSG driver.
@@ -20,7 +19,6 @@ class MSGCommand
 {
   public:
     MSGCommand();
-    virtual ~MSGCommand();
 
     std::string parse(std::string const &command_line);
     std::string sFileName(int iSatellite, int iSequence, int iStrip);

@@ -69,7 +69,7 @@ class SRPDataset final : public GDALPamDataset
     ~SRPDataset() override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
-    CPLErr GetGeoTransform(double *padfGeoTransform) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     char **GetMetadata(const char *pszDomain = "") override;
 
@@ -138,7 +138,7 @@ double SRPRasterBand::GetNoDataValue(int *pbSuccess)
 GDALColorInterp SRPRasterBand::GetColorInterpretation()
 
 {
-    SRPDataset *l_poDS = (SRPDataset *)this->poDS;
+    SRPDataset *l_poDS = cpl::down_cast<SRPDataset *>(poDS);
 
     if (l_poDS->oCT.GetColorEntryCount() > 0)
         return GCI_PaletteIndex;
@@ -153,7 +153,7 @@ GDALColorInterp SRPRasterBand::GetColorInterpretation()
 GDALColorTable *SRPRasterBand::GetColorTable()
 
 {
-    SRPDataset *l_poDS = (SRPDataset *)this->poDS;
+    SRPDataset *l_poDS = cpl::down_cast<SRPDataset *>(poDS);
 
     if (l_poDS->oCT.GetColorEntryCount() > 0)
         return &(l_poDS->oCT);
@@ -168,7 +168,7 @@ GDALColorTable *SRPRasterBand::GetColorTable()
 CPLErr SRPRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
 
 {
-    SRPDataset *l_poDS = (SRPDataset *)this->poDS;
+    SRPDataset *l_poDS = cpl::down_cast<SRPDataset *>(poDS);
     vsi_l_offset offset;
     int nBlock = nBlockYOff * l_poDS->NFC + nBlockXOff;
     if (nBlockXOff >= l_poDS->NFC || nBlockYOff >= l_poDS->NFL)
@@ -376,7 +376,7 @@ const OGRSpatialReference *SRPDataset::GetSpatialRef() const
 /*                        GetGeoTransform()                             */
 /************************************************************************/
 
-CPLErr SRPDataset::GetGeoTransform(double *padfGeoTransform)
+CPLErr SRPDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
     if (EQUAL(osProduct, "ASRP"))
     {
@@ -385,49 +385,49 @@ CPLErr SRPDataset::GetGeoTransform(double *padfGeoTransform)
         if (ZNA == 9)
         {
             // North Polar Case
-            padfGeoTransform[0] = 111319.4907933 * (90.0 - PSO / 3600.0) *
-                                  sin(LSO * M_PI / 648000.0);
-            padfGeoTransform[1] = 40075016.68558 / ARV;
-            padfGeoTransform[2] = 0.0;
-            padfGeoTransform[3] = -111319.4907933 * (90.0 - PSO / 3600.0) *
-                                  cos(LSO * M_PI / 648000.0);
-            padfGeoTransform[4] = 0.0;
-            padfGeoTransform[5] = -40075016.68558 / ARV;
+            gt[0] = 111319.4907933 * (90.0 - PSO / 3600.0) *
+                    sin(LSO * M_PI / 648000.0);
+            gt[1] = 40075016.68558 / ARV;
+            gt[2] = 0.0;
+            gt[3] = -111319.4907933 * (90.0 - PSO / 3600.0) *
+                    cos(LSO * M_PI / 648000.0);
+            gt[4] = 0.0;
+            gt[5] = -40075016.68558 / ARV;
         }
         else if (ZNA == 18)
         {
             // South Polar Case
-            padfGeoTransform[0] = 111319.4907933 * (90.0 + PSO / 3600.0) *
-                                  sin(LSO * M_PI / 648000.0);
-            padfGeoTransform[1] = 40075016.68558 / ARV;
-            padfGeoTransform[2] = 0.0;
-            padfGeoTransform[3] = 111319.4907933 * (90.0 + PSO / 3600.0) *
-                                  cos(LSO * M_PI / 648000.0);
-            padfGeoTransform[4] = 0.0;
-            padfGeoTransform[5] = -40075016.68558 / ARV;
+            gt[0] = 111319.4907933 * (90.0 + PSO / 3600.0) *
+                    sin(LSO * M_PI / 648000.0);
+            gt[1] = 40075016.68558 / ARV;
+            gt[2] = 0.0;
+            gt[3] = 111319.4907933 * (90.0 + PSO / 3600.0) *
+                    cos(LSO * M_PI / 648000.0);
+            gt[4] = 0.0;
+            gt[5] = -40075016.68558 / ARV;
         }
         else
         {
             if (BRV == 0)
                 return CE_Failure;
-            padfGeoTransform[0] = LSO / 3600.0;
-            padfGeoTransform[1] = 360. / ARV;
-            padfGeoTransform[2] = 0.0;
-            padfGeoTransform[3] = PSO / 3600.0;
-            padfGeoTransform[4] = 0.0;
-            padfGeoTransform[5] = -360. / BRV;
+            gt[0] = LSO / 3600.0;
+            gt[1] = 360. / ARV;
+            gt[2] = 0.0;
+            gt[3] = PSO / 3600.0;
+            gt[4] = 0.0;
+            gt[5] = -360. / BRV;
         }
 
         return CE_None;
     }
     else if (EQUAL(osProduct, "USRP"))
     {
-        padfGeoTransform[0] = LSO;
-        padfGeoTransform[1] = LOD;
-        padfGeoTransform[2] = 0.0;
-        padfGeoTransform[3] = PSO;
-        padfGeoTransform[4] = 0.0;
-        padfGeoTransform[5] = -LAD;
+        gt[0] = LSO;
+        gt[1] = LOD;
+        gt[2] = 0.0;
+        gt[3] = PSO;
+        gt[4] = 0.0;
+        gt[5] = -LAD;
         return CE_None;
     }
 
@@ -516,13 +516,17 @@ bool SRPDataset::GetFromRecord(const char *pszFileName, DDFRecord *record)
         record->GetStringSubfield("SPR", 0, "BAD", 0, &bSuccess);
     if (pszBAD == nullptr)
         return false;
-    const CPLString osBAD = pszBAD;
-    {
-        char *c = (char *)strchr(osBAD, ' ');
-        if (c)
-            *c = 0;
-    }
+    std::string osBAD = pszBAD;
+    const auto nSpacePos = osBAD.find(' ');
+    if (nSpacePos != std::string::npos)
+        osBAD.resize(nSpacePos);
     CPLDebug("SRP", "BAD=%s", osBAD.c_str());
+    if (CPLHasPathTraversal(osBAD.c_str()))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Path traversal detected in %s",
+                 osBAD.c_str());
+        return false;
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Read the tile map if available.                                 */
@@ -537,8 +541,9 @@ bool SRPDataset::GetFromRecord(const char *pszFileName, DDFRecord *record)
         if (field == nullptr)
             return false;
 
-        DDFFieldDefn *fieldDefn = field->GetFieldDefn();
-        DDFSubfieldDefn *subfieldDefn = fieldDefn->FindSubfieldDefn("TSI");
+        const DDFFieldDefn *fieldDefn = field->GetFieldDefn();
+        const DDFSubfieldDefn *subfieldDefn =
+            fieldDefn->FindSubfieldDefn("TSI");
         if (subfieldDefn == nullptr)
             return false;
 
@@ -579,8 +584,9 @@ bool SRPDataset::GetFromRecord(const char *pszFileName, DDFRecord *record)
     /*      Open the .IMG file.  Try to recover gracefully if the case      */
     /*      of the filename is wrong.                                       */
     /* -------------------------------------------------------------------- */
-    const CPLString osDirname = CPLGetDirname(pszFileName);
-    const CPLString osImgName = CPLFormCIFilename(osDirname, osBAD, nullptr);
+    const CPLString osDirname = CPLGetDirnameSafe(pszFileName);
+    const CPLString osImgName =
+        CPLFormCIFilenameSafe(osDirname, osBAD.c_str(), nullptr);
 
     fdIMG = VSIFOpenL(osImgName, "rb");
     if (fdIMG == nullptr)
@@ -670,8 +676,8 @@ bool SRPDataset::GetFromRecord(const char *pszFileName, DDFRecord *record)
     /* -------------------------------------------------------------------- */
     /*      Try to collect a color map from the .QAL file.                  */
     /* -------------------------------------------------------------------- */
-    const CPLString osBasename = CPLGetBasename(pszFileName);
-    osQALFileName = CPLFormCIFilename(osDirname, osBasename, "QAL");
+    const CPLString osBasename = CPLGetBasenameSafe(pszFileName);
+    osQALFileName = CPLFormCIFilenameSafe(osDirname, osBasename, "QAL");
 
     DDFModule oQALModule;
 
@@ -1052,13 +1058,12 @@ char **SRPDataset::GetGENListFromTHF(const char *pszFileName)
     DDFRecord *record = nullptr;
     DDFField *field = nullptr;
     DDFFieldDefn *fieldDefn = nullptr;
-    int nFilenames = 0;
+    CPLStringList aosFilenames;
 
-    char **papszFileNames = nullptr;
     if (!module.Open(pszFileName, TRUE))
-        return papszFileNames;
+        return nullptr;
 
-    CPLString osDirName(CPLGetDirname(pszFileName));
+    const CPLString osDirName(CPLGetDirnameSafe(pszFileName));
 
     while (true)
     {
@@ -1119,7 +1124,14 @@ char **SRPDataset::GetGENListFromTHF(const char *pszFileName)
                      * characters */
                     CPLString osDirDataset = pszNAM;
                     osDirDataset.resize(6);
-                    CPLString osDatasetDir = CPLFormFilename(
+                    if (CPLHasPathTraversal(osDirDataset.c_str()))
+                    {
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "Path traversal detected in %s",
+                                 osDirDataset.c_str());
+                        return nullptr;
+                    }
+                    CPLString osDatasetDir = CPLFormFilenameSafe(
                         osDirName.c_str(), osDirDataset.c_str(), nullptr);
 
                     CPLString osGENFileName = "";
@@ -1134,10 +1146,11 @@ char **SRPDataset::GetGENListFromTHF(const char *pszFileName)
                         {
                             while (*ptrDir)
                             {
-                                if (EQUAL(CPLGetExtension(*ptrDir), "GEN"))
+                                if (EQUAL(CPLGetExtensionSafe(*ptrDir).c_str(),
+                                          "GEN"))
                                 {
                                     bFound = 1;
-                                    osGENFileName = CPLFormFilename(
+                                    osGENFileName = CPLFormFilenameSafe(
                                         osDatasetDir.c_str(), *ptrDir, nullptr);
                                     CPLDebug("SRP",
                                              "Building GEN full file name : %s",
@@ -1160,11 +1173,13 @@ char **SRPDataset::GetGENListFromTHF(const char *pszFileName)
                         {
                             while (*ptrDir)
                             {
-                                if (EQUAL(CPLGetExtension(*ptrDir), "GEN") &&
-                                    EQUALN(CPLGetBasename(*ptrDir), osName, 6))
+                                if (EQUAL(CPLGetExtensionSafe(*ptrDir).c_str(),
+                                          "GEN") &&
+                                    EQUALN(CPLGetBasenameSafe(*ptrDir).c_str(),
+                                           osName, 6))
                                 {
                                     bFound = 1;
-                                    osGENFileName = CPLFormFilename(
+                                    osGENFileName = CPLFormFilenameSafe(
                                         osDirName.c_str(), *ptrDir, nullptr);
                                     CPLDebug("SRP",
                                              "Building GEN full file name : %s",
@@ -1179,18 +1194,13 @@ char **SRPDataset::GetGENListFromTHF(const char *pszFileName)
 
                     if (bFound == 1)
                     {
-                        papszFileNames = (char **)CPLRealloc(
-                            papszFileNames, sizeof(char *) * (nFilenames + 2));
-                        papszFileNames[nFilenames] =
-                            CPLStrdup(osGENFileName.c_str());
-                        papszFileNames[nFilenames + 1] = nullptr;
-                        nFilenames++;
+                        aosFilenames.AddString(osGENFileName.c_str());
                     }
                 }
             }
         }
     }
-    return papszFileNames;
+    return aosFilenames.StealList();
 }
 
 /************************************************************************/
@@ -1390,23 +1400,27 @@ char **SRPDataset::GetIMGListFromGEN(const char *pszFileName,
             const char *pszBAD = record->GetStringSubfield("SPR", 0, "BAD", 0);
             if (pszBAD == nullptr || strlen(pszBAD) != 12)
                 continue;
-            CPLString osBAD = pszBAD;
-            {
-                char *c = (char *)strchr(osBAD.c_str(), ' ');
-                if (c)
-                    *c = 0;
-            }
+            std::string osBAD = pszBAD;
+            const auto nSpacePos = osBAD.find(' ');
+            if (nSpacePos != std::string::npos)
+                osBAD.resize(nSpacePos);
             CPLDebug("SRP", "BAD=%s", osBAD.c_str());
+            if (CPLHasPathTraversal(osBAD.c_str()))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Path traversal detected in %s", osBAD.c_str());
+                return nullptr;
+            }
 
             /* Build full IMG file name from BAD value */
-            const CPLString osGENDir(CPLGetDirname(pszFileName));
+            const CPLString osGENDir(CPLGetDirnameSafe(pszFileName));
 
-            const CPLString osFileName =
-                CPLFormFilename(osGENDir.c_str(), osBAD.c_str(), nullptr);
+            std::string osFileName =
+                CPLFormFilenameSafe(osGENDir.c_str(), osBAD.c_str(), nullptr);
             VSIStatBufL sStatBuf;
-            if (VSIStatL(osFileName, &sStatBuf) == 0)
+            if (VSIStatL(osFileName.c_str(), &sStatBuf) == 0)
             {
-                osBAD = osFileName;
+                osBAD = std::move(osFileName);
                 CPLDebug("SRP", "Building IMG full file name : %s",
                          osBAD.c_str());
             }
@@ -1425,8 +1439,8 @@ char **SRPDataset::GetIMGListFromGEN(const char *pszFileName,
                 {
                     if (EQUAL(*ptrDir, osBAD.c_str()))
                     {
-                        osBAD =
-                            CPLFormFilename(osGENDir.c_str(), *ptrDir, nullptr);
+                        osBAD = CPLFormFilenameSafe(osGENDir.c_str(), *ptrDir,
+                                                    nullptr);
                         CPLDebug("SRP", "Building IMG full file name : %s",
                                  osBAD.c_str());
                         break;
@@ -1480,7 +1494,7 @@ GDALDataset *SRPDataset::Open(GDALOpenInfo *poOpenInfo)
             return nullptr;
         CPLString osFileName(poOpenInfo->pszFilename);
 
-        if (EQUAL(CPLGetExtension(osFileName.c_str()), "THF"))
+        if (EQUAL(CPLGetExtensionSafe(osFileName.c_str()).c_str(), "THF"))
         {
 
             CPLDebug("SRP", "Read THF");
@@ -1521,7 +1535,7 @@ GDALDataset *SRPDataset::Open(GDALOpenInfo *poOpenInfo)
 
         if (bTHFWithSingleGEN
 #ifdef OPEN_GEN
-            || EQUAL(CPLGetExtension(osFileName.c_str()), "GEN")
+            || EQUAL(CPLGetExtensionSafe(osFileName.c_str()).c_str(), "GEN")
 #endif
         )
         {
@@ -1550,7 +1564,7 @@ GDALDataset *SRPDataset::Open(GDALOpenInfo *poOpenInfo)
             }
         }
 
-        if (EQUAL(CPLGetExtension(osFileName.c_str()), "IMG"))
+        if (EQUAL(CPLGetExtensionSafe(osFileName.c_str()).c_str(), "IMG"))
         {
 
             osIMGFileName = osFileName;
@@ -1581,7 +1595,7 @@ GDALDataset *SRPDataset::Open(GDALOpenInfo *poOpenInfo)
             // --------------------------------------------------------------------
             VSIStatBufL sStatBuf;
 
-            CPLString basename = CPLGetBasename(osFileName);
+            CPLString basename = CPLGetBasenameSafe(osFileName);
             if (basename.size() != 8)
             {
                 CPLDebug("SRP", "Invalid basename file");
@@ -1590,14 +1604,14 @@ GDALDataset *SRPDataset::Open(GDALOpenInfo *poOpenInfo)
 
             nRecordIndex = static_cast<int>(CPLScanLong(basename + 6, 2));
 
-            CPLString path = CPLGetDirname(osFileName);
+            CPLString path = CPLGetDirnameSafe(osFileName);
             CPLString basename01 = ResetTo01(basename);
-            osFileName = CPLFormFilename(path, basename01, ".IMG");
+            osFileName = CPLFormFilenameSafe(path, basename01, ".IMG");
 
-            osFileName = CPLResetExtension(osFileName, "GEN");
+            osFileName = CPLResetExtensionSafe(osFileName, "GEN");
             if (VSIStatL(osFileName, &sStatBuf) != 0)
             {
-                osFileName = CPLResetExtension(osFileName, "gen");
+                osFileName = CPLResetExtensionSafe(osFileName, "gen");
                 if (VSIStatL(osFileName, &sStatBuf) != 0)
                     return nullptr;
             }
@@ -1611,9 +1625,7 @@ GDALDataset *SRPDataset::Open(GDALOpenInfo *poOpenInfo)
 
         if (poOpenInfo->eAccess == GA_Update)
         {
-            CPLError(CE_Failure, CPLE_NotSupported,
-                     "The SRP driver does not support update access to existing"
-                     " datasets.\n");
+            ReportUpdateNotSupportedByDriver("SRP");
             return nullptr;
         }
 

@@ -30,12 +30,12 @@ static int OGRTABDriverIdentify(GDALOpenInfo *poOpenInfo)
         return -1;  // Unsure.
     if (poOpenInfo->fpL == nullptr)
         return FALSE;
-    if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "MIF") ||
-        EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "MID"))
+    if (poOpenInfo->IsExtensionEqualToCI("MIF") ||
+        poOpenInfo->IsExtensionEqualToCI("MID"))
     {
         return TRUE;
     }
-    if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "TAB"))
+    if (poOpenInfo->IsExtensionEqualToCI("TAB"))
     {
         for (int i = 0; i < poOpenInfo->nHeaderBytes; i++)
         {
@@ -72,8 +72,8 @@ static GDALDataset *OGRTABDriverOpen(GDALOpenInfo *poOpenInfo)
         return nullptr;
     }
 
-    if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "MIF") ||
-        EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "MID"))
+    if (poOpenInfo->IsExtensionEqualToCI("MIF") ||
+        poOpenInfo->IsExtensionEqualToCI("MID"))
     {
         if (poOpenInfo->eAccess == GA_Update)
             return nullptr;
@@ -244,6 +244,7 @@ void RegisterOGRTAB()
         GDAL_DMD_CREATIONFIELDDATATYPES,
         "Integer Integer64 Real String Date DateTime Time");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATASUBTYPES, "Boolean");
+    poDriver->SetMetadataItem(GDAL_DMD_MAX_STRING_LENGTH, "254");
     poDriver->SetMetadataItem(GDAL_DMD_CREATION_FIELD_DEFN_FLAGS,
                               "WidthPrecision");
     poDriver->SetMetadataItem(GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
@@ -251,6 +252,9 @@ void RegisterOGRTAB()
     poDriver->SetMetadataItem(GDAL_DCAP_FEATURE_STYLES, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_FEATURE_STYLES_READ, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_FEATURE_STYLES_WRITE, "YES");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS, "Features");
 
     poDriver->pfnOpen = OGRTABDriverOpen;
     poDriver->pfnIdentify = OGRTABDriverIdentify;

@@ -54,7 +54,7 @@ OGRXLSDataSource::~OGRXLSDataSource()
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRXLSDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRXLSDataSource::GetLayer(int iLayer) const
 
 {
     if (iLayer < 0 || iLayer >= nLayers)
@@ -93,9 +93,9 @@ int OGRXLSDataSource::Open(const char *pszFilename, int bUpdateIn)
         {
             CPLErrorReset();
 
-            // FIXME: CPLGenerateTempFilename() would normally be expected to
+            // FIXME: CPLGenerateTempFilenameSafe() would normally be expected to
             // return a UTF-8 filename but I doubt it does in all cases.
-            m_osTempFilename = CPLGenerateTempFilename("temp_xls");
+            m_osTempFilename = CPLGenerateTempFilenameSafe("temp_xls");
             m_osANSIFilename = m_osTempFilename;
             CPLCopyFile(m_osANSIFilename, pszFilename);
             CPLDebug("XLS", "Create temporary file: %s",

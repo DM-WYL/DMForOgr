@@ -11,6 +11,8 @@ Dataset
 
 A dataset (represented by the :cpp:class:`GDALDataset` class) is an assembly of related raster bands and some information common to them all. In particular the dataset has a concept of the raster size (in pixels and lines) that applies to all the bands. The dataset is also responsible for the georeferencing transform and coordinate system definition of all bands. The dataset itself can also have associated metadata, a list of name/value pairs in string form.
 
+The number of pixels and lines for a raster band is limited to 2,147,483,647 each. The number of bands is also limited to 2,147,483,647, although by default a limitation to 65,536 is applied to avoid excessive RAM consumption.
+
 Note that the GDAL dataset, and raster band data model is loosely based on the OpenGIS Grid Coverages specification.
 
 Coordinate System
@@ -26,7 +28,7 @@ Dataset coordinate systems are represented as OpenGIS Well Known Text strings. T
 - A list of projection parameters (e.g., central_meridian).
 - A units name, and conversion factor to meters or radians.
 - Names and ordering for the axes.
-- Codes for most of the above in terms of predefined coordinate systems from authorities such as EPSG.
+- Codes for most of the above in terms of predefined coordinate systems from authorities such as :term:`EPSG`.
 
 For more information on OpenGIS WKT coordinate system definitions, and mechanisms to manipulate them, refer to the osr_tutorial document and/or the OGRSpatialReference class documentation.
 
@@ -136,7 +138,7 @@ The value of the _NAME is the string that can be passed to :cpp:func:`GDALOpen` 
 
 Drivers which support subdatasets advertise the ``DMD_SUBDATASETS`` capability. This information is reported when the --format and --formats options are passed to the command line utilities.
 
-Currently, drivers which support subdatasets are: ADRG, ECRGTOC, GEORASTER, GTiff, HDF4, HDF5, netCDF, NITF, NTv2, OGDI, PDF, PostGISRaster, Rasterlite, RPFTOC, RS2, TileDB, WCS, WMS, and Zarr.
+Currently, drivers which support subdatasets are: ADRG, ECRGTOC, GEORASTER, GTiff, HDF4, HDF5, netCDF, NITF, NTv2, OGDI, PDF, PostGISRaster, Rasterlite, RPFTOC, RS2, TileDB, WCS, WMS, WMTS, and Zarr.
 
 IMAGE_STRUCTURE Domain
 ++++++++++++++++++++++
@@ -217,11 +219,13 @@ A raster band is represented in GDAL with the :cpp:class:`GDALRasterBand` class.
 A raster band has the following properties:
 
 - A width and height in pixels and lines. This is the same as that defined for the dataset, if this is a full resolution band.
-- A datatype (GDALDataType). One of Byte, Int8, UInt16, Int16, UInt32, Int32, UInt64, Int64, Float32, Float64, and the complex types CInt16, CInt32, CFloat32, and CFloat64.
+- A datatype (GDALDataType). One of Byte, Int8, UInt16, Int16, UInt32, Int32, UInt64, Int64, Float16, Float32, Float64, and the complex types CInt16, CInt32, CFloat16, CFloat32, and CFloat64.
 
   UInt64 and Int64 data types have been added in GDAL 3.5. Beyond reading and write pixel values, their support is limited.  Some algorithms might use 64-bit floating-point internally (warping), as well as some methods returning only double values (GetMinimum(), GetMaximum(), etc.), or even 32-bit floating point (overview, RasterIO resampling). Hence the range where exact values are preserved can be [0, 2^53] (or less if 32-bit floating-point is used).
 
- Int8 data type has been added in GDAL 3.7.
+  The Int8 data type has been added in GDAL 3.7.
+
+  The Float16 and CFloat16 data types have been added in GDAL 3.11. If this data type is not supported by the hardware, then a software emulation is used. Not all drivers support Float16 yet.
 
 - A block size. This is a preferred (efficient) access chunk size. For tiled images this will be one tile. For scanline oriented images this will normally be one scanline.
 - A list of name/value pair metadata in the same format as the dataset, but of information that is potentially specific to this band.

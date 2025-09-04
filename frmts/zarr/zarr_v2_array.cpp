@@ -10,6 +10,7 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "cpl_float.h"
 #include "cpl_vsi_virtual.h"
 #include "gdal_thread_pool.h"
 #include "zarr.h"
@@ -76,16 +77,17 @@ ZarrV2Array::~ZarrV2Array()
 /*                                Flush()                               */
 /************************************************************************/
 
-void ZarrV2Array::Flush()
+bool ZarrV2Array::Flush()
 {
     if (!m_bValid)
-        return;
+        return true;
 
-    ZarrV2Array::FlushDirtyTile();
+    bool ret = ZarrV2Array::FlushDirtyTile();
 
     if (m_bDefinitionModified)
     {
-        Serialize();
+        if (!Serialize())
+            ret = false;
         m_bDefinitionModified = false;
     }
 
@@ -127,11 +129,15 @@ void ZarrV2Array::Flush()
 
         CPLJSONDocument oDoc;
         oDoc.SetRoot(oAttrs);
-        const std::string osAttrFilename = CPLFormFilename(
-            CPLGetDirname(m_osFilename.c_str()), ".zattrs", nullptr);
-        oDoc.Save(osAttrFilename);
+        const std::string osAttrFilename =
+            CPLFormFilenameSafe(CPLGetDirnameSafe(m_osFilename.c_str()).c_str(),
+                                ".zattrs", nullptr);
+        if (!oDoc.Save(osAttrFilename))
+            ret = false;
         m_poSharedResource->SetZMetadataItem(osAttrFilename, oAttrs);
     }
+
+    return ret;
 }
 
 /************************************************************************/
@@ -152,7 +158,7 @@ static void StripUselessItemsFromCompressorConfiguration(CPLJSONObject &o)
 /*                    ZarrV2Array::Serialize()                          */
 /************************************************************************/
 
-void ZarrV2Array::Serialize()
+bool ZarrV2Array::Serialize()
 {
     CPLJSONDocument oDoc;
     CPLJSONObject oRoot = oDoc.GetRoot();
@@ -252,9 +258,11 @@ void ZarrV2Array::Serialize()
         oRoot.Add("dimension_separator", m_osDimSeparator);
     }
 
-    oDoc.Save(m_osFilename);
+    bool ret = oDoc.Save(m_osFilename);
 
     m_poSharedResource->SetZMetadataItem(m_osFilename, oRoot);
+
+    return ret;
 }
 
 /************************************************************************/
@@ -433,43 +441,57 @@ bool ZarrV2Array::LoadTileData(const uint64_t *tileIndices, bool bUseMutex,
     osFilename = VSIFileManager::GetHandler(osFilename.c_str())
                      ->GetStreamingFilename(osFilename);
 
-    // First if we have a tile presence cache, check tile presence from it
-    if (bUseMutex)
-        m_oMutex.lock();
-    auto poTilePresenceArray = OpenTilePresenceCache(false);
-    if (poTilePresenceArray)
+    const auto CheckTilePresence =
+        [this, &osFilename, &tileIndices, &bMissingTileOut]()
     {
-        std::vector<GUInt64> anTileIdx(m_aoDims.size());
-        const std::vector<size_t> anCount(m_aoDims.size(), 1);
-        const std::vector<GInt64> anArrayStep(m_aoDims.size(), 0);
-        const std::vector<GPtrDiff_t> anBufferStride(m_aoDims.size(), 0);
-        const auto eByteDT = GDALExtendedDataType::Create(GDT_Byte);
-        for (size_t i = 0; i < m_aoDims.size(); ++i)
+        CPL_IGNORE_RET_VAL(osFilename);
+        auto poTilePresenceArray = OpenTilePresenceCache(false);
+        if (poTilePresenceArray)
         {
-            anTileIdx[i] = static_cast<GUInt64>(tileIndices[i]);
+            std::vector<GUInt64> anTileIdx(m_aoDims.size());
+            const std::vector<size_t> anCount(m_aoDims.size(), 1);
+            const std::vector<GInt64> anArrayStep(m_aoDims.size(), 0);
+            const std::vector<GPtrDiff_t> anBufferStride(m_aoDims.size(), 0);
+            const auto eByteDT = GDALExtendedDataType::Create(GDT_Byte);
+            for (size_t i = 0; i < m_aoDims.size(); ++i)
+            {
+                anTileIdx[i] = static_cast<GUInt64>(tileIndices[i]);
+            }
+            GByte byValue = 0;
+            if (poTilePresenceArray->Read(
+                    anTileIdx.data(), anCount.data(), anArrayStep.data(),
+                    anBufferStride.data(), eByteDT, &byValue) &&
+                byValue == 0)
+            {
+                CPLDebugOnly(ZARR_DEBUG_KEY, "Tile %s missing (=nodata)",
+                             osFilename.c_str());
+                bMissingTileOut = true;
+                return true;
+            }
         }
-        GByte byValue = 0;
-        if (poTilePresenceArray->Read(anTileIdx.data(), anCount.data(),
-                                      anArrayStep.data(), anBufferStride.data(),
-                                      eByteDT, &byValue) &&
-            byValue == 0)
-        {
-            if (bUseMutex)
-                m_oMutex.unlock();
-            CPLDebugOnly(ZARR_DEBUG_KEY, "Tile %s missing (=nodata)",
-                         osFilename.c_str());
-            bMissingTileOut = true;
-            return true;
-        }
-    }
+        return false;
+    };
+
+    // First if we have a tile presence cache, check tile presence from it
+    bool bEarlyRet;
     if (bUseMutex)
-        m_oMutex.unlock();
+    {
+        std::lock_guard<std::mutex> oLock(m_oMutex);
+        bEarlyRet = CheckTilePresence();
+    }
+    else
+    {
+        bEarlyRet = CheckTilePresence();
+    }
+    if (bEarlyRet)
+        return true;
 
     VSILFILE *fp = nullptr;
     // This is the number of files returned in a S3 directory listing operation
     constexpr uint64_t MAX_TILES_ALLOWED_FOR_DIRECTORY_LISTING = 1000;
     const char *const apszOpenOptions[] = {"IGNORE_FILENAME_RESTRICTIONS=YES",
                                            nullptr};
+    const auto nErrorBefore = CPLGetErrorCounter();
     if ((m_osDimSeparator == "/" && !m_anBlockSize.empty() &&
          m_anBlockSize.back() > MAX_TILES_ALLOWED_FOR_DIRECTORY_LISTING) ||
         (m_osDimSeparator != "/" &&
@@ -486,11 +508,18 @@ bool ZarrV2Array::LoadTileData(const uint64_t *tileIndices, bool bUseMutex,
     }
     if (fp == nullptr)
     {
-        // Missing files are OK and indicate nodata_value
-        CPLDebugOnly(ZARR_DEBUG_KEY, "Tile %s missing (=nodata)",
-                     osFilename.c_str());
-        bMissingTileOut = true;
-        return true;
+        if (nErrorBefore != CPLGetErrorCounter())
+        {
+            return false;
+        }
+        else
+        {
+            // Missing files are OK and indicate nodata_value
+            CPLDebugOnly(ZARR_DEBUG_KEY, "Tile %s missing (=nodata)",
+                         osFilename.c_str());
+            bMissingTileOut = true;
+            return true;
+        }
     }
 
     bMissingTileOut = false;
@@ -562,7 +591,12 @@ bool ZarrV2Array::LoadTileData(const uint64_t *tileIndices, bool bUseMutex,
         const auto &oFilter = m_oFiltersArray[i];
         const auto osFilterId = oFilter["id"].ToString();
         const auto psFilterDecompressor =
-            CPLGetDecompressor(osFilterId.c_str());
+            EQUAL(osFilterId.c_str(), "shuffle") ? ZarrGetShuffleDecompressor()
+            : EQUAL(osFilterId.c_str(), "quantize")
+                ? ZarrGetQuantizeDecompressor()
+            : EQUAL(osFilterId.c_str(), "fixedscaleoffset")
+                ? ZarrGetFixedScaleOffsetDecompressor()
+                : CPLGetDecompressor(osFilterId.c_str());
         CPLAssert(psFilterDecompressor);
 
         CPLStringList aosOptions;
@@ -845,7 +879,16 @@ bool ZarrV2Array::FlushDirtyTile() const
     for (const auto &oFilter : m_oFiltersArray)
     {
         const auto osFilterId = oFilter["id"].ToString();
-        const auto psFilterCompressor = CPLGetCompressor(osFilterId.c_str());
+        if (osFilterId == "quantize" || osFilterId == "fixedscaleoffset")
+        {
+            CPLError(CE_Failure, CPLE_NotSupported,
+                     "%s filter not supported for writing", osFilterId.c_str());
+            return false;
+        }
+        const auto psFilterCompressor =
+            EQUAL(osFilterId.c_str(), "shuffle")
+                ? ZarrGetShuffleCompressor()
+                : CPLGetCompressor(osFilterId.c_str());
         CPLAssert(psFilterCompressor);
 
         CPLStringList aosOptions;
@@ -872,7 +915,7 @@ bool ZarrV2Array::FlushDirtyTile() const
 
     if (m_osDimSeparator == "/")
     {
-        std::string osDir = CPLGetDirname(osFilename.c_str());
+        std::string osDir = CPLGetDirnameSafe(osFilename.c_str());
         VSIStatBufL sStat;
         if (VSIStatL(osDir.c_str(), &sStat) != 0)
         {
@@ -883,6 +926,16 @@ bool ZarrV2Array::FlushDirtyTile() const
                 return false;
             }
         }
+    }
+
+    if (m_psCompressor == nullptr && m_psDecompressor != nullptr)
+    {
+        // Case of imagecodecs_tiff
+
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "Only decompression supported for '%s' compression method",
+                 m_osDecompressorId.c_str());
+        return false;
     }
 
     VSILFILE *fp = VSIFOpenL(osFilename.c_str(), "wb");
@@ -987,8 +1040,8 @@ std::string ZarrV2Array::BuildTileFilename(const uint64_t *tileIndices) const
         }
     }
 
-    return CPLFormFilename(CPLGetDirname(m_osFilename.c_str()),
-                           osFilename.c_str(), nullptr);
+    return CPLFormFilenameSafe(CPLGetDirnameSafe(m_osFilename.c_str()).c_str(),
+                               osFilename.c_str(), nullptr);
 }
 
 /************************************************************************/
@@ -997,7 +1050,7 @@ std::string ZarrV2Array::BuildTileFilename(const uint64_t *tileIndices) const
 
 std::string ZarrV2Array::GetDataDirectory() const
 {
-    return std::string(CPLGetDirname(m_osFilename.c_str()));
+    return CPLGetDirnameSafe(m_osFilename.c_str());
 }
 
 /************************************************************************/
@@ -1139,9 +1192,11 @@ static GDALExtendedDataType ParseDtype(const CPLJSONObject &obj,
             }
             else if (chType == 'f' && nBytes == 2)
             {
+                // elt.nativeType = DtypeElt::NativeType::IEEEFP;
+                // elt.gdalTypeIsApproxOfNative = true;
+                // eDT = GDT_Float32;
                 elt.nativeType = DtypeElt::NativeType::IEEEFP;
-                elt.gdalTypeIsApproxOfNative = true;
-                eDT = GDT_Float32;
+                eDT = GDT_Float16;
             }
             else if (chType == 'f' && nBytes == 4)
             {
@@ -1279,7 +1334,7 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
     if (osFormat != "2")
     {
         CPLError(CE_Failure, CPLE_NotSupported,
-                 "Invalid value for zarr_format");
+                 "Invalid value for zarr_format: %s", osFormat.c_str());
         return nullptr;
     }
 
@@ -1328,8 +1383,9 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
     if (!bLoadedFromZMetadata)
     {
         CPLJSONDocument oDoc;
-        const std::string osZattrsFilename(CPLFormFilename(
-            CPLGetDirname(osZarrayFilename.c_str()), ".zattrs", nullptr));
+        const std::string osZattrsFilename(CPLFormFilenameSafe(
+            CPLGetDirnameSafe(osZarrayFilename.c_str()).c_str(), ".zattrs",
+            nullptr));
         CPLErrorStateBackuper oErrorStateBackuper(CPLQuietErrorHandler);
         if (oDoc.Load(osZattrsFilename))
         {
@@ -1418,10 +1474,18 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
             std::string osDirName = m_osDirectoryName;
             while (true)
             {
-                const std::string osArrayFilenameDim =
-                    CPLFormFilename(CPLFormFilename(osDirName.c_str(),
-                                                    osDimName.c_str(), nullptr),
-                                    ".zarray", nullptr);
+                if (CPLHasPathTraversal(osDimName.c_str()))
+                {
+                    CPLError(CE_Failure, CPLE_AppDefined,
+                             "Path traversal detected in %s",
+                             osDimName.c_str());
+                    return false;
+                }
+                const std::string osArrayFilenameDim = CPLFormFilenameSafe(
+                    CPLFormFilenameSafe(osDirName.c_str(), osDimName.c_str(),
+                                        nullptr)
+                        .c_str(),
+                    ".zarray", nullptr);
                 VSIStatBufL sStat;
                 if (VSIStatL(osArrayFilenameDim.c_str(), &sStat) == 0)
                 {
@@ -1436,11 +1500,11 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
                 {
                     // Recurse to upper level for datasets such as
                     // /vsis3/hrrrzarr/sfc/20210809/20210809_00z_anl.zarr/0.1_sigma_level/HAIL_max_fcst/0.1_sigma_level/HAIL_max_fcst
-                    const std::string osDirNameNew =
-                        CPLGetPath(osDirName.c_str());
+                    std::string osDirNameNew =
+                        CPLGetPathSafe(osDirName.c_str());
                     if (!osDirNameNew.empty() && osDirNameNew != osDirName)
                     {
-                        osDirName = osDirNameNew;
+                        osDirName = std::move(osDirNameNew);
                         continue;
                     }
                 }
@@ -1695,6 +1759,13 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
                 CPLError(CE_Failure, CPLE_AppDefined, "Invalid fill_value");
                 return nullptr;
             }
+            if (oType.GetNumericDataType() == GDT_Float16)
+            {
+                const GFloat16 hfNoDataValue =
+                    static_cast<GFloat16>(dfNoDataValue);
+                abyNoData.resize(sizeof(hfNoDataValue));
+                memcpy(&abyNoData[0], &hfNoDataValue, sizeof(hfNoDataValue));
+            }
             if (oType.GetNumericDataType() == GDT_Float32)
             {
                 const float fNoDataValue = static_cast<float>(dfNoDataValue);
@@ -1817,13 +1888,21 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
             CPLError(CE_Failure, CPLE_AppDefined, "Missing compressor id");
             return nullptr;
         }
-        psCompressor = CPLGetCompressor(osDecompressorId.c_str());
-        psDecompressor = CPLGetDecompressor(osDecompressorId.c_str());
-        if (psCompressor == nullptr || psDecompressor == nullptr)
+        if (osDecompressorId == "imagecodecs_tiff")
         {
-            CPLError(CE_Failure, CPLE_AppDefined, "Decompressor %s not handled",
-                     osDecompressorId.c_str());
-            return nullptr;
+            psDecompressor = ZarrGetTIFFDecompressor();
+        }
+        else
+        {
+            psCompressor = CPLGetCompressor(osDecompressorId.c_str());
+            psDecompressor = CPLGetDecompressor(osDecompressorId.c_str());
+            if (psCompressor == nullptr || psDecompressor == nullptr)
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Decompressor %s not handled",
+                         osDecompressorId.c_str());
+                return nullptr;
+            }
         }
     }
     else
@@ -1853,16 +1932,21 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
                 CPLError(CE_Failure, CPLE_AppDefined, "Missing filter id");
                 return nullptr;
             }
-            const auto psFilterCompressor =
-                CPLGetCompressor(osFilterId.c_str());
-            const auto psFilterDecompressor =
-                CPLGetDecompressor(osFilterId.c_str());
-            if (psFilterCompressor == nullptr ||
-                psFilterDecompressor == nullptr)
+            if (!EQUAL(osFilterId.c_str(), "shuffle") &&
+                !EQUAL(osFilterId.c_str(), "quantize") &&
+                !EQUAL(osFilterId.c_str(), "fixedscaleoffset"))
             {
-                CPLError(CE_Failure, CPLE_AppDefined, "Filter %s not handled",
-                         osFilterId.c_str());
-                return nullptr;
+                const auto psFilterCompressor =
+                    CPLGetCompressor(osFilterId.c_str());
+                const auto psFilterDecompressor =
+                    CPLGetDecompressor(osFilterId.c_str());
+                if (psFilterCompressor == nullptr ||
+                    psFilterDecompressor == nullptr)
+                {
+                    CPLError(CE_Failure, CPLE_AppDefined,
+                             "Filter %s not handled", osFilterId.c_str());
+                    return nullptr;
+                }
             }
         }
     }
@@ -1895,9 +1979,17 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
         const std::string gridMappingName = gridMapping.ToString();
         if (m_oMapMDArrays.find(gridMappingName) == m_oMapMDArrays.end())
         {
-            const std::string osArrayFilenameDim = CPLFormFilename(
-                CPLFormFilename(m_osDirectoryName.c_str(),
-                                gridMappingName.c_str(), nullptr),
+            if (CPLHasPathTraversal(gridMappingName.c_str()))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Path traversal detected in %s",
+                         gridMappingName.c_str());
+                return nullptr;
+            }
+            const std::string osArrayFilenameDim = CPLFormFilenameSafe(
+                CPLFormFilenameSafe(m_osDirectoryName.c_str(),
+                                    gridMappingName.c_str(), nullptr)
+                    .c_str(),
                 ".zarray", nullptr);
             VSIStatBufL sStat;
             if (VSIStatL(osArrayFilenameDim.c_str(), &sStat) == 0)
@@ -1934,4 +2026,28 @@ ZarrV2Group::LoadArray(const std::string &osArrayName,
     }
 
     return poArray;
+}
+
+/************************************************************************/
+/*                    ZarrV2Group::SetCompressorJson()                  */
+/************************************************************************/
+
+void ZarrV2Array::SetCompressorJson(const CPLJSONObject &oCompressor)
+{
+    m_oCompressorJSon = oCompressor;
+    if (oCompressor.GetType() != CPLJSONObject::Type::Null)
+        m_aosStructuralInfo.SetNameValue("COMPRESSOR",
+                                         oCompressor.ToString().c_str());
+}
+
+/************************************************************************/
+/*                     ZarrV2Group::SetFilters()                        */
+/************************************************************************/
+
+void ZarrV2Array::SetFilters(const CPLJSONArray &oFiltersArray)
+{
+    m_oFiltersArray = oFiltersArray;
+    if (oFiltersArray.Size() > 0)
+        m_aosStructuralInfo.SetNameValue("FILTERS",
+                                         oFiltersArray.ToString().c_str());
 }

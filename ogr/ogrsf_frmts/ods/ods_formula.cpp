@@ -17,6 +17,8 @@
 #include "cpl_conv.h"
 #include "ods_formula.h"
 
+IODSCellEvaluator::~IODSCellEvaluator() = default;
+
 namespace
 {
 #include "ods_formula_parser.hpp"
@@ -26,8 +28,6 @@ int ods_formulalex(ods_formula_node **ppNode,
 
 #include "ods_formula_parser.cpp"
 } /* end of anonymous namespace */
-
-#define YYSTYPE ods_formula_node *
 
 static const SingleOpStruct apsSingleOp[] = {
     {"ABS", ODS_ABS, fabs},   {"SQRT", ODS_SQRT, sqrt},

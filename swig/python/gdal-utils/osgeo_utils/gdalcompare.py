@@ -190,7 +190,9 @@ def compare_band(golden_band, new_band, id, options=None):
     else:
         # check a bit deeper in case of Float data type for which the Checksum() function is not reliable
         if golden_band.DataType in (gdal.GDT_Float32, gdal.GDT_Float64):
-            if golden_band.ComputeRasterMinMax() != new_band.ComputeRasterMinMax():
+            if golden_band.ComputeRasterMinMax(
+                can_return_none=True
+            ) != new_band.ComputeRasterMinMax(can_return_none=True):
                 my_print("Band %s statistics difference:" % 1)
                 my_print("  Golden: " + str(golden_band.ComputeBandStats()))
                 my_print("  New:    " + str(new_band.ComputeBandStats()))
@@ -498,7 +500,7 @@ def main(argv=sys.argv):
     # Script argument parsing.
     golden_file = None
     new_file = None
-    check_sds = 0
+    check_sds = False
     options = []
 
     i = 1
@@ -508,7 +510,7 @@ def main(argv=sys.argv):
             return Usage(isError=False)
 
         elif argv[i] == "-sds":
-            check_sds = 1
+            check_sds = True
 
         elif argv[i] == "-dumpdiffs":
             options.append("DUMP_DIFFS")

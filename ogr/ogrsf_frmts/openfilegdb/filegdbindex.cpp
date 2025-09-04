@@ -37,6 +37,8 @@
 namespace OpenFileGDB
 {
 
+FileGDBIndex::~FileGDBIndex() = default;
+
 /************************************************************************/
 /*                    GetFieldNameFromExpression()                      */
 /************************************************************************/
@@ -1026,9 +1028,9 @@ static const char *FileGDBValueToStr(OGRFieldType eOGRFieldType,
 
 int FileGDBIndex::GetMaxWidthInBytes(const FileGDBTable *poTable) const
 {
-    const char *pszAtxName = CPLResetExtension(
+    const std::string osAtxName = CPLResetExtensionSafe(
         poTable->GetFilename().c_str(), (GetIndexName() + ".atx").c_str());
-    VSILFILE *fpCurIdx = VSIFOpenL(pszAtxName, "rb");
+    VSILFILE *fpCurIdx = VSIFOpenL(osAtxName.c_str(), "rb");
     if (fpCurIdx == nullptr)
         return 0;
 
@@ -1130,12 +1132,21 @@ int FileGDBIndexIterator::SetConstraint(int nFieldIdx, FileGDBSQLOp op,
         return FALSE;
     }
 
-    const char *pszAtxName =
-        CPLFormFilename(CPLGetPath(poParent->GetFilename().c_str()),
-                        CPLGetBasename(poParent->GetFilename().c_str()),
-                        CPLSPrintf("%s.atx", poIndex->GetIndexName().c_str()));
+    if (CPLHasPathTraversal(poIndex->GetIndexName().c_str()))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Path traversal detected in %s",
+                 poIndex->GetIndexName().c_str());
+        return FALSE;
+    }
 
-    if (!ReadTrailer(pszAtxName))
+    const std::string osAtxName =
+        CPLFormFilenameSafe(
+            CPLGetPathSafe(poParent->GetFilename().c_str()).c_str(),
+            CPLGetBasenameSafe(poParent->GetFilename().c_str()).c_str(),
+            poIndex->GetIndexName().c_str())
+            .append(".atx");
+
+    if (!ReadTrailer(osAtxName.c_str()))
         return FALSE;
     returnErrorIf(m_nValueCountInIdx >
                   static_cast<GUInt64>(poParent->GetValidRecordCount()));
@@ -2384,6 +2395,8 @@ bool FileGDBIndexIterator::GetMinMaxSumCount(double &dfMin, double &dfMax,
     return true;
 }
 
+FileGDBSpatialIndexIterator::~FileGDBSpatialIndexIterator() = default;
+
 /************************************************************************/
 /*                    FileGDBSpatialIndexIteratorImpl                   */
 /************************************************************************/
@@ -2427,7 +2440,7 @@ class FileGDBSpatialIndexIteratorImpl final : public FileGDBIndexIteratorBase,
 };
 
 /************************************************************************/
-/*                      FileGDBSpatialIndexIteratorImpl()                   */
+/*                      FileGDBSpatialIndexIteratorImpl()               */
 /************************************************************************/
 
 FileGDBSpatialIndexIteratorImpl::FileGDBSpatialIndexIteratorImpl(
@@ -2483,11 +2496,11 @@ bool FileGDBSpatialIndexIteratorImpl::Init()
 {
     const bool errorRetValue = false;
 
-    const char *pszSpxName =
-        CPLFormFilename(CPLGetPath(poParent->GetFilename().c_str()),
-                        CPLGetBasename(poParent->GetFilename().c_str()), "spx");
+    const std::string osSpxName = CPLFormFilenameSafe(
+        CPLGetPathSafe(poParent->GetFilename().c_str()).c_str(),
+        CPLGetBasenameSafe(poParent->GetFilename().c_str()).c_str(), "spx");
 
-    if (!ReadTrailer(pszSpxName))
+    if (!ReadTrailer(osSpxName.c_str()))
         return false;
 
     returnErrorIf(m_nValueSize != sizeof(uint64_t));
@@ -2511,7 +2524,8 @@ bool FileGDBSpatialIndexIteratorImpl::Init()
         // The FileGDB driver does not use the .spx file in that situation,
         // so do we.
         CPLDebug("OpenFileGDB",
-                 "Cannot use %s as the grid resolution is invalid", pszSpxName);
+                 "Cannot use %s as the grid resolution is invalid",
+                 osSpxName.c_str());
         return false;
     }
 
@@ -2544,7 +2558,7 @@ bool FileGDBSpatialIndexIteratorImpl::Init()
                 CPLError(CE_Warning, CPLE_AppDefined,
                          "Cannot use %s as the index depth(=1) is suspicious "
                          "(it should rather be 2)",
-                         pszSpxName);
+                         osSpxName.c_str());
                 return false;
             }
         }

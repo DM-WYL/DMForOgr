@@ -47,7 +47,7 @@ class NWT_GRCDataset final : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *poOpenInfo);
 
-    CPLErr GetGeoTransform(double *padfTransform) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 };
 
@@ -241,8 +241,11 @@ NWT_GRCDataset::~NWT_GRCDataset()
     CSLDestroy(papszCategories);
 
     NWT_GRCDataset::FlushCache(true);
-    pGrd->fp = nullptr;  // this prevents nwtCloseGrid from closing the fp
-    nwtCloseGrid(pGrd);
+    if (pGrd)
+    {
+        pGrd->fp = nullptr;  // this prevents nwtCloseGrid from closing the fp
+        nwtCloseGrid(pGrd);
+    }
 
     if (fp != nullptr)
         VSIFCloseL(fp);
@@ -251,15 +254,15 @@ NWT_GRCDataset::~NWT_GRCDataset()
 /************************************************************************/
 /*                          GetGeoTransform()                           */
 /************************************************************************/
-CPLErr NWT_GRCDataset::GetGeoTransform(double *padfTransform)
+CPLErr NWT_GRCDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    padfTransform[0] = pGrd->dfMinX - (pGrd->dfStepSize * 0.5);
-    padfTransform[3] = pGrd->dfMaxY + (pGrd->dfStepSize * 0.5);
-    padfTransform[1] = pGrd->dfStepSize;
-    padfTransform[2] = 0.0;
+    gt[0] = pGrd->dfMinX - (pGrd->dfStepSize * 0.5);
+    gt[3] = pGrd->dfMaxY + (pGrd->dfStepSize * 0.5);
+    gt[1] = pGrd->dfStepSize;
+    gt[2] = 0.0;
 
-    padfTransform[4] = 0.0;
-    padfTransform[5] = -1 * pGrd->dfStepSize;
+    gt[4] = 0.0;
+    gt[5] = -1 * pGrd->dfStepSize;
 
     return CE_None;
 }
@@ -326,6 +329,11 @@ GDALDataset *NWT_GRCDataset::Open(GDALOpenInfo *poOpenInfo)
     VSIFSeekL(poDS->fp, 0, SEEK_SET);
     VSIFReadL(poDS->abyHeader, 1, 1024, poDS->fp);
     poDS->pGrd = static_cast<NWT_GRID *>(malloc(sizeof(NWT_GRID)));
+    if (!poDS->pGrd)
+    {
+        delete poDS;
+        return nullptr;
+    }
 
     poDS->pGrd->fp = poDS->fp;
 

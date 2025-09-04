@@ -995,9 +995,9 @@ CPLErr ILWISDataset::WriteProjection()
 {
     OGRSpatialReference *poGeogSRS = nullptr;
 
-    std::string csFileName = CPLResetExtension(osFileName, "csy");
-    std::string pszBaseName = std::string(CPLGetBasename(osFileName));
-    // std::string pszPath = std::string(CPLGetPath( osFileName ));
+    std::string csFileName = CPLResetExtensionSafe(osFileName, "csy");
+    std::string pszBaseName = std::string(CPLGetBasenameSafe(osFileName));
+    // std::string pszPath = std::string(CPLGetPathSafe( osFileName ));
     const bool bHaveSRS = !m_oSRS.IsEmpty();
 
     const IlwisDatums *piwDatum = iwDatums;
@@ -1013,7 +1013,7 @@ CPLErr ILWISDataset::WriteProjection()
         poGeogSRS = m_oSRS.CloneGeogCS();
     }
 
-    std::string grFileName = CPLResetExtension(osFileName, "grf");
+    std::string grFileName = CPLResetExtensionSafe(osFileName, "grf");
     std::string csy;
     if (poGeogSRS)
     {
@@ -1051,9 +1051,8 @@ CPLErr ILWISDataset::WriteProjection()
     /* -------------------------------------------------------------------- */
     /*  Determine to write a geo-referencing file for the dataset to create */
     /* -------------------------------------------------------------------- */
-    if (adfGeoTransform[0] != 0.0 || adfGeoTransform[1] != 1.0 ||
-        adfGeoTransform[2] != 0.0 || adfGeoTransform[3] != 0.0 ||
-        adfGeoTransform[4] != 0.0 || fabs(adfGeoTransform[5]) != 1.0)
+    if (m_gt[0] != 0.0 || m_gt[1] != 1.0 || m_gt[2] != 0.0 || m_gt[3] != 0.0 ||
+        m_gt[4] != 0.0 || fabs(m_gt[5]) != 1.0)
         WriteElement("GeoRef", "CoordSystem", grFileName, csy);
 
     /* -------------------------------------------------------------------- */

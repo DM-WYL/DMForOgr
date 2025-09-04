@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Private definitions for OGR/PostgreSQL dump driver.
@@ -77,6 +76,8 @@ class OGRPGDumpGeomFieldDefn final : public OGRGeomFieldDefn
     {
     }
 
+    ~OGRPGDumpGeomFieldDefn() override;
+
     int m_nSRSId;
     int m_nGeometryTypeFlags;
 };
@@ -108,6 +109,7 @@ class OGRPGDumpLayer final : public OGRLayer
     bool m_bCopyActive = false;
     bool m_bFIDColumnInCopyFields = false;
     int m_bCreateTable = false;
+    bool m_bSkipConflicts = false;
     int m_nUnknownSRSId = -1;
     int m_nForcedSRSId = -1;
     int m_nForcedGeometryTypeFlags = -2;
@@ -140,15 +142,17 @@ class OGRPGDumpLayer final : public OGRLayer
   public:
     OGRPGDumpLayer(OGRPGDumpDataSource *poDS, const char *pszSchemaName,
                    const char *pszLayerName, const char *pszFIDColumn,
-                   int bWriteAsHexIn, int bCreateTable);
+                   int bWriteAsHexIn, int bCreateTable, bool bSkipConflicts);
     virtual ~OGRPGDumpLayer();
 
-    virtual OGRFeatureDefn *GetLayerDefn() override
+    using OGRLayer::GetLayerDefn;
+
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
 
-    virtual const char *GetFIDColumn() override
+    const char *GetFIDColumn() const override
     {
         return m_pszFIDColumn ? m_pszFIDColumn : "";
     }
@@ -157,11 +161,11 @@ class OGRPGDumpLayer final : public OGRLayer
     {
     }
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
-    virtual OGRErr CreateFeatureViaInsert(OGRFeature *poFeature);
-    virtual OGRErr CreateFeatureViaCopy(OGRFeature *poFeature);
+    OGRErr CreateFeatureViaInsert(OGRFeature *poFeature);
+    OGRErr CreateFeatureViaCopy(OGRFeature *poFeature);
 
     virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = TRUE) override;
@@ -270,18 +274,18 @@ class OGRPGDumpDataSource final : public GDALDataset
 
     bool Log(const char *pszStr, bool bAddSemiColumn = true);
 
-    virtual int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(m_apoLayers.size());
     }
 
-    virtual OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
     virtual OGRLayer *ICreateLayer(const char *pszName,
                                    const OGRGeomFieldDefn *poGeomFieldDefn,
                                    CSLConstList papszOptions) override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     void LogStartTransaction();
     void LogCommit();

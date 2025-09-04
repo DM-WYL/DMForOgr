@@ -168,12 +168,14 @@ void PDS4DriverSetCommonMetadata(GDALDriver *poDriver)
                               "NASA Planetary Data System 4");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/pds4.html");
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "xml");
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
-                              "Byte Int8 UInt16 Int16 UInt32 Int32 Float32 "
-                              "Float64 CFloat32 CFloat64");
+    poDriver->SetMetadataItem(
+        GDAL_DMD_CREATIONDATATYPES,
+        "Byte Int8 UInt16 Int16 UInt32 Int32 UInt64 Int64 "
+        "Float32 Float64 CFloat32 CFloat64");
     poDriver->SetMetadataItem(GDAL_DMD_OPENOPTIONLIST, "<OpenOptionList/>");
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_SUBDATASETS, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CREATE_SUBDATASETS, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS, "OGRSQL SQLITE");
 
     poDriver->SetMetadataItem(
@@ -269,6 +271,9 @@ void PDS4DriverSetCommonMetadata(GDALDriver *poDriver)
         "  <Option name='BOUNDING_DEGREES' type='string' scope='raster,vector' "
         "description='Manually set bounding box with the syntax "
         "west_lon,south_lat,east_lon,north_lat'/>"
+        "  <Option name='PROPAGATE_SRC_METADATA' type='boolean' scope='raster' "
+        "description='Whether to propagate particular metadata domains, such "
+        "as json:ISIS3' default='YES'/>"
         "</CreationOptionList>");
 
     poDriver->SetMetadataItem(
@@ -304,9 +309,6 @@ void PDS4DriverSetCommonMetadata(GDALDriver *poDriver)
         "'Name of a field containing a Altitude value' default='Altitude'/>"
         "  <Option name='WKT' type='string' description="
         "'Name of a field containing a WKT value' default='WKT'/>"
-        "  <Option name='SAME_DIRECTORY' type='boolean' description="
-        "'Whether table files should be created in the same "
-        "directory, or in a subdirectory' default='NO'/>"
         "</LayerCreationOptionList>");
 
     poDriver->SetMetadataItem(
@@ -318,6 +320,9 @@ void PDS4DriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATECOPY, "YES");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS, "Features");
 }
 
 /************************************************************************/
@@ -329,7 +334,8 @@ int ISIS2DriverIdentify(GDALOpenInfo *poOpenInfo)
     if (poOpenInfo->pabyHeader == nullptr)
         return FALSE;
 
-    if (strstr((const char *)poOpenInfo->pabyHeader, "^QUBE") == nullptr)
+    if (strstr(reinterpret_cast<const char *>(poOpenInfo->pabyHeader),
+               "^QUBE") == nullptr)
         return FALSE;
 
     return TRUE;
@@ -347,23 +353,9 @@ void ISIS2DriverSetCommonMetadata(GDALDriver *poDriver)
                               "USGS Astrogeology ISIS cube (Version 2)");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/isis2.html");
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
-                              "Byte Int16 UInt16 Float32 Float64");
-
-    poDriver->SetMetadataItem(
-        GDAL_DMD_CREATIONOPTIONLIST,
-        "<CreationOptionList>\n"
-        "   <Option name='LABELING_METHOD' type='string-select' "
-        "default='ATTACHED'>\n"
-        "     <Value>ATTACHED</Value>"
-        "     <Value>DETACHED</Value>"
-        "   </Option>"
-        "   <Option name='IMAGE_EXTENSION' type='string' default='cub'/>\n"
-        "</CreationOptionList>\n");
 
     poDriver->pfnIdentify = ISIS2DriverIdentify;
     poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
-    poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
 }
 
 /************************************************************************/
@@ -373,7 +365,8 @@ void ISIS2DriverSetCommonMetadata(GDALDriver *poDriver)
 int ISIS3DriverIdentify(GDALOpenInfo *poOpenInfo)
 {
     if (poOpenInfo->fpL != nullptr && poOpenInfo->pabyHeader != nullptr &&
-        strstr((const char *)poOpenInfo->pabyHeader, "IsisCube") != nullptr)
+        strstr(reinterpret_cast<const char *>(poOpenInfo->pabyHeader),
+               "IsisCube") != nullptr)
         return TRUE;
 
     return FALSE;
@@ -395,6 +388,18 @@ void ISIS3DriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
                               "Byte UInt16 Int16 Float32");
     poDriver->SetMetadataItem(GDAL_DMD_OPENOPTIONLIST, "<OpenOptionList/>");
+
+    poDriver->SetMetadataItem(
+        GDAL_DMD_OPENOPTIONLIST,
+        "<OpenOptionList>"
+        "  <Option name='INCLUDE_OFFLINE_CONTENT' type='boolean' default='YES' "
+        "description='Whether to include a _data member in "
+        "json:ISIS3 metadata with offline content of label objects'/>"
+        "  <Option name='MAX_SIZE_OFFLINE_CONTENT' type='string' "
+        "default='100000000' description='Maximum size of offline content to "
+        "include in _data member, in bytes' min='0'/>"
+        "</OpenOptionList>");
+
     poDriver->SetMetadataItem(
         GDAL_DMD_CREATIONOPTIONLIST,
         "<CreationOptionList>"

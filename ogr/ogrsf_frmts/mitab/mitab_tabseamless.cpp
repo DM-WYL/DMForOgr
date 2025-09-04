@@ -236,7 +236,7 @@ int TABSeamless::OpenForRead(const char *pszFname,
         return -1;
     }
 
-    OGRFeatureDefn *poDefn = m_poIndexTable->GetLayerDefn();
+    const OGRFeatureDefn *poDefn = m_poIndexTable->GetLayerDefn();
     if (poDefn == nullptr ||
         (m_nTableNameField = poDefn->GetFieldIndex("Table")) == -1)
     {
@@ -263,7 +263,8 @@ int TABSeamless::OpenForRead(const char *pszFname,
     }
 
     CPLAssert(m_poCurBaseTable);
-    m_poFeatureDefnRef = m_poCurBaseTable->GetLayerDefn();
+    OGRLayer *poCurBaseTable = m_poCurBaseTable;
+    m_poFeatureDefnRef = poCurBaseTable->GetLayerDefn();
     m_poFeatureDefnRef->Reference();
 
     return 0;
@@ -585,7 +586,7 @@ TABFeature *TABSeamless::GetFeatureRef(GIntBig nFeatureId)
 }
 
 /**********************************************************************
- *                   TABSeamless::GetLayerDefn()
+ *                   TABSeamless::GetLayerDefn() const
  *
  * Returns a reference to the OGRFeatureDefn that will be used to create
  * features in this dataset.
@@ -595,7 +596,7 @@ TABFeature *TABSeamless::GetFeatureRef(GIntBig nFeatureId)
  * NULL if the OGRFeatureDefn has not been initialized yet (i.e. no file
  * opened yet)
  **********************************************************************/
-OGRFeatureDefn *TABSeamless::GetLayerDefn()
+const OGRFeatureDefn *TABSeamless::GetLayerDefn() const
 {
     return m_poFeatureDefnRef;
 }
@@ -669,7 +670,7 @@ int TABSeamless::GetBounds(double &dXMin, double &dYMin, double &dXMax,
 }
 
 /**********************************************************************
- *                   TABSeamless::GetExtent()
+ *                   TABSeamless::IGetExtent()
  *
  * Fetch extent of the data currently stored in the dataset.
  *
@@ -678,7 +679,8 @@ int TABSeamless::GetBounds(double &dXMin, double &dYMin, double &dXMax,
  *
  * Returns OGRERR_NONE/OGRRERR_FAILURE.
  **********************************************************************/
-OGRErr TABSeamless::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr TABSeamless::IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                               bool bForce)
 {
     if (m_poIndexTable == nullptr)
     {
@@ -688,7 +690,7 @@ OGRErr TABSeamless::GetExtent(OGREnvelope *psExtent, int bForce)
         return OGRERR_FAILURE;
     }
 
-    return m_poIndexTable->GetExtent(psExtent, bForce);
+    return m_poIndexTable->GetExtent(iGeomField, psExtent, bForce);
 }
 
 /**********************************************************************
@@ -739,7 +741,7 @@ GIntBig TABSeamless::GetFeatureCount(int bForce)
  *
  * Returns NULL if the SpatialRef cannot be accessed.
  **********************************************************************/
-OGRSpatialReference *TABSeamless::GetSpatialRef()
+const OGRSpatialReference *TABSeamless::GetSpatialRef() const
 {
     if (m_poIndexTable == nullptr)
     {
@@ -757,7 +759,8 @@ OGRSpatialReference *TABSeamless::GetSpatialRef()
  * Standard OGR SetSpatialFiltere implementation.  This method is used
  * to set a SpatialFilter for this OGRLayer.
  **********************************************************************/
-void TABSeamless::SetSpatialFilter(OGRGeometry *poGeomIn)
+OGRErr TABSeamless::ISetSpatialFilter(int /*iGeomField*/,
+                                      const OGRGeometry *poGeomIn)
 
 {
     IMapInfoFile::SetSpatialFilter(poGeomIn);
@@ -767,13 +770,15 @@ void TABSeamless::SetSpatialFilter(OGRGeometry *poGeomIn)
 
     if (m_poCurBaseTable)
         m_poCurBaseTable->SetSpatialFilter(poGeomIn);
+
+    return OGRERR_NONE;
 }
 
 /************************************************************************/
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int TABSeamless::TestCapability(const char *pszCap)
+int TABSeamless::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))

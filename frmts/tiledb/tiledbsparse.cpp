@@ -12,6 +12,7 @@
 
 #include "tiledbheaders.h"
 
+#include "cpl_float.h"
 #include "cpl_json.h"
 #include "cpl_time.h"
 #include "ogr_p.h"
@@ -229,8 +230,9 @@ GDALDataset *OGRTileDBDataset::Open(GDALOpenInfo *poOpenInfo,
     {
         auto poLayer = std::make_unique<OGRTileDBLayer>(
             poDS.get(), osLayerFilename.c_str(),
-            osLayerName.has_value() ? (*osLayerName).c_str()
-                                    : CPLGetBasename(osLayerFilename.c_str()),
+            osLayerName.has_value()
+                ? (*osLayerName).c_str()
+                : CPLGetBasenameSafe(osLayerFilename.c_str()).c_str(),
             wkbUnknown, nullptr);
         poLayer->m_bUpdatable = poOpenInfo->eAccess == GA_Update;
         if (!poLayer->InitFromStorage(poDS->m_ctx.get(), nTimestamp,
@@ -283,7 +285,7 @@ GDALDataset *OGRTileDBDataset::Open(GDALOpenInfo *poOpenInfo,
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRTileDBDataset::TestCapability(const char *pszCap)
+int OGRTileDBDataset::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
     {
@@ -342,7 +344,7 @@ OGRTileDBDataset::ICreateLayer(const char *pszName,
     {
         CPLError(CE_Failure, CPLE_NotSupported,
                  "CreateLayer() failed: no more than one layer per dataset "
-                 "supported on a array object. Create a dataset with the "
+                 "supported on an array object. Create a dataset with the "
                  "CREATE_GROUP=YES creation option or open such group "
                  "to enable multiple layer creation.");
         return nullptr;
@@ -358,7 +360,8 @@ OGRTileDBDataset::ICreateLayer(const char *pszName,
     std::string osFilename = GetDescription();
     if (!m_osGroupName.empty())
     {
-        osFilename = CPLFormFilename(m_osGroupName.c_str(), "layers", nullptr);
+        osFilename =
+            CPLFormFilenameSafe(m_osGroupName.c_str(), "layers", nullptr);
         if (!STARTS_WITH(m_osGroupName.c_str(), "s3://") &&
             !STARTS_WITH(m_osGroupName.c_str(), "gcs://"))
         {
@@ -366,7 +369,7 @@ OGRTileDBDataset::ICreateLayer(const char *pszName,
             if (VSIStatL(osFilename.c_str(), &sStat) != 0)
                 VSIMkdir(osFilename.c_str(), 0755);
         }
-        osFilename = CPLFormFilename(osFilename.c_str(), pszName, nullptr);
+        osFilename = CPLFormFilenameSafe(osFilename.c_str(), pszName, nullptr);
     }
     auto poLayer = std::make_unique<OGRTileDBLayer>(
         this, osFilename.c_str(), pszName, eGType, poSpatialRef);
@@ -3280,7 +3283,7 @@ OGRFeature *OGRTileDBLayer::TranslateCurrentFeature()
                 psField->Set.nMarker2 = OGRUnsetMarker;
                 psField->Set.nMarker3 = OGRUnsetMarker;
                 constexpr int DAYS_IN_YEAR_APPROX = 365;
-                // Avoid overflow in the x SECONDS_PER_DAY muliplication
+                // Avoid overflow in the x SECONDS_PER_DAY multiplication
                 if (v[m_nOffsetInResultSet] > DAYS_IN_YEAR_APPROX * 100000 ||
                     v[m_nOffsetInResultSet] < -DAYS_IN_YEAR_APPROX * 100000)
                 {
@@ -3403,17 +3406,18 @@ GIntBig OGRTileDBLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                          GetExtent()                                 */
+/*                         IGetExtent()                                 */
 /************************************************************************/
 
-OGRErr OGRTileDBLayer::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr OGRTileDBLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                                  bool bForce)
 {
     if (m_oLayerExtent.IsInit())
     {
         *psExtent = m_oLayerExtent;
         return OGRERR_NONE;
     }
-    return OGRLayer::GetExtent(psExtent, bForce);
+    return OGRLayer::IGetExtent(iGeomField, psExtent, bForce);
 }
 
 /************************************************************************/
@@ -4563,7 +4567,7 @@ void OGRTileDBLayer::ResetBuffers()
 /*                         TestCapability()                             */
 /************************************************************************/
 
-int OGRTileDBLayer::TestCapability(const char *pszCap)
+int OGRTileDBLayer::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, OLCCreateField))
         return m_bUpdatable && m_schema == nullptr;
@@ -5201,8 +5205,8 @@ int OGRTileDBLayer::GetNextArrowArray(struct ArrowArrayStream *stream,
     }
     out_array->length = m_nRowCountInResultSet;
     out_array->n_children = nChildren;
-    out_array->children =
-        (struct ArrowArray **)CPLCalloc(sizeof(struct ArrowArray *), nChildren);
+    out_array->children = static_cast<struct ArrowArray **>(
+        CPLCalloc(sizeof(struct ArrowArray *), nChildren));
 
     // Allocate list of parent buffers: no nulls, null bitmap can be omitted
     out_array->n_buffers = 1;

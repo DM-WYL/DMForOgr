@@ -45,6 +45,12 @@
 #include "ogrsf_frmts.h"
 #include "sqlite3.h"
 
+OGRSQLiteGeomFieldDefn::~OGRSQLiteGeomFieldDefn() = default;
+
+OGRSQLiteFeatureDefn::~OGRSQLiteFeatureDefn() = default;
+
+IOGRSQLiteGetSpatialWhere::~IOGRSQLiteGetSpatialWhere() = default;
+
 /************************************************************************/
 /*                           OGRSQLiteLayer()                           */
 /************************************************************************/
@@ -565,9 +571,10 @@ void OGRSQLiteLayer::BuildFeatureDefn(const char *pszLayerName, bool bIsSelect,
                 {
                     OGRSQLiteGeomFormat eGeomFormat = OSGF_None;
                     CPLPushErrorHandler(CPLQuietErrorHandler);
-                    OGRGeometry *poGeometry = nullptr;
-                    if (OGRGeometryFactory::createFromWkt(
-                            pszText, nullptr, &poGeometry) == OGRERR_NONE)
+
+                    auto [poGeometry, eErr] =
+                        OGRGeometryFactory::createFromWkt(pszText);
+                    if (eErr == OGRERR_NONE)
                     {
                         eGeomFormat = OSGF_WKT;
                         auto poGeomFieldDefn =
@@ -579,7 +586,6 @@ void OGRSQLiteLayer::BuildFeatureDefn(const char *pszLayerName, bool bIsSelect,
                     }
                     CPLPopErrorHandler();
                     CPLErrorReset();
-                    delete poGeometry;
                     if (eGeomFormat != OSGF_None)
                         continue;
                 }
@@ -679,7 +685,7 @@ void OGRSQLiteLayer::BuildFeatureDefn(const char *pszLayerName, bool bIsSelect,
 /*                            GetFIDColumn()                            */
 /************************************************************************/
 
-const char *OGRSQLiteLayer::GetFIDColumn()
+const char *OGRSQLiteLayer::GetFIDColumn() const
 
 {
     GetLayerDefn();
@@ -900,11 +906,18 @@ OGRFeature *OGRSQLiteLayer::GetNextRawFeature()
                 {
                     const GIntBig nVal =
                         sqlite3_column_int64(m_hStmt, iRawField);
-                    if (nVal >= INT_MIN && nVal <= INT_MAX)
-                        poFeature->SetFieldSameTypeUnsafe(
-                            iField, static_cast<int>(nVal));
+                    if (poFieldDefn->GetSubType() == OFSTBoolean)
+                    {
+                        poFeature->SetField(iField, nVal != 0);
+                    }
                     else
-                        poFeature->SetField(iField, nVal);
+                    {
+                        if (nVal >= INT_MIN && nVal <= INT_MAX)
+                            poFeature->SetFieldSameTypeUnsafe(
+                                iField, static_cast<int>(nVal));
+                        else
+                            poFeature->SetField(iField, nVal);
+                    }
                 }
                 break;
             }
@@ -1399,7 +1412,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
         if (NEED_SWAP_SPATIALITE())
             CPL_SWAP32PTR(&nPointCount);
 
-        if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 16 * 2) / 8)
+        if (nPointCount < 0 || nPointCount > (INT_MAX - 16 * 2) / 8 + 2)
             return OGRERR_CORRUPT_DATA;
 
         compressedSize = 16 * 2;                  // first and last Points
@@ -1469,7 +1482,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
         if (NEED_SWAP_SPATIALITE())
             CPL_SWAP32PTR(&nPointCount);
 
-        if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 24 * 2) / 12)
+        if (nPointCount < 0 || nPointCount > (INT_MAX - 24 * 2) / 12 + 2)
             return OGRERR_CORRUPT_DATA;
 
         compressedSize = 24 * 2;                   // first and last Points
@@ -1543,7 +1556,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
         if (NEED_SWAP_SPATIALITE())
             CPL_SWAP32PTR(&nPointCount);
 
-        if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 24 * 2) / 16)
+        if (nPointCount < 0 || nPointCount > (INT_MAX - 24 * 2) / 16 + 2)
             return OGRERR_CORRUPT_DATA;
 
         compressedSize = 24 * 2;                   // first and last Points
@@ -1617,7 +1630,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
         if (NEED_SWAP_SPATIALITE())
             CPL_SWAP32PTR(&nPointCount);
 
-        if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 32 * 2) / 20)
+        if (nPointCount < 0 || nPointCount > (INT_MAX - 32 * 2) / 20 + 2)
             return OGRERR_CORRUPT_DATA;
 
         compressedSize = 32 * 2;  // first and last Points
@@ -2042,7 +2055,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
             if (NEED_SWAP_SPATIALITE())
                 CPL_SWAP32PTR(&nPointCount);
 
-            if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 16 * 2) / 8)
+            if (nPointCount < 0 || nPointCount > (INT_MAX - 16 * 2) / 8 + 2)
             {
                 delete poPoly;
                 return OGRERR_CORRUPT_DATA;
@@ -2144,7 +2157,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
             if (NEED_SWAP_SPATIALITE())
                 CPL_SWAP32PTR(&nPointCount);
 
-            if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 24 * 2) / 12)
+            if (nPointCount < 0 || nPointCount > (INT_MAX - 24 * 2) / 12 + 2)
             {
                 delete poPoly;
                 return OGRERR_CORRUPT_DATA;
@@ -2250,7 +2263,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
             if (NEED_SWAP_SPATIALITE())
                 CPL_SWAP32PTR(&nPointCount);
 
-            if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 24 * 2) / 16)
+            if (nPointCount < 0 || nPointCount > (INT_MAX - 24 * 2) / 16 + 2)
             {
                 delete poPoly;
                 return OGRERR_CORRUPT_DATA;
@@ -2357,7 +2370,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
             if (NEED_SWAP_SPATIALITE())
                 CPL_SWAP32PTR(&nPointCount);
 
-            if (nPointCount < 0 || nPointCount - 2 > (INT_MAX - 32 * 2) / 20)
+            if (nPointCount < 0 || nPointCount > (INT_MAX - 32 * 2) / 20 + 2)
             {
                 delete poPoly;
                 return OGRERR_CORRUPT_DATA;
@@ -3501,7 +3514,7 @@ OGRErr OGRSQLiteLayer::ExportSpatiaLiteGeometry(
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRSQLiteLayer::TestCapability(const char *pszCap)
+int OGRSQLiteLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))
@@ -3519,6 +3532,9 @@ int OGRSQLiteLayer::TestCapability(const char *pszCap)
     else if (EQUAL(pszCap, OLCTransactions))
         return TRUE;
 
+    else if (EQUAL(pszCap, OLCStringsAsUTF8))
+        return TRUE;
+
     else
         return FALSE;
 }
@@ -3528,7 +3544,6 @@ int OGRSQLiteLayer::TestCapability(const char *pszCap)
 /************************************************************************/
 
 OGRErr OGRSQLiteLayer::StartTransaction()
-
 {
     return m_poDS->StartTransaction();
 }
@@ -3538,7 +3553,6 @@ OGRErr OGRSQLiteLayer::StartTransaction()
 /************************************************************************/
 
 OGRErr OGRSQLiteLayer::CommitTransaction()
-
 {
     return m_poDS->CommitTransaction();
 }
@@ -3548,7 +3562,6 @@ OGRErr OGRSQLiteLayer::CommitTransaction()
 /************************************************************************/
 
 OGRErr OGRSQLiteLayer::RollbackTransaction()
-
 {
     return m_poDS->RollbackTransaction();
 }

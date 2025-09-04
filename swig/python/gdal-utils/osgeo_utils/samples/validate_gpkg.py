@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR
 # Purpose:  Test compliance of GeoPackage database w.r.t GeoPackage spec
@@ -65,7 +64,7 @@ class GPKGCheckException(Exception):
     pass
 
 
-class GPKGChecker(object):
+class GPKGChecker:
 
     BASE_GEOM_TYPES = (
         "GEOMETRY",
@@ -2033,7 +2032,7 @@ class GPKGChecker(object):
 
         try:
             # 'SELECT "col_name" FROM table_name' doesn't work because
-            # it will be interpreted as a literal if the columm does not exist
+            # it will be interpreted as a literal if the column does not exist
             c.execute(
                 "SELECT 1 FROM %s t ORDER BY t.%s LIMIT 0"
                 % (_esc_id(table_name), _esc_id(col_name))

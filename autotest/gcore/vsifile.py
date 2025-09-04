@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test VSI file primitives
@@ -19,7 +18,6 @@ import time
 
 import gdaltest
 import pytest
-from lxml import etree
 
 from osgeo import gdal, ogr
 
@@ -132,6 +130,23 @@ def vsifile_generic(filename, options=[]):
         if fp:
             gdal.VSIFCloseL(fp)
 
+    dirname = os.path.dirname(filename)
+    if dirname == "/vsimem":
+        dirname += "/"
+    d = gdal.OpenDir(dirname)
+    assert d
+    content = []
+    try:
+        while True:
+            entry = gdal.GetNextDirEntry(d)
+            if not entry:
+                break
+            content.append(entry.name)
+    finally:
+        gdal.CloseDir(d)
+
+    assert content == ["vsifile.bin"]
+
     gdal.Unlink(filename)
 
     if not filename.startswith("/vsicrypt/"):
@@ -148,7 +163,7 @@ def vsifile_generic(filename, options=[]):
             assert gdal.VSIStatL(subdir) is not None
 
         # Safety belt...
-        assert filename.startswith("tmp/") or filename.startswith("/vsimem/")
+        assert "pytest-of" in filename or filename.startswith("/vsimem/")
         assert gdal.RmdirRecursive(filename) == 0
 
         assert gdal.VSIStatL(subdir) is None
@@ -159,16 +174,26 @@ def vsifile_generic(filename, options=[]):
 # Test /vsimem
 
 
-def test_vsifile_1():
-    vsifile_generic("/vsimem/vsifile_1.bin")
+def test_vsifile_vsimem(tmp_vsimem):
+    vsifile_generic(f"{tmp_vsimem}/vsifile.bin")
 
 
 ###############################################################################
 # Test regular file system
 
 
-def test_vsifile_2():
-    vsifile_generic("tmp/vsifile_2.bin")
+def test_vsifile_regular_filesystem(tmp_path):
+    vsifile_generic(f"{tmp_path}/vsifile.bin")
+
+
+###############################################################################
+# Test regular file system
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows specific test")
+def test_vsifile_regular_filesystem_non_utf8(tmp_path):
+    with gdal.config_option("GDAL_FILENAME_IS_UTF8", "NO"):
+        vsifile_generic(f"{tmp_path}/vsifile.bin")
 
 
 ###############################################################################
@@ -176,8 +201,8 @@ def test_vsifile_2():
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows specific test")
-def test_vsifile_WRITE_THROUGH():
-    vsifile_generic("tmp/vsifile_WRITE_THROUGH.bin", ["WRITE_THROUGH=YES"])
+def test_vsifile_WRITE_THROUGH(tmp_path):
+    vsifile_generic(f"{tmp_path}/vsifile.bin", ["WRITE_THROUGH=YES"])
 
 
 ###############################################################################
@@ -769,7 +794,13 @@ def test_vsifile_18():
 # Test gdal.GetFileSystemOptions()
 
 
+@pytest.mark.skipif(
+    gdaltest.is_travis_branch("mingw64"),
+    reason="Crashes for unknown reason",
+)
 def test_vsifile_19():
+
+    from lxml import etree
 
     for prefix in gdal.GetFileSystemsPrefixes():
         options = gdal.GetFileSystemOptions(prefix)
@@ -1224,6 +1255,27 @@ def test_vsifile_vsizip_stored():
     assert gdal.VSIFEofL(f) == 1
     assert gdal.VSIFErrorL(f) == 0
     gdal.VSIFCloseL(f)
+
+
+###############################################################################
+# Test creating a file in a ZIP with non-Latin1 character
+
+
+def test_vsifile_vsizip_non_latin1_char(tmp_vsimem):
+
+    gdal.ErrorReset()
+    with gdal.VSIFile(
+        f"/vsizip/{tmp_vsimem}/test.zip/" + b"\xE5\xAE\x89.txt".decode("UTF-8"), "wb"
+    ) as f:
+        f.close()
+        assert gdal.GetLastErrorMsg() == ""
+
+    assert gdal.ReadDir(f"/vsizip/{tmp_vsimem}/test.zip") == [
+        b"\xE5\xAE\x89.txt".decode("UTF-8")
+    ]
+
+    with gdal.VSIFile(f"{tmp_vsimem}/test.zip", "rb") as f:
+        assert b"0xE50xAE0x89" in f.read()
 
 
 ###############################################################################
@@ -1767,3 +1819,50 @@ def test_vsifile_MultipartUpload():
             match=r"MultipartUploadAbort\(\) not supported by this file system",
         ):
             gdal.MultipartUploadAbort("", "")
+
+
+def test_vsifile_move(tmp_path, tmp_vsimem):
+
+    tab_pct = [0]
+
+    def myProgress(pct, msg, user_data):
+        tab_pct[0] = pct
+        return True
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "a", "foo")
+
+    assert gdal.Move(tmp_vsimem / "a", tmp_vsimem / "a") == 0
+
+    tab_pct = [0]
+    assert gdal.Move(tmp_vsimem / "a", tmp_path, callback=myProgress) == 0
+    assert tab_pct[0] == 1
+    assert gdal.VSIStatL(tmp_vsimem / "a") is None
+    assert gdal.VSIStatL(tmp_path / "a").size == 3
+
+    assert gdal.Move(tmp_path / "a", tmp_path / "i_do" / "not" / "exist") == -1
+
+    tab_pct = [0]
+    assert gdal.Move(tmp_path / "a", tmp_path / "b", callback=myProgress) == 0
+    assert tab_pct[0] == 1
+
+    assert gdal.VSIStatL(tmp_path / "a") is None
+    assert gdal.VSIStatL(tmp_path / "b").size == 3
+
+    gdal.Mkdir(tmp_vsimem / "dir", 0o755)
+
+    tab_pct = [0]
+    assert gdal.Move(tmp_vsimem / "dir", tmp_path, callback=myProgress) == 0
+    assert tab_pct[0] == 1
+    assert gdal.VSIStatL(tmp_vsimem / "dir") is None
+    assert gdal.VSIStatL(tmp_path / "dir") is not None
+
+    assert gdal.Move(tmp_path / "dir", tmp_vsimem) == 0
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "dir" / "myfile", "bar")
+
+    tab_pct = [0]
+    assert gdal.Move(tmp_vsimem / "dir", tmp_path, callback=myProgress) == 0
+    assert tab_pct[0] == 1
+    assert gdal.VSIStatL(tmp_vsimem / "dir") is None
+    assert gdal.VSIStatL(tmp_path / "dir") is not None
+    assert gdal.VSIStatL(tmp_path / "dir" / "myfile").size == 3

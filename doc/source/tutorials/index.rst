@@ -15,6 +15,7 @@ Raster
    warp_tut
    gdal_grid_tut
    geotransforms_tut
+   raster_dtm_tut
 
 Multidimensional raster
 -----------------------
@@ -32,6 +33,7 @@ Vector
 
    vector_api_tut
    vector_driver_tut
+   vector_geoparquet_tut
    vector_python_driver
 
 Geographic Network Model

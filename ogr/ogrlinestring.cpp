@@ -61,6 +61,31 @@ OGRSimpleCurve::OGRSimpleCurve(const OGRSimpleCurve &other)
 }
 
 /************************************************************************/
+/*                OGRSimpleCurve( OGRSimpleCurve&& )                    */
+/************************************************************************/
+
+/**
+ * \brief Move constructor.
+ *
+ * @since GDAL 3.11
+ */
+
+// cppcheck-suppress-begin accessMoved
+OGRSimpleCurve::OGRSimpleCurve(OGRSimpleCurve &&other)
+    : OGRCurve(std::move(other)), nPointCount(other.nPointCount),
+      m_nPointCapacity(other.m_nPointCapacity), paoPoints(other.paoPoints),
+      padfZ(other.padfZ), padfM(other.padfM)
+{
+    other.nPointCount = 0;
+    other.m_nPointCapacity = 0;
+    other.paoPoints = nullptr;
+    other.padfZ = nullptr;
+    other.padfM = nullptr;
+}
+
+// cppcheck-suppress-end accessMoved
+
+/************************************************************************/
 /*                          ~OGRSimpleCurve()                           */
 /************************************************************************/
 
@@ -73,7 +98,7 @@ OGRSimpleCurve::~OGRSimpleCurve()
 }
 
 /************************************************************************/
-/*                       operator=( const OGRPoint& )                   */
+/*                 operator=(const OGRSimpleCurve &other)               */
 /************************************************************************/
 
 /**
@@ -94,6 +119,43 @@ OGRSimpleCurve &OGRSimpleCurve::operator=(const OGRSimpleCurve &other)
 
     setPoints(other.nPointCount, other.paoPoints, other.padfZ, other.padfM);
     flags = other.flags;
+
+    return *this;
+}
+
+/************************************************************************/
+/*                     operator=(OGRSimpleCurve &&other)                */
+/************************************************************************/
+
+/**
+ * \brief Move assignment operator.
+ *
+ * @since GDAL 3.11
+ */
+
+OGRSimpleCurve &OGRSimpleCurve::operator=(OGRSimpleCurve &&other)
+{
+    if (this != &other)
+    {
+        // cppcheck-suppress-begin accessMoved
+        OGRCurve::operator=(std::move(other));
+
+        nPointCount = other.nPointCount;
+        m_nPointCapacity = other.m_nPointCapacity;
+        CPLFree(paoPoints);
+        paoPoints = other.paoPoints;
+        CPLFree(padfZ);
+        padfZ = other.padfZ;
+        CPLFree(padfM);
+        padfM = other.padfM;
+        flags = other.flags;
+        other.nPointCount = 0;
+        other.m_nPointCapacity = 0;
+        other.paoPoints = nullptr;
+        other.padfZ = nullptr;
+        other.padfM = nullptr;
+        // cppcheck-suppress-end accessMoved
+    }
 
     return *this;
 }
@@ -969,7 +1031,10 @@ bool OGRSimpleCurve::setPointsM(int nPointsIn, const OGRRawPoint *paoPointsIn,
         return false;
 
     if (nPointsIn)
-        memcpy(paoPoints, paoPointsIn, sizeof(OGRRawPoint) * nPointsIn);
+    {
+        const void *pUnaligned = paoPointsIn;
+        memcpy(paoPoints, pUnaligned, sizeof(OGRRawPoint) * nPointsIn);
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Check measures.                                                 */
@@ -983,7 +1048,10 @@ bool OGRSimpleCurve::setPointsM(int nPointsIn, const OGRRawPoint *paoPointsIn,
         if (!AddM())
             return false;
         if (padfM && nPointsIn)
-            memcpy(padfM, padfMIn, sizeof(double) * nPointsIn);
+        {
+            const void *pUnaligned = padfMIn;
+            memcpy(padfM, pUnaligned, sizeof(double) * nPointsIn);
+        }
     }
     return true;
 }
@@ -1020,7 +1088,10 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const OGRRawPoint *paoPointsIn,
         return false;
 
     if (nPointsIn)
-        memcpy(paoPoints, paoPointsIn, sizeof(OGRRawPoint) * nPointsIn);
+    {
+        const void *pUnaligned = paoPointsIn;
+        memcpy(paoPoints, pUnaligned, sizeof(OGRRawPoint) * nPointsIn);
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Check 2D/3D.                                                    */
@@ -1034,7 +1105,10 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const OGRRawPoint *paoPointsIn,
         if (!Make3D())
             return false;
         if (padfZ && nPointsIn)
-            memcpy(padfZ, padfZIn, sizeof(double) * nPointsIn);
+        {
+            const void *pUnaligned = padfZIn;
+            memcpy(padfZ, pUnaligned, sizeof(double) * nPointsIn);
+        }
     }
 
     /* -------------------------------------------------------------------- */
@@ -1049,7 +1123,10 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const OGRRawPoint *paoPointsIn,
         if (!AddM())
             return false;
         if (padfM && nPointsIn)
-            memcpy(padfM, padfMIn, sizeof(double) * nPointsIn);
+        {
+            const void *pUnaligned = padfMIn;
+            memcpy(padfM, pUnaligned, sizeof(double) * nPointsIn);
+        }
     }
     return true;
 }
@@ -1085,7 +1162,10 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const OGRRawPoint *paoPointsIn,
         return false;
 
     if (nPointsIn)
-        memcpy(paoPoints, paoPointsIn, sizeof(OGRRawPoint) * nPointsIn);
+    {
+        const void *pUnaligned = paoPointsIn;
+        memcpy(paoPoints, pUnaligned, sizeof(OGRRawPoint) * nPointsIn);
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Check 2D/3D.                                                    */
@@ -1099,7 +1179,10 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const OGRRawPoint *paoPointsIn,
         if (!Make3D())
             return false;
         if (padfZ && nPointsIn)
-            memcpy(padfZ, padfZIn, sizeof(double) * nPointsIn);
+        {
+            const void *pUnaligned = padfZIn;
+            memcpy(padfZ, pUnaligned, sizeof(double) * nPointsIn);
+        }
     }
     return true;
 }
@@ -1153,7 +1236,8 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const double *padfX,
 
     if (padfZ && padfZIn && nPointsIn)
     {
-        memcpy(padfZ, padfZIn, sizeof(double) * nPointsIn);
+        const void *pUnaligned = padfZIn;
+        memcpy(padfZ, pUnaligned, sizeof(double) * nPointsIn);
     }
     return true;
 }
@@ -1206,7 +1290,8 @@ bool OGRSimpleCurve::setPointsM(int nPointsIn, const double *padfX,
 
     if (padfMIn && padfM && nPointsIn)
     {
-        memcpy(padfM, padfMIn, sizeof(double) * nPointsIn);
+        const void *pUnaligned = padfMIn;
+        memcpy(padfM, pUnaligned, sizeof(double) * nPointsIn);
     }
     return true;
 }
@@ -1271,9 +1356,15 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const double *padfX,
     }
 
     if (padfZ != nullptr && padfZIn && nPointsIn)
-        memcpy(padfZ, padfZIn, sizeof(double) * nPointsIn);
+    {
+        const void *pUnaligned = padfZIn;
+        memcpy(padfZ, pUnaligned, sizeof(double) * nPointsIn);
+    }
     if (padfM != nullptr && padfMIn && nPointsIn)
-        memcpy(padfM, padfMIn, sizeof(double) * nPointsIn);
+    {
+        const void *pUnaligned = padfMIn;
+        memcpy(padfM, pUnaligned, sizeof(double) * nPointsIn);
+    }
     return true;
 }
 
@@ -1300,17 +1391,21 @@ void OGRSimpleCurve::getPoints(OGRRawPoint *paoPointsOut,
     if (!paoPointsOut || nPointCount == 0)
         return;
 
-    memcpy(paoPointsOut, paoPoints, sizeof(OGRRawPoint) * nPointCount);
+    {
+        void *pUnaligned = paoPointsOut;
+        memcpy(pUnaligned, paoPoints, sizeof(OGRRawPoint) * nPointCount);
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Check 2D/3D.                                                    */
     /* -------------------------------------------------------------------- */
     if (padfZOut)
     {
+        void *pUnaligned = padfZOut;
         if (padfZ)
-            memcpy(padfZOut, padfZ, sizeof(double) * nPointCount);
+            memcpy(pUnaligned, padfZ, sizeof(double) * nPointCount);
         else
-            memset(padfZOut, 0, sizeof(double) * nPointCount);
+            memset(pUnaligned, 0, sizeof(double) * nPointCount);
     }
 }
 
@@ -2694,15 +2789,17 @@ bool OGRSimpleCurve::segmentize(double dfMaxLength)
                 sqrt(dfSquareDist / dfSquareMaxLength) - REL_EPSILON_ROUND);
             const int nIntermediatePoints =
                 DoubleToIntClamp(dfIntermediatePoints);
+            const double dfRatioX =
+                dfX / (static_cast<double>(nIntermediatePoints) + 1);
+            const double dfRatioY =
+                dfY / (static_cast<double>(nIntermediatePoints) + 1);
 
             for (int j = 1; j <= nIntermediatePoints; j++)
             {
                 // coverity[overflow_const]
                 const int newI = nNewPointCount + j - 1;
-                paoNewPoints[newI].x =
-                    paoPoints[i].x + j * dfX / (nIntermediatePoints + 1);
-                paoNewPoints[newI].y =
-                    paoPoints[i].y + j * dfY / (nIntermediatePoints + 1);
+                paoNewPoints[newI].x = paoPoints[i].x + j * dfRatioX;
+                paoNewPoints[newI].y = paoPoints[i].y + j * dfRatioY;
                 if (padfZ != nullptr)
                 {
                     // No interpolation.
@@ -2807,6 +2904,18 @@ OGRPointIterator *OGRSimpleCurve::getPointIterator() const
 OGRLineString::OGRLineString(const OGRLineString &) = default;
 
 /************************************************************************/
+/*                  OGRLineString( OGRLineString&& )                    */
+/************************************************************************/
+
+/**
+ * \brief Move constructor.
+ *
+ * @since GDAL 3.11
+ */
+
+OGRLineString::OGRLineString(OGRLineString &&) = default;
+
+/************************************************************************/
 /*                    operator=( const OGRLineString& )                 */
 /************************************************************************/
 
@@ -2824,6 +2933,25 @@ OGRLineString &OGRLineString::operator=(const OGRLineString &other)
     if (this != &other)
     {
         OGRSimpleCurve::operator=(other);
+    }
+    return *this;
+}
+
+/************************************************************************/
+/*                    operator=( OGRLineString&& )                      */
+/************************************************************************/
+
+/**
+ * \brief Move assignment operator.
+ *
+ * @since GDAL 3.11
+ */
+
+OGRLineString &OGRLineString::operator=(OGRLineString &&other)
+{
+    if (this != &other)
+    {
+        OGRSimpleCurve::operator=(std::move(other));
     }
     return *this;
 }
@@ -2977,7 +3105,16 @@ OGRLinearRing *OGRLineString::CastToLinearRing(OGRLineString *poLS)
 
 OGRLineString *OGRLineString::clone() const
 {
-    return new (std::nothrow) OGRLineString(*this);
+    auto ret = new (std::nothrow) OGRLineString(*this);
+    if (ret)
+    {
+        if (ret->getNumPoints() != getNumPoints())
+        {
+            delete ret;
+            ret = nullptr;
+        }
+    }
+    return ret;
 }
 
 //! @cond Doxygen_Suppress
@@ -3020,12 +3157,14 @@ double OGRLineString::get_Area() const
 }
 
 /************************************************************************/
-/*                        GetGeodesicAreaOrLength()                     */
+/*                           GetGeodesicInputs()                        */
 /************************************************************************/
 
-static bool GetGeodesicAreaOrLength(const OGRLineString *poLS,
-                                    const OGRSpatialReference *poSRSOverride,
-                                    double *pdfArea, double *pdfLength)
+static bool GetGeodesicInputs(const OGRLineString *poLS,
+                              const OGRSpatialReference *poSRSOverride,
+                              const char *pszComputationType, geod_geodesic &g,
+                              std::vector<double> &adfLat,
+                              std::vector<double> &adfLon)
 {
     if (!poSRSOverride)
         poSRSOverride = poLS->getSpatialReference();
@@ -3034,7 +3173,7 @@ static bool GetGeodesicAreaOrLength(const OGRLineString *poLS,
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Cannot compute %s on ellipsoid due to missing SRS",
-                 pdfArea ? "area" : "length");
+                 pszComputationType);
         return false;
     }
 
@@ -3046,12 +3185,9 @@ static bool GetGeodesicAreaOrLength(const OGRLineString *poLS,
     if (eErr != OGRERR_NONE)
         return false;
 
-    geod_geodesic g;
     geod_init(&g, dfSemiMajor,
               dfInvFlattening != 0 ? 1.0 / dfInvFlattening : 0.0);
 
-    std::vector<double> adfLat;
-    std::vector<double> adfLon;
     const int nPointCount = poLS->getNumPoints();
     adfLat.reserve(nPointCount);
     adfLon.reserve(nPointCount);
@@ -3104,8 +3240,6 @@ static bool GetGeodesicAreaOrLength(const OGRLineString *poLS,
         adfLat[i] *= dfToDegrees;
     }
 
-    geod_polygonarea(&g, adfLat.data(), adfLon.data(),
-                     static_cast<int>(adfLat.size()), pdfArea, pdfLength);
     return true;
 }
 
@@ -3116,9 +3250,14 @@ static bool GetGeodesicAreaOrLength(const OGRLineString *poLS,
 double
 OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
 {
-    double dfArea = 0;
-    if (!GetGeodesicAreaOrLength(this, poSRSOverride, &dfArea, nullptr))
+    geod_geodesic g;
+    std::vector<double> adfLat;
+    std::vector<double> adfLon;
+    if (!GetGeodesicInputs(this, poSRSOverride, "area", g, adfLat, adfLon))
         return -1.0;
+    double dfArea = -1.0;
+    geod_polygonarea(&g, adfLat.data(), adfLon.data(),
+                     static_cast<int>(adfLat.size()), &dfArea, nullptr);
     return std::fabs(dfArea);
 }
 
@@ -3129,9 +3268,19 @@ OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
 double OGRLineString::get_GeodesicLength(
     const OGRSpatialReference *poSRSOverride) const
 {
+    geod_geodesic g;
+    std::vector<double> adfLat;
+    std::vector<double> adfLon;
+    if (!GetGeodesicInputs(this, poSRSOverride, "length", g, adfLat, adfLon))
+        return -1.0;
     double dfLength = 0;
-    if (!GetGeodesicAreaOrLength(this, poSRSOverride, nullptr, &dfLength))
-        return -1;
+    for (size_t i = 0; i + 1 < adfLon.size(); ++i)
+    {
+        double dfSegmentLength = 0;
+        geod_inverse(&g, adfLat[i], adfLon[i], adfLat[i + 1], adfLon[i + 1],
+                     &dfSegmentLength, nullptr, nullptr);
+        dfLength += dfSegmentLength;
+    }
     return dfLength;
 }
 

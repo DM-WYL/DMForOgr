@@ -151,13 +151,10 @@ static GByte *GDALOpenInfoGetFileNotToOpen(const char *pszFilename,
  */
 GDALOpenInfo::GDALOpenInfo(const char *pszFilenameIn, int nOpenFlagsIn,
                            const char *const *papszSiblingsIn)
-    : bHasGotSiblingFiles(false), papszSiblingFiles(nullptr),
-      nHeaderBytesTried(0), pszFilename(CPLStrdup(pszFilenameIn)),
-      papszOpenOptions(nullptr),
+    : pszFilename(CPLStrdup(pszFilenameIn)),
+      osExtension(CPLGetExtensionSafe(pszFilenameIn)),
       eAccess(nOpenFlagsIn & GDAL_OF_UPDATE ? GA_Update : GA_ReadOnly),
-      nOpenFlags(nOpenFlagsIn), bStatOK(FALSE), bIsDirectory(FALSE),
-      fpL(nullptr), nHeaderBytes(0), pabyHeader(nullptr),
-      papszAllowedDrivers(nullptr)
+      nOpenFlags(nOpenFlagsIn)
 {
     if (STARTS_WITH(pszFilename, "MVT:/vsi"))
         return;
@@ -182,12 +179,12 @@ GDALOpenInfo::GDALOpenInfo(const char *pszFilenameIn, int nOpenFlagsIn,
     /*      Collect information about the file.                             */
     /* -------------------------------------------------------------------- */
 
-#ifdef HAVE_READLINK
+#if !defined(_WIN32)
     bool bHasRetried = false;
 
 retry:  // TODO(schwehr): Stop using goto.
 
-#endif  // HAVE_READLINK
+#endif  //  !defined(_WIN32)
 
 #if !(defined(_WIN32) || defined(__linux__) || defined(__ANDROID__) ||         \
       (defined(__MACH__) && defined(__APPLE__)))
@@ -205,7 +202,7 @@ retry:  // TODO(schwehr): Stop using goto.
         STARTS_WITH(pszFilename, "/vsi7z/") ||
         STARTS_WITH(pszFilename, "/vsirar/"))
     {
-        const char *pszExt = CPLGetExtension(pszFilename);
+        const char *pszExt = osExtension.c_str();
         if (EQUAL(pszExt, "zip") || EQUAL(pszExt, "tar") ||
             EQUAL(pszExt, "gz") || EQUAL(pszExt, "7z") ||
             EQUAL(pszExt, "rar") ||
@@ -295,7 +292,7 @@ retry:  // TODO(schwehr): Stop using goto.
             if (VSI_ISDIR(sStat.st_mode))
                 bIsDirectory = TRUE;
         }
-#ifdef HAVE_READLINK
+#if !defined(_WIN32)
         else if (!bHasRetried && !STARTS_WITH(pszFilename, "/vsi"))
         {
             // If someone creates a file with "ln -sf
@@ -313,12 +310,13 @@ retry:  // TODO(schwehr): Stop using goto.
                 szPointerFilename[std::min(nBytes, nBufSize - 1)] = 0;
                 CPLFree(pszFilename);
                 pszFilename = CPLStrdup(szPointerFilename);
+                osExtension = CPLGetExtensionSafe(pszFilename);
                 papszSiblingsIn = nullptr;
                 bHasRetried = true;
                 goto retry;
             }
         }
-#endif  // HAVE_READLINK
+#endif  //  !defined(_WIN32)
     }
 
     /* -------------------------------------------------------------------- */
@@ -407,7 +405,7 @@ char **GDALOpenInfo::GetSiblingFiles()
         return papszSiblingFiles;
     }
 
-    CPLString osDir = CPLGetDirname(pszFilename);
+    const CPLString osDir = CPLGetDirnameSafe(pszFilename);
     const int nMaxFiles = atoi(VSIGetPathSpecificOption(
         pszFilename, "GDAL_READDIR_LIMIT_ON_OPEN", "1000"));
     papszSiblingFiles = VSIReadDirEx(osDir, nMaxFiles);

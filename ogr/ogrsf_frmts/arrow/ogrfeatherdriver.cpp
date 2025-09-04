@@ -14,6 +14,7 @@
 #include "ogrsf_frmts.h"
 
 #include <map>
+#include <mutex>
 
 #include "ogr_feather.h"
 #include "../arrow_common/ograrrowrandomaccessfile.h"
@@ -44,7 +45,7 @@ static bool IsArrowIPCStream(GDALOpenInfo *poOpenInfo)
         memcmp(poOpenInfo->pabyHeader, "\xFF\xFF\xFF\xFF", CONTINUATION_SIZE) ==
             0)
     {
-        const char *pszExt = CPLGetExtension(poOpenInfo->pszFilename);
+        const char *pszExt = poOpenInfo->osExtension.c_str();
         if (EQUAL(pszExt, "arrows") || EQUAL(pszExt, "ipc"))
             return true;
 
@@ -119,6 +120,18 @@ static GDALDataset *OGRFeatherDriverOpen(GDALOpenInfo *poOpenInfo)
         return nullptr;
     }
 
+#if ARROW_VERSION_MAJOR >= 21
+    // Register geoarrow.wkb extension only if requested for Arrow driver
+    if (CPLTestBool(CPLGetConfigOption(
+            "OGR_ARROW_REGISTER_GEOARROW_WKB_EXTENSION", "NO")) &&
+        arrow::GetExtensionType(EXTENSION_NAME_GEOARROW_WKB))
+    {
+        CPL_IGNORE_RET_VAL(arrow::RegisterExtensionType(
+            std::make_shared<OGRGeoArrowWkbExtensionType>(
+                std::move(arrow::binary()), std::string())));
+    }
+#endif
+
     GDALOpenInfo *poOpenInfoForIdentify = poOpenInfo;
     std::unique_ptr<GDALOpenInfo> poOpenInfoTmp;
     if (STARTS_WITH(poOpenInfo->pszFilename, "gdalvsi://"))
@@ -170,7 +183,7 @@ static GDALDataset *OGRFeatherDriverOpen(GDALOpenInfo *poOpenInfo)
             char *pszCurDir = CPLGetCurrentDir();
             if (pszCurDir == nullptr)
                 return nullptr;
-            osPath = CPLFormFilename(pszCurDir, osPath.c_str(), nullptr);
+            osPath = CPLFormFilenameSafe(pszCurDir, osPath.c_str(), nullptr);
             CPLFree(pszCurDir);
         }
 
@@ -216,7 +229,7 @@ static GDALDataset *OGRFeatherDriverOpen(GDALOpenInfo *poOpenInfo)
         const bool bSeekable =
             !STARTS_WITH_CI(poOpenInfo->pszFilename, "ARROW_IPC_STREAM:") &&
             strcmp(poOpenInfo->pszFilename, "/vsistdin/") != 0;
-        std::string osLayername = CPLGetBasename(poOpenInfo->pszFilename);
+        std::string osLayername = CPLGetBasenameSafe(poOpenInfo->pszFilename);
         if (osLayername.empty())
             osLayername = "layer";
         auto poLayer = std::make_unique<OGRFeatherLayer>(
@@ -256,7 +269,7 @@ static GDALDataset *OGRFeatherDriverOpen(GDALOpenInfo *poOpenInfo)
         }
         auto poRecordBatchReader = *result;
         auto poLayer = std::make_unique<OGRFeatherLayer>(
-            poDS.get(), CPLGetBasename(poOpenInfo->pszFilename),
+            poDS.get(), CPLGetBasenameSafe(poOpenInfo->pszFilename).c_str(),
             poRecordBatchReader);
         poDS->SetLayer(std::move(poLayer));
     }
@@ -279,13 +292,14 @@ static GDALDataset *OGRFeatherDriverCreate(const char *pszName, int nXSize,
     if (STARTS_WITH(pszName, "/vsi") ||
         CPLTestBool(CPLGetConfigOption("OGR_ARROW_USE_VSI", "YES")))
     {
-        VSILFILE *fp = VSIFOpenL(pszName, "wb");
+        VSIVirtualHandleUniquePtr fp =
+            VSIFilesystemHandler::OpenStatic(pszName, "wb");
         if (fp == nullptr)
         {
             CPLError(CE_Failure, CPLE_FileIO, "Cannot create %s", pszName);
             return nullptr;
         }
-        out_file = std::make_shared<OGRArrowWritableFile>(fp);
+        out_file = std::make_shared<OGRArrowWritableFile>(std::move(fp));
     }
     else
     {
@@ -308,26 +322,32 @@ static GDALDataset *OGRFeatherDriverCreate(const char *pszName, int nXSize,
 
 class OGRFeatherDriver final : public GDALDriver
 {
+    std::mutex m_oMutex{};
     bool m_bMetadataInitialized = false;
     void InitMetadata();
 
   public:
     const char *GetMetadataItem(const char *pszName,
-                                const char *pszDomain) override
-    {
-        if (EQUAL(pszName, GDAL_DS_LAYER_CREATIONOPTIONLIST))
-        {
-            InitMetadata();
-        }
-        return GDALDriver::GetMetadataItem(pszName, pszDomain);
-    }
+                                const char *pszDomain) override;
 
     char **GetMetadata(const char *pszDomain) override
     {
+        std::lock_guard oLock(m_oMutex);
         InitMetadata();
         return GDALDriver::GetMetadata(pszDomain);
     }
 };
+
+const char *OGRFeatherDriver::GetMetadataItem(const char *pszName,
+                                              const char *pszDomain)
+{
+    std::lock_guard oLock(m_oMutex);
+    if (EQUAL(pszName, GDAL_DS_LAYER_CREATIONOPTIONLIST))
+    {
+        InitMetadata();
+    }
+    return GDALDriver::GetMetadataItem(pszName, pszDomain);
+}
 
 void OGRFeatherDriver::InitMetadata()
 {

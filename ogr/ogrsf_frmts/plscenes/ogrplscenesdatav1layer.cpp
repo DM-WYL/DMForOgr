@@ -78,7 +78,7 @@ OGRPLScenesDataV1Layer::~OGRPLScenesDataV1Layer()
 /*                             GetLayerDefn()                           */
 /************************************************************************/
 
-OGRFeatureDefn *OGRPLScenesDataV1Layer::GetLayerDefn()
+const OGRFeatureDefn *OGRPLScenesDataV1Layer::GetLayerDefn() const
 {
     return m_poFeatureDefn;
 }
@@ -488,10 +488,11 @@ void OGRPLScenesDataV1Layer::ResetReading()
 }
 
 /************************************************************************/
-/*                          SetSpatialFilter()                          */
+/*                          ISetSpatialFilter()                         */
 /************************************************************************/
 
-void OGRPLScenesDataV1Layer::SetSpatialFilter(OGRGeometry *poGeomIn)
+OGRErr OGRPLScenesDataV1Layer::ISetSpatialFilter(int /*iGeomField*/,
+                                                 const OGRGeometry *poGeomIn)
 {
     m_poFeatures = nullptr;
 
@@ -512,6 +513,8 @@ void OGRPLScenesDataV1Layer::SetSpatialFilter(OGRGeometry *poGeomIn)
         InstallFilter(poGeomIn);
 
     ResetReading();
+
+    return OGRERR_NONE;
 }
 
 /************************************************************************/
@@ -1090,7 +1093,7 @@ OGRFeature *OGRPLScenesDataV1Layer::GetNextRawFeature()
                                  "in configuration",
                                  osPrefixedJSonFieldName.c_str());
                         m_oSetUnregisteredFields.insert(
-                            osPrefixedJSonFieldName);
+                            std::move(osPrefixedJSonFieldName));
                     }
                 }
             }
@@ -1337,15 +1340,16 @@ GIntBig OGRPLScenesDataV1Layer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                                GetExtent()                           */
+/*                             IGetExtent()                             */
 /************************************************************************/
 
-OGRErr OGRPLScenesDataV1Layer::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr OGRPLScenesDataV1Layer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                                          bool bForce)
 {
     if (m_poFilterGeom != nullptr)
     {
         m_bInFeatureCountOrGetExtent = true;
-        OGRErr eErr = OGRLayer::GetExtentInternal(0, psExtent, bForce);
+        OGRErr eErr = OGRLayer::IGetExtent(iGeomField, psExtent, bForce);
         m_bInFeatureCountOrGetExtent = false;
         return eErr;
     }
@@ -1361,7 +1365,7 @@ OGRErr OGRPLScenesDataV1Layer::GetExtent(OGREnvelope *psExtent, int bForce)
 /*                              TestCapability()                        */
 /************************************************************************/
 
-int OGRPLScenesDataV1Layer::TestCapability(const char *pszCap)
+int OGRPLScenesDataV1Layer::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, OLCFastFeatureCount))
         return !m_bFilterMustBeClientSideEvaluated;

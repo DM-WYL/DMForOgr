@@ -22,9 +22,11 @@
 #include "hdf5dataset.h"
 #include "hdf5drivercore.h"
 #include "ogr_spatialref.h"
-#include "../mem/memdataset.h"
+#include "memdataset.h"
 
 #include <algorithm>
+#include <cstring>
+#include <limits>
 
 class HDF5ImageDataset final : public HDF5Dataset
 {
@@ -63,7 +65,7 @@ class HDF5ImageDataset final : public HDF5Dataset
 #endif
     Hdf5ProductType iSubdatasetType;
     HDF5CSKProductEnum iCSKProductType;
-    double adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
     bool bHasGeoTransform;
     int m_nXIndex = -1;
     int m_nYIndex = -1;
@@ -102,6 +104,8 @@ class HDF5ImageDataset final : public HDF5Dataset
 
     CPLErr CreateODIMH5Projection();
 
+    CPL_DISALLOW_COPY_ASSIGN(HDF5ImageDataset)
+
   public:
     HDF5ImageDataset();
     virtual ~HDF5ImageDataset();
@@ -114,7 +118,7 @@ class HDF5ImageDataset final : public HDF5Dataset
     virtual int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
     virtual const GDAL_GCP *GetGCPs() override;
-    virtual CPLErr GetGeoTransform(double *padfTransform) override;
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                      int nYSize, void *pData, int nBufXSize, int nBufYSize,
@@ -172,8 +176,8 @@ class HDF5ImageDataset final : public HDF5Dataset
     /**
      * Get Geotransform information for COSMO-SKYMED files
      * In case of success it stores the transformation
-     * in adfGeoTransform. In case of failure it doesn't
-     * modify adfGeoTransform
+     * in m_gt. In case of failure it doesn't
+     * modify m_gt
      * @param iProductType type of HDF5 subproduct, see HDF5CSKProduct
      */
     void CaptureCSKGeoTransform(int iProductType);
@@ -201,12 +205,6 @@ HDF5ImageDataset::HDF5ImageDataset()
 {
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     m_oGCPSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-    adfGeoTransform[0] = 0.0;
-    adfGeoTransform[1] = 1.0;
-    adfGeoTransform[2] = 0.0;
-    adfGeoTransform[3] = 0.0;
-    adfGeoTransform[4] = 0.0;
-    adfGeoTransform[5] = 1.0;
 }
 
 /************************************************************************/
@@ -971,9 +969,7 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
     // Confirm the requested access is supported.
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The HDF5ImageDataset driver does not support update access "
-                 "to existing datasets.");
+        ReportUpdateNotSupportedByDriver("HDF5");
         return nullptr;
     }
 
@@ -1060,6 +1056,18 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
         static_cast<hsize_t *>(CPLCalloc(poDS->ndims, sizeof(hsize_t)));
     poDS->dimensions = H5Sget_simple_extent_dims(poDS->dataspace_id, poDS->dims,
                                                  poDS->maxdims);
+    for (int i = 0; i < poDS->dimensions; ++i)
+    {
+        if (poDS->dims[i] >
+            static_cast<hsize_t>(std::numeric_limits<int>::max()))
+        {
+            CPLError(CE_Failure, CPLE_NotSupported,
+                     "At least one dimension size exceeds INT_MAX !");
+            delete poDS;
+            return nullptr;
+        }
+    }
+
     auto datatype = H5Dget_type(poDS->dataset_id);
     poDS->native = H5Tget_native_type(datatype, H5T_DIR_ASCEND);
     H5Tclose(datatype);
@@ -1115,6 +1123,7 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
                     poDS->ndims)
             {
                 int iDim = 0;
+                std::shared_ptr<GDALMDArray> poXDim, poYDim;
                 for (const auto &oDim : oGridDataFieldMetadata.aoDimensions)
                 {
                     if (oDim.osName == "XDim")
@@ -1127,7 +1136,7 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
                 }
 
                 if (oGridDataFieldMetadata.poGridMetadata->GetGeoTransform(
-                        poDS->adfGeoTransform))
+                        poDS->m_gt))
                     poDS->bHasGeoTransform = true;
 
                 auto poSRS = oGridDataFieldMetadata.poGridMetadata->GetSRS();
@@ -1149,42 +1158,38 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
                 poDS->m_nOtherDimIndex = oSwathDataFieldMetadata.iOtherDim;
                 if (!oSwathDataFieldMetadata.osLongitudeSubdataset.empty())
                 {
+                    CPLStringList aosGeolocation;
+
                     // Arbitrary
-                    poDS->SetMetadataItem("SRS", SRS_WKT_WGS84_LAT_LONG,
-                                          "GEOLOCATION");
-                    poDS->SetMetadataItem(
+                    aosGeolocation.AddNameValue("SRS", SRS_WKT_WGS84_LAT_LONG);
+                    aosGeolocation.AddNameValue(
                         "X_DATASET",
                         ("HDF5:\"" + osFilename +
                          "\":" + oSwathDataFieldMetadata.osLongitudeSubdataset)
-                            .c_str(),
-                        "GEOLOCATION");
-                    poDS->SetMetadataItem("X_BAND", "1", "GEOLOCATION");
-                    poDS->SetMetadataItem(
+                            .c_str());
+                    aosGeolocation.AddNameValue("X_BAND", "1");
+                    aosGeolocation.AddNameValue(
                         "Y_DATASET",
                         ("HDF5:\"" + osFilename +
                          "\":" + oSwathDataFieldMetadata.osLatitudeSubdataset)
-                            .c_str(),
-                        "GEOLOCATION");
-                    poDS->SetMetadataItem("Y_BAND", "1", "GEOLOCATION");
-                    poDS->SetMetadataItem(
+                            .c_str());
+                    aosGeolocation.AddNameValue("Y_BAND", "1");
+                    aosGeolocation.AddNameValue(
                         "PIXEL_OFFSET",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelOffset),
-                        "GEOLOCATION");
-                    poDS->SetMetadataItem(
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelOffset));
+                    aosGeolocation.AddNameValue(
                         "PIXEL_STEP",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelStep),
-                        "GEOLOCATION");
-                    poDS->SetMetadataItem(
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelStep));
+                    aosGeolocation.AddNameValue(
                         "LINE_OFFSET",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineOffset),
-                        "GEOLOCATION");
-                    poDS->SetMetadataItem(
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineOffset));
+                    aosGeolocation.AddNameValue(
                         "LINE_STEP",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineStep),
-                        "GEOLOCATION");
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineStep));
                     // Not totally sure about that
-                    poDS->SetMetadataItem("GEOREFERENCING_CONVENTION",
-                                          "PIXEL_CENTER", "GEOLOCATION");
+                    aosGeolocation.AddNameValue("GEOREFERENCING_CONVENTION",
+                                                "PIXEL_CENTER");
+                    poDS->SetMetadata(aosGeolocation.List(), "GEOLOCATION");
                 }
             }
         }
@@ -1334,6 +1339,47 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
     // Setup/check for pam .aux.xml.
     poDS->TryLoadXML();
 
+    // If the PAM .aux.xml file contains the serialized GEOLOCATION metadata
+    // domain, make sure to patch the X_DATASET and Y_DATASET values, when
+    // they point to the current file, to use the filename with which we have
+    // opened the dataset. Helps in scenarios where the .aux.xml file has
+    // been saved with a relative filename for example.
+    // Or scenarios like https://github.com/OSGeo/gdal/issues/12824 mixing
+    // native Windows and WSL use.
+    CSLConstList papszGeoLocationAfterLoadXML =
+        poDS->GetMetadata("GEOLOCATION");
+    if (papszGeoLocationAfterLoadXML)
+    {
+        for (const char *pszItem : {"X_DATASET", "Y_DATASET"})
+        {
+            const char *pszSubdataset =
+                CSLFetchNameValue(papszGeoLocationAfterLoadXML, pszItem);
+            if (pszSubdataset && STARTS_WITH(pszSubdataset, "HDF5:\"") &&
+                strstr(pszSubdataset, CPLGetFilename(osFilename.c_str())))
+            {
+                auto hSubDSInfo = GDALGetSubdatasetInfo(pszSubdataset);
+                if (hSubDSInfo)
+                {
+                    char *pszOriPath =
+                        GDALSubdatasetInfoGetPathComponent(hSubDSInfo);
+                    if (EQUAL(CPLGetFilename(pszOriPath),
+                              CPLGetFilename(osFilename.c_str())))
+                    {
+                        char *pszNewVal = GDALSubdatasetInfoModifyPathComponent(
+                            hSubDSInfo, osFilename.c_str());
+                        poDS->SetMetadataItem(pszItem, pszNewVal,
+                                              "GEOLOCATION");
+                        CPLFree(pszNewVal);
+                    }
+                    CPLFree(pszOriPath);
+                    GDALDestroySubdatasetInfo(hSubDSInfo);
+                }
+            }
+        }
+    }
+
+    poDS->SetPamFlags(poDS->GetPamFlags() & ~GPF_DIRTY);
+
     // Setup overviews.
     poDS->oOvManager.Initialize(poDS, ":::VIRTUAL:::");
 
@@ -1426,12 +1472,12 @@ CPLErr HDF5ImageDataset::CreateODIMH5Projection()
     const double dfPixelY = (dfURY - dfLLY) / nRasterYSize;
 
     bHasGeoTransform = true;
-    adfGeoTransform[0] = dfLLX;
-    adfGeoTransform[1] = dfPixelX;
-    adfGeoTransform[2] = 0;
-    adfGeoTransform[3] = dfURY;
-    adfGeoTransform[4] = 0;
-    adfGeoTransform[5] = -dfPixelY;
+    m_gt[0] = dfLLX;
+    m_gt[1] = dfPixelX;
+    m_gt[2] = 0;
+    m_gt[3] = dfURY;
+    m_gt[4] = 0;
+    m_gt[5] = -dfPixelY;
 
     return CE_None;
 }
@@ -1720,15 +1766,15 @@ const GDAL_GCP *HDF5ImageDataset::GetGCPs()
 /*                         GetGeoTransform()                            */
 /************************************************************************/
 
-CPLErr HDF5ImageDataset::GetGeoTransform(double *padfTransform)
+CPLErr HDF5ImageDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
     if (bHasGeoTransform)
     {
-        memcpy(padfTransform, adfGeoTransform, sizeof(double) * 6);
+        gt = m_gt;
         return CE_None;
     }
 
-    return GDALPamDataset::GetGeoTransform(padfTransform);
+    return GDALPamDataset::GetGeoTransform(gt);
 }
 
 /************************************************************************/
@@ -1868,8 +1914,8 @@ void HDF5ImageDataset::CaptureCSKGeolocation(int iProductType)
 /**
  * Get Geotransform information for COSMO-SKYMED files
  * In case of success it stores the transformation
- * in adfGeoTransform. In case of failure it doesn't
- * modify adfGeoTransform
+ * in m_gt. In case of failure it doesn't
+ * modify m_gt
  * @param iProductType type of CSK subproduct, see HDF5CSKProduct
  */
 void HDF5ImageDataset::CaptureCSKGeoTransform(int iProductType)
@@ -1915,12 +1961,12 @@ void HDF5ImageDataset::CaptureCSKGeoTransform(int iProductType)
                 // images.
                 // geotransform[5] : height of pixel (but negative)
 
-                adfGeoTransform[0] = pdOutUL[0];
-                adfGeoTransform[1] = pdLineSpacing[0];
-                adfGeoTransform[2] = 0;
-                adfGeoTransform[3] = pdOutUL[1];
-                adfGeoTransform[4] = 0;
-                adfGeoTransform[5] = -pdColumnSpacing[0];
+                m_gt[0] = pdOutUL[0];
+                m_gt[1] = pdLineSpacing[0];
+                m_gt[2] = 0;
+                m_gt[3] = pdOutUL[1];
+                m_gt[4] = 0;
+                m_gt[5] = -pdColumnSpacing[0];
 
                 CPLFree(pdOutUL);
                 CPLFree(pdLineSpacing);

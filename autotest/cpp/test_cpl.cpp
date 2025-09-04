@@ -21,7 +21,9 @@
 
 #include "cpl_compressor.h"
 #include "cpl_error.h"
+#include "cpl_float.h"
 #include "cpl_hash_set.h"
+#include "cpl_levenshtein.h"
 #include "cpl_list.h"
 #include "cpl_mask.h"
 #include "cpl_sha256.h"
@@ -714,8 +716,8 @@ TEST_F(test_cpl, CPLStringList_NameValue)
     {
         CPLStringList oTemp;
         oTemp.AddString("test");
-        // coverity[copy_assignment_call]
         oCopy = oTemp;
+        oTemp.AddString("avoid_coverity_scan_warning");
     }
     EXPECT_STREQ(oCopy[0], "test");
 
@@ -1048,6 +1050,21 @@ TEST_F(test_cpl, CPLFormFilename)
     EXPECT_TRUE(
         EQUAL(CPLFormFilename("\\\\$\\c:", "..", nullptr), "\\\\$\\c:/..") ||
         EQUAL(CPLFormFilename("\\\\$\\c:", "..", nullptr), "\\\\$\\c:\\.."));
+    EXPECT_STREQ(CPLFormFilename("/a", "../", nullptr), "/");
+    EXPECT_STREQ(CPLFormFilename("/a/", "../", nullptr), "/");
+    EXPECT_STREQ(CPLFormFilename("/a", "../b", nullptr), "/b");
+    EXPECT_STREQ(CPLFormFilename("/a/", "../b", nullptr), "/b");
+    EXPECT_STREQ(CPLFormFilename("/a", "../b/c", nullptr), "/b/c");
+    EXPECT_STREQ(CPLFormFilename("/a/", "../b/c/d", nullptr), "/b/c/d");
+    EXPECT_STREQ(CPLFormFilename("/a/b", "../../c", nullptr), "/c");
+    EXPECT_STREQ(CPLFormFilename("/a/b/", "../../c/d", nullptr), "/c/d");
+    EXPECT_STREQ(CPLFormFilename("/a/b", "../..", nullptr), "/");
+    EXPECT_STREQ(CPLFormFilename("/a/b", "../../", nullptr), "/");
+    EXPECT_STREQ(CPLFormFilename("/a/b/c", "../../d", nullptr), "/a/d");
+    EXPECT_STREQ(CPLFormFilename("/a/b/c/", "../../d", nullptr), "/a/d");
+    // we could also just error out, but at least this preserves the original
+    // semantics
+    EXPECT_STREQ(CPLFormFilename("/a", "../../b", nullptr), "/a/../../b");
     EXPECT_STREQ(
         CPLFormFilename("/vsicurl/http://example.com?foo", "bar", nullptr),
         "/vsicurl/http://example.com/bar?foo");
@@ -1059,6 +1076,12 @@ TEST_F(test_cpl, CPLGetPath)
     EXPECT_STREQ(CPLGetPath("/foo/bar"), "/foo");
     EXPECT_STREQ(CPLGetPath("/vsicurl/http://example.com/foo/bar?suffix"),
                  "/vsicurl/http://example.com/foo?suffix");
+    EXPECT_STREQ(
+        CPLGetPath(
+            "/vsicurl?foo=bar&url=https%3A%2F%2Fraw.githubusercontent.com%"
+            "2FOSGeo%2Fgdal%2Fmaster%2Fautotest%2Fogr%2Fdata%2Fpoly.shp"),
+        "/vsicurl?foo=bar&url=https%3A%2F%2Fraw.githubusercontent.com%2FOSGeo%"
+        "2Fgdal%2Fmaster%2Fautotest%2Fogr%2Fdata");
 }
 
 TEST_F(test_cpl, CPLGetDirname)
@@ -1067,6 +1090,12 @@ TEST_F(test_cpl, CPLGetDirname)
     EXPECT_STREQ(CPLGetDirname("/foo/bar"), "/foo");
     EXPECT_STREQ(CPLGetDirname("/vsicurl/http://example.com/foo/bar?suffix"),
                  "/vsicurl/http://example.com/foo?suffix");
+    EXPECT_STREQ(
+        CPLGetDirname(
+            "/vsicurl?foo=bar&url=https%3A%2F%2Fraw.githubusercontent.com%"
+            "2FOSGeo%2Fgdal%2Fmaster%2Fautotest%2Fogr%2Fdata%2Fpoly.shp"),
+        "/vsicurl?foo=bar&url=https%3A%2F%2Fraw.githubusercontent.com%2FOSGeo%"
+        "2Fgdal%2Fmaster%2Fautotest%2Fogr%2Fdata");
 }
 
 TEST_F(test_cpl, VSIGetDiskFreeSpace)
@@ -1293,16 +1322,30 @@ TEST_F(test_cpl, CPLExpandTilde)
     CPLSetConfigOption("HOME", nullptr);
 }
 
-TEST_F(test_cpl, CPLString_constructors)
+TEST_F(test_cpl, CPLDeclareKnownConfigOption)
 {
-    // CPLString(std::string) constructor
-    ASSERT_STREQ(CPLString(std::string("abc")).c_str(), "abc");
+    CPLConfigOptionSetter oDebugSetter("CPL_DEBUG", "ON", false);
+    {
+        CPLErrorStateBackuper oErrorStateBackuper(CPLQuietErrorHandler);
+        CPLErrorReset();
+        CPLConfigOptionSetter oDeclaredConfigOptionSetter("UNDECLARED_OPTION",
+                                                          "FOO", false);
+        EXPECT_STREQ(CPLGetLastErrorMsg(),
+                     "Unknown configuration option 'UNDECLARED_OPTION'.");
+    }
+    {
+        CPLDeclareKnownConfigOption("DECLARED_OPTION", nullptr);
 
-    // CPLString(const char*) constructor
-    ASSERT_STREQ(CPLString("abc").c_str(), "abc");
+        const CPLStringList aosKnownConfigOptions(CPLGetKnownConfigOptions());
+        EXPECT_GE(aosKnownConfigOptions.FindString("CPL_DEBUG"), 0);
+        EXPECT_GE(aosKnownConfigOptions.FindString("DECLARED_OPTION"), 0);
 
-    // CPLString(const char*, n) constructor
-    ASSERT_STREQ(CPLString("abc", 1).c_str(), "a");
+        CPLErrorStateBackuper oErrorStateBackuper(CPLQuietErrorHandler);
+        CPLErrorReset();
+        CPLConfigOptionSetter oDeclaredConfigOptionSetter("DECLARED_OPTION",
+                                                          "FOO", false);
+        EXPECT_STREQ(CPLGetLastErrorMsg(), "");
+    }
 }
 
 TEST_F(test_cpl, CPLErrorSetState)
@@ -1599,36 +1642,36 @@ TEST_F(test_cpl, CPLSM_unsigned)
     {
     }
 
-    ASSERT_EQ((CPLSM(static_cast<GUInt64>(2) * 1000 * 1000 * 1000) +
-               CPLSM(static_cast<GUInt64>(3) * 1000 * 1000 * 1000))
+    ASSERT_EQ((CPLSM(static_cast<uint64_t>(2) * 1000 * 1000 * 1000) +
+               CPLSM(static_cast<uint64_t>(3) * 1000 * 1000 * 1000))
                   .v(),
-              static_cast<GUInt64>(5) * 1000 * 1000 * 1000);
-    ASSERT_EQ((CPLSM(std::numeric_limits<GUInt64>::max() - 1) +
-               CPLSM(static_cast<GUInt64>(1)))
+              static_cast<uint64_t>(5) * 1000 * 1000 * 1000);
+    ASSERT_EQ((CPLSM(std::numeric_limits<uint64_t>::max() - 1) +
+               CPLSM(static_cast<uint64_t>(1)))
                   .v(),
-              std::numeric_limits<GUInt64>::max());
+              std::numeric_limits<uint64_t>::max());
     try
     {
-        (CPLSM(std::numeric_limits<GUInt64>::max()) +
-         CPLSM(static_cast<GUInt64>(1)));
+        (CPLSM(std::numeric_limits<uint64_t>::max()) +
+         CPLSM(static_cast<uint64_t>(1)));
     }
     catch (...)
     {
     }
 
-    ASSERT_EQ((CPLSM(static_cast<GUInt64>(2) * 1000 * 1000 * 1000) *
-               CPLSM(static_cast<GUInt64>(3) * 1000 * 1000 * 1000))
+    ASSERT_EQ((CPLSM(static_cast<uint64_t>(2) * 1000 * 1000 * 1000) *
+               CPLSM(static_cast<uint64_t>(3) * 1000 * 1000 * 1000))
                   .v(),
-              static_cast<GUInt64>(6) * 1000 * 1000 * 1000 * 1000 * 1000 *
+              static_cast<uint64_t>(6) * 1000 * 1000 * 1000 * 1000 * 1000 *
                   1000);
-    ASSERT_EQ((CPLSM(std::numeric_limits<GUInt64>::max()) *
-               CPLSM(static_cast<GUInt64>(1)))
+    ASSERT_EQ((CPLSM(std::numeric_limits<uint64_t>::max()) *
+               CPLSM(static_cast<uint64_t>(1)))
                   .v(),
-              std::numeric_limits<GUInt64>::max());
+              std::numeric_limits<uint64_t>::max());
     try
     {
-        (CPLSM(std::numeric_limits<GUInt64>::max()) *
-         CPLSM(static_cast<GUInt64>(2)));
+        (CPLSM(std::numeric_limits<uint64_t>::max()) *
+         CPLSM(static_cast<uint64_t>(2)));
     }
     catch (...)
     {
@@ -2731,12 +2774,12 @@ TEST_F(test_cpl, CPLJSONDocument)
         CPLJSONObject oObj2(oObj);
         ASSERT_TRUE(oObj2.ToBool());
         // Assignment operator
-        // coverity[copy_assignment_call]
         oDocument2 = oDocument;
+        oDocument.GetRoot();  // avoid Coverity Scan warning
         auto &oDocument2Ref(oDocument2);
         oDocument2 = oDocument2Ref;
-        // coverity[copy_assignment_call]
         oObj2 = oObj;
+        oObj.GetType();  // avoid Coverity Scan warning
         auto &oObj2Ref(oObj2);
         oObj2 = oObj2Ref;
         CPLJSONObject oObj3(std::move(oObj2));
@@ -4252,19 +4295,20 @@ TEST_F(test_cpl, CPLQuadTree)
 // Test bUnlinkAndSize on VSIGetMemFileBuffer
 TEST_F(test_cpl, VSIGetMemFileBuffer_unlink_and_size)
 {
-    VSILFILE *fp = VSIFOpenL("/vsimem/test_unlink_and_seize.tif", "wb");
-    VSIFWriteL("test", 5, 1, fp);
-    GByte *pRawData =
-        VSIGetMemFileBuffer("/vsimem/test_unlink_and_seize.tif", nullptr, true);
-    ASSERT_TRUE(EQUAL(reinterpret_cast<const char *>(pRawData), "test"));
+    VSIVirtualHandleUniquePtr fp(
+        VSIFOpenL("/vsimem/test_unlink_and_seize.tif", "wb"));
+    VSIFWriteL("test", 5, 1, fp.get());
+    std::unique_ptr<GByte, VSIFreeReleaser> pRawData(VSIGetMemFileBuffer(
+        "/vsimem/test_unlink_and_seize.tif", nullptr, true));
+    ASSERT_TRUE(EQUAL(reinterpret_cast<const char *>(pRawData.get()), "test"));
     ASSERT_TRUE(VSIGetMemFileBuffer("/vsimem/test_unlink_and_seize.tif",
                                     nullptr, false) == nullptr);
-    ASSERT_TRUE(VSIFOpenL("/vsimem/test_unlink_and_seize.tif", "r") == nullptr);
-    ASSERT_TRUE(VSIFReadL(pRawData, 5, 1, fp) == 0);
-    ASSERT_TRUE(VSIFWriteL(pRawData, 5, 1, fp) == 0);
-    ASSERT_TRUE(VSIFSeekL(fp, 0, SEEK_END) == 0);
-    CPLFree(pRawData);
-    VSIFCloseL(fp);
+    VSIVirtualHandleUniquePtr fp2(
+        VSIFOpenL("/vsimem/test_unlink_and_seize.tif", "r"));
+    ASSERT_TRUE(fp2.get() == nullptr);
+    ASSERT_TRUE(VSIFReadL(pRawData.get(), 5, 1, fp.get()) == 0);
+    ASSERT_TRUE(VSIFWriteL(pRawData.get(), 5, 1, fp.get()) == 0);
+    ASSERT_TRUE(VSIFSeekL(fp.get(), 0, SEEK_END) == 0);
 }
 
 // Test CPLLoadConfigOptionsFromFile() for VSI credentials
@@ -4460,13 +4504,16 @@ TEST_F(test_cpl, VSI_plugin_minimal_testing)
     reinterpret_cast<VSIVirtualHandle *>(fp)->AdviseRead(1, &nOffset, &nSize);
 
     VSIFCloseL(fp);
-    EXPECT_TRUE(VSIFOpenL("/vsimyplugin/i_dont_exist", "rb") == nullptr);
+    EXPECT_TRUE(VSIVirtualHandleUniquePtr(
+                    VSIFOpenL("/vsimyplugin/i_dont_exist", "rb")) == nullptr);
 
     // Check that we can remove the handler
     VSIRemovePluginHandler("/vsimyplugin/");
 
-    EXPECT_TRUE(VSIFOpenL("/vsimyplugin/test", "rb") == nullptr);
-    EXPECT_TRUE(VSIFOpenL("/vsimyplugin/i_dont_exist", "rb") == nullptr);
+    EXPECT_TRUE(VSIVirtualHandleUniquePtr(
+                    VSIFOpenL("/vsimyplugin/test", "rb")) == nullptr);
+    EXPECT_TRUE(VSIVirtualHandleUniquePtr(
+                    VSIFOpenL("/vsimyplugin/i_dont_exist", "rb")) == nullptr);
 
     // Removing a non-existing handler is a no-op
     VSIRemovePluginHandler("/vsimyplugin/");
@@ -4686,6 +4733,22 @@ TEST_F(test_cpl, CPLWorkerThreadPool_recursion)
         std::condition_variable cv{};
         bool you_can_leave = false;
         int threadStarted = 0;
+
+        void notifyYouCanLeave()
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            you_can_leave = true;
+            cv.notify_one();
+        }
+
+        void waitYouCanLeave()
+        {
+            std::unique_lock<std::mutex> guard(mutex);
+            while (!you_can_leave)
+            {
+                cv.wait(guard);
+            }
+        }
     };
 
     Context ctxt;
@@ -4737,12 +4800,7 @@ TEST_F(test_cpl, CPLWorkerThreadPool_recursion)
                 // make sure that job 0 run in the other thread
                 // takes sufficiently long that job 2 has been submitted
                 // before it completes
-                std::unique_lock<std::mutex> guard(psData2->psCtxt->mutex);
-                // coverity[missing_lock:FALSE]
-                while (!psData2->psCtxt->you_can_leave)
-                {
-                    psData2->psCtxt->cv.wait(guard);
-                }
+                psData2->psCtxt->waitYouCanLeave();
             }
             else if (iJob == 100 + 1 || iJob == 100 + 2)
             {
@@ -4761,9 +4819,7 @@ TEST_F(test_cpl, CPLWorkerThreadPool_recursion)
         poQueue->SubmitJob(lambda2, &d2);
         if (psData->iJob == 0)
         {
-            std::lock_guard<std::mutex> guard(psData->psCtxt->mutex);
-            psData->psCtxt->you_can_leave = true;
-            psData->psCtxt->cv.notify_one();
+            psData->psCtxt->notifyYouCanLeave();
         }
     };
     {
@@ -5289,6 +5345,43 @@ TEST_F(test_cpl, CPLStrtod)
     }
 }
 
+TEST_F(test_cpl, CPLStringToComplex)
+{
+    const auto EXPECT_PARSED = [](const char *str, double real, double imag)
+    {
+        double r = -999;
+        double i = -999;
+        EXPECT_EQ(CPLStringToComplex(str, &r, &i), CE_None)
+            << "Unexpected error parsing " << str;
+        EXPECT_EQ(r, real);
+        EXPECT_EQ(i, imag);
+    };
+    const auto EXPECT_ERROR = [](const char *str)
+    {
+        CPLErrorStateBackuper state(CPLQuietErrorHandler);
+        double r, i;
+        EXPECT_EQ(CPLStringToComplex(str, &r, &i), CE_Failure)
+            << "Did not receive expected error parsing " << str;
+    };
+
+    EXPECT_PARSED("05401", 5401, 0);
+    EXPECT_PARSED("-5401", -5401, 0);
+    EXPECT_PARSED(" 611.2-38.4i", 611.2, -38.4);
+    EXPECT_PARSED("611.2+38.4i ", 611.2, 38.4);
+    EXPECT_PARSED("-611.2+38.4i", -611.2, 38.4);
+
+    EXPECT_ERROR("-611.2+38.4ii");
+    EXPECT_ERROR("-611.2+38.4ji");
+    EXPECT_ERROR("-611.2+38.4ij");
+    EXPECT_ERROR("f-611.2+38.4i");
+    EXPECT_ERROR("-611.2+f38.4i");
+    EXPECT_ERROR("-611.2+-38.4i");
+    EXPECT_ERROR("611.2+38.4");
+    EXPECT_ERROR("38.4i");
+    EXPECT_ERROR("38.4x");
+    EXPECT_ERROR("invalid");
+}
+
 TEST_F(test_cpl, CPLForceToASCII)
 {
     {
@@ -5578,4 +5671,334 @@ TEST_F(test_cpl, VSIMemGenerateHiddenFilename)
         EXPECT_TRUE(ENDS_WITH(pszFilename, "/foo.bar"));
     }
 }
+
+TEST_F(test_cpl, VSIGlob)
+{
+    GByte abyDummyData[1] = {0};
+    const std::string osFilenameRadix = VSIMemGenerateHiddenFilename("");
+    const std::string osFilename = osFilenameRadix + "trick";
+    VSIFCloseL(VSIFileFromMemBuffer(osFilename.c_str(), abyDummyData,
+                                    sizeof(abyDummyData), false));
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(osFilename.c_str(), nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(osFilename.substr(0, osFilename.size() - 1).c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 0);
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("?rick").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("?rack").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 0);
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("*ick").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("*").c_str(), nullptr,
+                    nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("*ack").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 0);
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("*ic*").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("*ac*").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 0);
+    }
+
+    {
+        CPLStringList aosRes(VSIGlob(
+            std::string(osFilenameRadix).append("[st][!s]ic[j-l]").c_str(),
+            nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("[!s]rick").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("[").c_str(), nullptr,
+                    nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 0);
+    }
+
+    const std::string osFilenameWithSpecialChars = osFilenameRadix + "[!-]";
+    VSIFCloseL(VSIFileFromMemBuffer(osFilenameWithSpecialChars.c_str(),
+                                    abyDummyData, sizeof(abyDummyData), false));
+
+    {
+        CPLStringList aosRes(VSIGlob(
+            std::string(osFilenameRadix).append("[[][!]a-][-][]]").c_str(),
+            nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilenameWithSpecialChars.c_str());
+    }
+
+    const std::string osFilename2 = osFilenameRadix + "truck/track";
+    VSIFCloseL(VSIFileFromMemBuffer(osFilename2.c_str(), abyDummyData,
+                                    sizeof(abyDummyData), false));
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("*uc*/track").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename2.c_str());
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("*uc*/truck").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 0);
+    }
+
+    {
+        CPLStringList aosRes(
+            VSIGlob(std::string(osFilenameRadix).append("**/track").c_str(),
+                    nullptr, nullptr, nullptr));
+        ASSERT_EQ(aosRes.size(), 1);
+        EXPECT_STREQ(aosRes[0], osFilename2.c_str());
+    }
+
+    VSIUnlink(osFilename.c_str());
+    VSIUnlink(osFilenameWithSpecialChars.c_str());
+    VSIUnlink(osFilename2.c_str());
+    VSIUnlink(osFilenameRadix.c_str());
+}
+
+TEST_F(test_cpl, CPLGreatestCommonDivisor)
+{
+    CPLErrorStateBackuper state(CPLQuietErrorHandler);
+
+    // These tests serve to document the current behavior.
+    // In some cases the results are dependent on various
+    // hardcoded epsilons and it may be appropriate to change
+    // the expected results.
+
+    EXPECT_EQ(CPLGreatestCommonDivisor(0.0, 1.0), 0.0);
+    EXPECT_EQ(
+        CPLGreatestCommonDivisor(std::numeric_limits<double>::quiet_NaN(), 1.0),
+        0.0);
+    EXPECT_EQ(
+        CPLGreatestCommonDivisor(std::numeric_limits<double>::infinity(), 1.0),
+        0.0);
+    EXPECT_EQ(
+        CPLGreatestCommonDivisor(-std::numeric_limits<double>::infinity(), 1.0),
+        0.0);
+    EXPECT_EQ(CPLGreatestCommonDivisor(1.0, 0.0), 0.0);
+    EXPECT_EQ(
+        CPLGreatestCommonDivisor(1.0, std::numeric_limits<double>::quiet_NaN()),
+        0.0);
+    EXPECT_EQ(
+        CPLGreatestCommonDivisor(1.0, std::numeric_limits<double>::infinity()),
+        0.0);
+    EXPECT_EQ(
+        CPLGreatestCommonDivisor(1.0, -std::numeric_limits<double>::infinity()),
+        0.0);
+
+    EXPECT_EQ(CPLGreatestCommonDivisor(std::numeric_limits<double>::min(),
+                                       std::numeric_limits<double>::max()),
+              0.0);
+
+    EXPECT_EQ(CPLGreatestCommonDivisor(-2.0, 4.0), -2.0);
+    EXPECT_EQ(CPLGreatestCommonDivisor(-2.0, -4.0), -2.0);
+    EXPECT_EQ(CPLGreatestCommonDivisor(2.0, -4.0), 2.0);
+
+    EXPECT_EQ(CPLGreatestCommonDivisor(3.0, 5.0), 1.0);
+    EXPECT_EQ(CPLGreatestCommonDivisor(3.0 / 3600, 5.0 / 3600), 1.0 / 3600);
+    EXPECT_EQ(CPLGreatestCommonDivisor(5.0 / 3600, 2.5 / 3600), 2.5 / 3600);
+    EXPECT_EQ(CPLGreatestCommonDivisor(1.0 / 10, 1.0), 1.0 / 10);
+    EXPECT_EQ(CPLGreatestCommonDivisor(1.0 / 17, 1.0 / 13), 1.0 / 221);
+    EXPECT_EQ(CPLGreatestCommonDivisor(1.0 / 17, 1.0 / 3600), 1.0 / 61200);
+
+    // GLO-90 resolutoins
+    EXPECT_EQ(CPLGreatestCommonDivisor(3.0 / 3600, 4.5 / 3600), 1.5 / 3600);
+
+    // WorldDEM resolutions
+    EXPECT_EQ(CPLGreatestCommonDivisor(0.4 / 3600, 0.6 / 3600), 0.2 / 3600);
+    EXPECT_EQ(CPLGreatestCommonDivisor(0.6 / 3600, 0.8 / 3600), 0.2 / 3600);
+
+    EXPECT_EQ(CPLGreatestCommonDivisor(M_PI, M_PI / 6), M_PI / 6);
+    EXPECT_EQ(CPLGreatestCommonDivisor(M_PI / 5, M_PI / 6),
+              0);  // Ideally we would get M_PI / 30
+
+    EXPECT_EQ(CPLGreatestCommonDivisor(2.999999, 3.0), 0);
+    EXPECT_EQ(CPLGreatestCommonDivisor(2.9999999, 3.0), 0);
+    EXPECT_EQ(CPLGreatestCommonDivisor(2.99999999, 3.0), 2.99999999);
+}
+
+TEST_F(test_cpl, CPLLevenshteinDistance)
+{
+    EXPECT_EQ(CPLLevenshteinDistance("", "", false), 0);
+    EXPECT_EQ(CPLLevenshteinDistance("a", "a", false), 0);
+    EXPECT_EQ(CPLLevenshteinDistance("a", "b", false), 1);
+    EXPECT_EQ(CPLLevenshteinDistance("a", "", false), 1);
+    EXPECT_EQ(CPLLevenshteinDistance("abc", "ac", false), 1);
+    EXPECT_EQ(CPLLevenshteinDistance("ac", "abc", false), 1);
+    EXPECT_EQ(CPLLevenshteinDistance("0ab1", "0xy1", false), 2);
+    EXPECT_EQ(CPLLevenshteinDistance("0ab1", "0xy1", true), 2);
+    EXPECT_EQ(CPLLevenshteinDistance("0ab1", "0ba1", false), 2);
+    EXPECT_EQ(CPLLevenshteinDistance("0ab1", "0ba1", true), 1);
+
+    std::string longStr(32768, 'x');
+    EXPECT_EQ(CPLLevenshteinDistance(longStr.c_str(), longStr.c_str(), true),
+              0);
+    EXPECT_EQ(CPLLevenshteinDistance(longStr.c_str(), "another_one", true),
+              std::numeric_limits<size_t>::max());
+}
+
+TEST_F(test_cpl, CPLLockFileEx)
+{
+    const std::string osLockFilename = CPLGenerateTempFilename(".lock");
+
+    ASSERT_EQ(CPLLockFileEx(nullptr, nullptr, nullptr), CLFS_API_MISUSE);
+
+    ASSERT_EQ(CPLLockFileEx(osLockFilename.c_str(), nullptr, nullptr),
+              CLFS_API_MISUSE);
+
+    CPLLockFileHandle hLockFileHandle = nullptr;
+
+    ASSERT_EQ(CPLLockFileEx(osLockFilename.c_str(), &hLockFileHandle, nullptr),
+              CLFS_OK);
+    ASSERT_NE(hLockFileHandle, nullptr);
+
+    // Check the lock file has been created
+    VSIStatBufL sStat;
+    ASSERT_EQ(VSIStatL(osLockFilename.c_str(), &sStat), 0);
+
+    {
+        CPLStringList aosOptions;
+        aosOptions.SetNameValue("WAIT_TIME", "0.1");
+        CPLLockFileHandle hLockFileHandle2 = nullptr;
+        ASSERT_EQ(CPLLockFileEx(osLockFilename.c_str(), &hLockFileHandle2,
+                                aosOptions.List()),
+                  CLFS_LOCK_BUSY);
+    }
+
+    CPLUnlockFileEx(hLockFileHandle);
+
+    // Check the lock file has been deleted
+    ASSERT_EQ(VSIStatL(osLockFilename.c_str(), &sStat), -1);
+
+    CPLUnlockFileEx(nullptr);
+}
+
+TEST_F(test_cpl, CPLFormatReadableFileSize)
+{
+    EXPECT_STREQ(CPLFormatReadableFileSize(1.23e18).c_str(), "1.23 HB");
+    EXPECT_STREQ(CPLFormatReadableFileSize(1.23e15).c_str(), "1.23 PB");
+    EXPECT_STREQ(CPLFormatReadableFileSize(1.23e12).c_str(), "1.23 TB");
+    EXPECT_STREQ(CPLFormatReadableFileSize(1.23e9).c_str(), "1.23 GB");
+    EXPECT_STREQ(CPLFormatReadableFileSize(1.23e6).c_str(), "1.23 MB");
+    EXPECT_STREQ(
+        CPLFormatReadableFileSize(static_cast<uint64_t>(123456)).c_str(),
+        "123,456 bytes");
+}
+
+TEST_F(test_cpl, CPLStrlenUTF8)
+{
+    EXPECT_EQ(CPLStrlenUTF8("a"), 1);
+    EXPECT_EQ(CPLStrlenUTF8("a"
+                            "\xC3\xA9"
+                            "b"),
+              3);
+}
+
+TEST_F(test_cpl, CPLStrlenUTF8Ex)
+{
+    EXPECT_EQ(CPLStrlenUTF8Ex("a"), 1);
+    EXPECT_EQ(CPLStrlenUTF8Ex("a"
+                              "\xC3\xA9"
+                              "b"),
+              3);
+}
+
+TEST_F(test_cpl, CPLGetRemainingFileDescriptorCount)
+{
+#ifdef _WIN32
+    EXPECT_EQ(CPLGetRemainingFileDescriptorCount(), -1);
+#else
+    EXPECT_GE(CPLGetRemainingFileDescriptorCount(), 0);
+#endif
+}
+
+TEST_F(test_cpl, CPLGetCurrentThreadCount)
+{
+#if defined(_WIN32) || defined(__linux) || defined(__FreeBSD__) ||             \
+    defined(__NetBSD__) || (defined(__APPLE__) && defined(__MACH__))
+    // Not sure why it returns 0 on those, whereas it works fine on build-windows-msys2-mingw
+    if (strstr(CPLGetConfigOption("BUILD_NAME", ""), "build-windows-conda") !=
+            nullptr &&
+        strstr(CPLGetConfigOption("BUILD_NAME", ""), "build-windows-minimum") !=
+            nullptr)
+    {
+        EXPECT_GE(CPLGetCurrentThreadCount(), 1);
+    }
+#else
+    EXPECT_EQ(CPLGetCurrentThreadCount(), 0);
+#endif
+}
+
+TEST_F(test_cpl, CPLHasPathTraversal)
+{
+    EXPECT_TRUE(CPLHasPathTraversal("a/../b"));
+    EXPECT_TRUE(CPLHasPathTraversal("a\\..\\b"));
+    EXPECT_FALSE(CPLHasPathTraversal("a/b"));
+    {
+        CPLConfigOptionSetter oSetter("CPL_ENABLE_PATH_TRAVERSAL_DETECTION",
+                                      "NO", true);
+        EXPECT_FALSE(CPLHasPathTraversal("a/../b"));
+        EXPECT_FALSE(CPLHasPathTraversal("a\\..\\b"));
+    }
+}
+
 }  // namespace

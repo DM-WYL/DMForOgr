@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  GDAL Core
  * Purpose:  Declaration for Peristable Auxiliary Metadata classes.
@@ -80,8 +79,8 @@ class GDALDatasetPamInfo
 
     OGRSpatialReference *poSRS = nullptr;
 
-    int bHaveGeoTransform = false;
-    std::array<double, 6> adfGeoTransform{};
+    bool bHaveGeoTransform = false;
+    GDALGeoTransform gt{};
 
     std::vector<gdal::GCP> asGCPs{};
     OGRSpatialReference *poGCP_SRS = nullptr;
@@ -141,10 +140,11 @@ class CPL_DLL GDALPamDataset : public GDALDataset
     CPLErr FlushCache(bool bAtClosing) override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
+    const OGRSpatialReference *GetSpatialRefRasterOnly() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
-    CPLErr GetGeoTransform(double *) override;
-    CPLErr SetGeoTransform(double *) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &) const override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &) override;
     void DeleteGeoTransform();
 
     int GetGCPCount() override;
@@ -197,6 +197,9 @@ class CPL_DLL GDALPamDataset : public GDALDataset
 
   private:
     CPL_DISALLOW_COPY_ASSIGN(GDALPamDataset)
+
+    // cached return of GetMetadataItem("OVERVIEW_FILE", "OVERVIEWS")
+    std::string m_osOverviewFile{};
 };
 
 //! @cond Doxygen_Suppress

@@ -205,7 +205,7 @@ int JPEGXLDataset::Identify(GDALOpenInfo *poOpenInfo)
     if (poOpenInfo->fpL == nullptr)
         return false;
 
-    if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "jxl"))
+    if (poOpenInfo->IsExtensionEqualToCI("jxl"))
         return true;
 
     // See
@@ -474,6 +474,12 @@ bool JPEGXLDataset::Open(GDALOpenInfo *poOpenInfo)
                     eDT = GDT_Byte;
                 else if (info.bits_per_sample <= 16)
                     eDT = GDT_UInt16;
+            }
+            else if (info.exponent_bits_per_sample == 5)
+            {
+                // Float16
+                CPLDebug("JXL", "16-bit floating point data");
+                eDT = GDT_Float32;
             }
             else if (info.exponent_bits_per_sample == 8)
             {
@@ -1480,7 +1486,7 @@ void JPEGXLDataset::GetDecodedImage(void *pabyOutputData,
     }
 
     // Rescale from 8-bits/16-bits
-    if (m_nBits < GDALGetDataTypeSize(eDT))
+    if (m_nBits < GDALGetDataTypeSizeBits(eDT))
     {
         const auto Rescale = [this, eDT](void *pBuffer, int nChannels)
         {
@@ -1752,9 +1758,8 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
     char **papszXMP = poSrcDS->GetMetadata("xml:XMP");
 
     const bool bWriteGeoJP2 = CPLFetchBool(papszOptions, "WRITE_GEOJP2", true);
-    double adfGeoTransform[6];
-    const bool bHasGeoTransform =
-        poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None;
+    GDALGeoTransform gt;
+    const bool bHasGeoTransform = poSrcDS->GetGeoTransform(gt) == CE_None;
     const OGRSpatialReference *poSRS = poSrcDS->GetSpatialRef();
     const int nGCPCount = poSrcDS->GetGCPCount();
     char **papszRPCMD = poSrcDS->GetMetadata("RPC");
@@ -1766,7 +1771,7 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
         if (poSRS)
             oJP2Metadata.SetSpatialRef(poSRS);
         if (bHasGeoTransform)
-            oJP2Metadata.SetGeoTransform(adfGeoTransform);
+            oJP2Metadata.SetGeoTransform(gt);
         if (nGCPCount)
         {
             const OGRSpatialReference *poSRSGCP = poSrcDS->GetGCPSpatialRef();
@@ -2182,7 +2187,7 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
     const int nBits =
         ((eDT == GDT_Byte || eDT == GDT_UInt16) && pszNBits != nullptr)
             ? atoi(pszNBits)
-            : GDALGetDataTypeSize(eDT);
+            : GDALGetDataTypeSizeBits(eDT);
 
     JxlBasicInfo basic_info;
     JxlEncoderInitBasicInfo(&basic_info);

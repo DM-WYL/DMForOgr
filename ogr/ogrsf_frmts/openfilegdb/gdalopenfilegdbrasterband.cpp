@@ -52,9 +52,9 @@ bool OGROpenFileGDBDataSource::OpenRaster(const GDALOpenInfo *poOpenInfo,
 
     FileGDBTable oTable;
 
-    const CPLString osBndFilename(CPLFormFilename(
+    const std::string osBndFilename(CPLFormFilenameSafe(
         m_osDirName, CPLSPrintf("a%08x.gdbtable", nBndIdx), nullptr));
-    if (!oTable.Open(osBndFilename, false))
+    if (!oTable.Open(osBndFilename.c_str(), false))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "Cannot open table %s",
                  osBndTableName.c_str());
@@ -400,10 +400,10 @@ bool OGROpenFileGDBDataSource::OpenRaster(const GDALOpenInfo *poOpenInfo,
             nWidth = 1 + static_cast<int>(
                              std::round((dfMaxX - dfMinXAdjusted) / dfResX));
         }
-        m_adfGeoTransform[0] =
+        m_gt[0] =
             (dfBlockOriginX + m_nShiftBlockX * dfBlockGeorefWidth) - dfResX / 2;
-        m_adfGeoTransform[1] = dfResX;
-        m_adfGeoTransform[2] = 0.0;
+        m_gt[1] = dfResX;
+        m_gt[2] = 0.0;
         const double dfBlockGeorefHeight = dfResY * nBlockHeight;
         if (dfMaxY != dfBlockOriginY)
         {
@@ -426,11 +426,10 @@ bool OGROpenFileGDBDataSource::OpenRaster(const GDALOpenInfo *poOpenInfo,
             nHeight = 1 + static_cast<int>(
                               std::round((dfMaxYAdjusted - dfMinY) / dfResY));
         }
-        m_adfGeoTransform[3] =
-            (dfBlockOriginY - m_nShiftBlockY * dfBlockGeorefHeight) +
-            dfResY / 2;
-        m_adfGeoTransform[4] = 0.0;
-        m_adfGeoTransform[5] = -dfResY;
+        m_gt[3] = (dfBlockOriginY - m_nShiftBlockY * dfBlockGeorefHeight) +
+                  dfResY / 2;
+        m_gt[4] = 0.0;
+        m_gt[5] = -dfResY;
     }
 
     // Two cases:
@@ -454,9 +453,9 @@ bool OGROpenFileGDBDataSource::OpenRaster(const GDALOpenInfo *poOpenInfo,
 
             FileGDBTable oTableMain;
 
-            const CPLString osTableMain(CPLFormFilename(
+            const std::string osTableMain(CPLFormFilenameSafe(
                 m_osDirName, CPLSPrintf("a%08x.gdbtable", nTableIdx), nullptr));
-            if (oTableMain.Open(osTableMain, false))
+            if (oTableMain.Open(osTableMain.c_str(), false))
             {
                 const int iRasterFieldIdx = oTableMain.GetFieldIdx("RASTER");
                 if (iRasterFieldIdx >= 0)
@@ -1069,10 +1068,9 @@ void OGROpenFileGDBDataSource::ReadAuxTable(const std::string &osLayerName)
 /*                         GetGeoTransform()                            */
 /************************************************************************/
 
-CPLErr OGROpenFileGDBDataSource::GetGeoTransform(double *padfGeoTransform)
+CPLErr OGROpenFileGDBDataSource::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    memcpy(padfGeoTransform, m_adfGeoTransform.data(),
-           sizeof(m_adfGeoTransform));
+    gt = m_gt;
     return m_bHasGeoTransform ? CE_None : CE_Failure;
 }
 
@@ -1940,4 +1938,22 @@ GDALRasterAttributeTable *GDALOpenFileGDBRasterBand::GetDefaultRAT()
     m_poRAT = std::make_unique<GDALOpenFileGDBRasterAttributeTable>(
         std::move(poDSNew), osVATTableName, std::move(poVatLayer));
     return m_poRAT.get();
+}
+
+/************************************************************************/
+/*               GDALOpenFileGDBRasterAttributeTable::Clone()           */
+/************************************************************************/
+
+GDALRasterAttributeTable *GDALOpenFileGDBRasterAttributeTable::Clone() const
+{
+    auto poDS = std::make_unique<OGROpenFileGDBDataSource>();
+    GDALOpenInfo oOpenInfo(m_poDS->m_osDirName.c_str(), GA_ReadOnly);
+    bool bRetryFileGDBUnused = false;
+    if (!poDS->Open(&oOpenInfo, bRetryFileGDBUnused))
+        return nullptr;
+    auto poVatLayer = poDS->BuildLayerFromName(m_osVATTableName.c_str());
+    if (!poVatLayer)
+        return nullptr;
+    return new GDALOpenFileGDBRasterAttributeTable(
+        std::move(poDS), m_osVATTableName, std::move(poVatLayer));
 }

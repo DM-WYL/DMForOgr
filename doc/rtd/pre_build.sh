@@ -13,7 +13,10 @@ cmake \
     -DGDAL_PYTHON_INSTALL_PREFIX=${PREFIX} \
     -DGDAL_BUILD_OPTIONAL_DRIVERS=OFF \
     -DOGR_BUILD_OPTIONAL_DRIVERS=OFF \
-    -DBUILD_APPS=OFF \
+    -DGDAL_ENABLE_DRIVER_GTI=ON \
+    -DOGR_ENABLE_DRIVER_GPKG=ON \
+    -DOGR_ENABLE_DRIVER_OPENFILEGDB=ON \
+    -DBUILD_APPS=ON \
     -DBUILD_PYTHON_BINDINGS=ON \
     -DBUILD_JAVA_BINDINGS=ON \
     -DBUILD_TESTING=OFF \
@@ -22,6 +25,7 @@ cmake \
     ..
 
 cmake --build . -j$(nproc)
+cmake --build . --target doxygen_xml doxygen_html
 cmake --install .
 
 # set rpath for python libraries
@@ -33,6 +37,10 @@ python3 -c "from osgeo import gdal; print(gdal.__version__)"
 # unpack javadoc created during cmake --build into correct location
 mkdir -p ../doc/build/html_extra
 unzip -d ../doc/build/html_extra swig/java/javadoc.zip
+
+# copy doxygen outputs into source tree
+cp -r doc/build/xml ../doc/build
+cp -r doc/build/html_extra/doxygen ../doc/build/html_extra
 
 # copy gdalicon.png into html_extra (used by test suite)
 cp ../data/gdalicon.png ../doc/build/html_extra/

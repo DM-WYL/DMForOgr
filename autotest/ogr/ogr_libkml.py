@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  LIBKML Driver testing.
@@ -2342,3 +2341,68 @@ def ogr_libkml_non_editable():
         lyr = ds.GetLayer(0)
         assert lyr.TestCapability(ogr.OLCRandomWrite) == 0
         assert lyr.TestCapability(ogr.OLCDeleteFeature) == 0
+
+
+###############################################################################
+#
+
+
+def test_ogr_libkml_create_field_id_integer(tmp_vsimem):
+
+    filename = str(tmp_vsimem / "test.kml")
+    with ogr.GetDriverByName("LIBKML").CreateDataSource(filename) as ds:
+        lyr = ds.CreateLayer("test")
+        lyr.CreateField(ogr.FieldDefn("id", ogr.OFTInteger))
+        lyr.CreateField(ogr.FieldDefn("name"))
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f["id"] = 1
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        lyr.CreateFeature(f)
+
+    with gdal.OpenEx(filename, gdal.OF_VECTOR | gdal.OF_UPDATE) as ds:
+        lyr = ds.GetLayer(0)
+        f = lyr.GetNextFeature()
+        assert f["id"] == "1"
+
+
+###############################################################################
+#
+
+
+def test_ogr_libkml_create_field_bool(tmp_vsimem):
+
+    filename = str(tmp_vsimem / "test.kml")
+    with ogr.GetDriverByName("LIBKML").CreateDataSource(filename) as ds:
+        lyr = ds.CreateLayer("test")
+        fld_defn = ogr.FieldDefn("b", ogr.OFTInteger)
+        fld_defn.SetSubType(ogr.OFSTBoolean)
+        lyr.CreateField(fld_defn)
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f["b"] = True
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        lyr.CreateFeature(f)
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f["b"] = False
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        lyr.CreateFeature(f)
+
+    with gdal.OpenEx(filename, gdal.OF_VECTOR) as ds:
+        lyr = ds.GetLayer(0)
+        idx = lyr.GetLayerDefn().GetFieldIndex("b")
+        fld_defn = lyr.GetLayerDefn().GetFieldDefn(idx)
+        assert fld_defn.GetType() == ogr.OFTInteger
+        assert fld_defn.GetSubType() == ogr.OFSTBoolean
+        f = lyr.GetNextFeature()
+        assert f["b"]
+        f = lyr.GetNextFeature()
+        assert not f["b"]
+
+
+###############################################################################
+
+
+def test_ogr_libkml_creation_illegal_layer_name(tmp_vsimem):
+
+    ds = ogr.GetDriverByName("LIBKML").CreateDataSource(tmp_vsimem / "out")
+    with pytest.raises(Exception, match="Illegal character"):
+        ds.CreateLayer("illegal/with/slash")

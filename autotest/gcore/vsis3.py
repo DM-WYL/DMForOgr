@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test /vsis3
@@ -129,9 +128,8 @@ def test_vsis3_init(aws_test_config):
 def test_vsis3_no_sign_request(aws_test_config_as_config_options_or_credentials):
 
     options = {
-        "AWS_S3_ENDPOINT": "s3.amazonaws.com",
+        "AWS_S3_ENDPOINT": "https://s3.amazonaws.com",
         "AWS_NO_SIGN_REQUEST": "YES",
-        "AWS_HTTPS": "YES",
         "AWS_VIRTUAL_HOSTING": "TRUE",
     }
 
@@ -176,7 +174,7 @@ def test_vsis3_sync_multithreaded_download(
 
     tab = [-1]
     options = {
-        "AWS_S3_ENDPOINT": "s3.amazonaws.com",
+        "AWS_S3_ENDPOINT": "http://s3.amazonaws.com",
         "AWS_NO_SIGN_REQUEST": "YES",
         "AWS_VIRTUAL_HOSTING": "FALSE",
     }
@@ -893,7 +891,7 @@ def test_vsis3_2(aws_test_config_as_config_options_or_credentials, webserver_por
     # Test temporary redirect
     handler = webserver.SequentialHandler()
 
-    class HandlerClass(object):
+    class HandlerClass:
         def __init__(self, response_value):
             self.old_authorization = None
             self.response_value = response_value
@@ -1246,9 +1244,16 @@ def test_vsis3_readdir(aws_test_config, webserver_port):
                 </Contents>
             </ListBucketResult>
         """,
+        expected_headers={"foo": "bar"},
+    )
+    gdal.SetPathSpecificOption(
+        "/vsis3/s3_fake_bucket2/a_dir",
+        "GDAL_HTTP_HEADERS",
+        "foo:bar",
     )
     with webserver.install_http_handler(handler):
         dir_contents = gdal.ReadDir("/vsis3/s3_fake_bucket2/a_dir")
+    gdal.ClearPathSpecificOptions()
     assert dir_contents == ["test.txt"]
 
     # Test CPL_VSIL_CURL_IGNORE_GLACIER_STORAGE=NO
@@ -1454,6 +1459,8 @@ def test_vsis3_readdir(aws_test_config, webserver_port):
         </ListAllMyBucketsResult>
         """,
     )
+    # This one is a s3express request for directory buckets
+    handler.add("GET", "/", 403)
     with webserver.install_http_handler(handler):
         dir_contents = gdal.ReadDir("/vsis3/")
     assert dir_contents == ["."]
@@ -1477,14 +1484,30 @@ def test_vsis3_readdir(aws_test_config, webserver_port):
         </ListAllMyBucketsResult>
         """,
     )
+    # This one is a s3express request for directory buckets
+    handler.add(
+        "GET",
+        "/",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <ListAllMyDirectoryBucketsResult>
+        <Buckets>
+            <Bucket>
+                <Name>mydirectorybucket</Name>
+            </Bucket>
+        </Buckets>
+        </ListAllMyDirectoryBucketsResult>
+        """,
+    )
     with webserver.install_http_handler(handler):
         dir_contents = gdal.ReadDir("/vsis3/")
-    assert dir_contents == ["mybucket"]
+    assert dir_contents == ["mybucket", "mydirectorybucket"]
 
     # Test temporary redirect
     handler = webserver.SequentialHandler()
 
-    class HandlerClass(object):
+    class HandlerClass:
         def __init__(self, response_value):
             self.old_authorization = None
             self.response_value = response_value
@@ -1950,6 +1973,103 @@ def test_vsis3_opendir_synthetize_missing_directory(aws_test_config, webserver_p
     assert entry is None
 
     gdal.CloseDir(d)
+
+
+###############################################################################
+# Test OpenDir() with a fake AWS server on /vsis3/ root
+
+
+def test_vsis3_opendir_from_prefix(aws_test_config, webserver_port):
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "GET",
+        "/",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <ListAllMyBucketsResult>
+        <Buckets>
+            <Bucket>
+                <Name>bucket1</Name>
+            </Bucket>
+            <Bucket>
+                <Name>bucket2</Name>
+            </Bucket>
+        </Buckets>
+        </ListAllMyBucketsResult>
+        """,
+    )
+    handler.add(
+        "GET",
+        "/bucket1/",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+            <ListBucketResult>
+                <Prefix/>
+                <Marker/>
+                <Contents>
+                    <Key>test1.txt</Key>
+                    <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                    <Size>40</Size>
+                </Contents>
+                <Contents>
+                    <Key>test2.txt</Key>
+                    <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                    <Size>40</Size>
+                </Contents>
+            </ListBucketResult>
+        """,
+    )
+    handler.add(
+        "GET",
+        "/bucket2/",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+            <ListBucketResult>
+                <Prefix/>
+                <Marker/>
+                <Contents>
+                    <Key>test3.txt</Key>
+                    <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                    <Size>40</Size>
+                </Contents>
+            </ListBucketResult>
+        """,
+    )
+    # This one is a s3express request for directory buckets
+    handler.add("GET", "/", 403)
+    with webserver.install_http_handler(handler):
+        d = gdal.OpenDir("/vsis3/")
+        assert d is not None
+        try:
+
+            entry = gdal.GetNextDirEntry(d)
+            assert entry.name == "bucket1"
+            assert entry.mode == 16384
+
+            entry = gdal.GetNextDirEntry(d)
+            assert entry.name == "bucket1/test1.txt"
+            assert entry.mode == 32768
+
+            entry = gdal.GetNextDirEntry(d)
+            assert entry.name == "bucket1/test2.txt"
+            assert entry.mode == 32768
+
+            entry = gdal.GetNextDirEntry(d)
+            assert entry.name == "bucket2"
+            assert entry.mode == 16384
+
+            entry = gdal.GetNextDirEntry(d)
+            assert entry.name == "bucket2/test3.txt"
+            assert entry.mode == 32768
+
+            assert gdal.GetNextDirEntry(d) is None
+
+        finally:
+            gdal.CloseDir(d)
 
 
 ###############################################################################
@@ -2664,9 +2784,7 @@ def test_vsis3_rmdir_recursive_no_batch_deletion(aws_test_config, webserver_port
 # Test multipart upload with a fake AWS server
 
 
-@pytest.mark.skipif(
-    gdaltest.is_travis_branch("macos_build"), reason="randomly fails on macos"
-)
+@pytest.mark.skipif(gdaltest.is_ci(), reason="randomly fails on CI")
 def test_vsis3_6(aws_test_config, webserver_port):
     with gdaltest.config_option("VSIS3_CHUNK_SIZE", "1", thread_local=False):  # 1 MB
         with webserver.install_http_handler(webserver.SequentialHandler()):
@@ -2969,9 +3087,7 @@ def test_vsis3_6(aws_test_config, webserver_port):
 # Test multipart upload with retry logic
 
 
-@pytest.mark.skipif(
-    gdaltest.is_travis_branch("macos_build"), reason="randomly fails on macos"
-)
+@pytest.mark.skipif(gdaltest.is_ci(), reason="randomly fails on CI")
 def test_vsis3_write_multipart_retry(aws_test_config, webserver_port):
 
     with gdaltest.config_options(
@@ -6094,6 +6210,121 @@ source_profile = foo
 
 
 ###############################################################################
+# Read credentials from cached SSO file
+
+
+def test_vsis3_read_credentials_sso(tmp_vsimem, aws_test_config, webserver_port):
+
+    if webserver_port != 8080:
+        pytest.skip("only works for webserver on port 8080")
+
+    options = {
+        "AWS_SECRET_ACCESS_KEY": "",
+        "AWS_ACCESS_KEY_ID": "",
+        "AWS_PROFILE": "my_profile",
+        "CPL_AWS_SSO_ENDPOINT": "localhost:%d" % webserver_port,
+        "CPL_AWS_ROOT_DIR": str(tmp_vsimem),
+    }
+
+    gdal.VSICurlClearCache()
+
+    gdal.FileFromMemBuffer(
+        tmp_vsimem / "config",
+        """
+[sso-session my-sso]
+sso_start_url = https://example.com
+sso_region = eu-central-1
+sso_registration_scopes = sso:account:access
+
+[profile my_profile]
+sso_session = my-sso
+sso_account_id = my_sso_account_id
+sso_role_name = my_sso_role_name
+region = eu-east-1
+""",
+    )
+
+    gdal.FileFromMemBuffer(
+        tmp_vsimem / "sso" / "cache" / "0ad374308c5a4e22f723adf10145eafad7c4031c.json",
+        '{"startUrl": "https://example.com", "region": "us-east-1", "accessToken": "sso-accessToken", "expiresAt": "9999-01-01T00:00:00Z"}',
+    )
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+
+    handler.add(
+        "GET",
+        "/federation/credentials?role_name=my_sso_role_name&account_id=my_sso_account_id",
+        200,
+        {},
+        """{
+  "roleCredentials": {
+    "accessKeyId": "accessKeyId",
+    "secretAccessKey": "secretAccessKey",
+    "sessionToken": "sessionToken",
+    "expiration": 9999999999000
+  }
+}""",
+        expected_headers={
+            "x-amz-sso_bearer_token": "sso-accessToken",
+        },
+    )
+
+    handler.add(
+        "GET",
+        "/s3_fake_bucket/resource",
+        200,
+        {},
+        """foo""",
+        expected_headers={
+            "x-amz-date": "20150101T000000Z",
+            "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "X-Amz-Security-Token": "sessionToken",
+            "Authorization": "AWS4-HMAC-SHA256 Credential=accessKeyId/20150101/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token,Signature=bfa9fb8c88286e3ef6537303784efe45721ede5e5bf51091565a66cf1ad8084a",
+        },
+    )
+
+    with webserver.install_http_handler(handler):
+        with gdaltest.config_options(options, thread_local=False):
+            f = open_for_read("/vsis3/s3_fake_bucket/resource")
+        assert f is not None
+        try:
+            data = gdal.VSIFReadL(1, 4, f).decode("ascii")
+        finally:
+            gdal.VSIFCloseL(f)
+
+    assert data == "foo"
+
+    handler = webserver.SequentialHandler()
+
+    handler.add(
+        "GET",
+        "/s3_fake_bucket/resource2",
+        200,
+        {},
+        """bar""",
+        expected_headers={
+            "x-amz-date": "20150101T000000Z",
+            "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "X-Amz-Security-Token": "sessionToken",
+            "Authorization": "AWS4-HMAC-SHA256 Credential=accessKeyId/20150101/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token,Signature=b081c4f3195807de3fc934626f7ef7f3fd8e1143226bcbf2afce478c4bb7d4ff",
+        },
+    )
+
+    with webserver.install_http_handler(handler):
+        with gdaltest.config_options(options, thread_local=False):
+            f = open_for_read("/vsis3/s3_fake_bucket/resource2")
+        assert f is not None
+        try:
+            data = gdal.VSIFReadL(1, 4, f).decode("ascii")
+        finally:
+            gdal.VSIFCloseL(f)
+
+    assert data == "bar"
+
+
+###############################################################################
 
 
 def test_vsis3_non_existing_file_GDAL_DISABLE_READDIR_ON_OPEN(
@@ -6276,6 +6507,84 @@ def test_vsis3_MultipartUpload_unauthenticated():
         assert not gdal.MultipartUploadAbort(
             "/vsis3/test_multipartupload/test.bin", "my_upload_id"
         )
+
+
+###############################################################################
+# Test listing a directory bucket (ListObjectsV2 API)
+
+
+def test_vsis3_list_directory_bucket(aws_test_config, webserver_port):
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "GET",
+        "/mydirbucket--regionid--x-s3/?delimiter=%2F&list-type=2",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <ListBucketResult>
+            <Prefix></Prefix>
+            <Contents>
+                <Key>test.bin</Key>
+                <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                <Size>123456</Size>
+            </Contents>
+            <NextContinuationToken>next_continuation_token</NextContinuationToken>
+        </ListBucketResult>
+        """,
+    )
+    handler.add(
+        "GET",
+        "/mydirbucket--regionid--x-s3/?continuation-token=next_continuation_token&delimiter=%2F&list-type=2",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <ListBucketResult>
+            <Prefix></Prefix>
+            <Contents>
+                <Key>test2.bin</Key>
+                <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                <Size>123456</Size>
+            </Contents>
+        </ListBucketResult>
+        """,
+    )
+    with webserver.install_http_handler(handler):
+        assert gdal.ReadDir("/vsis3/mydirbucket--regionid--x-s3") == [
+            "test.bin",
+            "test2.bin",
+        ]
+
+
+###############################################################################
+# Test AWS_S3SESSION_TOKEN config option (for directory buckets)
+
+
+def test_vsis3_AWS_S3SESSION_TOKEN(aws_test_config, webserver_port):
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "GET",
+        "/mydirbucket--regionid--x-s3/?delimiter=%2F&list-type=2",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <ListBucketResult>
+            <Prefix></Prefix>
+            <Contents>
+                <Key>test.bin</Key>
+                <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                <Size>123456</Size>
+            </Contents>
+        </ListBucketResult>
+        """,
+        expected_headers={"x-amz-s3session-token": "the_token"},
+    )
+    with gdal.config_option("AWS_S3SESSION_TOKEN", "the_token"):
+        with webserver.install_http_handler(handler):
+            assert gdal.ReadDir("/vsis3/mydirbucket--regionid--x-s3") == ["test.bin"]
 
 
 ###############################################################################

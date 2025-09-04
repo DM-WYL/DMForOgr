@@ -1,8 +1,12 @@
 add_gdal_driver(TARGET ogr_MongoDBv3
                 SOURCES ogrmongodbv3driver.cpp
                 CORE_SOURCES ogrmongodbv3drivercore.cpp
+                SKIP_GDAL_PRIV_HEADER # because of below -fno-operator-names
                 NO_CXX_WFLAGS PLUGIN_CAPABLE
-                NO_SHARED_SYMBOL_WITH_CORE)
+                NO_SHARED_SYMBOL_WITH_CORE
+  NO_CXX_WFLAGS_EFFCXX
+  NO_WFLAG_OLD_STYLE_CAST
+)
 
 if(NOT TARGET ogr_MongoDBv3)
     return()

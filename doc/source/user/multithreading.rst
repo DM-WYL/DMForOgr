@@ -48,7 +48,7 @@ Thread-safe GDAL dataset instances for raster read-only use cases
 
 .. versionadded:: 3.10
 
-RFC 101 adds a new capability to open, or obtain, a thread-safe dataset from
+:ref:`rfc-101` adds a new capability to open, or obtain, a thread-safe dataset from
 any dataset, but only for raster read-only use cases.
 
 At open time, this can be done by passing ``GDAL_OF_RASTER | GDAL_OF_THREAD_SAFE``
@@ -56,7 +56,7 @@ to :cpp:func:`GDALOpenEx` / :cpp:func:`GDALDataset::Open`.
 
 Given an existing GDALDataset* instance, :cpp:func:`GDALDataset::IsThreadSafe`
 can be used to determine if it is thread-safe or not. If not,
-:cpp:func:`GDALDataset::GetThreadSafeDataset` can be used.
+:cpp:func:`GDALGetThreadSafeDataset` can be used.
 
 Note that the generic implementation of this capability involves opening one
 dataset the first time a thread-safe dataset/raster band is accessed by a thread.

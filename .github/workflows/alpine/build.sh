@@ -21,6 +21,10 @@ cmake ${GDAL_SOURCE_DIR:=..} \
   -DIconv_INCLUDE_DIR=/usr/include/gnu-libiconv \
   -DIconv_LIBRARY=/usr/lib/libiconv.so \
   -DADD_EXTERNAL_DEFERRED_PLUGIN_FOO=/tmp/foo.cpp \
+  -DGDAL_ENABLE_PLUGINS=ON \
+  -DGDAL_ENABLE_PLUGINS_NO_DEPS=ON \
+  -DOGR_ENABLE_DRIVER_TAB_PLUGIN=OFF \
+  -DOGR_ENABLE_DRIVER_GEOJSON_PLUGIN=OFF \
   -DCMAKE_CXX_STANDARD=23 \
   -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS="-Werror" -DWERROR_DEV_FLAG="-Werror=dev"
 make -j$(nproc)
@@ -35,3 +39,25 @@ else
   echo "DeclareDeferredFOO() has NOT been run"
   exit 1
 fi
+
+#
+echo "Validating gdal --json-usage output"
+apps/gdal --json-usage > out.json
+export PYTHON_CMD=python3
+$PYTHON_CMD -m venv myvenv
+source myvenv/bin/activate
+$PYTHON_CMD -m pip install -U check-jsonschema
+check-jsonschema --schemafile data/gdal_algorithm.schema.json out.json
+
+# Check behavior when plugin not available
+mv gdalplugins/ogr_PG.so gdalplugins/ogr_PG.so.disabled
+export GDAL_DRIVER_PATH=$PWD/gdalplugins
+if apps/gdal vector convert -i autotest/ogr/data/poly.shp -o PG:dbname=autotest >/dev/null; then
+  echo "Failure expected"
+  exit 1
+fi
+if test -d PG:dbname=autotest; then
+  echo "Directory PG:dbname=autotest should not have been created"
+  exit 1
+fi
+mv gdalplugins/ogr_PG.so.disabled gdalplugins/ogr_PG.so

@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  GDAL Utilities
  * Purpose:  Common utility routines
@@ -94,9 +93,10 @@ std::vector<std::string> CPL_DLL
 GetOutputDriversFor(const char *pszDestFilename, int nFlagRasterVector);
 CPLString CPL_DLL GetOutputDriverForRaster(const char *pszDestFilename);
 void GDALRemoveBOM(GByte *pabyData);
-std::string GDALRemoveSQLComments(const std::string &osInput);
 
 int ArgIsNumeric(const char *pszArg);
+
+bool GDALPatternMatch(const char *input, const char *pattern);
 
 // those values shouldn't be changed, because overview levels >= 0 are meant
 // to be overview indices, and ovr_level < OVR_LEVEL_AUTO mean overview level

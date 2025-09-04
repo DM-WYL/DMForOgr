@@ -55,7 +55,7 @@ class OGCAPIDataset final : public GDALDataset
     CPLString m_osRootURL{};
     CPLString m_osUserPwd{};
     CPLString m_osUserQueryParams{};
-    double m_adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
 
     OGRSpatialReference m_oSRS{};
     CPLString m_osTileData{};
@@ -80,7 +80,7 @@ class OGCAPIDataset final : public GDALDataset
 
     bool InitFromFile(GDALOpenInfo *poOpenInfo);
     bool InitFromURL(GDALOpenInfo *poOpenInfo);
-    void ProcessScale(const CPLJSONObject &oScaleDenominator,
+    bool ProcessScale(const CPLJSONObject &oScaleDenominator,
                       const double dfXMin, const double dfYMin,
                       const double dfXMax, const double dfYMax);
     bool InitFromCollection(GDALOpenInfo *poOpenInfo, CPLJSONDocument &oDoc);
@@ -124,19 +124,19 @@ class OGCAPIDataset final : public GDALDataset
     int CloseDependentDatasets() override;
 
   public:
-    OGCAPIDataset();
+    OGCAPIDataset() = default;
     ~OGCAPIDataset();
 
-    CPLErr GetGeoTransform(double *padfGeoTransform) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return m_poOAPIFDS ? m_poOAPIFDS->GetLayerCount()
                            : static_cast<int>(m_apoLayers.size());
     }
 
-    OGRLayer *GetLayer(int idx) override
+    const OGRLayer *GetLayer(int idx) const override
     {
         return m_poOAPIFDS                         ? m_poOAPIFDS->GetLayer(idx)
                : idx >= 0 && idx < GetLayerCount() ? m_apoLayers[idx].get()
@@ -205,6 +205,8 @@ class OGCAPITiledLayerFeatureDefn final : public OGRFeatureDefn
 {
     OGCAPITiledLayer *m_poLayer = nullptr;
 
+    CPL_DISALLOW_COPY_ASSIGN(OGCAPITiledLayerFeatureDefn)
+
   public:
     OGCAPITiledLayerFeatureDefn(OGCAPITiledLayer *poLayer, const char *pszName)
         : OGRFeatureDefn(pszName), m_poLayer(poLayer)
@@ -259,6 +261,8 @@ class OGCAPITiledLayer final
     void FinalizeFeatureDefnWithLayer(OGRLayer *poUnderlyingLayer);
     OGRFeature *BuildFeature(OGRFeature *poSrcFeature, int nX, int nY);
 
+    CPL_DISALLOW_COPY_ASSIGN(OGCAPITiledLayer)
+
   protected:
     friend class OGCAPITiledLayerFeatureDefn;
     void EstablishFields();
@@ -276,17 +280,17 @@ class OGCAPITiledLayer final
 
     void ResetReading() override;
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
 
-    const char *GetName() override
+    const char *GetName() const override
     {
         return m_poFeatureDefn->GetName();
     }
 
-    OGRwkbGeometryType GetGeomType() override
+    OGRwkbGeometryType GetGeomType() const override
     {
         return m_poFeatureDefn->GetGeomType();
     }
@@ -297,22 +301,14 @@ class OGCAPITiledLayer final
         return -1;
     }
 
-    OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
-    OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent, int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
-
-    void SetSpatialFilter(OGRGeometry *) override;
-
-    void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
-    {
-        OGRLayer::SetSpatialFilter(iGeomField, poGeom);
-    }
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
     OGRFeature *GetFeature(GIntBig nFID) override;
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 };
 
 /************************************************************************/
@@ -326,20 +322,6 @@ int OGCAPITiledLayerFeatureDefn::GetFieldCount() const
         m_poLayer->EstablishFields();
     }
     return OGRFeatureDefn::GetFieldCount();
-}
-
-/************************************************************************/
-/*                            OGCAPIDataset()                           */
-/************************************************************************/
-
-OGCAPIDataset::OGCAPIDataset()
-{
-    m_adfGeoTransform[0] = 0;
-    m_adfGeoTransform[1] = 1;
-    m_adfGeoTransform[2] = 0;
-    m_adfGeoTransform[3] = 0;
-    m_adfGeoTransform[4] = 0;
-    m_adfGeoTransform[5] = 1;
 }
 
 /************************************************************************/
@@ -379,9 +361,9 @@ int OGCAPIDataset::CloseDependentDatasets()
 /*                          GetGeoTransform()                           */
 /************************************************************************/
 
-CPLErr OGCAPIDataset::GetGeoTransform(double *padfGeoTransform)
+CPLErr OGCAPIDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    memcpy(padfGeoTransform, m_adfGeoTransform, 6 * sizeof(double));
+    gt = m_gt;
     return CE_None;
 }
 
@@ -648,7 +630,7 @@ int OGCAPIDataset::Identify(GDALOpenInfo *poOpenInfo)
 {
     if (STARTS_WITH_CI(poOpenInfo->pszFilename, "OGCAPI:"))
         return TRUE;
-    if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "moaw"))
+    if (poOpenInfo->IsExtensionEqualToCI("moaw"))
         return TRUE;
     if (poOpenInfo->IsSingleAllowedDriver("OGCAPI"))
     {
@@ -710,7 +692,7 @@ int OGCAPIDataset::FigureBands(const std::string &osContentType,
             OpenTile(osImageURL, 0, 0, 0, bEmptyContent, GDAL_OF_RASTER);
 
         // Return the bands from the image, if we didn't get an image then assume 3.
-        result = dataset ? (int)dataset->GetBands().size() : 3;
+        result = dataset ? static_cast<int>(dataset->GetBands().size()) : 3;
     }
 
     return result;
@@ -753,7 +735,7 @@ bool OGCAPIDataset::InitFromFile(GDALOpenInfo *poOpenInfo)
 /*                        ProcessScale()                          */
 /************************************************************************/
 
-void OGCAPIDataset::ProcessScale(const CPLJSONObject &oScaleDenominator,
+bool OGCAPIDataset::ProcessScale(const CPLJSONObject &oScaleDenominator,
                                  const double dfXMin, const double dfYMin,
                                  const double dfXMax, const double dfYMax)
 
@@ -765,6 +747,8 @@ void OGCAPIDataset::ProcessScale(const CPLJSONObject &oScaleDenominator,
         constexpr double HALF_CIRCUMFERENCE = 6378137 * M_PI;
         dfRes = dfScaleDenominator / ((HALF_CIRCUMFERENCE / 180) / 0.28e-3);
     }
+    if (dfRes == 0.0)
+        return false;
 
     double dfXSize = (dfXMax - dfXMin) / dfRes;
     double dfYSize = (dfYMax - dfYMin) / dfRes;
@@ -776,10 +760,12 @@ void OGCAPIDataset::ProcessScale(const CPLJSONObject &oScaleDenominator,
 
     nRasterXSize = std::max(1, static_cast<int>(0.5 + dfXSize));
     nRasterYSize = std::max(1, static_cast<int>(0.5 + dfYSize));
-    m_adfGeoTransform[0] = dfXMin;
-    m_adfGeoTransform[1] = (dfXMax - dfXMin) / nRasterXSize;
-    m_adfGeoTransform[3] = dfYMax;
-    m_adfGeoTransform[5] = -(dfYMax - dfYMin) / nRasterYSize;
+    m_gt[0] = dfXMin;
+    m_gt[1] = (dfXMax - dfXMin) / nRasterXSize;
+    m_gt[3] = dfYMax;
+    m_gt[5] = -(dfYMax - dfYMin) / nRasterYSize;
+
+    return true;
 }
 
 /************************************************************************/
@@ -831,7 +817,8 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
 
     auto oScaleDenominator = oRoot["scaleDenominator"];
 
-    ProcessScale(oScaleDenominator, dfXMin, dfYMin, dfXMax, dfYMax);
+    if (!ProcessScale(oScaleDenominator, dfXMin, dfYMin, dfXMax, dfYMax))
+        return false;
 
     bool bFoundMap = false;
 
@@ -1005,7 +992,7 @@ bool OGCAPIDataset::InitFromURL(GDALOpenInfo *poOpenInfo)
     {
         if (!oDoc.GetRoot().GetArray("extent").IsValid())
         {
-            // If there is no "colletions" or "extent" member, then it is
+            // If there is no "collections" or "extent" member, then it is
             // perhaps a landing page
             const auto oLinks = oDoc.GetRoot().GetArray("links");
             osURL.clear();
@@ -1423,10 +1410,10 @@ bool OGCAPIDataset::InitWithCoverageAPI(GDALOpenInfo *poOpenInfo,
 
             nRasterXSize = std::max(1, static_cast<int>(0.5 + dfXSize));
             nRasterYSize = std::max(1, static_cast<int>(0.5 + dfYSize));
-            m_adfGeoTransform[0] = dfXMin;
-            m_adfGeoTransform[1] = (dfXMax - dfXMin) / nRasterXSize;
-            m_adfGeoTransform[3] = dfYMax;
-            m_adfGeoTransform[5] = -(dfYMax - dfYMin) / nRasterYSize;
+            m_gt[0] = dfXMin;
+            m_gt[1] = (dfXMax - dfXMin) / nRasterXSize;
+            m_gt[3] = dfYMax;
+            m_gt[5] = -(dfYMax - dfYMin) / nRasterYSize;
         }
 
         OGRSpatialReference oSRS;
@@ -2248,7 +2235,7 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
             m_apoDatasetsCropped.emplace_back(
                 GDALDataset::FromHandle(hCroppedDS));
 
-            if (tileMatrix.mResX <= m_adfGeoTransform[1])
+            if (tileMatrix.mResX <= m_gt[1])
                 break;
         }
         if (!m_apoDatasetsCropped.empty())
@@ -2257,7 +2244,7 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
                          std::end(m_apoDatasetsCropped));
             nRasterXSize = m_apoDatasetsCropped[0]->GetRasterXSize();
             nRasterYSize = m_apoDatasetsCropped[0]->GetRasterYSize();
-            m_apoDatasetsCropped[0]->GetGeoTransform(m_adfGeoTransform);
+            m_apoDatasetsCropped[0]->GetGeoTransform(m_gt);
 
             for (int i = 1; i <= m_apoDatasetsCropped[0]->GetRasterCount(); i++)
             {
@@ -2766,68 +2753,73 @@ void OGCAPITiledLayer::SetExtent(double dfXMin, double dfYMin, double dfXMax,
 }
 
 /************************************************************************/
-/*                            GetExtent()                               */
+/*                           IGetExtent()                               */
 /************************************************************************/
 
-OGRErr OGCAPITiledLayer::GetExtent(OGREnvelope *psExtent, int /* bForce */)
+OGRErr OGCAPITiledLayer::IGetExtent(int /* iGeomField */, OGREnvelope *psExtent,
+                                    bool /* bForce */)
 {
     *psExtent = m_sEnvelope;
     return OGRERR_NONE;
 }
 
 /************************************************************************/
-/*                         SetSpatialFilter()                           */
+/*                         ISetSpatialFilter()                          */
 /************************************************************************/
 
-void OGCAPITiledLayer::SetSpatialFilter(OGRGeometry *poGeomIn)
+OGRErr OGCAPITiledLayer::ISetSpatialFilter(int iGeomField,
+                                           const OGRGeometry *poGeomIn)
 {
-    OGRLayer::SetSpatialFilter(poGeomIn);
-
-    OGREnvelope sEnvelope;
-    if (m_poFilterGeom != nullptr)
-        sEnvelope = m_sFilterEnvelope;
-    else
-        sEnvelope = m_sEnvelope;
-
-    const double dfTileDim = m_oTileMatrix.mResX * m_oTileMatrix.mTileWidth;
-    const double dfOriX =
-        m_bInvertAxis ? m_oTileMatrix.mTopLeftY : m_oTileMatrix.mTopLeftX;
-    const double dfOriY =
-        m_bInvertAxis ? m_oTileMatrix.mTopLeftX : m_oTileMatrix.mTopLeftY;
-    if (sEnvelope.MinX - dfOriX >= -10 * dfTileDim &&
-        dfOriY - sEnvelope.MinY >= -10 * dfTileDim &&
-        sEnvelope.MaxX - dfOriX <= 10 * dfTileDim &&
-        dfOriY - sEnvelope.MaxY <= 10 * dfTileDim)
+    const OGRErr eErr = OGRLayer::ISetSpatialFilter(iGeomField, poGeomIn);
+    if (eErr == OGRERR_NONE)
     {
-        m_nCurMinX = std::max(
-            m_nMinX,
-            static_cast<int>(floor((sEnvelope.MinX - dfOriX) / dfTileDim)));
-        m_nCurMinY = std::max(
-            m_nMinY,
-            static_cast<int>(floor((dfOriY - sEnvelope.MaxY) / dfTileDim)));
-        m_nCurMaxX = std::min(
-            m_nMaxX,
-            static_cast<int>(floor((sEnvelope.MaxX - dfOriX) / dfTileDim)));
-        m_nCurMaxY = std::min(
-            m_nMaxY,
-            static_cast<int>(floor((dfOriY - sEnvelope.MinY) / dfTileDim)));
-    }
-    else
-    {
-        m_nCurMinX = m_nMinX;
-        m_nCurMinY = m_nMinY;
-        m_nCurMaxX = m_nMaxX;
-        m_nCurMaxY = m_nMaxY;
-    }
+        OGREnvelope sEnvelope;
+        if (m_poFilterGeom != nullptr)
+            sEnvelope = m_sFilterEnvelope;
+        else
+            sEnvelope = m_sEnvelope;
 
-    ResetReading();
+        const double dfTileDim = m_oTileMatrix.mResX * m_oTileMatrix.mTileWidth;
+        const double dfOriX =
+            m_bInvertAxis ? m_oTileMatrix.mTopLeftY : m_oTileMatrix.mTopLeftX;
+        const double dfOriY =
+            m_bInvertAxis ? m_oTileMatrix.mTopLeftX : m_oTileMatrix.mTopLeftY;
+        if (sEnvelope.MinX - dfOriX >= -10 * dfTileDim &&
+            dfOriY - sEnvelope.MinY >= -10 * dfTileDim &&
+            sEnvelope.MaxX - dfOriX <= 10 * dfTileDim &&
+            dfOriY - sEnvelope.MaxY <= 10 * dfTileDim)
+        {
+            m_nCurMinX = std::max(
+                m_nMinX,
+                static_cast<int>(floor((sEnvelope.MinX - dfOriX) / dfTileDim)));
+            m_nCurMinY = std::max(
+                m_nMinY,
+                static_cast<int>(floor((dfOriY - sEnvelope.MaxY) / dfTileDim)));
+            m_nCurMaxX = std::min(
+                m_nMaxX,
+                static_cast<int>(floor((sEnvelope.MaxX - dfOriX) / dfTileDim)));
+            m_nCurMaxY = std::min(
+                m_nMaxY,
+                static_cast<int>(floor((dfOriY - sEnvelope.MinY) / dfTileDim)));
+        }
+        else
+        {
+            m_nCurMinX = m_nMinX;
+            m_nCurMinY = m_nMinY;
+            m_nCurMaxX = m_nMaxX;
+            m_nCurMaxY = m_nMaxY;
+        }
+
+        ResetReading();
+    }
+    return eErr;
 }
 
 /************************************************************************/
 /*                          TestCapability()                            */
 /************************************************************************/
 
-int OGCAPITiledLayer::TestCapability(const char *pszCap)
+int OGCAPITiledLayer::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, OLCRandomRead))
         return true;

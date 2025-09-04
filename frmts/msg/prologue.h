@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Purpose:  Interface of Prologue class. Parse the prologue of one repeat
  *           cycle and keep the interesting info.
@@ -104,6 +103,11 @@ class Prologue
   private:
     ImageDescriptionRecord *m_idr;
     RadiometricProcessingRecord *m_rpr;
+
+    Prologue(const Prologue &) = delete;
+    Prologue &operator=(const Prologue &) = delete;
+    Prologue(Prologue &&) = delete;
+    Prologue &operator=(Prologue &&) = delete;
 };
 
 #endif  // !defined(AFX_PROLOGUE_H__777B5B86_04F4_4A01_86F6_24615DCD8446__INCLUDED_)

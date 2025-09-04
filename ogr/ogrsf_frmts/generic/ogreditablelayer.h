@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Defines OGREditableLayer class
@@ -66,13 +65,8 @@ class CPL_DLL OGREditableLayer : public OGRLayerDecorator
     void SetSupportsCurveGeometries(bool bSupportsCurveGeometries);
 
     virtual OGRGeometry *GetSpatialFilter() override;
-    virtual void SetSpatialFilter(OGRGeometry *) override;
-    virtual void SetSpatialFilterRect(double dfMinX, double dfMinY,
-                                      double dfMaxX, double dfMaxY) override;
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *) override;
-    virtual void SetSpatialFilterRect(int iGeomField, double dfMinX,
-                                      double dfMinY, double dfMaxX,
-                                      double dfMaxY) override;
+    virtual OGRErr ISetSpatialFilter(int iGeomField,
+                                     const OGRGeometry *) override;
 
     virtual OGRErr SetAttributeFilter(const char *) override;
     virtual bool GetArrowStream(struct ArrowArrayStream *out_stream,
@@ -92,17 +86,17 @@ class CPL_DLL OGREditableLayer : public OGRLayerDecorator
                           bool bUpdateStyleString) override;
     virtual OGRErr DeleteFeature(GIntBig nFID) override;
 
-    virtual OGRwkbGeometryType GetGeomType() override;
-    virtual OGRFeatureDefn *GetLayerDefn() override;
+    OGRwkbGeometryType GetGeomType() const override;
+    using OGRLayerDecorator::GetLayerDefn;
+    const OGRFeatureDefn *GetLayerDefn() const override;
 
-    virtual OGRSpatialReference *GetSpatialRef() override;
+    const OGRSpatialReference *GetSpatialRef() const override;
 
     virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce = TRUE) override;
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce = TRUE) override;
+    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                              bool bForce) override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = TRUE) override;
@@ -124,7 +118,7 @@ class CPL_DLL OGREditableLayer : public OGRLayerDecorator
     virtual OGRErr CommitTransaction() override;
     virtual OGRErr RollbackTransaction() override;
 
-    virtual const char *GetGeometryColumn() override;
+    const char *GetGeometryColumn() const override;
 };
 
 //! @endcond

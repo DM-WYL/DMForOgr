@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  Hierarchical Data Format Release 4 (HDF4)
  * Purpose:  Header file for HDF4 datasets reader.
@@ -59,6 +58,8 @@ class HDF4Dataset CPL_NON_FINAL : public GDALPamDataset
                                    char **ppszAttrClass, char **ppszAttrValue);
 
     void OpenMultiDim(const char *pszFilename, CSLConstList papszOpenOptionsIn);
+
+    CPL_DISALLOW_COPY_ASSIGN(HDF4Dataset)
 
   protected:
     int32 hGR;

@@ -216,7 +216,7 @@ class OGRHanaLayer : public OGRLayer
                                  const CPLString &query,
                                  const CPLString &featureDefName);
     void ReadGeometryExtent(int geomField, OGREnvelope *extent, int force);
-    bool IsFastExtentAvailable();
+    bool IsFastExtentAvailable() const;
 
   public:
     explicit OGRHanaLayer(OGRHanaDataSource *datasource);
@@ -229,26 +229,18 @@ class OGRHanaLayer : public OGRLayer
 
     void ResetReading() override;
 
-    OGRErr GetExtent(OGREnvelope *extent, int force = TRUE) override
-    {
-        return GetExtent(0, extent, force);
-    }
-
-    OGRErr GetExtent(int geomField, OGREnvelope *extent, int force) override;
+    OGRErr IGetExtent(int geomField, OGREnvelope *extent, bool force) override;
     GIntBig GetFeatureCount(int force) override;
     OGRFeature *GetNextFeature() override;
-    const char *GetFIDColumn() override;
-    OGRFeatureDefn *GetLayerDefn() override;
-    const char *GetName() override;
+    const char *GetFIDColumn() const override;
+    using OGRLayer::GetLayerDefn;
+    const OGRFeatureDefn *GetLayerDefn() const override;
+    const char *GetName() const override;
 
     OGRErr SetAttributeFilter(const char *pszQuery) override;
 
-    void SetSpatialFilter(OGRGeometry *poGeom) override
-    {
-        SetSpatialFilter(0, poGeom);
-    }
-
-    void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override;
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 };
 
 /************************************************************************/
@@ -309,20 +301,16 @@ class OGRHanaTableLayer final : public OGRHanaLayer
 
     void ResetReading() override;
 
-    OGRErr GetExtent(OGREnvelope *extent, int force = TRUE) override
-    {
-        return GetExtent(0, extent, force);
-    }
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *extent, bool force) override;
 
-    OGRErr GetExtent(int geomField, OGREnvelope *extent, int force) override;
     GIntBig GetFeatureCount(int force) override;
 
-    const char *GetName() override
+    const char *GetName() const override
     {
         return tableName_.c_str();
     }
 
-    int TestCapability(const char *capabilities) override;
+    int TestCapability(const char *capabilities) const override;
 
     OGRErr ICreateFeature(OGRFeature *feature) override;
     OGRErr DeleteFeature(GIntBig nFID) override;
@@ -376,7 +364,7 @@ class OGRHanaResultLayer final : public OGRHanaLayer
     explicit OGRHanaResultLayer(OGRHanaDataSource *datasource,
                                 const char *query);
 
-    int TestCapability(const char *capabilities) override;
+    int TestCapability(const char *capabilities) const override;
 };
 
 }  // namespace OGRHANA
@@ -469,17 +457,18 @@ class OGRHanaDataSource final : public GDALDataset
 
     OGRErr DeleteLayer(int index) override;
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(layers_.size());
     }
 
-    OGRLayer *GetLayer(int index) override;
+    using GDALDataset::GetLayer;
+    const OGRLayer *GetLayer(int index) const override;
     OGRLayer *GetLayerByName(const char *) override;
     OGRLayer *ICreateLayer(const char *pszName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
-    int TestCapability(const char *capabilities) override;
+    int TestCapability(const char *capabilities) const override;
 
     OGRLayer *ExecuteSQL(const char *sqlCommand, OGRGeometry *spatialFilter,
                          const char *dialect) override;

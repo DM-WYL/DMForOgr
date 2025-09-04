@@ -76,12 +76,13 @@ class Viewshed
     bool readLine(int nLine, double *data);
     std::pair<int, int> adjustHeight(int iLine, int nX,
                                      std::vector<double> &thisLineVal);
-    bool calcExtents(int nX, int nY,
-                     const std::array<double, 6> &adfInvTransform);
+    bool calcExtents(int nX, int nY, const GDALGeoTransform &invGT);
 
     Viewshed(const Viewshed &) = delete;
     Viewshed &operator=(const Viewshed &) = delete;
 };
+
+double CPL_DLL adjustCurveCoeff(double curveCoeff, GDALDatasetH hSrcDS);
 
 }  // namespace viewshed
 }  // namespace gdal

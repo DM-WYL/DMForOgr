@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Private definitions for OGR/OpenStreeMap driver.
@@ -134,13 +133,15 @@ class OGROSMLayer final : public OGRLayer
     OGROSMLayer(OGROSMDataSource *m_poDS, int m_nIdxLayer, const char *pszName);
     virtual ~OGROSMLayer();
 
-    virtual OGRFeatureDefn *GetLayerDefn() override
+    using OGRLayer::GetLayerDefn;
+
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
 
     virtual void ResetReading() override;
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRFeature *GetNextFeature() override;
 
@@ -152,13 +153,8 @@ class OGROSMLayer final : public OGRLayer
 
     virtual OGRErr SetAttributeFilter(const char *pszAttrQuery) override;
 
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
+    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                              bool bForce) override;
 
     const OGREnvelope *GetSpatialFilterEnvelope();
 
@@ -569,14 +565,14 @@ class OGROSMDataSource final : public GDALDataset
     OGROSMDataSource();
     virtual ~OGROSMDataSource();
 
-    virtual int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(m_apoLayers.size());
     }
 
-    virtual OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRLayer *ExecuteSQL(const char *pszSQLCommand,
                                  OGRGeometry *poSpatialFilter,
@@ -594,7 +590,7 @@ class OGROSMDataSource final : public GDALDataset
     int MyResetReading();
     bool ParseNextChunk(int nIdxLayer, GDALProgressFunc pfnProgress,
                         void *pProgressData);
-    OGRErr GetExtent(OGREnvelope *psExtent);
+    OGRErr GetNativeExtent(OGREnvelope *psExtent);
     int IsInterleavedReading();
 
     void NotifyNodes(unsigned int nNodes, const OSMNode *pasNodes);

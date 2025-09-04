@@ -60,16 +60,16 @@ bool S100BaseDataset::Init()
 /*                          GetGeoTransform()                           */
 /************************************************************************/
 
-CPLErr S100BaseDataset::GetGeoTransform(double *padfGeoTransform)
+CPLErr S100BaseDataset::GetGeoTransform(GDALGeoTransform &gt) const
 
 {
     if (m_bHasGT)
     {
-        memcpy(padfGeoTransform, m_adfGeoTransform, sizeof(double) * 6);
+        gt = m_gt;
         return CE_None;
     }
 
-    return GDALPamDataset::GetGeoTransform(padfGeoTransform);
+    return GDALPamDataset::GetGeoTransform(gt);
 }
 
 /************************************************************************/
@@ -228,7 +228,7 @@ bool S100GetNumPointsLongitudinalLatitudinal(const GDALGroup *poGroup,
 /*                        S100GetGeoTransform()                         */
 /************************************************************************/
 
-bool S100GetGeoTransform(const GDALGroup *poGroup, double adfGeoTransform[6],
+bool S100GetGeoTransform(const GDALGroup *poGroup, GDALGeoTransform &gt,
                          bool bNorthUp)
 {
     auto poOriginX = poGroup->GetAttribute("gridOriginLongitude");
@@ -253,16 +253,15 @@ bool S100GetGeoTransform(const GDALGroup *poGroup, double adfGeoTransform[6],
         const double dfSpacingX = poSpacingX->ReadAsDouble();
         const double dfSpacingY = poSpacingY->ReadAsDouble();
 
-        adfGeoTransform[0] = poOriginX->ReadAsDouble();
-        adfGeoTransform[3] =
-            poOriginY->ReadAsDouble() +
-            (bNorthUp ? dfSpacingY * (nNumPointsLatitudinal - 1) : 0);
-        adfGeoTransform[1] = dfSpacingX;
-        adfGeoTransform[5] = bNorthUp ? -dfSpacingY : dfSpacingY;
+        gt[0] = poOriginX->ReadAsDouble();
+        gt[3] = poOriginY->ReadAsDouble() +
+                (bNorthUp ? dfSpacingY * (nNumPointsLatitudinal - 1) : 0);
+        gt[1] = dfSpacingX;
+        gt[5] = bNorthUp ? -dfSpacingY : dfSpacingY;
 
         // From pixel-center convention to pixel-corner convention
-        adfGeoTransform[0] -= adfGeoTransform[1] / 2;
-        adfGeoTransform[3] -= adfGeoTransform[5] / 2;
+        gt[0] -= gt[1] / 2;
+        gt[3] -= gt[5] / 2;
 
         return true;
     }
@@ -417,8 +416,15 @@ std::string S100ReadMetadata(GDALDataset *poDS, const std::string &osFilename,
             const char *pszVal = poAttr->ReadAsString();
             if (pszVal && pszVal[0])
             {
-                osMetadataFile = CPLFormFilename(CPLGetPath(osFilename.c_str()),
-                                                 pszVal, nullptr);
+                if (CPLHasPathTraversal(pszVal))
+                {
+                    CPLError(CE_Warning, CPLE_AppDefined,
+                             "Path traversal detected in %s", pszVal);
+                    continue;
+                }
+                osMetadataFile = CPLFormFilenameSafe(
+                    CPLGetPathSafe(osFilename.c_str()).c_str(), pszVal,
+                    nullptr);
                 VSIStatBufL sStat;
                 if (VSIStatL(osMetadataFile.c_str(), &sStat) != 0)
                 {
@@ -427,9 +433,9 @@ std::string S100ReadMetadata(GDALDataset *poDS, const std::string &osFilename,
                     // but the actual filename does not start with "MD_"...
                     if (STARTS_WITH(pszVal, "MD_"))
                     {
-                        osMetadataFile =
-                            CPLFormFilename(CPLGetPath(osFilename.c_str()),
-                                            pszVal + strlen("MD_"), nullptr);
+                        osMetadataFile = CPLFormFilenameSafe(
+                            CPLGetPathSafe(osFilename.c_str()).c_str(),
+                            pszVal + strlen("MD_"), nullptr);
                         if (VSIStatL(osMetadataFile.c_str(), &sStat) != 0)
                         {
                             osMetadataFile.clear();

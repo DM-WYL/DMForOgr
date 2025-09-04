@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  Arc/Info Coverage (E00 & Binary) Reader
  * Purpose:  Declarations for OGR wrapper classes for coverage access.
@@ -49,12 +48,12 @@ class OGRAVCLayer CPL_NON_FINAL : public OGRLayer
     OGRAVCLayer(AVCFileType eSectionType, OGRAVCDataSource *poDS);
     virtual ~OGRAVCLayer();
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 };
 
 /************************************************************************/
@@ -116,7 +115,7 @@ class OGRAVCBinLayer final : public OGRAVCLayer
     OGRFeature *GetNextFeature() override;
     OGRFeature *GetFeature(GIntBig nFID) override;
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 };
 
 /************************************************************************/
@@ -136,14 +135,14 @@ class OGRAVCBinDataSource final : public OGRAVCDataSource
 
     int Open(const char *, int bTestOpen);
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return nLayers;
     }
 
-    OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     AVCE00ReadPtr GetInfo()
     {
@@ -214,13 +213,14 @@ class OGRAVCE00DataSource final : public OGRAVCDataSource
         return psE00;
     }
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return nLayers;
     }
 
-    OGRLayer *GetLayer(int) override;
-    int TestCapability(const char *) override;
+    using GDALDataset::GetLayer;
+    const OGRLayer *GetLayer(int) const override;
+    int TestCapability(const char *) const override;
     virtual OGRSpatialReference *DSGetSpatialRef() override;
 };
 

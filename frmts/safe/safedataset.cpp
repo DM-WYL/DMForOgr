@@ -777,8 +777,8 @@ int SAFEDataset::Identify(GDALOpenInfo *poOpenInfo)
     if (poOpenInfo->bIsDirectory)
     {
         VSIStatBufL sStat;
-        CPLString osMDFilename = CPLFormCIFilename(poOpenInfo->pszFilename,
-                                                   "manifest.safe", nullptr);
+        CPLString osMDFilename = CPLFormCIFilenameSafe(
+            poOpenInfo->pszFilename, "manifest.safe", nullptr);
 
         if (VSIStatL(osMDFilename, &sStat) == 0 && VSI_ISREG(sStat.st_mode))
         {
@@ -795,11 +795,14 @@ int SAFEDataset::Identify(GDALOpenInfo *poOpenInfo)
     if (poOpenInfo->nHeaderBytes < 100)
         return FALSE;
 
-    if (strstr((const char *)poOpenInfo->pabyHeader, "<xfdu:XFDU") == nullptr)
+    const char *pszHeader =
+        reinterpret_cast<const char *>(poOpenInfo->pabyHeader);
+    if (!strstr(pszHeader, "<xfdu:XFDU"))
         return FALSE;
 
-    // This driver doesn't handle Sentinel-2 data
-    if (strstr((const char *)poOpenInfo->pabyHeader, "sentinel-2") != nullptr)
+    // This driver doesn't handle Sentinel-2 or RCM (RADARSAT Constellation Mission) data
+    if (strstr(pszHeader, "sentinel-2") ||
+        strstr(pszHeader, "rcm_prod_manifest.xsd"))
         return FALSE;
 
     return TRUE;
@@ -982,8 +985,8 @@ GDALDataset *SAFEDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (poOpenInfo->bIsDirectory)
     {
-        osMDFilename =
-            CPLFormCIFilename(osMDFilename.c_str(), "manifest.safe", nullptr);
+        osMDFilename = CPLFormCIFilenameSafe(osMDFilename.c_str(),
+                                             "manifest.safe", nullptr);
     }
 
     /* -------------------------------------------------------------------- */
@@ -994,16 +997,14 @@ GDALDataset *SAFEDataset::Open(GDALOpenInfo *poOpenInfo)
     if (psManifest == nullptr)
         return nullptr;
 
-    CPLString osPath(CPLGetPath(osMDFilename));
+    CPLString osPath(CPLGetPathSafe(osMDFilename));
 
     /* -------------------------------------------------------------------- */
     /*      Confirm the requested access is supported.                      */
     /* -------------------------------------------------------------------- */
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The SAFE driver does not support update access to existing"
-                 " datasets.\n");
+        ReportUpdateNotSupportedByDriver("SAFE");
         return nullptr;
     }
 
@@ -1096,14 +1097,20 @@ GDALDataset *SAFEDataset::Open(GDALOpenInfo *poOpenInfo)
             if (*pszMeasurement == '\0')
                 continue;
 
-            char **papszTokens = CSLTokenizeString2(pszDmdID, " ",
-                                                    CSLT_ALLOWEMPTYTOKENS |
-                                                        CSLT_STRIPLEADSPACES |
-                                                        CSLT_STRIPENDSPACES);
-
-            for (int j = 0; j < CSLCount(papszTokens); j++)
+            if (CPLHasPathTraversal(pszMeasurement))
             {
-                const char *pszId = papszTokens[j];
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Path traversal detected in %s", pszMeasurement);
+                return nullptr;
+            }
+
+            const CPLStringList aosTokens(CSLTokenizeString2(
+                pszDmdID, " ",
+                CSLT_ALLOWEMPTYTOKENS | CSLT_STRIPLEADSPACES |
+                    CSLT_STRIPENDSPACES));
+
+            for (const char *pszId : aosTokens)
+            {
                 if (*pszId == '\0')
                     continue;
 
@@ -1136,16 +1143,28 @@ GDALDataset *SAFEDataset::Open(GDALOpenInfo *poOpenInfo)
                 }
             }
 
-            CSLDestroy(papszTokens);
-
             if (pszAnnotation == nullptr || pszCalibration == nullptr)
                 continue;
 
+            if (CPLHasPathTraversal(pszAnnotation))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Path traversal detected in %s", pszAnnotation);
+                return nullptr;
+            }
+
+            if (CPLHasPathTraversal(pszCalibration))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Path traversal detected in %s", pszCalibration);
+                return nullptr;
+            }
+
             // open Annotation XML file
             const CPLString osAnnotationFilePath =
-                CPLFormFilename(osPath, pszAnnotation, nullptr);
+                CPLFormFilenameSafe(osPath, pszAnnotation, nullptr);
             const CPLString osCalibrationFilePath =
-                CPLFormFilename(osPath, pszCalibration, nullptr);
+                CPLFormFilenameSafe(osPath, pszCalibration, nullptr);
 
             CPLXMLTreeCloser psAnnotation(
                 CPLParseXMLFile(osAnnotationFilePath));
@@ -1289,18 +1308,21 @@ GDALDataset *SAFEDataset::Open(GDALOpenInfo *poOpenInfo)
             /* --------------------------------------------------------------------
              */
             const std::string osFullFilename(
-                CPLFormFilename(osPath, pszMeasurement, nullptr));
+                CPLFormFilenameSafe(osPath, pszMeasurement, nullptr));
 
             /* --------------------------------------------------------------------
              */
             /*      Try and open the file. */
             /* --------------------------------------------------------------------
              */
-            CPLTurnFailureIntoWarning(true);
-            auto poBandFile = std::unique_ptr<GDALDataset>(
-                GDALDataset::Open(osFullFilename.c_str(),
-                                  GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
-            CPLTurnFailureIntoWarning(false);
+            std::unique_ptr<GDALDataset> poBandFile;
+            {
+                CPLTurnFailureIntoWarningBackuper oErrorsToWarnings{};
+                poBandFile = std::unique_ptr<GDALDataset>(
+                    GDALDataset::Open(osFullFilename.c_str(),
+                                      GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
+            }
+
             if (poBandFile == nullptr)
             {
                 // NOP
@@ -1927,20 +1949,6 @@ const GDAL_GCP *SAFEDataset::GetGCPs()
 
 {
     return pasGCPList;
-}
-
-/************************************************************************/
-/*                          GetGeoTransform()                           */
-/************************************************************************/
-
-CPLErr SAFEDataset::GetGeoTransform(double *padfTransform)
-{
-    memcpy(padfTransform, adfGeoTransform, sizeof(double) * 6);
-
-    if (bHaveGeoTransform)
-        return CE_None;
-
-    return CE_Failure;
 }
 
 /************************************************************************/

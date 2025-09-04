@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test core numeric operations and statistics calculations
@@ -31,6 +30,7 @@ import math
 import os
 import shutil
 import struct
+import sys
 
 import gdaltest
 import pytest
@@ -810,12 +810,13 @@ def test_stats_all_nodata():
     with pytest.raises(Exception):
         ds.GetRasterBand(1).ComputeRasterMinMax()
 
-    with pytest.raises(Exception):
-        ds.GetRasterBand(1).ComputeRasterMinMax(can_return_none=True)
+    assert ds.GetRasterBand(1).ComputeRasterMinMax(can_return_none=True) is None
 
-    with pytest.raises(Exception):
-        # can_return_null also accepted for similarity with other methods
-        ds.GetRasterBand(1).ComputeRasterMinMax(can_return_null=True)
+    with gdaltest.disable_exceptions(), gdal.quiet_errors():
+        assert ds.GetRasterBand(1).ComputeRasterMinMax(can_return_none=True) is None
+
+    # can_return_null also accepted for similarity with other methods
+    assert ds.GetRasterBand(1).ComputeRasterMinMax(can_return_null=True) is None
 
     approx_ok = 1
     force = 1
@@ -867,8 +868,8 @@ def test_stats_clear():
         (gdal.GDT_Int16, -32767, 32766),
         (gdal.GDT_UInt32, 1, (1 << 32) - 2),
         (gdal.GDT_Int32, -(1 << 31) + 1, (1 << 31) - 2),
-        (gdal.GDT_UInt64, 1, (1 << 53) - 2),
-        (gdal.GDT_Int64, -(1 << 53) + 2, (1 << 53) - 2),
+        (gdal.GDT_UInt64, 1, (1 << 60) - 1),
+        (gdal.GDT_Int64, -(1 << 60) - 1, (1 << 60) - 1),
         (
             gdal.GDT_Float32,
             -struct.unpack("f", struct.pack("f", 1e20))[0],
@@ -909,7 +910,12 @@ def test_stats_computeminmax(datatype, minval, maxval, nodata):
         buf_xsize=2,
         buf_ysize=1,
     )
-    assert ds.GetRasterBand(1).ComputeRasterMinMax(0) == (expected_minval, maxval)
+    if datatype in (gdal.GDT_Int64, gdal.GDT_UInt64):
+        assert ds.GetRasterBand(1).ComputeRasterMinMax(0) == pytest.approx(
+            (expected_minval, maxval), rel=1e-17
+        )
+    else:
+        assert ds.GetRasterBand(1).ComputeRasterMinMax(0) == (expected_minval, maxval)
 
 
 ###############################################################################
@@ -926,3 +932,52 @@ def test_stats_mask_band():
     assert src_ds.GetRasterBand(1).ComputeRasterMinMax(False) == (2, 3)
     assert src_ds.GetRasterBand(1).ComputeStatistics(False) == [2, 3, 2.5, 0.5]
     assert src_ds.GetRasterBand(1).GetHistogram(False) == [0, 0, 1, 1] + ([0] * 252)
+
+
+###############################################################################
+# Test statistics on a band with all values to large values
+
+
+@pytest.mark.parametrize(
+    "value", [sys.float_info.max, -sys.float_info.max, float("inf"), -float("inf")]
+)
+def test_stats_all_large_values(value):
+
+    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 1, 1, gdal.GDT_Float64)
+    src_ds.WriteRaster(0, 0, 2, 1, struct.pack("d" * 2, value, value))
+    assert src_ds.GetRasterBand(1).ComputeRasterMinMax(False) == (value, value)
+    assert src_ds.GetRasterBand(1).ComputeStatistics(False) == [value, value, value, 0]
+
+
+###############################################################################
+
+
+def test_stats_int64():
+
+    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 1, 1, gdal.GDT_Int64)
+    src_ds.GetRasterBand(1).SetNoDataValue(-(1 << 60) - 1)
+    src_ds.WriteRaster(0, 0, 2, 1, struct.pack("q" * 2, 1 << 50, -(1 << 60) - 1))
+    assert src_ds.GetRasterBand(1).ComputeRasterMinMax(False) == (1 << 50, 1 << 50)
+    assert src_ds.GetRasterBand(1).ComputeStatistics(False) == [
+        1 << 50,
+        1 << 50,
+        1 << 50,
+        0,
+    ]
+
+
+###############################################################################
+
+
+def test_stats_uint64():
+
+    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 1, 1, gdal.GDT_UInt64)
+    src_ds.GetRasterBand(1).SetNoDataValue((1 << 60) - 1)
+    src_ds.WriteRaster(0, 0, 2, 1, struct.pack("Q" * 2, 1 << 50, (1 << 60) - 1))
+    assert src_ds.GetRasterBand(1).ComputeRasterMinMax(False) == (1 << 50, 1 << 50)
+    assert src_ds.GetRasterBand(1).ComputeStatistics(False) == [
+        1 << 50,
+        1 << 50,
+        1 << 50,
+        0,
+    ]

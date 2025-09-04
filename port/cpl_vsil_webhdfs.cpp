@@ -269,7 +269,8 @@ void VSIWebHDFSWriteHandle::InvalidateParentDirectory()
     std::string osFilenameWithoutSlash(m_osFilename);
     if (!osFilenameWithoutSlash.empty() && osFilenameWithoutSlash.back() == '/')
         osFilenameWithoutSlash.pop_back();
-    m_poFS->InvalidateDirContent(CPLGetDirname(osFilenameWithoutSlash.c_str()));
+    m_poFS->InvalidateDirContent(
+        CPLGetDirnameSafe(osFilenameWithoutSlash.c_str()));
 }
 
 /************************************************************************/
@@ -590,11 +591,12 @@ char **VSIWebHDFSFSHandler::GetFileList(const char *pszDirname,
         osDelegationParam = "&delegation=" + osDelegationParam;
     std::string osURL =
         osBaseURL + "?op=LISTSTATUS" + osUsernameParam + osDelegationParam;
+    const CPLStringList aosHTTPOptions(CPLHTTPGetOptionsFromEnv(pszDirname));
 
     CURL *hCurlHandle = curl_easy_init();
 
     struct curl_slist *headers =
-        VSICurlSetOptions(hCurlHandle, osURL.c_str(), nullptr);
+        VSICurlSetOptions(hCurlHandle, osURL.c_str(), aosHTTPOptions.List());
 
     WriteFuncStruct sWriteFuncData;
     VSICURLInitWriteFuncStruct(&sWriteFuncData, nullptr, nullptr, nullptr);
@@ -693,13 +695,14 @@ int VSIWebHDFSFSHandler::Unlink(const char *pszFilename)
         osDelegationParam = "&delegation=" + osDelegationParam;
     std::string osURL =
         osBaseURL + "?op=DELETE" + osUsernameParam + osDelegationParam;
+    const CPLStringList aosHTTPOptions(CPLHTTPGetOptionsFromEnv(pszFilename));
 
     CURL *hCurlHandle = curl_easy_init();
 
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_CUSTOMREQUEST, "DELETE");
 
     struct curl_slist *headers =
-        VSICurlSetOptions(hCurlHandle, osURL.c_str(), nullptr);
+        VSICurlSetOptions(hCurlHandle, osURL.c_str(), aosHTTPOptions.List());
 
     WriteFuncStruct sWriteFuncData;
     VSICURLInitWriteFuncStruct(&sWriteFuncData, nullptr, nullptr, nullptr);
@@ -740,7 +743,7 @@ int VSIWebHDFSFSHandler::Unlink(const char *pszFilename)
             osFilenameWithoutSlash.back() == '/')
             osFilenameWithoutSlash.pop_back();
 
-        InvalidateDirContent(CPLGetDirname(osFilenameWithoutSlash.c_str()));
+        InvalidateDirContent(CPLGetDirnameSafe(osFilenameWithoutSlash.c_str()));
     }
     else
     {
@@ -816,13 +819,14 @@ int VSIWebHDFSFSHandler::Mkdir(const char *pszDirname, long nMode)
         osURL += "&permission=";
         osURL += CPLSPrintf("%o", static_cast<int>(nMode));
     }
+    const CPLStringList aosHTTPOptions(CPLHTTPGetOptionsFromEnv(pszDirname));
 
     CURL *hCurlHandle = curl_easy_init();
 
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_CUSTOMREQUEST, "PUT");
 
     struct curl_slist *headers =
-        VSICurlSetOptions(hCurlHandle, osURL.c_str(), nullptr);
+        VSICurlSetOptions(hCurlHandle, osURL.c_str(), aosHTTPOptions.List());
 
     WriteFuncStruct sWriteFuncData;
     VSICURLInitWriteFuncStruct(&sWriteFuncData, nullptr, nullptr, nullptr);
@@ -856,7 +860,8 @@ int VSIWebHDFSFSHandler::Mkdir(const char *pszDirname, long nMode)
     }
     if (bOK)
     {
-        InvalidateDirContent(CPLGetDirname(osDirnameWithoutEndSlash.c_str()));
+        InvalidateDirContent(
+            CPLGetDirnameSafe(osDirnameWithoutEndSlash.c_str()));
 
         FileProp cachedFileProp;
         cachedFileProp.eExists = EXIST_YES;

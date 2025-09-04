@@ -208,16 +208,21 @@ bool CPLWorkerThreadPool::SubmitJob(std::function<void()> task)
         CPLDebug("JOB", "Waking up %p", psWorkerThread);
 #endif
 
+#ifdef __COVERITY__
+        CPLError(CE_Failure, CPLE_AppDefined, "Not implemented");
+#else
         {
             std::lock_guard<std::mutex> oGuardWT(psWorkerThread->m_mutex);
-            // coverity[ uninit_use_in_call]
+            // coverity[uninit_use_in_call]
             oGuard.unlock();
             psWorkerThread->m_cv.notify_one();
         }
+#endif
 
         CPLFree(psToFree);
     }
 
+    // coverity[double_unlock]
     return true;
 }
 
@@ -300,7 +305,7 @@ bool CPLWorkerThreadPool::SubmitJobs(CPLThreadFunc pfnFunc,
 #endif
             {
                 std::lock_guard<std::mutex> oGuardWT(psWorkerThread->m_mutex);
-                // coverity[ uninit_use_in_call]
+                // coverity[uninit_use_in_call]
                 oGuard.unlock();
                 psWorkerThread->m_cv.notify_one();
             }
@@ -340,7 +345,8 @@ void CPLWorkerThreadPool::WaitCompletion(int nMaxRemainingJobs)
 /*                            WaitEvent()                               */
 /************************************************************************/
 
-/** Wait for completion of at least one job, if there are any remaining
+/** Wait for completion of at least one job, if there are any remaining,
+ * or for WakeUpWaitEvent() to have been called.
  */
 void CPLWorkerThreadPool::WaitEvent()
 {
@@ -352,7 +358,25 @@ void CPLWorkerThreadPool::WaitEvent()
         return;
     const int nPendingJobsBefore = nPendingJobs;
     m_cv.wait(oGuard, [this, nPendingJobsBefore]
-              { return nPendingJobs < nPendingJobsBefore; });
+              { return nPendingJobs < nPendingJobsBefore || m_bNotifyEvent; });
+    m_bNotifyEvent = false;
+}
+
+/************************************************************************/
+/*                          WakeUpWaitEvent()                           */
+/************************************************************************/
+
+/** Wake-up WaitEvent().
+ *
+ * This method is thread-safe.
+ *
+ * @since GDAL 3.12
+ */
+void CPLWorkerThreadPool::WakeUpWaitEvent()
+{
+    std::unique_lock<std::mutex> oGuard(m_mutex);
+    m_bNotifyEvent = true;
+    m_cv.notify_one();
 }
 
 /************************************************************************/
@@ -453,9 +477,9 @@ void CPLWorkerThreadPool::DeclareJobFinished()
 std::function<void()>
 CPLWorkerThreadPool::GetNextJob(CPLWorkerThread *psWorkerThread)
 {
+    std::unique_lock<std::mutex> oGuard(m_mutex);
     while (true)
     {
-        std::unique_lock<std::mutex> oGuard(m_mutex);
         if (eState == CPLWTS_STOP)
             return std::function<void()>();
 
@@ -500,10 +524,17 @@ CPLWorkerThreadPool::GetNextJob(CPLWorkerThread *psWorkerThread)
         CPLDebug("JOB", "%p sleeping", psWorkerThread);
 #endif
 
+#ifdef __COVERITY__
+        CPLError(CE_Failure, CPLE_AppDefined, "Not implemented");
+#else
         std::unique_lock<std::mutex> oGuardThisThread(psWorkerThread->m_mutex);
         // coverity[uninit_use_in_call]
         oGuard.unlock();
+        // coverity[wait_not_in_locked_loop]
         psWorkerThread->m_cv.wait(oGuardThisThread);
+        // coverity[lock_order]
+        oGuard.lock();
+#endif
     }
 }
 
@@ -581,14 +612,14 @@ bool CPLJobQueue::SubmitJob(std::function<void()> task)
         m_nPendingJobs++;
     }
 
-    // cppcheck-suppress knownConditionTrueFalse
     // coverity[uninit_member,copy_constructor_call]
-    return m_poPool->SubmitJob(
-        [this, task]
-        {
-            task();
-            DeclareJobFinished();
-        });
+    const auto lambda = [this, capturedTask = std::move(task)]
+    {
+        capturedTask();
+        DeclareJobFinished();
+    };
+    // cppcheck-suppress knownConditionTrueFalse
+    return m_poPool->SubmitJob(std::move(lambda));
 }
 
 /************************************************************************/

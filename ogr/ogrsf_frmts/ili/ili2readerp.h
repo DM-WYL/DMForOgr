@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  Interlis 2 Reader
  * Purpose:  Private Declarations for Reader code.
@@ -89,9 +88,14 @@ class ILI2Reader : public IILI2Reader
     SAX2XMLReader *m_poSAXReader;
     int m_bReadStarted;
 
-    std::list<OGRLayer *> m_listLayer;
+    std::vector<std::unique_ptr<OGRLayer>> m_listLayer;
 
     bool m_bXercesInitialized;
+
+    ILI2Reader(ILI2Reader &) = delete;
+    ILI2Reader &operator=(const ILI2Reader &) = delete;
+    ILI2Reader(ILI2Reader &&) = delete;
+    ILI2Reader &operator=(ILI2Reader &&) = delete;
 
   public:
     ILI2Reader();
@@ -102,8 +106,8 @@ class ILI2Reader : public IILI2Reader
                   const char *modelFilename) override;
     int SaveClasses(const char *pszFile) override;
 
-    std::list<OGRLayer *> GetLayers() override;
-    int GetLayerCount() override;
+    std::vector<std::unique_ptr<OGRLayer>> &GetLayers() override;
+    int GetLayerCount() const override;
     OGRLayer *GetLayer(const char *pszName);
 
     int AddFeature(DOMElement *elem);

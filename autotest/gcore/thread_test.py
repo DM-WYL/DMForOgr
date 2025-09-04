@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test Python threading
@@ -34,15 +33,13 @@ def thread_test_1_worker(args_dict):
             if ds.GetRasterBand(1).Checksum() != 4672:
                 args_dict["ret"] = False
         else:
-            ds.GetRasterBand(1).ReadAsArray()
+            ds.GetRasterBand(1).ReadRaster()
     for i in range(1000):
         with gdaltest.disable_exceptions(), gdaltest.error_handler():
             gdal.Open("i_dont_exist")
 
 
 def test_thread_test_1():
-
-    pytest.importorskip("numpy")
 
     threads = []
     args_array = []
@@ -448,7 +445,7 @@ def test_thread_safe_BeginAsyncReader():
 def test_thread_safe_GetVirtualMem():
 
     pytest.importorskip("numpy")
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
 
     with gdal.OpenEx("data/byte.tif", gdal.OF_RASTER | gdal.OF_THREAD_SAFE) as ds:
         with pytest.raises(Exception, match="not supported"):

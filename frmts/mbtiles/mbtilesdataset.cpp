@@ -102,8 +102,8 @@ class MBTilesDataset final : public GDALPamDataset,
 
     virtual ~MBTilesDataset();
 
-    virtual CPLErr GetGeoTransform(double *padfGeoTransform) override;
-    virtual CPLErr SetGeoTransform(double *padfGeoTransform) override;
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
@@ -119,12 +119,12 @@ class MBTilesDataset final : public GDALPamDataset,
                                    void *pProgressData,
                                    CSLConstList papszOptions) override;
 
-    virtual int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(m_apoLayers.size());
     }
 
-    virtual OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
@@ -148,7 +148,7 @@ class MBTilesDataset final : public GDALPamDataset,
     bool m_bWriteMinMaxZoom;
     MBTilesDataset *poMainDS;
     bool m_bGeoTransformValid;
-    double m_adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
     int m_nMinZoomLevel = 0;
     OGRSpatialReference m_oSRS{};
 
@@ -248,7 +248,7 @@ class MBTilesVectorLayer final : public OGRLayer
 
     OGRFeature *GetNextRawFeature();
     OGRFeature *GetNextSrcFeature();
-    OGRFeature *CreateFeatureFrom(OGRFeature *poSrcFeature);
+    OGRFeature *CreateFeatureFrom(OGRFeature *poSrcFeature) const;
 
   public:
     MBTilesVectorLayer(MBTilesDataset *poDS, const char *pszLayerName,
@@ -263,28 +263,19 @@ class MBTilesVectorLayer final : public OGRLayer
     virtual void ResetReading() override;
     virtual OGRFeature *GetNextFeature() override;
 
-    virtual OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
 
     virtual GIntBig GetFeatureCount(int bForce) override;
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
-    OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
+    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                              bool bForce) override;
 
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
-
-    virtual void SetSpatialFilter(OGRGeometry *) override;
-
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
-    {
-        OGRLayer::SetSpatialFilter(iGeomField, poGeom);
-    }
+    virtual OGRErr ISetSpatialFilter(int iGeomField,
+                                     const OGRGeometry *poGeom) override;
 
     virtual OGRFeature *GetFeature(GIntBig nFID) override;
 };
@@ -485,10 +476,10 @@ char *MBTilesDataset::FindKey(int iPixel, int iLine)
     // Compute shift between GDAL origin and TileMatrixSet origin
     // Caution this is in GeoPackage / WMTS convention ! That is upper-left
     // corner
-    const int nShiftXPixels = (int)floor(
-        0.5 + (m_adfGeoTransform[0] - TMS_ORIGIN_X) / m_adfGeoTransform[1]);
-    const int nShiftYPixelsFromGPKGOrigin = (int)floor(
-        0.5 + (m_adfGeoTransform[3] - TMS_ORIGIN_Y) / m_adfGeoTransform[5]);
+    const int nShiftXPixels =
+        (int)floor(0.5 + (m_gt[0] - TMS_ORIGIN_X) / m_gt[1]);
+    const int nShiftYPixelsFromGPKGOrigin =
+        (int)floor(0.5 + (m_gt[3] - TMS_ORIGIN_Y) / m_gt[5]);
 
     const int iLineFromGPKGOrigin = iLine + nShiftYPixelsFromGPKGOrigin;
     const int iLineFromMBTilesOrigin =
@@ -726,8 +717,8 @@ const char *MBTilesBand::GetMetadataItem(const char *pszName,
         }
         else if (STARTS_WITH_CI(pszName, "GeoPixel_"))
         {
-            double adfGeoTransform[6];
-            double adfInvGeoTransform[6];
+            GDALGeoTransform gt;
+            GDALGeoTransform invGT;
             double dfGeoX, dfGeoY;
 
             dfGeoX = CPLAtof(pszName + 9);
@@ -739,18 +730,16 @@ const char *MBTilesBand::GetMetadataItem(const char *pszName,
             if (GetDataset() == nullptr)
                 return nullptr;
 
-            if (GetDataset()->GetGeoTransform(adfGeoTransform) != CE_None)
+            if (GetDataset()->GetGeoTransform(gt) != CE_None)
                 return nullptr;
 
-            if (!GDALInvGeoTransform(adfGeoTransform, adfInvGeoTransform))
+            if (!GDALInvGeoTransform(gt.data(), invGT.data()))
                 return nullptr;
 
-            iPixel = (int)floor(adfInvGeoTransform[0] +
-                                adfInvGeoTransform[1] * dfGeoX +
-                                adfInvGeoTransform[2] * dfGeoY);
-            iLine = (int)floor(adfInvGeoTransform[3] +
-                               adfInvGeoTransform[4] * dfGeoX +
-                               adfInvGeoTransform[5] * dfGeoY);
+            iPixel =
+                (int)floor(invGT[0] + invGT[1] * dfGeoX + invGT[2] * dfGeoY);
+            iLine =
+                (int)floor(invGT[3] + invGT[4] * dfGeoX + invGT[5] * dfGeoY);
         }
         else
             return nullptr;
@@ -877,12 +866,6 @@ MBTilesDataset::MBTilesDataset()
     pMyVFS = nullptr;
 
     m_bGeoTransformValid = false;
-    m_adfGeoTransform[0] = 0.0;
-    m_adfGeoTransform[1] = 1.0;
-    m_adfGeoTransform[2] = 0.0;
-    m_adfGeoTransform[3] = 0.0;
-    m_adfGeoTransform[4] = 0.0;
-    m_adfGeoTransform[5] = 1.0;
     m_bInFlushCache = false;
 
     m_osRasterTable = "tiles";
@@ -1029,9 +1012,9 @@ int MBTilesDataset::GetRowFromIntoTopConvention(int nRow)
 /*                          GetGeoTransform()                           */
 /************************************************************************/
 
-CPLErr MBTilesDataset::GetGeoTransform(double *padfGeoTransform)
+CPLErr MBTilesDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    memcpy(padfGeoTransform, m_adfGeoTransform, 6 * sizeof(double));
+    gt = m_gt;
     return (m_bGeoTransformValid) ? CE_None : CE_Failure;
 }
 
@@ -1063,7 +1046,7 @@ static void LongLatToSphericalMercator(double *x, double *y)
 /*                          SetGeoTransform()                           */
 /************************************************************************/
 
-CPLErr MBTilesDataset::SetGeoTransform(double *padfGeoTransform)
+CPLErr MBTilesDataset::SetGeoTransform(const GDALGeoTransform &gt)
 {
     if (eAccess != GA_Update)
     {
@@ -1077,8 +1060,7 @@ CPLErr MBTilesDataset::SetGeoTransform(double *padfGeoTransform)
                  "Cannot modify geotransform once set");
         return CE_Failure;
     }
-    if (padfGeoTransform[2] != 0.0 || padfGeoTransform[4] != 0 ||
-        padfGeoTransform[5] > 0.0)
+    if (gt[2] != 0.0 || gt[4] != 0 || gt[5] > 0.0)
     {
         CPLError(CE_Failure, CPLE_NotSupported,
                  "Only north-up non rotated geotransform supported");
@@ -1090,12 +1072,10 @@ CPLErr MBTilesDataset::SetGeoTransform(double *padfGeoTransform)
         CPLString osBounds(m_osBounds);
         if (osBounds.empty())
         {
-            double minx = padfGeoTransform[0];
-            double miny =
-                padfGeoTransform[3] + nRasterYSize * padfGeoTransform[5];
-            double maxx =
-                padfGeoTransform[0] + nRasterXSize * padfGeoTransform[1];
-            double maxy = padfGeoTransform[3];
+            double minx = gt[0];
+            double miny = gt[3] + nRasterYSize * gt[5];
+            double maxx = gt[0] + nRasterXSize * gt[1];
+            double maxy = gt[3];
 
             SphericalMercatorToLongLat(&minx, &miny);
             SphericalMercatorToLongLat(&maxx, &maxy);
@@ -1148,9 +1128,8 @@ CPLErr MBTilesDataset::SetGeoTransform(double *padfGeoTransform)
             dfPixelXSizeZoomLevel0 / (1 << m_nZoomLevel);
         double dfExpectedPixelYSize =
             dfPixelYSizeZoomLevel0 / (1 << m_nZoomLevel);
-        if (fabs(padfGeoTransform[1] - dfExpectedPixelXSize) <
-                1e-8 * dfExpectedPixelXSize &&
-            fabs(fabs(padfGeoTransform[5]) - dfExpectedPixelYSize) <
+        if (fabs(gt[1] - dfExpectedPixelXSize) < 1e-8 * dfExpectedPixelXSize &&
+            fabs(fabs(gt[5]) - dfExpectedPixelYSize) <
                 1e-8 * dfExpectedPixelYSize)
         {
             break;
@@ -1165,7 +1144,7 @@ CPLErr MBTilesDataset::SetGeoTransform(double *padfGeoTransform)
         return CE_Failure;
     }
 
-    memcpy(m_adfGeoTransform, padfGeoTransform, 6 * sizeof(double));
+    m_gt = gt;
     m_bGeoTransformValid = true;
 
     return FinalizeRasterRegistration();
@@ -1183,13 +1162,11 @@ void MBTilesDataset::ComputeTileAndPixelShifts()
     // Compute shift between GDAL origin and TileMatrixSet origin
     // Caution this is in GeoPackage / WMTS convention ! That is upper-left
     // corner
-    int nShiftXPixels = (int)floor(0.5 + (m_adfGeoTransform[0] - TMS_ORIGIN_X) /
-                                             m_adfGeoTransform[1]);
+    int nShiftXPixels = (int)floor(0.5 + (m_gt[0] - TMS_ORIGIN_X) / m_gt[1]);
     m_nShiftXTiles = (int)floor(1.0 * nShiftXPixels / nTileWidth);
     m_nShiftXPixelsMod =
         ((nShiftXPixels % nTileWidth) + nTileWidth) % nTileWidth;
-    int nShiftYPixels = (int)floor(0.5 + (m_adfGeoTransform[3] - TMS_ORIGIN_Y) /
-                                             m_adfGeoTransform[5]);
+    int nShiftYPixels = (int)floor(0.5 + (m_gt[3] - TMS_ORIGIN_Y) / m_gt[5]);
     m_nShiftYTiles = (int)floor(1.0 * nShiftYPixels / nTileHeight);
     m_nShiftYPixelsMod =
         ((nShiftYPixels % nTileHeight) + nTileHeight) % nTileHeight;
@@ -1206,12 +1183,10 @@ CPLErr MBTilesDataset::FinalizeRasterRegistration()
 
     ComputeTileAndPixelShifts();
 
-    double dfGDALMinX = m_adfGeoTransform[0];
-    double dfGDALMinY =
-        m_adfGeoTransform[3] + nRasterYSize * m_adfGeoTransform[5];
-    double dfGDALMaxX =
-        m_adfGeoTransform[0] + nRasterXSize * m_adfGeoTransform[1];
-    double dfGDALMaxY = m_adfGeoTransform[3];
+    double dfGDALMinX = m_gt[0];
+    double dfGDALMinY = m_gt[3] + nRasterYSize * m_gt[5];
+    double dfGDALMaxX = m_gt[0] + nRasterXSize * m_gt[1];
+    double dfGDALMaxY = m_gt[3];
 
     m_nOverviewCount = m_nZoomLevel;
     m_papoOverviewDS = (MBTilesDataset **)CPLCalloc(sizeof(MBTilesDataset *),
@@ -1265,10 +1240,10 @@ bool MBTilesDataset::InitRaster(MBTilesDataset *poParentDS, int nZoomLevel,
     const double dfPixelYSize = 2 * MAX_GM / nTileHeight / (1 << nZoomLevel);
 
     m_bGeoTransformValid = true;
-    m_adfGeoTransform[0] = dfGDALMinX;
-    m_adfGeoTransform[1] = dfPixelXSize;
-    m_adfGeoTransform[3] = dfGDALMaxY;
-    m_adfGeoTransform[5] = -dfPixelYSize;
+    m_gt[0] = dfGDALMinX;
+    m_gt[1] = dfPixelXSize;
+    m_gt[3] = dfGDALMaxY;
+    m_gt[5] = -dfPixelYSize;
     double dfRasterXSize = 0.5 + (dfGDALMaxX - dfGDALMinX) / dfPixelXSize;
     double dfRasterYSize = 0.5 + (dfGDALMaxY - dfGDALMinY) / dfPixelYSize;
     if (dfRasterXSize > INT_MAX || dfRasterYSize > INT_MAX)
@@ -1429,7 +1404,7 @@ const char *MBTilesDataset::GetMetadataItem(const char *pszName,
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *MBTilesDataset::GetLayer(int iLayer)
+const OGRLayer *MBTilesDataset::GetLayer(int iLayer) const
 
 {
     if (iLayer < 0 || iLayer >= GetLayerCount())
@@ -1525,7 +1500,7 @@ MBTilesVectorLayer::~MBTilesVectorLayer()
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int MBTilesVectorLayer::TestCapability(const char *pszCap)
+int MBTilesVectorLayer::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, OLCStringsAsUTF8) ||
         EQUAL(pszCap, OLCFastSpatialFilter) || EQUAL(pszCap, OLCFastGetExtent))
@@ -1536,10 +1511,11 @@ int MBTilesVectorLayer::TestCapability(const char *pszCap)
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /************************************************************************/
 
-OGRErr MBTilesVectorLayer::GetExtent(OGREnvelope *psExtent, int)
+OGRErr MBTilesVectorLayer::IGetExtent(int /* iGeomField */,
+                                      OGREnvelope *psExtent, bool /* bForce */)
 {
     *psExtent = m_sExtent;
     return OGRERR_NONE;
@@ -1569,71 +1545,76 @@ void MBTilesVectorLayer::ResetReading()
 }
 
 /************************************************************************/
-/*                         SetSpatialFilter()                           */
+/*                        ISetSpatialFilter()                           */
 /************************************************************************/
 
-void MBTilesVectorLayer::SetSpatialFilter(OGRGeometry *poGeomIn)
+OGRErr MBTilesVectorLayer::ISetSpatialFilter(int iGeomField,
+                                             const OGRGeometry *poGeomIn)
 {
-    OGRLayer::SetSpatialFilter(poGeomIn);
-
-    if (m_poFilterGeom != nullptr && m_sFilterEnvelope.MinX <= -MAX_GM &&
-        m_sFilterEnvelope.MinY <= -MAX_GM && m_sFilterEnvelope.MaxX >= MAX_GM &&
-        m_sFilterEnvelope.MaxY >= MAX_GM)
+    OGRErr eErr = OGRLayer::ISetSpatialFilter(iGeomField, poGeomIn);
+    if (eErr == OGRERR_NONE)
     {
-        if (m_bZoomLevelAuto)
+        if (m_poFilterGeom != nullptr && m_sFilterEnvelope.MinX <= -MAX_GM &&
+            m_sFilterEnvelope.MinY <= -MAX_GM &&
+            m_sFilterEnvelope.MaxX >= MAX_GM &&
+            m_sFilterEnvelope.MaxY >= MAX_GM)
         {
-            m_nZoomLevel = m_poDS->m_nMinZoomLevel;
+            if (m_bZoomLevelAuto)
+            {
+                m_nZoomLevel = m_poDS->m_nMinZoomLevel;
+            }
+            m_nFilterMinX = 0;
+            m_nFilterMinY = 0;
+            m_nFilterMaxX = (1 << m_nZoomLevel) - 1;
+            m_nFilterMaxY = (1 << m_nZoomLevel) - 1;
         }
-        m_nFilterMinX = 0;
-        m_nFilterMinY = 0;
-        m_nFilterMaxX = (1 << m_nZoomLevel) - 1;
-        m_nFilterMaxY = (1 << m_nZoomLevel) - 1;
-    }
-    else if (m_poFilterGeom != nullptr &&
-             m_sFilterEnvelope.MinX >= -10 * MAX_GM &&
-             m_sFilterEnvelope.MinY >= -10 * MAX_GM &&
-             m_sFilterEnvelope.MaxX <= 10 * MAX_GM &&
-             m_sFilterEnvelope.MaxY <= 10 * MAX_GM)
-    {
-        if (m_bZoomLevelAuto)
+        else if (m_poFilterGeom != nullptr &&
+                 m_sFilterEnvelope.MinX >= -10 * MAX_GM &&
+                 m_sFilterEnvelope.MinY >= -10 * MAX_GM &&
+                 m_sFilterEnvelope.MaxX <= 10 * MAX_GM &&
+                 m_sFilterEnvelope.MaxY <= 10 * MAX_GM)
         {
-            double dfExtent =
-                std::min(m_sFilterEnvelope.MaxX - m_sFilterEnvelope.MinX,
-                         m_sFilterEnvelope.MaxY - m_sFilterEnvelope.MinY);
-            m_nZoomLevel = std::max(
-                m_poDS->m_nMinZoomLevel,
-                std::min(static_cast<int>(0.5 + log(2 * MAX_GM / dfExtent) /
-                                                    log(2.0)),
-                         m_poDS->m_nZoomLevel));
-            CPLDebug("MBTILES", "Zoom level = %d", m_nZoomLevel);
+            if (m_bZoomLevelAuto)
+            {
+                double dfExtent =
+                    std::min(m_sFilterEnvelope.MaxX - m_sFilterEnvelope.MinX,
+                             m_sFilterEnvelope.MaxY - m_sFilterEnvelope.MinY);
+                m_nZoomLevel = std::max(
+                    m_poDS->m_nMinZoomLevel,
+                    std::min(static_cast<int>(0.5 + log(2 * MAX_GM / dfExtent) /
+                                                        log(2.0)),
+                             m_poDS->m_nZoomLevel));
+                CPLDebug("MBTILES", "Zoom level = %d", m_nZoomLevel);
+            }
+            const double dfTileDim = 2 * MAX_GM / (1 << m_nZoomLevel);
+            m_nFilterMinX = std::max(
+                0, static_cast<int>(
+                       floor((m_sFilterEnvelope.MinX + MAX_GM) / dfTileDim)));
+            m_nFilterMinY = std::max(
+                0, static_cast<int>(
+                       floor((m_sFilterEnvelope.MinY + MAX_GM) / dfTileDim)));
+            m_nFilterMaxX =
+                std::min(static_cast<int>(ceil(
+                             (m_sFilterEnvelope.MaxX + MAX_GM) / dfTileDim)),
+                         (1 << m_nZoomLevel) - 1);
+            m_nFilterMaxY =
+                std::min(static_cast<int>(ceil(
+                             (m_sFilterEnvelope.MaxY + MAX_GM) / dfTileDim)),
+                         (1 << m_nZoomLevel) - 1);
         }
-        const double dfTileDim = 2 * MAX_GM / (1 << m_nZoomLevel);
-        m_nFilterMinX =
-            std::max(0, static_cast<int>(floor(
-                            (m_sFilterEnvelope.MinX + MAX_GM) / dfTileDim)));
-        m_nFilterMinY =
-            std::max(0, static_cast<int>(floor(
-                            (m_sFilterEnvelope.MinY + MAX_GM) / dfTileDim)));
-        m_nFilterMaxX =
-            std::min(static_cast<int>(
-                         ceil((m_sFilterEnvelope.MaxX + MAX_GM) / dfTileDim)),
-                     (1 << m_nZoomLevel) - 1);
-        m_nFilterMaxY =
-            std::min(static_cast<int>(
-                         ceil((m_sFilterEnvelope.MaxY + MAX_GM) / dfTileDim)),
-                     (1 << m_nZoomLevel) - 1);
-    }
-    else
-    {
-        if (m_bZoomLevelAuto)
+        else
         {
-            m_nZoomLevel = m_poDS->m_nZoomLevel;
+            if (m_bZoomLevelAuto)
+            {
+                m_nZoomLevel = m_poDS->m_nZoomLevel;
+            }
+            m_nFilterMinX = 0;
+            m_nFilterMinY = 0;
+            m_nFilterMaxX = (1 << m_nZoomLevel) - 1;
+            m_nFilterMaxY = (1 << m_nZoomLevel) - 1;
         }
-        m_nFilterMinX = 0;
-        m_nFilterMinY = 0;
-        m_nFilterMaxX = (1 << m_nZoomLevel) - 1;
-        m_nFilterMaxY = (1 << m_nZoomLevel) - 1;
     }
+    return eErr;
 }
 
 /************************************************************************/
@@ -1827,7 +1808,8 @@ OGRFeature *MBTilesVectorLayer::GetNextSrcFeature()
 /*                         CreateFeatureFrom()                          */
 /************************************************************************/
 
-OGRFeature *MBTilesVectorLayer::CreateFeatureFrom(OGRFeature *poSrcFeature)
+OGRFeature *
+MBTilesVectorLayer::CreateFeatureFrom(OGRFeature *poSrcFeature) const
 {
 
     return OGRMVTCreateFeatureFrom(poSrcFeature, m_poFeatureDefn, m_bJsonField,
@@ -2015,7 +1997,7 @@ int MBTilesDataset::Identify(GDALOpenInfo *poOpenInfo)
     }
 #endif
 
-    if ((EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "MBTILES") ||
+    if ((poOpenInfo->IsExtensionEqualToCI("MBTILES") ||
          // Allow direct Amazon S3 signed URLs that contains .mbtiles in the
          // middle of the URL
          strstr(poOpenInfo->pszFilename, ".mbtiles") != nullptr) &&
@@ -2873,6 +2855,10 @@ GDALDataset *MBTilesDataset::Open(GDALOpenInfo *poOpenInfo)
             {
                 poDS->m_eTF = GPKG_TF_JPEG;
             }
+            else if (pszFormat != nullptr && (EQUAL(pszFormat, "webp")))
+            {
+                poDS->m_eTF = GPKG_TF_WEBP;
+            }
 
             const char *pszTF =
                 CSLFetchNameValue(poOpenInfo->papszOpenOptions, "TILE_FORMAT");
@@ -2882,6 +2868,8 @@ GDALDataset *MBTilesDataset::Open(GDALOpenInfo *poOpenInfo)
                 if ((pszFormat != nullptr &&
                      (EQUAL(pszFormat, "jpg") || EQUAL(pszFormat, "jpeg")) &&
                      poDS->m_eTF != GPKG_TF_JPEG) ||
+                    (pszFormat != nullptr && EQUAL(pszFormat, "webp") &&
+                     poDS->m_eTF != GPKG_TF_WEBP) ||
                     (pszFormat != nullptr && EQUAL(pszFormat, "png") &&
                      poDS->m_eTF == GPKG_TF_JPEG))
                 {
@@ -3054,10 +3042,11 @@ bool MBTilesDataset::CreateInternal(const char *pszFilename, int nXSize,
         return false;
     }
 
-    const char *pszName =
-        CSLFetchNameValueDef(papszOptions, "NAME", CPLGetBasename(pszFilename));
+    const std::string osName = CSLFetchNameValueDef(
+        papszOptions, "NAME", CPLGetBasenameSafe(pszFilename).c_str());
     char *pszSQL = sqlite3_mprintf(
-        "INSERT INTO metadata (name, value) VALUES ('name', '%q')", pszName);
+        "INSERT INTO metadata (name, value) VALUES ('name', '%q')",
+        osName.c_str());
     sqlite3_exec(hDB, pszSQL, nullptr, nullptr, nullptr);
     sqlite3_free(pszSQL);
 
@@ -3067,11 +3056,11 @@ bool MBTilesDataset::CreateInternal(const char *pszFilename, int nXSize,
     sqlite3_exec(hDB, pszSQL, nullptr, nullptr, nullptr);
     sqlite3_free(pszSQL);
 
-    const char *pszDescription = CSLFetchNameValueDef(
-        papszOptions, "DESCRIPTION", CPLGetBasename(pszFilename));
+    const std::string osDescription = CSLFetchNameValueDef(
+        papszOptions, "DESCRIPTION", CPLGetBasenameSafe(pszFilename).c_str());
     pszSQL = sqlite3_mprintf(
         "INSERT INTO metadata (name, value) VALUES ('description', '%q')",
-        pszDescription);
+        osDescription.c_str());
     sqlite3_exec(hDB, pszSQL, nullptr, nullptr, nullptr);
     sqlite3_free(pszSQL);
 
@@ -3159,20 +3148,18 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
     // Hack to compensate for GDALSuggestedWarpOutput2() failure (or not
     // ideal suggestion with PROJ 8) when reprojecting latitude = +/- 90 to
     // EPSG:3857.
-    double adfSrcGeoTransform[6] = {0, 0, 0, 0, 0, 0};
+    GDALGeoTransform srcGT;
     std::unique_ptr<GDALDataset> poTmpDS;
     bool bModifiedMaxLat = false;
     bool bModifiedMinLat = false;
     const auto poSrcSRS = poSrcDS->GetSpatialRef();
-    if (poSrcDS->GetGeoTransform(adfSrcGeoTransform) == CE_None &&
-        adfSrcGeoTransform[2] == 0 && adfSrcGeoTransform[4] == 0 &&
-        adfSrcGeoTransform[5] < 0)
+    if (poSrcDS->GetGeoTransform(srcGT) == CE_None && srcGT[2] == 0 &&
+        srcGT[4] == 0 && srcGT[5] < 0)
     {
         if (poSrcSRS && poSrcSRS->IsGeographic())
         {
-            double maxLat = adfSrcGeoTransform[3];
-            double minLat = adfSrcGeoTransform[3] +
-                            poSrcDS->GetRasterYSize() * adfSrcGeoTransform[5];
+            double maxLat = srcGT[3];
+            double minLat = srcGT[3] + poSrcDS->GetRasterYSize() * srcGT[5];
             // Corresponds to the latitude of MAX_GM
             constexpr double MAX_LAT = 85.0511287798066;
             if (maxLat > MAX_LAT)
@@ -3191,13 +3178,10 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
                 aosOptions.AddString("-of");
                 aosOptions.AddString("VRT");
                 aosOptions.AddString("-projwin");
-                aosOptions.AddString(
-                    CPLSPrintf("%.17g", adfSrcGeoTransform[0]));
+                aosOptions.AddString(CPLSPrintf("%.17g", srcGT[0]));
                 aosOptions.AddString(CPLSPrintf("%.17g", maxLat));
-                aosOptions.AddString(
-                    CPLSPrintf("%.17g", adfSrcGeoTransform[0] +
-                                            poSrcDS->GetRasterXSize() *
-                                                adfSrcGeoTransform[1]));
+                aosOptions.AddString(CPLSPrintf(
+                    "%.17g", srcGT[0] + poSrcDS->GetRasterXSize() * srcGT[1]));
                 aosOptions.AddString(CPLSPrintf("%.17g", minLat));
                 auto psOptions =
                     GDALTranslateOptionsNew(aosOptions.List(), nullptr);
@@ -3225,12 +3209,12 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
     }
 
     GDALTransformerInfo *psInfo = (GDALTransformerInfo *)hTransformArg;
-    double adfGeoTransform[6];
+    GDALGeoTransform gt;
     double adfExtent[4];
     int nXSize, nYSize;
 
     if (GDALSuggestedWarpOutput2(poSrcDS, psInfo->pfnTransform, hTransformArg,
-                                 adfGeoTransform, &nXSize, &nYSize, adfExtent,
+                                 gt.data(), &nXSize, &nYSize, adfExtent,
                                  0) != CE_None)
     {
         CSLDestroy(papszTO);
@@ -3247,7 +3231,7 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
         if (bModifiedMaxLat)
         {
             const double maxNorthing = MAX_GM;
-            adfGeoTransform[3] = maxNorthing;
+            gt[3] = maxNorthing;
             adfExtent[3] = maxNorthing;
         }
         if (bModifiedMinLat)
@@ -3258,9 +3242,7 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
 
         if (poSrcSRS && poSrcSRS->IsGeographic())
         {
-            if (adfSrcGeoTransform[0] +
-                    poSrcDS->GetRasterXSize() * adfSrcGeoTransform[1] ==
-                180)
+            if (srcGT[0] + poSrcDS->GetRasterXSize() * srcGT[1] == 180)
             {
                 adfExtent[2] = MAX_GM;
             }
@@ -3268,7 +3250,7 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
     }
 
     int nZoomLevel;
-    double dfComputedRes = adfGeoTransform[1];
+    double dfComputedRes = gt[1];
     double dfPrevRes = 0.0;
     double dfRes = 0.0;
     int nBlockSize = std::max(
@@ -3320,8 +3302,8 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
 
     nXSize = (int)(0.5 + (dfMaxX - dfMinX) / dfRes);
     nYSize = (int)(0.5 + (dfMaxY - dfMinY) / dfRes);
-    adfGeoTransform[1] = dfRes;
-    adfGeoTransform[5] = -dfRes;
+    gt[1] = dfRes;
+    gt[5] = -dfRes;
 
     int nTargetBands = nBands;
     /* For grey level or RGB, if there's reprojection involved, add an alpha */
@@ -3374,7 +3356,7 @@ GDALDataset *MBTilesDataset::CreateCopy(const char *pszFilename,
         CSLDestroy(papszTO);
         return nullptr;
     }
-    poDS->SetGeoTransform(adfGeoTransform);
+    poDS->SetGeoTransform(gt);
     if (nTargetBands == 1 && nBands == 1 &&
         poSrcDS->GetRasterBand(1)->GetColorTable() != nullptr)
     {

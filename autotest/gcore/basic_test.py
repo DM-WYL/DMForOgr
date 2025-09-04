@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test basic GDAL open
@@ -20,7 +19,7 @@ import sys
 import gdaltest
 import pytest
 
-from osgeo import gdal
+from osgeo import gdal, osr
 
 
 ###############################################################################
@@ -222,7 +221,7 @@ def test_basic_test_9():
 # Test gdal.PushErrorHandler() with a Python error handler as a method (#5186)
 
 
-class my_python_error_handler_class(object):
+class my_python_error_handler_class:
     def __init__(self):
         self.eErrClass = None
         self.err_no = None
@@ -987,3 +986,178 @@ def test_colorinterp():
         assert name not in d
         d[name] = c
         assert gdal.GetColorInterpretationByName(name) == c
+
+
+def test_ComputeMinMaxLocation():
+
+    ds = gdal.Open("data/byte.tif")
+    ret = ds.GetRasterBand(1).ComputeMinMaxLocation()
+    assert (
+        ret.min == 74
+        and ret.max == 255
+        and ret.minX == 9
+        and ret.minY == 17
+        and ret.maxX == 2
+        and ret.maxY == 18
+    )
+
+    ds = gdal.GetDriverByName("MEM").Create("", 1, 1, 1, gdal.GDT_Float64)
+    ds.GetRasterBand(1).Fill(float("nan"))
+    ret = ds.GetRasterBand(1).ComputeMinMaxLocation()
+    assert ret is None
+
+
+def test_create_numpy_types():
+    np = pytest.importorskip("numpy")
+    gdaltest.importorskip_gdal_array()
+
+    drv = gdal.GetDriverByName("MEM")
+
+    with drv.Create("", 1, 1, eType=np.int16) as ds:
+        assert ds.GetRasterBand(1).DataType == gdal.GDT_Int16
+
+    with drv.Create("", 1, 1, eType=np.dtype("float32")) as ds:
+        assert ds.GetRasterBand(1).DataType == gdal.GDT_Float32
+
+    with pytest.raises(Exception, match="must be a GDAL data type code or NumPy type"):
+        drv.Create("", 1, 1, eType=str)
+
+    with pytest.raises(Exception, match="must be a GDAL data type code or NumPy type"):
+        drv.Create("", 1, 1, eType=[1, 2, 3])
+
+
+@pytest.mark.require_curl()
+@gdaltest.enable_exceptions()
+def test_gdal_open_non_accessible_object_on_cloud_storage():
+
+    with gdal.config_option("OSS_SECRET_ACCESS_KEY", ""):
+        with pytest.raises(Exception, match="InvalidCredentials"):
+            gdal.Open("/vsioss/i_do_not/exist.bin")
+
+
+def test_basic_test_create_copy_band():
+    mem_driver = gdal.GetDriverByName("MEM")
+    src_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
+    src_ds.GetRasterBand(1).Fill(1)
+
+    out_ds = mem_driver.CreateCopy("", src_ds.GetRasterBand(1))
+    assert out_ds.GetRasterBand(1).Checksum() == 1
+
+
+def test_basic_window_type():
+
+    pytest.importorskip("numpy")
+    gdaltest.importorskip_gdal_array()
+
+    w1 = gdal.Window(10, 20, 30, 40)
+    assert w1 == (10, 20, 30, 40)
+
+    w2 = gdal.Window(10, 20, 30, 40)
+    assert w1 == w2
+
+    with gdal.Open("data/byte.tif") as ds:
+        w = gdal.Window(5, 6, 7, 8)
+        window_data = ds.ReadAsArray(*w)
+        assert window_data.shape == (w.ysize, w.xsize)
+
+    import copy
+
+    w3 = copy.copy(w2)
+    w3.xoff = 24
+    w3.yoff = 48
+    w3.xsize = 12
+    w3.ysize = 24
+    assert w3 == (24, 48, 12, 24)
+
+    w3[0] = 48
+    assert w3 == (48, 48, 12, 24)
+
+    assert w2.xoff == 10
+
+
+def test_basic_block_windows(tmp_vsimem):
+
+    windows = []
+
+    with gdal.GetDriverByName("GTiff").Create(
+        tmp_vsimem / "src.tif",
+        1050,
+        600,
+        options={"TILED": True, "BLOCKXSIZE": 512, "BLOCKYSIZE": 256},
+    ) as ds:
+        for window in ds.GetRasterBand(1).BlockWindows():
+            windows.append(window)
+
+        assert len(windows) == 9
+        assert all(type(x) is int for x in windows[0])
+
+        # equality between Window and tuple
+        assert windows[0] == (0, 0, 512, 256)
+        assert windows[1] == (512, 0, 512, 256)
+        assert windows[2] == (1024, 0, 1050 - 1024, 256)
+
+        assert windows[3] == gdal.Window(0, 256, 512, 256)
+        assert windows[4] == gdal.Window(512, 256, 512, 256)
+        assert windows[5] == gdal.Window(1024, 256, 1050 - 1024, 256)
+
+        assert windows[6] == [0, 512, 512, 600 - 512]
+        assert windows[7] == [512, 512, 512, 600 - 512]
+        assert windows[8] == [1024, 512, 1050 - 1024, 600 - 512]
+
+        assert windows[8].xoff == 1024
+        assert windows[8].yoff == 512
+        assert windows[8].xsize == 1050 - 1024
+        assert windows[8].ysize == 600 - 512
+
+
+###############################################################################
+# Test GetExtent()
+
+
+def test_basic_get_extent():
+
+    with gdal.Open("data/byte.tif") as ds:
+        assert ds.GetExtent() == (440720.0, 441920.0, 3750120.0, 3751320.0)
+
+
+def test_basic_get_extent_reprojected():
+
+    wgs84 = osr.SpatialReference(epsg=4326)
+    wgs84.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+    with gdal.Open("data/byte.tif") as ds:
+        assert ds.GetExtent(wgs84) == pytest.approx(
+            (-117.642, -117.629, 33.892, 33.902), abs=1e-3
+        )
+
+
+def test_basic_get_extent_no_crs():
+
+    with gdal.GetDriverByName("MEM").Create("", 5, 5) as ds:
+        ds.SetGeoTransform((3, 0.5, 0, 7, 0, -1))
+        assert ds.GetExtent() == (3, 5.5, 2, 7)
+
+
+def test_basic_get_extent_no_crs_reprojected():
+
+    wgs84 = osr.SpatialReference(epsg=4326)
+    wgs84.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+    with gdal.GetDriverByName("MEM").Create("", 5, 5) as ds:
+        ds.SetGeoTransform((3, 0.5, 0, 7, 0, -1))
+        assert ds.GetExtent(wgs84) is None
+
+
+def test_basic_get_extent_bottom_up():
+
+    with gdal.GetDriverByName("MEM").Create("", 5, 5) as ds:
+        ds.SetGeoTransform((3, 0.5, 0, 7, 0, 1))
+        assert ds.GetExtent() == (3, 5.5, 7, 12)
+
+
+def test_basic_get_extent_rotated():
+
+    with gdal.Open("data/geomatrix.tif") as ds:
+        assert ds.GetExtent() == pytest.approx(
+            (1840900, 1841030, 1143870, 1144000), abs=4
+        )

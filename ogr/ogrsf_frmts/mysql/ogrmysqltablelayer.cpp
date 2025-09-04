@@ -412,18 +412,18 @@ OGRFeatureDefn *OGRMySQLTableLayer::ReadTableDefinition(const char *pszTable)
 }
 
 /************************************************************************/
-/*                          SetSpatialFilter()                          */
+/*                          ISetSpatialFilter()                         */
 /************************************************************************/
 
-void OGRMySQLTableLayer::SetSpatialFilter(OGRGeometry *poGeomIn)
+OGRErr OGRMySQLTableLayer::ISetSpatialFilter(int, const OGRGeometry *poGeomIn)
 
 {
-    if (!InstallFilter(poGeomIn))
-        return;
-
-    BuildWhere();
-
-    ResetReading();
+    if (InstallFilter(poGeomIn))
+    {
+        BuildWhere();
+        ResetReading();
+    }
+    return OGRERR_NONE;
 }
 
 /************************************************************************/
@@ -625,7 +625,7 @@ OGRErr OGRMySQLTableLayer::SetAttributeFilter(const char *pszQueryIn)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRMySQLTableLayer::TestCapability(const char *pszCap)
+int OGRMySQLTableLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))
@@ -799,7 +799,7 @@ OGRErr OGRMySQLTableLayer::ICreateFeature(OGRFeature *poFeature)
         if (pszWKT != nullptr)
         {
             const char *pszAxisOrder = "";
-            OGRSpatialReference *l_poSRS = GetSpatialRef();
+            const OGRSpatialReference *l_poSRS = GetSpatialRef();
             if (poDS->GetMajorVersion() >= 8 && !poDS->IsMariaDB() && l_poSRS &&
                 l_poSRS->IsGeographic())
             {
@@ -1236,15 +1236,15 @@ GIntBig OGRMySQLTableLayer::GetFeatureCount(CPL_UNUSED int bForce)
 }
 
 /************************************************************************/
-/*                          GetExtent()                                 */
+/*                          IGetExtent()                                */
 /*                                                                      */
 /*      Retrieve the MBR of the MySQL table.  This should be made more  */
 /*      in the future when MySQL adds support for a single MBR query    */
 /*      like PostgreSQL.                                                */
 /************************************************************************/
 
-OGRErr OGRMySQLTableLayer::GetExtent(OGREnvelope *psExtent,
-                                     CPL_UNUSED int bForce)
+OGRErr OGRMySQLTableLayer::IGetExtent(int /*iGeomField */,
+                                      OGREnvelope *psExtent, bool /* bForce */)
 {
     if (GetLayerDefn()->GetGeomType() == wkbNone)
     {

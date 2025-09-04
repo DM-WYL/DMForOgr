@@ -15,16 +15,6 @@
 #include "ershdrnode.h"
 
 /************************************************************************/
-/*                             ERSHdrNode()                             */
-/************************************************************************/
-
-ERSHdrNode::ERSHdrNode()
-    : nItemMax(0), nItemCount(0), papszItemName(nullptr),
-      papszItemValue(nullptr), papoItemChild(nullptr)
-{
-}
-
-/************************************************************************/
 /*                            ~ERSHdrNode()                             */
 /************************************************************************/
 
@@ -57,13 +47,13 @@ void ERSHdrNode::MakeSpace()
 {
     if (nItemCount == nItemMax)
     {
-        nItemMax = (int)(nItemMax * 1.3) + 10;
-        papszItemName =
-            (char **)CPLRealloc(papszItemName, sizeof(char *) * nItemMax);
-        papszItemValue =
-            (char **)CPLRealloc(papszItemValue, sizeof(char *) * nItemMax);
-        papoItemChild =
-            (ERSHdrNode **)CPLRealloc(papoItemChild, sizeof(void *) * nItemMax);
+        nItemMax = nItemMax + nItemMax / 3 + 10;
+        papszItemName = static_cast<char **>(
+            CPLRealloc(papszItemName, sizeof(char *) * nItemMax));
+        papszItemValue = static_cast<char **>(
+            CPLRealloc(papszItemValue, sizeof(char *) * nItemMax));
+        papoItemChild = static_cast<ERSHdrNode **>(
+            CPLRealloc(papoItemChild, sizeof(ERSHdrNode *) * nItemMax));
     }
 }
 
@@ -412,11 +402,11 @@ ERSHdrNode *ERSHdrNode::FindNode(const char *pszPath)
 
 {
     std::string osPathFirst, osPathRest;
-    const std::string osPath = pszPath;
-    size_t iDot = osPath.find_first_of('.');
+    std::string osPath = pszPath;
+    const size_t iDot = osPath.find('.');
     if (iDot == std::string::npos)
     {
-        osPathFirst = osPath;
+        osPathFirst = std::move(osPath);
     }
     else
     {

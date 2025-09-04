@@ -1,5 +1,4 @@
 /**********************************************************************
- * $Id$
  *
  * Name:     avc_bin.c
  * Project:  Arc/Info vector coverage (AVC)  BIN->E00 conversion library
@@ -173,9 +172,9 @@
 #define VSI_SHP_WriteMoreDataOK OGRAVC_VSI_SHP_WriteMoreDataOK
 #define SASetupDefaultHooks OGRAVC_SASetupDefaultHooks
 
-#include "../shape/shapefil.h"
-#include "../shape/dbfopen.c"
-#include "../shape/shp_vsi.c"
+#include "shapefil.h"
+#include "dbfopen.c"
+#include "shp_vsi.cpp"
 
 #else
 

@@ -17,9 +17,18 @@
 #include "ogr_p.h"
 #include "ogreditablelayer.h"
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wweak-vtables"
+#endif
+
 #include "header_generated.h"
 #include "feature_generated.h"
 #include "packedrtree.h"
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 #include <deque>
 #include <limits>
@@ -159,23 +168,18 @@ class OGRFlatGeobufLayer final : public OGRLayer,
     virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = true) override;
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual void ResetReading() override;
 
-    virtual OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
 
     virtual GIntBig GetFeatureCount(int bForce) override;
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
+    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                              bool bForce) override;
 
     void VerifyBuffers(int bFlag)
     {
@@ -230,7 +234,7 @@ class OGRFlatGeobufEditableLayer final : public OGREditableLayer,
         return this;
     }
 
-    int TestCapability(const char *pszCap) override;
+    int TestCapability(const char *pszCap) const override;
 
     CPLErr Close() override
     {
@@ -260,14 +264,15 @@ class OGRFlatGeobufDataset final : public GDALDataset
                                CPL_UNUSED int nXSize, CPL_UNUSED int nYSize,
                                CPL_UNUSED GDALDataType eDT,
                                char **papszOptions);
-    virtual OGRLayer *GetLayer(int) override;
-    int TestCapability(const char *pszCap) override;
+    using GDALDataset::GetLayer;
+    const OGRLayer *GetLayer(int) const override;
+    int TestCapability(const char *pszCap) const override;
 
     OGRLayer *ICreateLayer(const char *pszName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
-    virtual int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(m_apoLayers.size());
     }

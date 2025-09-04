@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test Raster Matrix Format used in GISes "Panorama"/"Integratsia".
@@ -703,6 +702,8 @@ def rmf_31e_data_gen(min_val, max_val, stripeSize, sx):
 
 
 def test_rmf_31e():
+
+    gdaltest.importorskip_gdal_array()
     numpy = pytest.importorskip("numpy")
 
     drv = gdal.GetDriverByName("Gtiff")
@@ -847,6 +848,8 @@ def test_rmf_33c():
 
 
 def test_rmf_34():
+
+    gdaltest.importorskip_gdal_array()
     numpy = pytest.importorskip("numpy")
 
     drv = gdal.GetDriverByName("RMF")

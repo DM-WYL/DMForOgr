@@ -13,6 +13,7 @@
 #include "cpl_port.h"
 #include "cpl_http.h"
 #include "cpl_minixml.h"
+#include "cpl_json.h"
 #include "cpl_vsil_curl_priv.h"
 #include "cpl_vsil_curl_class.h"
 
@@ -24,6 +25,11 @@
 #include <memory>
 
 #include "cpl_google_cloud.h"
+
+// To avoid aliasing to GetDiskFreeSpace to GetDiskFreeSpaceA on Windows
+#ifdef GetDiskFreeSpace
+#undef GetDiskFreeSpace
+#endif
 
 #ifndef HAVE_CURL
 
@@ -84,6 +90,12 @@ class VSIGSFSHandler final : public IVSIS3LikeFSHandlerWithMultipartUpload
     CreateWriteHandle(const char *pszFilename,
                       CSLConstList papszOptions) override;
 
+    GIntBig GetDiskFreeSpace(const char * /* pszDirname */) override
+    {
+        // There is no limit per bucket, but a 5 TiB limit per object.
+        return static_cast<GIntBig>(5) * 1024 * 1024 * 1024 * 1024;
+    }
+
   public:
     explicit VSIGSFSHandler(const char *pszPrefix) : m_osPrefix(pszPrefix)
     {
@@ -131,9 +143,8 @@ class VSIGSHandle final : public IVSIS3LikeHandle
     VSIGSHandleHelper *m_poHandleHelper = nullptr;
 
   protected:
-    struct curl_slist *
-    GetCurlHeaders(const std::string &osVerb,
-                   const struct curl_slist *psExistingHeaders) override;
+    struct curl_slist *GetCurlHeaders(const std::string &osVerb,
+                                      struct curl_slist *psHeaders) override;
 
   public:
     VSIGSHandle(VSIGSFSHandler *poFS, const char *pszFilename,
@@ -331,6 +342,130 @@ char **VSIGSFSHandler::GetFileMetadata(const char *pszFilename,
     if (!STARTS_WITH_CI(pszFilename, GetFSPrefix().c_str()))
         return nullptr;
 
+    if (pszDomain == nullptr)
+    {
+        // Handle case of requesting GetFileMetadata() on the bucket root
+        std::string osFilename(pszFilename);
+        if (osFilename.back() == '/')
+            osFilename.pop_back();
+        if (osFilename.find('/', GetFSPrefix().size()) == std::string::npos)
+        {
+            const std::string osBucket =
+                osFilename.substr(GetFSPrefix().size());
+            const std::string osResource =
+                std::string("storage/v1/b/").append(osBucket);
+
+            auto poHandleHelper = std::unique_ptr<VSIGSHandleHelper>(
+                VSIGSHandleHelper::BuildFromURI(osResource.c_str(),
+                                                GetFSPrefix().c_str(),
+                                                osBucket.c_str()));
+            if (!poHandleHelper)
+                return nullptr;
+
+            // Check if OAuth2 is used externally and a bearer token is passed
+            // as a header in path-specific options
+            const CPLStringList aosHTTPOptions(
+                CPLHTTPGetOptionsFromEnv(pszFilename));
+            bool bUsingBearerToken = false;
+            const char *pszHeaders = aosHTTPOptions.FetchNameValue("HEADERS");
+            if (pszHeaders && strstr(pszHeaders, "Authorization: Bearer "))
+                bUsingBearerToken = true;
+
+            // The JSON API cannot be used with HMAC keys
+            if (poHandleHelper->UsesHMACKey() && !bUsingBearerToken)
+            {
+                CPLDebug(GetDebugKey(),
+                         "GetFileMetadata() on bucket "
+                         "only available for OAuth2 authentication");
+                return VSICurlFilesystemHandlerBase::GetFileMetadata(
+                    pszFilename, pszDomain, papszOptions);
+            }
+
+            NetworkStatisticsFileSystem oContextFS(GetFSPrefix().c_str());
+            NetworkStatisticsAction oContextAction("GetFileMetadata");
+
+            const CPLHTTPRetryParameters oRetryParameters(aosHTTPOptions);
+            CPLHTTPRetryContext oRetryContext(oRetryParameters);
+
+            bool bRetry;
+            CPLStringList aosResult;
+            do
+            {
+                bRetry = false;
+                CURL *hCurlHandle = curl_easy_init();
+
+                struct curl_slist *headers =
+                    static_cast<struct curl_slist *>(CPLHTTPSetOptions(
+                        hCurlHandle, poHandleHelper->GetURL().c_str(),
+                        aosHTTPOptions.List()));
+                headers = poHandleHelper->GetCurlHeaders("GET", headers);
+
+                CurlRequestHelper requestHelper;
+                const long response_code = requestHelper.perform(
+                    hCurlHandle, headers, this, poHandleHelper.get());
+
+                NetworkStatisticsLogger::LogGET(
+                    requestHelper.sWriteFuncData.nSize);
+
+                if (response_code != 200 ||
+                    requestHelper.sWriteFuncData.pBuffer == nullptr)
+                {
+                    // Look if we should attempt a retry
+                    if (oRetryContext.CanRetry(
+                            static_cast<int>(response_code),
+                            requestHelper.sWriteFuncHeaderData.pBuffer,
+                            requestHelper.szCurlErrBuf))
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "HTTP error code: %d - %s. "
+                                 "Retrying again in %.1f secs",
+                                 static_cast<int>(response_code),
+                                 poHandleHelper->GetURL().c_str(),
+                                 oRetryContext.GetCurrentDelay());
+                        CPLSleep(oRetryContext.GetCurrentDelay());
+                        bRetry = true;
+                    }
+                    else
+                    {
+                        CPLDebug(GetDebugKey(), "%s",
+                                 requestHelper.sWriteFuncData.pBuffer
+                                     ? requestHelper.sWriteFuncData.pBuffer
+                                     : "(null)");
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "GetFileMetadata failed");
+                    }
+                }
+                else
+                {
+                    CPLJSONDocument oDoc;
+                    if (oDoc.LoadMemory(
+                            reinterpret_cast<const GByte *>(
+                                requestHelper.sWriteFuncData.pBuffer),
+                            static_cast<int>(
+                                requestHelper.sWriteFuncData.nSize)) &&
+                        oDoc.GetRoot().GetType() == CPLJSONObject::Type::Object)
+                    {
+                        for (const auto &oObj : oDoc.GetRoot().GetChildren())
+                        {
+                            aosResult.SetNameValue(oObj.GetName().c_str(),
+                                                   oObj.ToString().c_str());
+                        }
+                    }
+                    else
+                    {
+                        // Shouldn't happen normally
+                        aosResult.SetNameValue(
+                            "DATA", requestHelper.sWriteFuncData.pBuffer);
+                    }
+                }
+
+                curl_easy_cleanup(hCurlHandle);
+            } while (bRetry);
+
+            return aosResult.StealList();
+        }
+    }
+
     if (pszDomain == nullptr || !EQUAL(pszDomain, "ACL"))
     {
         return VSICurlFilesystemHandlerBase::GetFileMetadata(
@@ -361,8 +496,7 @@ char **VSIGSFSHandler::GetFileMetadata(const char *pszFilename,
         struct curl_slist *headers = static_cast<struct curl_slist *>(
             CPLHTTPSetOptions(hCurlHandle, poHandleHelper->GetURL().c_str(),
                               aosHTTPOptions.List()));
-        headers = VSICurlMergeHeaders(
-            headers, poHandleHelper->GetCurlHeaders("GET", headers));
+        headers = poHandleHelper->GetCurlHeaders("GET", headers);
 
         CurlRequestHelper requestHelper;
         const long response_code = requestHelper.perform(
@@ -404,7 +538,7 @@ char **VSIGSFSHandler::GetFileMetadata(const char *pszFilename,
 
         curl_easy_cleanup(hCurlHandle);
     } while (bRetry);
-    return CSLDuplicate(aosResult.List());
+    return aosResult.StealList();
 }
 
 /************************************************************************/
@@ -467,9 +601,8 @@ bool VSIGSFSHandler::SetFileMetadata(const char *pszFilename,
             CPLHTTPSetOptions(hCurlHandle, poHandleHelper->GetURL().c_str(),
                               aosHTTPOptions.List()));
         headers = curl_slist_append(headers, "Content-Type: application/xml");
-        headers = VSICurlMergeHeaders(
-            headers, poHandleHelper->GetCurlHeaders("PUT", headers, pszXML,
-                                                    strlen(pszXML)));
+        headers = poHandleHelper->GetCurlHeaders("PUT", headers, pszXML,
+                                                 strlen(pszXML));
         NetworkStatisticsLogger::LogPUT(strlen(pszXML));
 
         CurlRequestHelper requestHelper;
@@ -524,6 +657,16 @@ int *VSIGSFSHandler::UnlinkBatch(CSLConstList papszFiles)
     const char *pszFirstFilename =
         papszFiles && papszFiles[0] ? papszFiles[0] : nullptr;
 
+    bool bUsingBearerToken = false;
+    if (pszFirstFilename)
+    {
+        const CPLStringList aosHTTPOptions(
+            CPLHTTPGetOptionsFromEnv(pszFirstFilename));
+        const char *pszHeaders = aosHTTPOptions.FetchNameValue("HEADERS");
+        if (pszHeaders && strstr(pszHeaders, "Authorization: Bearer "))
+            bUsingBearerToken = true;
+    }
+
     auto poHandleHelper =
         std::unique_ptr<VSIGSHandleHelper>(VSIGSHandleHelper::BuildFromURI(
             "batch/storage/v1", GetFSPrefix().c_str(),
@@ -533,7 +676,7 @@ int *VSIGSFSHandler::UnlinkBatch(CSLConstList papszFiles)
                 : nullptr));
 
     // The JSON API cannot be used with HMAC keys
-    if (poHandleHelper && poHandleHelper->UsesHMACKey())
+    if ((poHandleHelper && poHandleHelper->UsesHMACKey()) && !bUsingBearerToken)
     {
         CPLDebug(GetDebugKey(), "UnlinkBatch() has an efficient implementation "
                                 "only for OAuth2 authentication");
@@ -658,10 +801,9 @@ int *VSIGSFSHandler::UnlinkBatch(CSLConstList papszFiles)
                     headers,
                     "Content-Type: multipart/mixed; "
                     "boundary=\"===============7330845974216740156==\"");
-                headers = VSICurlMergeHeaders(
-                    headers, poHandleHelper->GetCurlHeaders(
-                                 "POST", headers, osPOSTContent.c_str(),
-                                 osPOSTContent.size()));
+                headers = poHandleHelper->GetCurlHeaders("POST", headers,
+                                                         osPOSTContent.c_str(),
+                                                         osPOSTContent.size());
 
                 CurlRequestHelper requestHelper;
                 const long response_code = requestHelper.perform(
@@ -782,11 +924,10 @@ VSIGSHandle::~VSIGSHandle()
 /*                          GetCurlHeaders()                            */
 /************************************************************************/
 
-struct curl_slist *
-VSIGSHandle::GetCurlHeaders(const std::string &osVerb,
-                            const struct curl_slist *psExistingHeaders)
+struct curl_slist *VSIGSHandle::GetCurlHeaders(const std::string &osVerb,
+                                               struct curl_slist *psHeaders)
 {
-    return m_poHandleHelper->GetCurlHeaders(osVerb, psExistingHeaders);
+    return m_poHandleHelper->GetCurlHeaders(osVerb, psHeaders);
 }
 
 } /* end of namespace cpl */

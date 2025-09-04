@@ -89,6 +89,14 @@ The following configuration options are available:
 
      Control the gml:xlink resolving. See `gml:xlink resolving`_.
 
+- .. config:: GML_SKIP_CORRUPTED_FEATURES
+     :choices: YES, NO
+     :default: NO
+
+     If set to **YES**, skip features that cannot be parsed correctly.
+     If set to **NO**, the driver will fail with an error when it encounters
+     a feature that cannot be parsed correctly.
+
 - .. config:: GML_SAVE_RESOLVED_TO
      :choices: SAME, <filename>
 
@@ -304,6 +312,7 @@ SurfacePropertyType, MultiCurvePropertyType or MultiSurfacePropertyType
 will be also interpreted as being potential non-linear geometries, and
 corresponding OGR geometry type will be used for the layer geometry
 type.
+
 
 gml:xlink resolving
 -------------------
@@ -585,6 +594,14 @@ The following open options are supported:
        Whether to
        consider srsName like EPSG:XXXX as respecting EPSG axis order.
 
+-  .. oo:: SKIP_CORRUPTED_FEATURES
+      :choices: YES, NO
+      :default: NO
+
+      If set to **YES**, skip features that cannot be parsed correctly.
+      If set to **NO**, the driver will fail with an error when it encounters
+      a feature that cannot be parsed correctly.
+
 -  .. oo:: SWAP_COORDINATES
       :choices: AUTO, YES, NO
       :default: AUTO
@@ -597,6 +614,12 @@ The following open options are supported:
       :oo:`INVERT_AXIS_ORDER_IF_LAT_LONG`. When :oo:`SWAP_COORDINATES` is set to YES,
       coordinates will be always swapped regarding the order they appear in
       the GML, and when it set to NO, they will be kept in the same order.
+
+-  .. oo:: SKIP_RESOLVE_ELEMS
+        :choices: NONE, ALL, HUGE, <list>
+        :default: ALL
+
+        Control the gml:xlink resolving. See `gml:xlink resolving`_.
 
 -  .. oo:: READ_MODE
       :choices: AUTO, STANDARD, SEQUENTIAL_LAYERS, INTERLEAVED_LAYERS
@@ -643,6 +666,16 @@ The following open options are supported:
 
       Whether to use schema imports in XSD files so that
       the feature types corresponding to imported schema can be detected.
+
+-  .. oo:: OGR_SCHEMA
+      :choices: <filename>|<json string>
+      :since: 3.11.0
+
+      Partially or totally overrides the auto-detected schema to use for creating the layer.
+      The overrides are applied to the schema detected from the GML file or the `.xsd` or the `.gfs`` file if present.
+      The overrides are defined as a JSON list of field definitions.
+      This can be a filename, a URL or JSON string conformant with the `ogr_fields_override.schema.json schema <https://raw.githubusercontent.com/OSGeo/gdal/refs/heads/master/ogr/data/ogr_fields_override.schema.json>`_
+
 
 .. note::
 

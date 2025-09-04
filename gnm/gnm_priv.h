@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  GDAL/OGR Geography Network support (Geographic Network Model)
  * Purpose:  GNM private and internal declarations.
@@ -82,7 +81,7 @@
 // Other string constants.
 #define GNM_SRSFILENAME "_gnm_srs.prj"
 
-// Corespondent datatype for identificator
+// Correspondent datatype for identificator
 // (i.e. int -> OFTInteger -> GetFieldAsInteger and
 //       GUIntBig -> OFTInteger64 -> GetFieldAsInteger64)
 #define GNMGFIDInt OFTInteger64

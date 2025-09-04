@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test the GenImgProjTransformer capabilities.
@@ -94,6 +93,38 @@ def test_transformer_3():
 
     ds = gdal.Open("data/gcps.vrt")
     tr = gdal.Transformer(ds, None, ["METHOD=GCP_TPS"])
+
+    (success, pnt) = tr.TransformPoint(0, 20, 10)
+
+    assert (
+        success
+        and pnt[0] == pytest.approx(441920, abs=0.001)
+        and pnt[1] == pytest.approx(3750720, abs=0.001)
+        and pnt[2] == 0
+    ), "got wrong forward transform result."
+
+    (success, pnt) = tr.TransformPoint(1, pnt[0], pnt[1], pnt[2])
+
+    assert (
+        success
+        and pnt[0] == pytest.approx(20, abs=0.001)
+        and pnt[1] == pytest.approx(10, abs=0.001)
+        and pnt[2] == 0
+    ), "got wrong reverse transform result."
+
+
+###############################################################################
+# Test GCP based transformer with homography.
+
+
+@pytest.mark.skipif(
+    not gdaltest.vrt_has_open_support(),
+    reason="VRT driver open missing",
+)
+def test_transformer_homography():
+
+    ds = gdal.Open("data/gcps.vrt")
+    tr = gdal.Transformer(ds, None, ["METHOD=GCP_HOMOGRAPHY"])
 
     (success, pnt) = tr.TransformPoint(0, 20, 10)
 
@@ -246,6 +277,19 @@ def test_transformer_5():
     ), "got wrong reverse transform result.(4)"
 
     tr = None
+
+    # Test HEIGHT_DEFAULT in RPC metadata domain
+    tmp_ds = gdal.GetDriverByName("VRT").CreateCopy("", ds)
+    tmp_ds.SetMetadataItem("HEIGHT_DEFAULT", "30", "RPC")
+    tr = gdal.Transformer(tmp_ds, None, ["METHOD=RPC"])
+
+    (success, pnt) = tr.TransformPoint(0, 20.5, 10.5)
+
+    assert (
+        success
+        and pnt[0] == pytest.approx(125.64828521533849, abs=0.000001)
+        and pnt[1] == pytest.approx(39.869345204440144, abs=0.000001)
+    ), "got wrong forward transform result.(3)"
 
     # Test RPC_DEMINTERPOLATION=cubic
 
@@ -1271,3 +1315,97 @@ def test_transformer_gcp_antimeridian_unwrap():
     assert success and pnt == pytest.approx(
         (-97.99753079934052, 62.45182290696794, 0.0)
     )
+
+
+###############################################################################
+# Test passing an unknown transformer option.
+
+
+@gdaltest.disable_exceptions()
+def test_transformer_unknown_option():
+
+    ds = gdal.Open("data/byte.tif")
+    with gdal.quiet_errors():
+        gdal.ErrorReset()
+        gdal.Transformer(ds, None, ["FOO=BAR"])
+        assert (
+            gdal.GetLastErrorMsg() == "transformer options does not support option FOO"
+        )
+
+
+###############################################################################
+
+
+def test_transformer_validate_options():
+
+    if (
+        gdaltest.is_travis_branch("mingw64")
+        or gdaltest.is_travis_branch("build-windows-conda")
+        or gdaltest.is_travis_branch("build-windows-minimum")
+    ):
+        pytest.skip("Crashes for unknown reason")
+
+    from lxml import etree
+
+    schema_optionlist = etree.XML(
+        r"""
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="Value">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="xs:string" name="alias" use="optional"/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="Option">
+    <xs:complexType mixed="true">
+      <xs:sequence>
+        <xs:element ref="Value" maxOccurs="unbounded" minOccurs="0"/>
+      </xs:sequence>
+      <xs:attribute name="name" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:pattern value="[^\s]*"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="type" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="int" />
+            <xs:enumeration value="float" />
+            <xs:enumeration value="boolean" />
+            <xs:enumeration value="string-select" />
+            <xs:enumeration value="string" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute type="xs:string" name="description" use="optional"/>
+      <xs:attribute type="xs:string" name="default" use="optional"/>
+      <xs:attribute type="xs:string" name="alias" use="optional"/>
+      <xs:attribute type="xs:string" name="min" use="optional"/>
+      <xs:attribute type="xs:string" name="max" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="OptionList">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="Option" maxOccurs="unbounded" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+    )
+
+    schema = etree.XMLSchema(schema_optionlist)
+
+    xml = gdal.GetTranformerOptionList()
+    try:
+        parser = etree.XMLParser(schema=schema)
+        etree.fromstring(xml, parser)
+    except Exception:
+        print(xml)
+        raise

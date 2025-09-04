@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test /vsicrypt/
@@ -47,11 +46,13 @@ def setup_and_cleanup():
 # Use common test for /vsicrypt
 
 
-def test_vsicrypt_1():
+def test_vsicrypt_1(tmp_vsimem):
 
     import vsifile
 
-    vsifile.vsifile_generic("/vsicrypt/key=DONT_USE_IN_PROD,file=/vsimem/file.bin")
+    vsifile.vsifile_generic(
+        f"/vsicrypt/key=DONT_USE_IN_PROD,file={tmp_vsimem}/vsifile.bin"
+    )
 
 
 ###############################################################################

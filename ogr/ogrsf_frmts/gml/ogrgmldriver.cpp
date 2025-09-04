@@ -32,7 +32,7 @@ static int OGRGMLDriverIdentify(GDALOpenInfo *poOpenInfo)
     /* it transparently with /vsigzip/ */
     else if (poOpenInfo->pabyHeader[0] == 0x1f &&
              poOpenInfo->pabyHeader[1] == 0x8b &&
-             EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "gz") &&
+             poOpenInfo->IsExtensionEqualToCI("gz") &&
              !STARTS_WITH(poOpenInfo->pszFilename, "/vsigzip/"))
     {
         return -1; /* must be later checked */
@@ -196,6 +196,11 @@ void RegisterOGRGML()
         "    <Value>YES</Value>"
         "    <Value>NO</Value>"
         "  </Option>"
+        "  <Option name='OGR_SCHEMA' type='string' description='"
+        "Partially or totally overrides the auto-detected schema to use for "
+        "creating the layer. "
+        "The overrides are defined as a JSON list of field definitions. "
+        "This can be a filename or a JSON string or a URL.'/>"
         "  <Option name='DOWNLOAD_SCHEMA' type='boolean' description='Whether "
         "to download the remote application schema if needed (only for WFS "
         "currently)' default='YES'/>"
@@ -207,6 +212,16 @@ void RegisterOGRGML()
         "  <Option name='USE_SCHEMA_IMPORT' type='boolean' "
         "description='Whether "
         "to read schema for imports along with includes or not' default='NO'/>"
+        "  <Option name='SKIP_CORRUPTED_FEATURES' type='boolean' "
+        "description='Whether to skip features that cannot be parsed instead "
+        "of failing' default='NO'/>"
+        "  <Option name='SKIP_RESOLVE_ELEMS' type='string' "
+        "description='Configure xlink element resolution. Set to NONE to "
+        "resolve all elements, set to ALL to skip all xlink elements, "
+        "set to HUGE to store linked elements in a temporary SQLite DB, "
+        "set to a comma separated list of names of specific elements to be "
+        "skipped.' "
+        "default='ALL'/>"
         "</OpenOptionList>");
 
     poDriver->SetMetadataItem(

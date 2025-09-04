@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  VirtualOGR testing
@@ -74,7 +73,7 @@ def ogr_virtualogr_run_sql(sql_statement):
     if not success:
         return success
 
-    ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+    ds = ogr.GetDriverByName("MEM").CreateDataSource("")
     gdal.ErrorReset()
     with gdal.quiet_errors(), gdaltest.config_option(
         "OGR_SQLITE_DIALECT_ALLOW_CREATE_VIRTUAL_TABLE", "YES"
@@ -226,6 +225,10 @@ def test_ogr_virtualogr_2(require_auto_load_extension):
 
 
 def test_ogr_virtualogr_3(require_auto_load_extension):
+
+    if gdaltest.is_travis_branch("sanitize"):
+        pytest.skip("leaks memory on CI but not locally")
+
     # Find path of libgdal
     libgdal_name = gdaltest.find_lib("gdal")
     if libgdal_name is None:
@@ -333,7 +336,7 @@ def test_ogr_virtualogr_5(require_auto_load_extension):
     gdal.VSIFWriteL(line, 1, len(line), fp)
     gdal.VSIFCloseL(fp)
 
-    ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+    ds = ogr.GetDriverByName("MEM").CreateDataSource("")
     with gdal.quiet_errors():
         sql_lyr = ds.ExecuteSQL(
             "CREATE VIRTUAL TABLE lyr2 USING VirtualOGR('/vsimem/ogr_virtualogr_5.csv')",

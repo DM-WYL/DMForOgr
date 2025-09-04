@@ -19,9 +19,11 @@
 #include "cpl_azure.h"
 #include "cpl_port.h"
 #include "cpl_json.h"
+#include "cpl_http.h"
 #include "cpl_string.h"
 #include "cpl_vsil_curl_priv.h"
 #include "cpl_mem_cache.h"
+#include "cpl_multiproc.h"
 
 #include "cpl_curl_priv.h"
 
@@ -49,8 +51,6 @@ void VSICurlStreamingClearCache(void);  // from cpl_vsil_curl_streaming.cpp
 
 struct curl_slist *VSICurlSetOptions(CURL *hCurlHandle, const char *pszURL,
                                      const char *const *papszOptions);
-struct curl_slist *VSICurlMergeHeaders(struct curl_slist *poDest,
-                                       struct curl_slist *poSrcToDestroy);
 
 struct curl_slist *VSICurlSetContentTypeFromExt(struct curl_slist *polist,
                                                 const char *pszPath);
@@ -80,6 +80,7 @@ class FileProp
     std::string osRedirectURL{};
     bool bHasComputedFileSize = false;
     bool bIsDirectory = false;
+    bool bIsAzureFolder = false;
     int nMode = 0;  // st_mode member of struct stat
     bool bS3LikeRedirect = false;
     std::string ETag{};
@@ -241,16 +242,12 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
 
     static bool IsAllowedFilename(const char *pszFilename);
 
-    VSIVirtualHandle *Open(const char *pszFilename, const char *pszAccess,
-                           bool bSetError,
-                           CSLConstList /* papszOptions */) override;
+    VSIVirtualHandleUniquePtr Open(const char *pszFilename,
+                                   const char *pszAccess, bool bSetError,
+                                   CSLConstList /* papszOptions */) override;
 
     int Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
              int nFlags) override;
-    int Unlink(const char *pszFilename) override;
-    int Rename(const char *oldpath, const char *newpath) override;
-    int Mkdir(const char *pszDirname, long nMode) override;
-    int Rmdir(const char *pszDirname) override;
     char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
     char **SiblingFiles(const char *pszFilename) override;
 
@@ -268,14 +265,14 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
 
     char **ReadDirInternal(const char *pszDirname, int nMaxFiles,
                            bool *pbGotFileList);
-    void InvalidateDirContent(const char *pszDirname);
+    void InvalidateDirContent(const std::string &osDirname);
 
     virtual const char *GetDebugKey() const = 0;
 
     virtual std::string GetFSPrefix() const = 0;
     virtual bool AllowCachedDataFor(const char *pszFilename);
 
-    virtual bool IsLocal(const char * /* pszPath */) override
+    virtual bool IsLocal(const char * /* pszPath */) const override
     {
         return false;
     }
@@ -405,6 +402,8 @@ class VSICurlHandle : public VSIVirtualHandle
     mutable std::string m_osPlanetaryComputerCollection{};
     void ManagePlanetaryComputerSigning() const;
 
+    void UpdateQueryString() const;
+
     int ReadMultiRangeSingleGet(int nRanges, void **ppData,
                                 const vsi_l_offset *panOffsets,
                                 const size_t *panSizes);
@@ -418,22 +417,35 @@ class VSICurlHandle : public VSIVirtualHandle
     struct AdviseReadRange
     {
         bool bDone = false;
+        bool bToRetry = true;
+        double dfSleepDelay = 0.0;
         std::mutex oMutex{};
         std::condition_variable oCV{};
         vsi_l_offset nStartOffset = 0;
         size_t nSize = 0;
         std::vector<GByte> abyData{};
+        CPLHTTPRetryContext retryContext;
+
+        explicit AdviseReadRange(const CPLHTTPRetryParameters &oRetryParameters)
+            : retryContext(oRetryParameters)
+        {
+        }
+
+        AdviseReadRange(const AdviseReadRange &) = delete;
+        AdviseReadRange &operator=(const AdviseReadRange &) = delete;
+        AdviseReadRange(AdviseReadRange &&) = delete;
+        AdviseReadRange &operator=(AdviseReadRange &&) = delete;
     };
 
     std::vector<std::unique_ptr<AdviseReadRange>> m_aoAdviseReadRanges{};
     std::thread m_oThreadAdviseRead{};
+    CURLM *m_hCurlMultiHandleForAdviseRead = nullptr;
 
   protected:
-    virtual struct curl_slist *
-    GetCurlHeaders(const std::string & /*osVerb*/,
-                   const struct curl_slist * /* psExistingHeaders */)
+    virtual struct curl_slist *GetCurlHeaders(const std::string & /*osVerb*/,
+                                              struct curl_slist *psHeaders)
     {
-        return nullptr;
+        return psHeaders;
     }
 
     virtual bool AllowAutomaticRedirection()
@@ -563,8 +575,9 @@ class VSICurlFilesystemHandlerBaseWritable : public VSICurlFilesystemHandlerBase
     CreateWriteHandle(const char *pszFilename, CSLConstList papszOptions) = 0;
 
   public:
-    VSIVirtualHandle *Open(const char *pszFilename, const char *pszAccess,
-                           bool bSetError, CSLConstList papszOptions) override;
+    VSIVirtualHandleUniquePtr Open(const char *pszFilename,
+                                   const char *pszAccess, bool bSetError,
+                                   CSLConstList /* papszOptions */) override;
 
     bool SupportsSequentialWrite(const char * /* pszPath */,
                                  bool /* bAllowLocalTempFile */) override
@@ -613,7 +626,8 @@ class IVSIS3LikeFSHandler : public VSICurlFilesystemHandlerBaseWritable
     int Rmdir(const char *pszDirname) override;
     int Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
              int nFlags) override;
-    int Rename(const char *oldpath, const char *newpath) override;
+    int Rename(const char *oldpath, const char *newpath, GDALProgressFunc,
+               void *) override;
 
     virtual int CopyFile(const char *pszSource, const char *pszTarget,
                          VSILFILE *fpSource, vsi_l_offset nSourceSize,
@@ -794,9 +808,7 @@ class IVSIS3LikeHandle : public VSICurlHandle
     {
     }
 
-    ~IVSIS3LikeHandle() override
-    {
-    }
+    ~IVSIS3LikeHandle() override;
 };
 
 /************************************************************************/
@@ -1002,10 +1014,59 @@ struct VSIDIRWithMissingDirSynthesis : public VSIDIR
     std::vector<std::unique_ptr<VSIDIREntry>> aoEntries{};
 
   protected:
+    ~VSIDIRWithMissingDirSynthesis() override;
+
     std::vector<std::string> m_aosSubpathsStack{};
 
     void SynthetizeMissingDirectories(const std::string &osCurSubdir,
                                       bool bAddEntryForThisSubdir);
+};
+
+/************************************************************************/
+/*                          VSIDIRS3Like                                */
+/************************************************************************/
+
+struct VSIDIRS3Like : public VSIDIRWithMissingDirSynthesis
+{
+    const std::string m_osDirName;
+
+    int nRecurseDepth = 0;
+
+    std::string osNextMarker{};
+    int nPos = 0;
+
+    std::string osBucket{};
+    std::string osObjectKey{};
+    VSICurlFilesystemHandlerBase *poFS = nullptr;
+    IVSIS3LikeFSHandler *poS3FS = nullptr;
+    std::unique_ptr<IVSIS3LikeHandleHelper> poHandleHelper{};
+    int nMaxFiles = 0;
+    bool bCacheEntries = true;
+    bool m_bSynthetizeMissingDirectories = false;
+    std::string m_osFilterPrefix{};
+
+    // used when listing only the file system prefix
+    std::unique_ptr<VSIDIR, decltype(&VSICloseDir)> m_subdir{nullptr,
+                                                             VSICloseDir};
+
+    VSIDIRS3Like(const std::string &osDirName, IVSIS3LikeFSHandler *poFSIn)
+        : m_osDirName(osDirName), poFS(poFSIn), poS3FS(poFSIn)
+    {
+    }
+
+    VSIDIRS3Like(const std::string &osDirName,
+                 VSICurlFilesystemHandlerBase *poFSIn)
+        : m_osDirName(osDirName), poFS(poFSIn)
+    {
+    }
+
+    VSIDIRS3Like(const VSIDIRS3Like &) = delete;
+    VSIDIRS3Like &operator=(const VSIDIRS3Like &) = delete;
+
+    const VSIDIREntry *NextDirEntry() override;
+
+    virtual bool IssueListDir() = 0;
+    void clear();
 };
 
 /************************************************************************/

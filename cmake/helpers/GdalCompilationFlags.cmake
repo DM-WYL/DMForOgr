@@ -118,6 +118,19 @@ else ()
   detect_and_set_cxx_warning_flag(non-virtual-dtor)
   detect_and_set_cxx_warning_flag(overloaded-virtual)
   detect_and_set_cxx_warning_flag(suggest-override)
+  # clang specific only. Avoids that foo("bar") goes to foo(bool) instead of foo(const std::string&)
+  detect_and_set_cxx_warning_flag(string-conversion)
+  detect_and_set_cxx_warning_flag(deprecated-copy-dtor)
+  detect_and_set_cxx_warning_flag(implicit-fallthrough)
+  detect_and_set_cxx_warning_flag(weak-vtables)
+  if(DEFINED ENV{CI})
+      detect_and_set_cxx_warning_flag(thread-safety-analysis)
+  endif()
+
+  # Not sure about the minimum version, but clang 12 complains about \file, @cond Doxygen_Suppress, etc.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND "${CMAKE_CXX_COMPILER_VERSION}" VERSION_GREATER_EQUAL 18.0.0)
+      detect_and_set_cxx_warning_flag(documentation-unknown-command)
+  endif()
 
   check_cxx_compiler_flag(-fno-operator-names HAVE_FLAG_NO_OPERATOR_NAMES)
   if (HAVE_FLAG_NO_OPERATOR_NAMES)
@@ -159,7 +172,14 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" OR CMAKE_CXX_COMPILER_ID STREQUAL
   check_cxx_compiler_flag(-fno-finite-math-only HAVE_FLAG_NO_FINITE_MATH_ONLY)
   if (HAVE_FLAG_NO_FINITE_MATH_ONLY)
     # Intel CXX compiler based on clang defaults to -ffinite-math-only, which breaks std::isinf(), std::isnan(), etc.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-finite-math-only")
+    add_compile_options("-fno-finite-math-only")
+  endif ()
+
+  check_cxx_compiler_flag(-fno-fast-math HAVE_FLAG_NO_FAST_MATH)
+  if (HAVE_FLAG_NO_FAST_MATH)
+    # Intel CXX compiler, based on clang, defaults to -ffast-math, which breaks
+    # for example DBL_MAX - -DBL_MAX in VRT pixel function mean()
+    add_compile_options("-fno-fast-math")
   endif ()
 
   set(TEST_LINK_STDCPP_SOURCE_CODE
@@ -202,6 +222,7 @@ add_definitions(-DGDAL_COMPILATION)
 if (MSVC)
   add_definitions(-D_CRT_SECURE_NO_DEPRECATE -D_CRT_NONSTDC_NO_DEPRECATE)
   add_definitions(-DNOMINMAX)
+  add_compile_options(/MP)
 endif ()
 
 if (MINGW)

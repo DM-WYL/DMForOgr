@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Elasticsearch driver testing (with fake server)
@@ -53,6 +52,8 @@ def startup_and_cleanup():
     ):
 
         yield
+
+    ogrtest.srs_wgs84 = None
 
 
 ###############################################################################

@@ -10,9 +10,6 @@ target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:ogrsf_frmts>)
 set_property(TARGET ogrsf_frmts PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
 add_dependencies(ogrsf_frmts generate_gdal_version_h)
 
-# Obligatory for building GDAL; always compile in.
-ogr_default_driver(mem "Read/write driver for MEMORY virtual files")
-
 # Exception to the rule: enable the GeoJSON driver by default, even if
 # OGR_BUILD_OPTIONAL_DRIVERS=OFF.
 if (NOT DEFINED OGR_ENABLE_DRIVER_GEOJSON AND
@@ -67,10 +64,7 @@ endif()
 ogr_optional_driver(csv CSV)
 ogr_optional_driver(dgn DGN)
 ogr_optional_driver(gmt GMT)
-ogr_optional_driver(ntf NTF)
 ogr_optional_driver(s57 S57)
-ogr_optional_driver(tiger "U.S. Census TIGER/Line")
-ogr_optional_driver(geoconcept GEOCONCEPT)
 ogr_optional_driver(georss GEORSS)
 ogr_optional_driver(dxf DXF)
 ogr_optional_driver(pgdump PGDump)
@@ -91,18 +85,17 @@ if( NOT WORDS_BIGENDIAN )
 endif()
 ogr_optional_driver(dm DM)
 
+ogr_optional_driver(aivector AIVector)
+
 # ######################################################################################################################
 #
 if (NOT OGR_ENABLE_DRIVER_GEOJSON_PLUGIN)
     ogr_dependent_driver(jsonfg JSONFG "OGR_ENABLE_DRIVER_GEOJSON")
 endif()
 
-ogr_dependent_driver(sdts SDTS "GDAL_ENABLE_DRIVER_SDTS")
-
 # XML drivers
 ogr_dependent_driver(gpx "GPX - GPS Exchange Format" "GDAL_USE_EXPAT")
 ogr_dependent_driver(gmlas GMLAS "GDAL_USE_XERCESC;OGR_ENABLE_DRIVER_PGDUMP")
-ogr_dependent_driver(svg "Scalable Vector Graphics" "GDAL_USE_EXPAT")
 ogr_dependent_driver(csw CSW "GDAL_USE_CURL")
 ogr_dependent_driver(dwg DWG "GDAL_USE_TEIGHA")
 ogr_dependent_driver(filegdb FileGDB "GDAL_USE_FILEGDB")
@@ -154,7 +147,6 @@ ogr_dependent_driver(gtfs "GTFS" "OGR_ENABLE_DRIVER_CSV")
 include(oci/driver_declaration.cmake)
 ogr_dependent_driver(idb "IDB" "GDAL_USE_IDB")
 ogr_dependent_driver(ods ODS "GDAL_USE_EXPAT")
-ogr_dependent_driver(ogdi "OGDI" "GDAL_USE_OGDI")
 ogr_dependent_driver(lvbag "LVBAG" "GDAL_USE_EXPAT")
 ogr_dependent_driver(hana "SAP HANA" "GDAL_USE_ODBCCPP;GDAL_USE_ODBC")
 

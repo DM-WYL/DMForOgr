@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  WMS Client Mini Driver
  * Purpose:  Implementation of Dataset and RasterBand classes for WMS
@@ -81,7 +80,7 @@ static size_t pread_curl(void *user_data, void *buff, size_t count,
 {
     // Use a copy of the provided request, which has the options and the URL
     // preset
-    WMSHTTPRequest request(*(reinterpret_cast<WMSHTTPRequest *>(user_data)));
+    WMSHTTPRequest &request = *(reinterpret_cast<WMSHTTPRequest *>(user_data));
     request.Range.Printf(CPL_FRMT_GUIB "-" CPL_FRMT_GUIB,
                          static_cast<GUIntBig>(offset),
                          static_cast<GUIntBig>(offset + count - 1));
@@ -142,8 +141,11 @@ void *SectorCache::data(size_t address)
         // thrashing
         do
         {
-            // coverity[dont_call]
+#ifndef __COVERITY__
             target = &(store[rand() % n]);
+#else
+            target = &(store[0]);
+#endif
         } while (target == last_used);
     }
 

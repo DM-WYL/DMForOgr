@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Name:     gdal_java.i
  * Project:  GDAL SWIG Interface
@@ -308,12 +307,12 @@ import java.lang.Integer;
   }
 %enddef
 
-  DEFINE_READ_MDA_DATA(char,    GDT_Byte)
-  DEFINE_READ_MDA_DATA(short,   GDT_Int16)
-  DEFINE_READ_MDA_DATA(int,     GDT_Int32)
-  DEFINE_READ_MDA_DATA(int64_t, GDT_Int64)
-  DEFINE_READ_MDA_DATA(float,   GDT_Float32)
-  DEFINE_READ_MDA_DATA(double,  GDT_Float64)
+  DEFINE_READ_MDA_DATA(char,     GDT_Byte)
+  DEFINE_READ_MDA_DATA(short,    GDT_Int16)
+  DEFINE_READ_MDA_DATA(int,      GDT_Int32)
+  DEFINE_READ_MDA_DATA(int64_t,  GDT_Int64)
+  DEFINE_READ_MDA_DATA(float,    GDT_Float32)
+  DEFINE_READ_MDA_DATA(double,   GDT_Float64)
 
 %define DEFINE_WRITE_MDA_DATA(ctype, buffer_type_code)
   %apply(int nList, GInt64 *pList) { (int starts,  GInt64 *startsValues) };
@@ -359,12 +358,12 @@ import java.lang.Integer;
   }
 %enddef
 
-  DEFINE_WRITE_MDA_DATA(char   , GDT_Byte)
-  DEFINE_WRITE_MDA_DATA(short  , GDT_Int16)
-  DEFINE_WRITE_MDA_DATA(int    , GDT_Int32)
-  DEFINE_WRITE_MDA_DATA(int64_t, GDT_Int64)
-  DEFINE_WRITE_MDA_DATA(float  , GDT_Float32)
-  DEFINE_WRITE_MDA_DATA(double , GDT_Float64)
+  DEFINE_WRITE_MDA_DATA(char    , GDT_Byte)
+  DEFINE_WRITE_MDA_DATA(short   , GDT_Int16)
+  DEFINE_WRITE_MDA_DATA(int     , GDT_Int32)
+  DEFINE_WRITE_MDA_DATA(int64_t , GDT_Int64)
+  DEFINE_WRITE_MDA_DATA(float   , GDT_Float32)
+  DEFINE_WRITE_MDA_DATA(double  , GDT_Float64)
 
 } /* extend */
 
@@ -564,6 +563,17 @@ import org.gdal.gdalconst.gdalconstConstants;
   }
 %}
 
+%extend GDALDatasetShadow {
+%proxycode %{
+  public int Close() {
+    int ret = gdalJNI.Dataset_CloseInternal(swigCPtr, this);
+    swigCPtr = 0;
+    swigCMemOwn = false;
+    return ret;
+  }
+%}
+}
+
 %typemap(javacode) GDALDatasetShadow %{
 
   // Preferred name to match C++ API
@@ -613,7 +623,7 @@ import org.gdal.gdalconst.gdalconstConstants;
         GDALDataType eDataType;
         GDALGetBlockSize(self, &nBlockXSize, &nBlockYSize);
         eDataType = GDALGetRasterDataType(self);
-        int nDataTypeSize = GDALGetDataTypeSize( eDataType ) / 8;
+        int nDataTypeSize = GDALGetDataTypeSizeBytes( eDataType );
         if (nBlockXSize > (INT_MAX / nDataTypeSize) / nBlockYSize)
         {
             CPLError(CE_Failure, CPLE_AppDefined, "Integer overflow");
@@ -665,7 +675,7 @@ static CPLErr DatasetRasterIO( GDALDatasetH hDS, GDALRWFlag eRWFlag,
   }
 
   GIntBig nMinBufferSizeInBytes = ComputeDatasetRasterIOSize (
-                         buf_xsize, buf_ysize, GDALGetDataTypeSize(buf_type) / 8,
+                         buf_xsize, buf_ysize, GDALGetDataTypeSizeBytes(buf_type),
                          band_list, pband_list, band_list,
                          nPixelSpace, nLineSpace, nBandSpace, sizeof_ctype > 1 );
 
@@ -832,7 +842,7 @@ static CPLErr BandRasterIO( GDALRasterBandH hBand, GDALRWFlag eRWFlag,
     }
 
     GIntBig nMinBufferSizeInBytes = ComputeBandRasterIOSize (
-                            buf_xsize, buf_ysize, GDALGetDataTypeSize(buf_type) / 8,
+                            buf_xsize, buf_ysize, GDALGetDataTypeSizeBytes(buf_type),
                             nPixelSpace, nLineSpace, sizeof_ctype > 1 );
     if (nMinBufferSizeInBytes > 0x7fffffff)
     {
@@ -1112,10 +1122,17 @@ import java.awt.Color;
 
 %typemap(javaimports) GDALRasterBandShadow %{
 import org.gdal.gdalconst.gdalconstConstants;
+import org.gdal.osr.SpatialReference;
 %}
 
-
 %typemap(javacode) GDALRasterBandShadow %{
+
+  public Dataset GetDataset()
+  {
+      if (parentReference != null)
+         return (Dataset)parentReference;
+      return GetDatasetInternal();
+  }
 
   // Preferred name to match C++ API
   public int GetXSize() { return getXSize(); }
@@ -1163,7 +1180,7 @@ import org.gdal.gdalconst.gdalconstConstants;
    public java.nio.ByteBuffer ReadRaster_Direct(int xoff, int yoff, int xsize, int ysize,
                                                 int buf_xsize, int buf_ysize, int buf_type)
    {
-       long buf_size = buf_xsize * buf_ysize * (gdal.GetDataTypeSize(buf_type) / 8);
+       long buf_size = buf_xsize * buf_ysize * gdal.GetDataTypeSizeBytes(buf_type);
        if ((int)buf_size != buf_size)
                throw new OutOfMemoryError();
        java.nio.ByteBuffer nioBuffer = java.nio.ByteBuffer.allocateDirect((int)buf_size);
@@ -1348,7 +1365,7 @@ import org.gdal.gdalconst.gdalconstConstants;
 %}
 
 %typemap(javacode) GDALMajorObjectShadow %{
-  private Object parentReference;
+  protected Object parentReference;
 
   /* Ensure that the GC doesn't collect any parent instance set from Java */
   protected void addReference(Object reference) {
@@ -1432,3 +1449,17 @@ import org.gdal.gdalconst.gdalconstConstants;
 %include callback.i
 
 %include typemaps_java.i
+
+
+// Also defined in python/gdal_python.i and csharp/gdal_csharp.i
+
+%rename (GetMemFileBuffer) wrapper_VSIGetMemFileBuffer;
+
+%apply (GByte* outBytes) {GByte*};
+%inline %{
+GByte* wrapper_VSIGetMemFileBuffer(const char *utf8_path, vsi_l_offset *length)
+{
+    return VSIGetMemFileBuffer(utf8_path, length, 0);
+}
+%}
+%clear GByte*;

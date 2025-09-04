@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test MEM format driver.
@@ -19,7 +18,7 @@ import struct
 import gdaltest
 import pytest
 
-from osgeo import gdal
+from osgeo import gdal, osr
 
 
 @pytest.fixture
@@ -67,8 +66,7 @@ def test_mem_1():
     #######################################################
     # Setup dataset
     drv = gdal.GetDriverByName("MEM")
-    gdaltest.mem_ds = drv.Create("mem_1.mem", 50, 3)
-    ds = gdaltest.mem_ds
+    ds = drv.Create("mem_1.mem", 50, 3)
 
     assert ds.GetProjection() == "", "projection wrong"
 
@@ -251,6 +249,10 @@ def test_mem_4():
         assert (
             cs == expected_cs[i]
         ), "did not get expected checksum for band %d after fill" % (i + 1)
+
+    assert (
+        ds.GetMetadataItem("INTERLEAVE", "IMAGE_STRUCTURE") == "BAND"
+    ), "did not get expected INTERLEAVE value"
 
     ds = None
 
@@ -777,8 +779,43 @@ def test_mem_alpha_ismaskband():
 
 
 ###############################################################################
-# cleanup
+# Check robustness to GDT_Unknown
 
 
-def test_mem_cleanup():
-    gdaltest.mem_ds = None
+def test_mem_gdt_unknown():
+
+    with pytest.raises(Exception, match="Illegal GDT_Unknown/GDT_TypeCount argument"):
+        gdal.GetDriverByName("MEM").Create("", 1, 1, 1, gdal.GDT_Unknown)
+
+    with gdal.GetDriverByName("MEM").Create("", 1, 1, 0, gdal.GDT_Unknown) as ds:
+        with pytest.raises(
+            Exception, match="Illegal GDT_Unknown/GDT_TypeCount argument"
+        ):
+            ds.AddBand(gdal.GDT_Unknown)
+
+
+###############################################################################
+# Test Dataset.GetExtent()
+
+
+def test_mem_extent():
+
+    ds = gdal.GetDriverByName("MEM").Create("", 2, 10)
+    assert ds.GetExtent() is None
+    assert ds.GetExtentWGS84LongLat() is None
+
+    srs = osr.SpatialReference(epsg=3857)
+    ds.SetSpatialRef(srs)
+    ds.SetGeoTransform([1000, 1, 0, 2000, 0, -2])
+
+    assert ds.TestCapability(gdal.GDsCFastGetExtent)
+    assert ds.GetExtent() == (1000, 1002, 1980, 2000)
+    assert ds.TestCapability(gdal.GDsCFastGetExtentWGS84LongLat)
+    assert ds.GetExtentWGS84LongLat() == pytest.approx(
+        (
+            0.008983152841195215,
+            0.009001119146877604,
+            0.017786642339884726,
+            0.01796630538796444,
+        )
+    )

@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test basic integration with numpy.
@@ -20,7 +19,7 @@ from osgeo import gdal
 
 # All tests will be skipped if numpy or gdal_array are unavailable.
 numpy = pytest.importorskip("numpy")
-gdal_array = pytest.importorskip("osgeo.gdal_array")
+gdal_array = gdaltest.importorskip_gdal_array()
 
 ###############################################################################
 @pytest.fixture(autouse=True, scope="module")
@@ -258,9 +257,9 @@ def test_numpy_rw_10_bis(options):
 # Test all datatypes
 
 
-def test_numpy_rw_11():
-
-    type_tuples = [
+@pytest.mark.parametrize(
+    "name,in_dt,np_dt,val",
+    [
         ("uint8", gdal.GDT_Byte, numpy.uint8, 255),
         ("uint16", gdal.GDT_UInt16, numpy.uint16, 65535),
         ("int16", gdal.GDT_Int16, numpy.int16, -32767),
@@ -279,53 +278,56 @@ def test_numpy_rw_11():
             numpy.complex128,
             -32768.123456 + 32767.123456j,
         ),
-    ]
+    ],
+)
+def test_numpy_rw_11(name, in_dt, np_dt, val):
 
-    for type_tuple in type_tuples:
-        ds = gdal.GetDriverByName("GTiff").Create(
-            "/vsimem/" + type_tuple[0], 1, 1, 1, type_tuple[1]
-        )
-        tmp = ds.ReadAsArray()
-        assert tmp.dtype == type_tuple[2], "did not get expected numpy type"
+    type_tuple = (name, in_dt, np_dt, val)
 
-        ar = numpy.empty([1, 1], dtype=type_tuple[2])
+    ds = gdal.GetDriverByName("GTiff").Create(
+        "/vsimem/" + type_tuple[0], 1, 1, 1, type_tuple[1]
+    )
+    tmp = ds.ReadAsArray()
+    assert tmp.dtype == type_tuple[2], "did not get expected numpy type"
 
-        ar_ds = gdal_array.OpenArray(ar)
-        got_dt = ar_ds.GetRasterBand(1).DataType
-        ar_ds = None
-        expected_dt = type_tuple[1]
-        if expected_dt == gdal.GDT_CInt16 or expected_dt == gdal.GDT_CInt32:
-            expected_dt = gdal.GDT_CFloat32
-        if got_dt != expected_dt:
-            print(type_tuple[1])
-            pytest.fail("did not get expected result (0)")
+    ar = numpy.empty([1, 1], dtype=type_tuple[2])
 
-        ar[0][0] = type_tuple[3]
-        ds.GetRasterBand(1).WriteArray(ar)
-        ds = None
+    ar_ds = gdal_array.OpenArray(ar)
+    got_dt = ar_ds.GetRasterBand(1).DataType
+    ar_ds = None
+    expected_dt = type_tuple[1]
+    if expected_dt == gdal.GDT_CInt16 or expected_dt == gdal.GDT_CInt32:
+        expected_dt = gdal.GDT_CFloat32
+    if got_dt != expected_dt:
+        print(type_tuple[1])
+        pytest.fail("did not get expected result (0)")
 
-        ds = gdal.Open("/vsimem/" + type_tuple[0])
-        assert ds.GetRasterBand(1).DataType == type_tuple[1]
-        ar2 = ds.ReadAsArray()
-        ar3 = numpy.empty_like(ar2)
-        ds.GetRasterBand(1).ReadAsArray(buf_obj=ar3)
-        ds = None
+    ar[0][0] = type_tuple[3]
+    ds.GetRasterBand(1).WriteArray(ar)
+    ds = None
 
-        gdal.Unlink("/vsimem/" + type_tuple[0])
+    ds = gdal.Open("/vsimem/" + type_tuple[0])
+    assert ds.GetRasterBand(1).DataType == type_tuple[1]
+    ar2 = ds.ReadAsArray()
+    ar3 = numpy.empty_like(ar2)
+    ds.GetRasterBand(1).ReadAsArray(buf_obj=ar3)
+    ds = None
 
-        assert not (
-            type_tuple[0] == "float32"
-            and ar2[0][0] != pytest.approx(type_tuple[3], abs=1e-6)
-        ) or (
-            type_tuple[0] != "float32" and ar2[0][0] != type_tuple[3]
-        ), "did not get expected result (1)"
+    gdal.Unlink("/vsimem/" + type_tuple[0])
 
-        assert not (
-            type_tuple[0] == "float32"
-            and ar3[0][0] != pytest.approx(type_tuple[3], abs=1e-6)
-        ) or (
-            type_tuple[0] != "float32" and ar3[0][0] != type_tuple[3]
-        ), "did not get expected result (2)"
+    assert not (
+        type_tuple[0] == "float32"
+        and ar2[0][0] != pytest.approx(type_tuple[3], abs=1e-6)
+    ) or (
+        type_tuple[0] != "float32" and ar2[0][0] != type_tuple[3]
+    ), "did not get expected result (1)"
+
+    assert not (
+        type_tuple[0] == "float32"
+        and ar3[0][0] != pytest.approx(type_tuple[3], abs=1e-6)
+    ) or (
+        type_tuple[0] != "float32" and ar3[0][0] != type_tuple[3]
+    ), "did not get expected result (2)"
 
 
 ###############################################################################
@@ -367,7 +369,7 @@ def test_numpy_rw_13():
     ds.GetRasterBand(1).WriteArray(ar)
 
     # Try reading into unsupported array type
-    ar = numpy.empty([1, 2], dtype=numpy.bool_)
+    ar = numpy.empty([1, 2], dtype=numpy.dtype("S1"))
     with pytest.raises(
         Exception, match="array does not have " "corresponding GDAL data type"
     ):
@@ -435,7 +437,7 @@ def test_numpy_rw_13():
     for i in range(3):
         ds.GetRasterBand(i + 1).WriteArray(ar[i])
 
-    ar = numpy.empty([3, 1, 2], dtype=numpy.bool_)
+    ar = numpy.empty([3, 1, 2], dtype=numpy.dtype("S1"))
     with pytest.raises(
         Exception, match="array does not have " "corresponding GDAL data type"
     ):
@@ -659,7 +661,7 @@ def test_numpy_rw_16():
     assert ds is None
 
     # Unsupported data type
-    array = numpy.empty([1, 1], numpy.float16)
+    array = numpy.empty([1, 1], numpy.dtype("S1"))
     with gdal.quiet_errors():
         ds = gdal_array.OpenArray(array)
     assert ds is None
@@ -984,12 +986,14 @@ def test_numpy_rw_band_read_as_array_getlasterrormsg():
 def test_numpy_rw_masked_array_1():
 
     ds = gdal.Open("data/byte.tif")
-
     band = ds.GetRasterBand(1)
 
     masked_arr = band.ReadAsMaskedArray()
-
     assert not numpy.any(masked_arr.mask)
+
+    ds_masked_arr = ds.ReadAsMaskedArray()
+    assert not numpy.any(ds_masked_arr.mask)
+    assert numpy.all(masked_arr == ds_masked_arr)
 
 
 def test_numpy_rw_masked_array_2():
@@ -1007,6 +1011,90 @@ def test_numpy_rw_masked_array_2():
     assert numpy.all(masked_arr.mask[mask != 255])
 
     assert masked_arr.sum() == arr[mask == 255].sum()
+
+    ds_masked_arr = ds.ReadAsMaskedArray()
+    assert numpy.all(ds_masked_arr.mask == masked_arr.mask)
+    assert numpy.all(ds_masked_arr.data == masked_arr.data)
+
+
+###############################################################################
+# Test dataset read into a masked array
+
+
+def test_numpy_rw_masked_array_3():
+
+    nx = 6
+    ny = 4
+    nz = 3
+    nodata = -999
+
+    ds = gdal.GetDriverByName("MEM").Create("", nx, ny, nz, eType=gdal.GDT_Int16)
+    for i in range(nz):
+        ds.GetRasterBand(i + 1).SetNoDataValue(nodata)
+
+    data = numpy.arange(nx * ny * nz).reshape(nz, ny, nx).astype(numpy.int16)
+    data[:, 1, 1] = nodata
+    ds.WriteArray(data)
+
+    masked_data = numpy.ma.masked_array(data, mask=data == nodata)
+
+    assert numpy.ma.allequal(masked_data, ds.ReadAsMaskedArray())
+
+    # read a single band
+    assert numpy.ma.allequal(masked_data[1, :, :], ds.ReadAsMaskedArray(band_list=[2]))
+
+    # read multiple bands
+    assert numpy.ma.allequal(
+        numpy.ma.stack((masked_data[2, :, :], masked_data[0, :, :])),
+        ds.ReadAsMaskedArray(band_list=[3, 1]),
+    )
+
+    # read a sub-window (square)
+    assert numpy.ma.allequal(
+        numpy.ma.stack((masked_data[2, 0:2, 1:3], masked_data[0, 0:2, 1:3])),
+        ds.ReadAsMaskedArray(band_list=[3, 1], xsize=2, ysize=2, xoff=1, yoff=0),
+    )
+
+    # read a sub-window (single pixel)
+    assert numpy.ma.allequal(
+        numpy.ma.stack((masked_data[2, 1:2, 1:2], masked_data[0, 1:2, 1:2])),
+        ds.ReadAsMaskedArray(band_list=[3, 1], xsize=1, ysize=1, xoff=1, yoff=1),
+    )
+
+    # read a sub-window (read 2x2 square into 4x4 square)
+    assert numpy.ma.allequal(
+        numpy.ma.repeat(
+            numpy.ma.repeat(
+                numpy.ma.stack((masked_data[2, 0:2, 1:3], masked_data[0, 0:2, 1:3])),
+                2,
+                axis=2,
+            ),
+            2,
+            axis=1,
+        ),
+        ds.ReadAsMaskedArray(
+            band_list=[3, 1], xsize=2, ysize=2, xoff=1, yoff=0, buf_xsize=4, buf_ysize=4
+        ),
+    )
+
+    # read a sub-window (read 2x2 square into single pixel)
+    assert numpy.ma.allequal(
+        numpy.ma.mean(
+            numpy.ma.stack((masked_data[2, 0:2, 1:3], masked_data[0, 0:2, 1:3])),
+            axis=(1, 2),
+            keepdims=True,
+        ).round(),
+        ds.ReadAsMaskedArray(
+            band_list=[3, 1],
+            xsize=2,
+            ysize=2,
+            xoff=1,
+            yoff=0,
+            buf_xsize=1,
+            buf_ysize=1,
+            resample_alg=gdal.GRIORA_Average,
+        ),
+    )
 
 
 ###############################################################################
@@ -1033,3 +1121,32 @@ def test_flip_code():
 
     assert gdal_array.flip_code(numpy.float32) == gdal.GDT_Float32
     assert gdal_array.flip_code(gdal.GDT_Int16) == numpy.int16
+
+
+###############################################################################
+# Test writing 0-stride array
+
+
+def test_numpy_rw_write_zero_stride():
+
+    n = 10
+    # 'ar' is just a (column) vector from 0 .. n-1
+    ar = numpy.arange(0, n, dtype=numpy.uint8).reshape(-1, 1)
+    # here, we "broadcast" it to make it square, replicating the values in every row
+    ar = numpy.broadcast_to(ar, [n, n])
+    assert ar.strides == (1, 0)
+
+    ds = gdal.GetDriverByName("MEM").Create("", n, n)
+    ds.GetRasterBand(1).WriteArray(ar)
+    assert numpy.all(ds.GetRasterBand(1).ReadAsArray() == ar)
+
+    ds = gdal.GetDriverByName("MEM").Create("", n, n)
+    ds.WriteArray(ar)
+    assert numpy.all(ds.ReadAsArray() == ar)
+
+    ar = numpy.arange(0, n, dtype=numpy.uint8).reshape(-1, 1)
+    ar = numpy.broadcast_to(ar, [2, n, n])
+    assert ar.strides == (0, 1, 0)
+    ds = gdal.GetDriverByName("MEM").Create("", n, n, 2)
+    ds.WriteArray(ar)
+    assert numpy.all(ds.ReadAsArray() == ar)

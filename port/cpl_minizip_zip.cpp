@@ -54,14 +54,13 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#if HAVE_FCNTL_H
 #include <fcntl.h>
-#endif
 #include <time.h>
 
 #include "cpl_conv.h"
 #include "cpl_error.h"
 #include "cpl_minizip_unzip.h"
+#include "cpl_multiproc.h"
 #include "cpl_string.h"
 #include "cpl_time.h"
 #include "cpl_vsi_virtual.h"
@@ -2104,7 +2103,36 @@ CPLErr CPLCreateFileInZip(void *hZip, const char *pszFilename,
 #endif
         );
 
-        pszCPFilename = CPLRecode(pszFilename, CPL_ENC_UTF8, pszDestEncoding);
+        {
+            CPLErrorStateBackuper oBackuper(CPLQuietErrorHandler);
+            pszCPFilename =
+                CPLRecode(pszFilename, CPL_ENC_UTF8, pszDestEncoding);
+
+            char *pszBackToUTF8 =
+                CPLRecode(pszCPFilename, pszDestEncoding, CPL_ENC_UTF8);
+            if (strcmp(pszBackToUTF8, pszFilename) != 0)
+            {
+                // If the UTF-8 name cannot be properly encoded to CPL_ZIP_ENCODING,
+                // then generate an ASCII name for it where non-ASCII characters
+                // are replaced by an hexadecimal representation
+                std::string s;
+                for (int i = 0; pszFilename[i]; ++i)
+                {
+                    if (static_cast<unsigned char>(pszFilename[i]) <= 127)
+                    {
+                        s += pszFilename[i];
+                    }
+                    else
+                    {
+                        s += CPLSPrintf("0x%02X", static_cast<unsigned char>(
+                                                      pszFilename[i]));
+                    }
+                }
+                CPLFree(pszCPFilename);
+                pszCPFilename = CPLStrdup(s.c_str());
+            }
+            CPLFree(pszBackToUTF8);
+        }
 
         /* Create a Info-ZIP Unicode Path Extra Field (0x7075) */
         const size_t nDataLength =

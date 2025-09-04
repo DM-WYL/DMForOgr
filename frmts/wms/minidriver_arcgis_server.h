@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  Arc GIS Server Client Driver
  * Purpose:  Implementation of Dataset and RasterBand classes for WMS
@@ -39,20 +38,20 @@ class WMSMiniDriver_AGS : public WMSMiniDriver
   protected:
     /*
      * png | png8 | png24 | jpg | pdf | bmp | gif | svg | png32
-     * http://resources.arcgis.com/en/help/rest/apiref/
+     * https://developers.arcgis.com/rest/services-reference/enterprise/export-map/
      * Parameter - format
      */
-    CPLString m_image_format;
-    CPLString m_transparent;
-    CPLString m_bbox_order;
-    CPLString m_irs;
+    CPLString m_image_format{};
+    CPLString m_transparent{};
+    CPLString m_bbox_order{};
+    CPLString m_irs{};
 
-    CPLString m_layers;
-    CPLString m_srs;
-    CPLString m_crs;
-    CPLString m_time_range;
+    CPLString m_layers{};
+    CPLString m_srs{};
+    CPLString m_crs{};
+    CPLString m_time_range{};
 
-    CPLString m_identification_tolerance;
+    CPLString m_identification_tolerance{};
 };
 
 #endif /* MINIDRIVER_AGS_H_INCLUDED */

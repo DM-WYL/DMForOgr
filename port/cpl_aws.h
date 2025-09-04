@@ -1,5 +1,4 @@
 /**********************************************************************
- * $Id$
  *
  * Name:     cpl_aws.h
  * Project:  CPL - Common Portability Library
@@ -37,26 +36,6 @@ std::string CPLAWSURLEncode(const std::string &osURL, bool bEncodeSlash = true);
 std::string CPLAWSGetHeaderVal(const struct curl_slist *psExistingHeaders,
                                const char *pszKey);
 
-std::string CPLGetAWS_SIGN4_Signature(
-    const std::string &osSecretAccessKey, const std::string &osAccessToken,
-    const std::string &osRegion, const std::string &osRequestPayer,
-    const std::string &osService, const std::string &osVerb,
-    const struct curl_slist *psExistingHeaders, const std::string &osHost,
-    const std::string &osCanonicalURI,
-    const std::string &osCanonicalQueryString,
-    const std::string &osXAMZContentSHA256, bool bAddHeaderAMZContentSHA256,
-    const std::string &osTimestamp, std::string &osSignedHeaders);
-
-std::string CPLGetAWS_SIGN4_Authorization(
-    const std::string &osSecretAccessKey, const std::string &osAccessKeyId,
-    const std::string &osAccessToken, const std::string &osRegion,
-    const std::string &osRequestPayer, const std::string &osService,
-    const std::string &osVerb, const struct curl_slist *psExistingHeaders,
-    const std::string &osHost, const std::string &osCanonicalURI,
-    const std::string &osCanonicalQueryString,
-    const std::string &osXAMZContentSHA256, bool bAddHeaderAMZContentSHA256,
-    const std::string &osTimestamp);
-
 class IVSIS3LikeHandleHelper
 {
     CPL_DISALLOW_COPY_ASSIGN(IVSIS3LikeHandleHelper)
@@ -68,16 +47,15 @@ class IVSIS3LikeHandleHelper
     std::string GetQueryString(bool bAddEmptyValueAfterEqual) const;
 
   public:
-    IVSIS3LikeHandleHelper() = default;
-    virtual ~IVSIS3LikeHandleHelper() = default;
+    IVSIS3LikeHandleHelper();
+    virtual ~IVSIS3LikeHandleHelper();
 
     void ResetQueryParameters();
     void AddQueryParameter(const std::string &osKey,
                            const std::string &osValue);
 
     virtual struct curl_slist *
-    GetCurlHeaders(const std::string &osVerb,
-                   const struct curl_slist *psExistingHeaders,
+    GetCurlHeaders(const std::string &osVerb, struct curl_slist *psHeaders,
                    const void *pabyDataContent = nullptr,
                    size_t nBytesContent = 0) const = 0;
 
@@ -126,11 +104,12 @@ enum class AWSCredentialsSource
     WEB_IDENTITY,  // credentials from Web Identity Token
                    // See
     // https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html
-    ASSUMED_ROLE  // credentials from an STS assumed role
-                  // See
+    ASSUMED_ROLE,  // credentials from an STS assumed role
+    // See
     // https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-cli.html
     // and
     // https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_request.html
+    SSO,  // credentials from Single-Sign On
 };
 
 class VSIS3HandleHelper final : public IVSIS3LikeHandleHelper
@@ -138,9 +117,11 @@ class VSIS3HandleHelper final : public IVSIS3LikeHandleHelper
     CPL_DISALLOW_COPY_ASSIGN(VSIS3HandleHelper)
 
     std::string m_osURL{};
+    std::string m_osService{};
     mutable std::string m_osSecretAccessKey{};
     mutable std::string m_osAccessKeyId{};
     mutable std::string m_osSessionToken{};
+    std::string m_osS3SessionToken{};
     std::string m_osEndpoint{};
     std::string m_osRegion{};
     std::string m_osRequestPayer{};
@@ -148,11 +129,17 @@ class VSIS3HandleHelper final : public IVSIS3LikeHandleHelper
     std::string m_osObjectKey{};
     bool m_bUseHTTPS = false;
     bool m_bUseVirtualHosting = false;
+    bool m_bIsDirectoryBucket = false;
     AWSCredentialsSource m_eCredentialsSource = AWSCredentialsSource::REGULAR;
 
     void RebuildURL() override;
 
     static bool GetOrRefreshTemporaryCredentialsForRole(
+        bool bForceRefresh, std::string &osSecretAccessKey,
+        std::string &osAccessKeyId, std::string &osSessionToken,
+        std::string &osRegion);
+
+    static bool GetOrRefreshTemporaryCredentialsForSSO(
         bool bForceRefresh, std::string &osSecretAccessKey,
         std::string &osAccessKeyId, std::string &osSessionToken,
         std::string &osRegion);
@@ -177,7 +164,9 @@ class VSIS3HandleHelper final : public IVSIS3LikeHandleHelper
         std::string &osCredentials, std::string &osRoleArn,
         std::string &osSourceProfile, std::string &osExternalId,
         std::string &osMFASerial, std::string &osRoleSessionName,
-        std::string &osWebIdentityTokenFile);
+        std::string &osWebIdentityTokenFile, std::string &osSSOStartURL,
+        std::string &osSSOAccountID, std::string &osSSORoleName,
+        std::string &osSSOSession);
 
     static bool GetConfiguration(const std::string &osPathForOption,
                                  CSLConstList papszOptions,
@@ -193,12 +182,13 @@ class VSIS3HandleHelper final : public IVSIS3LikeHandleHelper
   protected:
   public:
     VSIS3HandleHelper(
-        const std::string &osSecretAccessKey, const std::string &osAccessKeyId,
-        const std::string &osSessionToken, const std::string &osEndpoint,
+        const std::string &osService, const std::string &osSecretAccessKey,
+        const std::string &osAccessKeyId, const std::string &osSessionToken,
+        const std::string &osS3SessionToken, const std::string &osEndpoint,
         const std::string &osRegion, const std::string &osRequestPayer,
         const std::string &osBucket, const std::string &osObjectKey,
         bool bUseHTTPS, bool bUseVirtualHosting,
-        AWSCredentialsSource eCredentialsSource);
+        AWSCredentialsSource eCredentialsSource, bool bIsDirectoryBucket);
     ~VSIS3HandleHelper();
 
     static VSIS3HandleHelper *BuildFromURI(const char *pszURI,
@@ -210,11 +200,15 @@ class VSIS3HandleHelper final : public IVSIS3LikeHandleHelper
                                 const std::string &osObjectKey, bool bUseHTTPS,
                                 bool bUseVirtualHosting);
 
-    struct curl_slist *
-    GetCurlHeaders(const std::string &osVerb,
-                   const struct curl_slist *psExistingHeaders,
-                   const void *pabyDataContent = nullptr,
-                   size_t nBytesContent = 0) const override;
+    struct curl_slist *GetCurlHeaders(const std::string &osVerb,
+                                      struct curl_slist *psHeaders,
+                                      const void *pabyDataContent = nullptr,
+                                      size_t nBytesContent = 0) const override;
+
+    bool IsDirectoryBucket() const
+    {
+        return m_bIsDirectoryBucket;
+    }
 
     bool AllowAutomaticRedirection() override
     {

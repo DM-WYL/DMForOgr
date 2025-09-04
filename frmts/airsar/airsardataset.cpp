@@ -156,11 +156,11 @@ CPLErr AirSARRasterBand::IReadBlock(int /* nBlockXOff */, int nBlockYOff,
     float *pafLine = (float *)pImage;
     const double SQRT_2 = 1.4142135623730951;
 
-    CPLErr eErr = ((AirSARDataset *)poDS)->LoadLine(nBlockYOff);
+    CPLErr eErr = cpl::down_cast<AirSARDataset *>(poDS)->LoadLine(nBlockYOff);
     if (eErr != CE_None)
         return eErr;
 
-    double *padfMatrix = ((AirSARDataset *)poDS)->padfMatrix;
+    double *padfMatrix = cpl::down_cast<AirSARDataset *>(poDS)->padfMatrix;
 
     if (nBand == 1) /* C11 */
     {
@@ -523,9 +523,7 @@ GDALDataset *AirSARDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The AIRSAR driver does not support update access to existing"
-                 " datasets.\n");
+        ReportUpdateNotSupportedByDriver("AIRSAR");
         CSLDestroy(papszMD);
         return nullptr;
     }

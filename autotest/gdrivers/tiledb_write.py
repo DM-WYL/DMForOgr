@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test read/write functionality for GeoTIFF format.
@@ -74,6 +73,8 @@ def test_tiledb_write_custom_blocksize(tmp_path, mode):
 
 @pytest.mark.parametrize("mode", ["BAND", "PIXEL"])
 def test_tiledb_write_update(tmp_path, mode):
+
+    gdaltest.importorskip_gdal_array()
     np = pytest.importorskip("numpy")
 
     gdaltest.tiledb_drv = gdal.GetDriverByName("TileDB")
@@ -241,6 +242,8 @@ def test_tiledb_write_band_meta(tmp_path, mode):
 
 @pytest.mark.parametrize("mode", ["BAND", "PIXEL"])
 def test_tiledb_write_history(tmp_path, mode):
+
+    gdaltest.importorskip_gdal_array()
     np = pytest.importorskip("numpy")
 
     options = ["INTERLEAVE=%s" % (mode), "TILEDB_TIMESTAMP=1"]

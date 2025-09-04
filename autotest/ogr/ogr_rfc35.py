@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test RFC35 for several drivers
@@ -33,7 +32,7 @@ driver_extensions = {
     "ESRI Shapefile": "dbf",
     "MapInfo File": "tab",
     "SQLite": "sqlite",
-    "Memory": None,
+    "MEM": None,
 }
 
 
@@ -136,7 +135,7 @@ def rfc35_test_input(driver_name, tmp_path):
     fd.SetWidth(20)
     lyr.CreateField(fd)
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         return ds
     else:
         return fname
@@ -172,7 +171,7 @@ def CheckFeatures(
                 x if x is not None else "" for x in expected_values[i]
             ]
 
-    truncate_fn = Identity if driver_name in ("SQLite", "Memory") else Truncate
+    truncate_fn = Identity if driver_name in ("SQLite", "MEM") else Truncate
 
     lyr_defn = lyr.GetLayerDefn()
 
@@ -212,7 +211,7 @@ def Check(ds, lyr, expected_order):
 
     CheckFeatures(ds, lyr)
 
-    if ds.GetDriver().GetName() == "Memory":
+    if ds.GetDriver().GetName() == "MEM":
         return
 
     ds = ogr.Open(ds.GetDescription(), update=1)
@@ -229,7 +228,7 @@ def Check(ds, lyr, expected_order):
 
 def test_ogr_rfc35_2(rfc35_test_input, driver_name):
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         ds = rfc35_test_input
     else:
         ds = ogr.Open(rfc35_test_input, update=1)
@@ -274,7 +273,7 @@ def test_ogr_rfc35_2(rfc35_test_input, driver_name):
         ret = lyr.ReorderFields([0, 0, 0, 0])
     assert ret != 0
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         return
 
     ds = None
@@ -293,7 +292,7 @@ def test_ogr_rfc35_2(rfc35_test_input, driver_name):
 
 def test_ogr_rfc35_3(rfc35_test_input, driver_name):
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         ds = rfc35_test_input
     else:
         ds = ogr.Open(rfc35_test_input, update=1)
@@ -325,7 +324,7 @@ def test_ogr_rfc35_3(rfc35_test_input, driver_name):
 
     CheckFeatures(ds, lyr, field3="baz5")
 
-    if driver_name not in ("SQLite", "Memory"):
+    if driver_name not in ("SQLite", "MEM"):
         ds = None
         ds = ogr.Open(rfc35_test_input, update=1)
 
@@ -355,7 +354,7 @@ def test_ogr_rfc35_4(rfc35_test_input, driver_name, tmp_path):
     else:
         int_resizing_supported = False
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         ds = rfc35_test_input
     else:
         ds = ogr.Open(rfc35_test_input, update=1)
@@ -419,7 +418,7 @@ def test_ogr_rfc35_4(rfc35_test_input, driver_name, tmp_path):
         # Check that the file size has decreased after column shrinking
         CheckFileSize(rfc35_test_input, tmp_path)
 
-    if driver_name != "Memory":
+    if driver_name != "MEM":
         ds = None
         ds = ogr.Open(rfc35_test_input, update=1)
         lyr = ds.GetLayer(0)
@@ -436,7 +435,7 @@ def test_ogr_rfc35_4(rfc35_test_input, driver_name, tmp_path):
 
     CheckFeatures(ds, lyr)
 
-    if driver_name != "Memory":
+    if driver_name != "MEM":
         ds = None
         ds = ogr.Open(rfc35_test_input, update=1)
         lyr = ds.GetLayer(0)
@@ -474,7 +473,7 @@ def test_ogr_rfc35_4(rfc35_test_input, driver_name, tmp_path):
 
     CheckFeatures(ds, lyr)
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         return
 
     ds = None
@@ -497,7 +496,7 @@ def test_ogr_rfc35_4(rfc35_test_input, driver_name, tmp_path):
 
 def test_ogr_rfc35_5(rfc35_test_input, driver_name, tmp_path):
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         ds = rfc35_test_input
     else:
         ds = ogr.Open(rfc35_test_input, update=1)
@@ -519,7 +518,7 @@ def test_ogr_rfc35_5(rfc35_test_input, driver_name, tmp_path):
 
     assert lyr.DeleteField(lyr_defn.GetFieldIndex("baw20")) == 0
 
-    if driver_name not in ("Memory", "SQLite"):
+    if driver_name not in ("MEM", "SQLite"):
         ds = None
         # Check that the file size has decreased after column removing
         CheckFileSize(rfc35_test_input, tmp_path)
@@ -544,7 +543,7 @@ def test_ogr_rfc35_5(rfc35_test_input, driver_name, tmp_path):
 
         CheckFeatures(ds, lyr, field1=None, field2=None, field3=None, field4=None)
 
-    if driver_name == "Memory":
+    if driver_name == "MEM":
         return
 
     ds = None

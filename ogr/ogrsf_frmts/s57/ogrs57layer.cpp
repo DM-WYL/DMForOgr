@@ -161,7 +161,7 @@ OGRFeature *OGRS57Layer::GetNextFeature()
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRS57Layer::TestCapability(const char *pszCap)
+int OGRS57Layer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))
@@ -185,7 +185,8 @@ int OGRS57Layer::TestCapability(const char *pszCap)
     {
         OGREnvelope oEnvelope;
 
-        return GetExtent(&oEnvelope, FALSE) == OGRERR_NONE;
+        return const_cast<OGRS57Layer *>(this)->GetExtent(&oEnvelope, FALSE) ==
+               OGRERR_NONE;
     }
 
     if (EQUAL(pszCap, OLCFastSpatialFilter))
@@ -204,10 +205,11 @@ int OGRS57Layer::TestCapability(const char *pszCap)
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /************************************************************************/
 
-OGRErr OGRS57Layer::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr OGRS57Layer::IGetExtent(int /*iGeomField*/, OGREnvelope *psExtent,
+                               bool bForce)
 
 {
     if (GetGeomType() == wkbNone)

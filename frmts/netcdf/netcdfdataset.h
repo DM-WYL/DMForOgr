@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  netCDF read/write Driver
  * Purpose:  GDAL bindings over netCDF library.
@@ -80,7 +79,7 @@
    geotransform has been found, and is within the bounds -180,360 -90,90, if YES
    assume OGC:CRS84. Default is NO.
 
-   // TODO: this unusued and a few others occur in the source that are not
+   // TODO: this unused and a few others occur in the source that are not
    documented, flush out unused opts and document the rest mdsumner@gmail.com
    GDAL_NETCDF_CONVERT_LAT_180=YES/NO convert longitude values from ]180,360] to
    [-180,180]
@@ -391,7 +390,7 @@ class netCDFDataset final : public GDALPamDataset
     bool bWriteGDALHistory = true;
 
     /* projection/GT */
-    double m_adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
     OGRSpatialReference m_oSRS{};
     int nXDimID;
     int nYDimID;
@@ -546,7 +545,7 @@ class netCDFDataset final : public GDALPamDataset
     static GDALDataset *OpenMultiDim(GDALOpenInfo *);
     std::shared_ptr<GDALGroup> m_poRootGroup{};
 
-    void SetGeoTransformNoUpdate(double *);
+    void SetGeoTransformNoUpdate(const GDALGeoTransform &gt);
     void SetSpatialRefNoUpdate(const OGRSpatialReference *);
 
   protected:
@@ -564,8 +563,8 @@ class netCDFDataset final : public GDALPamDataset
     static std::string generateLogName();
 
     /* Projection/GT */
-    CPLErr GetGeoTransform(double *) override;
-    CPLErr SetGeoTransform(double *) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
@@ -577,14 +576,14 @@ class netCDFDataset final : public GDALPamDataset
     virtual CPLErr SetMetadata(char **papszMD,
                                const char *pszDomain = "") override;
 
-    virtual int TestCapability(const char *pszCap) override;
+    int TestCapability(const char *pszCap) const override;
 
-    virtual int GetLayerCount() override
+    virtual int GetLayerCount() const override
     {
         return static_cast<int>(this->papoLayers.size());
     }
 
-    virtual OGRLayer *GetLayer(int nIdx) override;
+    virtual const OGRLayer *GetLayer(int nIdx) const override;
 
     std::shared_ptr<GDALGroup> GetRootGroup() const override;
 
@@ -760,9 +759,10 @@ class netCDFLayer final : public OGRLayer
 
     virtual GIntBig GetFeatureCount(int bForce) override;
 
-    virtual int TestCapability(const char *pszCap) override;
+    int TestCapability(const char *pszCap) const override;
 
-    virtual OGRFeatureDefn *GetLayerDefn() override;
+    using OGRLayer::GetLayerDefn;
+    const OGRFeatureDefn *GetLayerDefn() const override;
 
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
     virtual OGRErr CreateField(const OGRFieldDefn *poFieldDefn,

@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  PDF driver
  * Purpose:  GDALDataset driver for PDF dataset.
@@ -32,8 +31,16 @@ class VSIPDFFileStream final : public BaseStream
 
     virtual BaseStream *copy() override;
 
+#if POPPLER_MAJOR_VERSION > 25 ||                                              \
+    (POPPLER_MAJOR_VERSION == 25 && POPPLER_MINOR_VERSION >= 5)
+    virtual std::unique_ptr<Stream> makeSubStream(Goffset startA, bool limitedA,
+                                                  Goffset lengthA,
+                                                  Object &&dictA) override;
+#else
     virtual Stream *makeSubStream(Goffset startA, bool limitedA,
                                   Goffset lengthA, Object &&dictA) override;
+
+#endif
     virtual Goffset getPos() override;
     virtual Goffset getStart() override;
 
@@ -48,8 +55,30 @@ class VSIPDFFileStream final : public BaseStream
     virtual int getUnfilteredChar() override;
     virtual int lookChar() override;
 
+#if POPPLER_MAJOR_VERSION > 25 ||                                              \
+    (POPPLER_MAJOR_VERSION == 25 && POPPLER_MINOR_VERSION >= 2)
+    virtual bool reset() override;
+#else
     virtual void reset() override;
+#endif
+
+    static void resetNoCheckReturnValue(Stream *str)
+    {
+#if POPPLER_MAJOR_VERSION > 25 ||                                              \
+    (POPPLER_MAJOR_VERSION == 25 && POPPLER_MINOR_VERSION >= 2)
+        CPL_IGNORE_RET_VAL(str->reset());
+#else
+        str->reset();
+#endif
+    }
+
+#if POPPLER_MAJOR_VERSION > 25 ||                                              \
+    (POPPLER_MAJOR_VERSION == 25 && POPPLER_MINOR_VERSION >= 3)
+    virtual bool unfilteredReset() override;
+#else
     virtual void unfilteredReset() override;
+#endif
+
     virtual void close() override;
 
     bool FoundLinearizedHint() const

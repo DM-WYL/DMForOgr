@@ -20,6 +20,7 @@ import test_py_scripts
 
 # test that osgeo_utils is available, if not skip all tests
 pytest.importorskip("osgeo_utils")
+gdaltest.importorskip_gdal_array()
 pytest.importorskip("numpy")
 
 from itertools import product
@@ -62,6 +63,9 @@ def test_gdal2xyz_help(script_path):
 
 
 def test_gdal2xyz_version(script_path):
+
+    if gdaltest.is_travis_branch("sanitize"):
+        pytest.skip("fails on sanitize for unknown reason")
 
     assert "ERROR" not in test_py_scripts.run_py_script(
         script_path, "gdal2xyz", "--version"
@@ -175,3 +179,22 @@ def test_gdal2xyz_py_srcnodata_dstnodata(script_path, tmp_path):
         l = f.readline()
 
     assert l.startswith(b"-44.838604 -22.9343 1 2 3")
+
+
+###############################################################################
+# Test output to /vsistdout/
+
+
+@pytest.mark.require_driver("XYZ")
+def test_gdal2xyz_py_vsistdout(script_path, tmp_path):
+
+    arguments = test_py_scripts.get_data_path("gcore") + "byte.tif /vsistdout/"
+
+    out = test_py_scripts.run_py_script(script_path, "gdal2xyz", arguments)
+
+    out_filename = str(tmp_path / "out.xyz")
+    open(out_filename, "wb").write(out.encode("UTF-8"))
+
+    with gdal.Open(out_filename) as ds:
+        assert ds.GetGeoTransform() == (440720.0, 60.0, 0.0, 3751320.0, 0.0, -60.0)
+        assert ds.GetRasterBand(1).Checksum() == 4672

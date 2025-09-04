@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  ENVI .hdr Driver
  * Purpose:  Implementation of ENVI .hdr labelled raw raster support.
@@ -23,9 +22,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#if HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
 
 #include <algorithm>
 #include <limits>
@@ -56,7 +52,7 @@ class ENVIDataset final : public RawDataset
     bool bHeaderDirty;
     bool bFillFile;
 
-    double adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
 
     OGRSpatialReference m_oSRS{};
 
@@ -65,6 +61,8 @@ class ENVIDataset final : public RawDataset
     CPLString osStaFilename{};
 
     std::vector<GDAL_GCP> m_asGCPs{};
+
+    Interleave eInterleave = Interleave::BSQ;
 
     bool ReadHeader(VSILFILE *);
     bool ProcessMapinfo(const char *);
@@ -89,13 +87,6 @@ class ENVIDataset final : public RawDataset
 
     static char **SplitList(const char *);
 
-    enum Interleave
-    {
-        BSQ,
-        BIL,
-        BIP
-    } interleave;
-
     static int GetEnviType(GDALDataType eType);
 
     CPL_DISALLOW_COPY_ASSIGN(ENVIDataset)
@@ -107,8 +98,8 @@ class ENVIDataset final : public RawDataset
     ~ENVIDataset() override;
 
     CPLErr FlushCache(bool bAtClosing) override;
-    CPLErr GetGeoTransform(double *padfTransform) override;
-    CPLErr SetGeoTransform(double *) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;

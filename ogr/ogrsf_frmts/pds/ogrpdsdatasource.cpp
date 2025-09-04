@@ -40,7 +40,7 @@ OGRPDSDataSource::~OGRPDSDataSource()
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRPDSDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRPDSDataSource::GetLayer(int iLayer) const
 
 {
     if (iLayer < 0 || iLayer >= nLayers)
@@ -146,9 +146,18 @@ bool OGRPDSDataSource::LoadTable(const char *pszFilename, int nRecordSize,
                      osTableLink.c_str());
             return false;
         }
-        CPLString osTPath = CPLGetPath(pszFilename);
+        CPLString osTPath = CPLGetPathSafe(pszFilename);
         CleanString(osTableFilename);
-        osTableFilename = CPLFormCIFilename(osTPath, osTableFilename, nullptr);
+
+        if (CPLHasPathTraversal(osTableFilename.c_str()))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Path traversal detected in %s", osTableFilename.c_str());
+            return false;
+        }
+
+        osTableFilename =
+            CPLFormCIFilenameSafe(osTPath, osTableFilename, nullptr);
     }
     else
     {
@@ -178,10 +187,19 @@ bool OGRPDSDataSource::LoadTable(const char *pszFilename, int nRecordSize,
         }
         else
         {
-            CPLString osTPath = CPLGetPath(pszFilename);
+            CPLString osTPath = CPLGetPathSafe(pszFilename);
             CleanString(osTableFilename);
+
+            if (CPLHasPathTraversal(osTableFilename.c_str()))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Path traversal detected in %s",
+                         osTableFilename.c_str());
+                return false;
+            }
+
             osTableFilename =
-                CPLFormCIFilename(osTPath, osTableFilename, nullptr);
+                CPLFormCIFilenameSafe(osTPath, osTableFilename, nullptr);
             nStartBytes = 0;
         }
     }
@@ -229,10 +247,19 @@ bool OGRPDSDataSource::LoadTable(const char *pszFilename, int nRecordSize,
         oKeywords.GetKeyword(MakeAttr(osTableID, "^STRUCTURE"), "");
     if (!osTableStructure.empty())
     {
-        CPLString osTPath = CPLGetPath(pszFilename);
+        CPLString osTPath = CPLGetPathSafe(pszFilename);
         CleanString(osTableStructure);
+
+        if (CPLHasPathTraversal(osTableStructure.c_str()))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Path traversal detected in %s", osTableStructure.c_str());
+            VSIFCloseL(fp);
+            return false;
+        }
+
         osTableStructure =
-            CPLFormCIFilename(osTPath, osTableStructure, nullptr);
+            CPLFormCIFilenameSafe(osTPath, osTableStructure, nullptr);
     }
 
     GByte *pabyRecord = (GByte *)VSI_MALLOC_VERBOSE(nRecordSize + 1);

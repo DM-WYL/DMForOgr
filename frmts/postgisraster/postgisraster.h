@@ -7,7 +7,6 @@
  *
  * Author:   David Zwarg, dzwarg@azavea.com
  *
- * Last changes: $Id$
  *
  ***********************************************************************
  * Copyright (c) 2009 - 2013, Jorge Arevalo, David Zwarg
@@ -192,7 +191,6 @@ class PostGISRasterDataset final : public VRTDataset
     } ResolutionStrategy;
 
     char **papszSubdatasets;
-    double adfGeoTransform[6];
     int nSrid;
     int nOverviewFactor;
     int nBandsToCreate;
@@ -308,8 +306,8 @@ class PostGISRasterDataset final : public VRTDataset
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
-    CPLErr SetGeoTransform(double *) override;
-    CPLErr GetGeoTransform(double *) override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     char **GetFileList() override;
 
     int GetOverviewCount();
@@ -381,7 +379,7 @@ class PostGISRasterTileDataset final : public GDALDataset
   private:
     PostGISRasterDataset *poRDS;
     char *pszPKID;
-    double adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
 
     CPL_DISALLOW_COPY_ASSIGN(PostGISRasterTileDataset)
 
@@ -389,9 +387,9 @@ class PostGISRasterTileDataset final : public GDALDataset
     PostGISRasterTileDataset(PostGISRasterDataset *poRDS, int nXSize,
                              int nYSize);
     ~PostGISRasterTileDataset();
-    CPLErr GetGeoTransform(double *) override;
-    void GetExtent(double *pdfMinX, double *pdfMinY, double *pdfMaxX,
-                   double *pdfMaxY) const;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    void GetNativeExtent(double *pdfMinX, double *pdfMinY, double *pdfMaxX,
+                         double *pdfMaxY) const;
 
     const char *GetPKID() const
     {

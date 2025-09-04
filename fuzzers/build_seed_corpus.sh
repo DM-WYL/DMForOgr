@@ -291,20 +291,6 @@ cd $OLDPWD
 echo "Building gdal_filesystem_fuzzer_seed_corpus.zip"
 cp $OUT/gdal_fuzzer_seed_corpus.zip $OUT/gdal_filesystem_fuzzer_seed_corpus.zip
 
-echo "Building gdal_sdts_fuzzer_seed_corpus.zip"
-rm -f $OUT/gdal_sdts_fuzzer_seed_corpus.zip
-CUR_DIR=$PWD
-cd  $(dirname $0)/../autotest/gdrivers/data/STDS_1107834_truncated
-printf "FUZZER_FRIENDLY_ARCHIVE\\n" > $CUR_DIR/gdal_sdts.tar
-for file in *.DDF; do
-    printf "***NEWFILE***:%s\\n" "$file" >> $CUR_DIR/gdal_sdts.tar
-    cat $file >> $CUR_DIR/gdal_sdts.tar
-done
-cd $CUR_DIR
-zip -r $OUT/gdal_sdts_fuzzer_seed_corpus.zip gdal_sdts.tar >/dev/null
-rm gdal_sdts.tar
-
-
 echo "Building ers_fuzzer_seed_corpus.zip"
 rm -f $OUT/ers_fuzzer_seed_corpus.zip
 CUR_DIR=$PWD
@@ -334,6 +320,7 @@ rm -f $OUT/zarr_fuzzer_seed_corpus.zip
 CUR_DIR=$PWD
 cd  $(dirname $0)/../autotest/gdrivers/data/zarr
 for dirname in *.zarr v3/*.zr3; do
+    CUR_DIR2=$PWD
     cd $dirname
     {
         filelist=$(find . -type f)
@@ -343,7 +330,7 @@ for dirname in *.zarr v3/*.zr3; do
           cat $f
         done
     } > $CUR_DIR/$(basename $dirname).tar
-    cd ..
+    cd $CUR_DIR2
 done
 cd $CUR_DIR
 zip -r $OUT/zarr_fuzzer_seed_corpus.zip ./*.zarr.tar ./*.zr3.tar >/dev/null
@@ -368,19 +355,6 @@ done
 cd $CUR_DIR
 zip -r $OUT/dimap_fuzzer_seed_corpus.zip dimap_*.tar >/dev/null
 rm dimap_*.tar
-
-echo "Building ogr_sdts_fuzzer_seed_corpus.zip"
-rm -f $OUT/ogr_sdts_fuzzer_seed_corpus.zip
-CUR_DIR=$PWD
-cd  $(dirname $0)/../autotest/ogr/data/sdts/D3607551_rd0s_1_sdts_truncated
-printf "FUZZER_FRIENDLY_ARCHIVE\\n" > $CUR_DIR/ogr_sdts.tar
-for file in *.DDF; do
-    printf "***NEWFILE***:%s\\n" "$file" >> $CUR_DIR/ogr_sdts.tar
-    cat $file >> $CUR_DIR/ogr_sdts.tar
-done
-cd $CUR_DIR
-zip -r $OUT/ogr_sdts_fuzzer_seed_corpus.zip ogr_sdts.tar >/dev/null
-rm ogr_sdts.tar
 
 echo "Building ogr_fuzzer_seed_corpus.zip"
 CUR_DIR=$PWD
@@ -610,8 +584,89 @@ for subdir in *; do
     )
 done
 cd $CUR_DIR
+rm -f $OUT/ogr_miramon_fuzzer_seed_corpus.zip
 zip -r $OUT/ogr_miramon_fuzzer_seed_corpus.zip ogr_miramon_*.tar >/dev/null
 rm ogr_miramon_*.tar
+
+echo "Building gdal_miramon_fuzzer_seed_corpus.zip"
+rm -f $OUT/gdal_miramon_fuzzer_seed_corpus.zip
+CUR_DIR=$PWD
+cd  $(dirname $0)/../autotest/gdrivers/data/miramon/normal
+printf "FUZZER_FRIENDLY_ARCHIVE\\n" > $CUR_DIR/gdal_miramon_byte_2x3_6.tar
+for file in 2x3_6_categs.rel byte_2x3_6_categs.img byte_2x3_6_categsI.rel byte_2x3_6_categs_RLE.img byte_2x3_6_categs_RLEI.rel byte_2x3_6_categs_RLE_no_ind.img byte_2x3_6_categs_RLE_no_indI.rel; do
+   printf "***NEWFILE***:%s\\n" "$file" >> $CUR_DIR/gdal_miramon_byte_2x3_6.tar
+   cat $file >> $CUR_DIR/gdal_miramon_byte_2x3_6.tar
+done
+cd $CUR_DIR
+zip -r $OUT/gdal_miramon_fuzzer_seed_corpus.zip gdal_miramon_*.tar >/dev/null
+rm gdal_miramon_*.tar
+
+
+echo "Building gdal_algorithm_fuzzer_seed_corpus.zip"
+
+cat > test.tar <<EOF
+FUZZER_FRIENDLY_ARCHIVE
+***NEWFILE***:cmd.txt
+raster
+info
+--input
+/vsitar//vsimem/test.tar/in
+***NEWFILE***:in
+x,y,z
+0,0,0
+1,0,0
+0,1,0
+1,1,1
+EOF
+
+cat > test2.tar <<EOF
+FUZZER_FRIENDLY_ARCHIVE
+***NEWFILE***:cmd.txt
+raster
+calc
+--input
+/vsitar//vsimem/test.tar/in
+--output
+/vsimem/out
+--calc
+X
+***NEWFILE***:in
+x,y,z
+0,0,0
+1,0,0
+0,1,0
+1,1,1
+EOF
+
+cat > test3.tar <<EOF
+FUZZER_FRIENDLY_ARCHIVE
+***NEWFILE***:cmd.txt
+vector
+pipeline
+--pipeline
+read /vsitar//vsimem/test.tar/in ! reproject --dst-crs EPSG:32630 ! write --of stream streamed_dataset
+***NEWFILE***:in
+{ "type": "Feature", "properties": null, "geometry": { "type": "Point", "coordinates": [0,0] } }
+EOF
+
+cat > test4.tar <<EOF
+FUZZER_FRIENDLY_ARCHIVE
+***NEWFILE***:cmd.txt
+raster
+pipeline
+--pipeline
+read /vsitar//vsimem/test.tar/in ! reproject --dst-crs EPSG:32630 ! write --of stream streamed_dataset
+***NEWFILE***:in
+x,y,z
+0,0,0
+1,0,0
+0,1,0
+1,1,1
+EOF
+
+rm -f $OUT/gdal_algorithm_fuzzer_seed_corpus.zip
+zip -r $OUT/gdal_algorithm_fuzzer_seed_corpus.zip test*.tar >/dev/null
+rm test*.tar
 
 echo "Copying data to $OUT"
 cp $(dirname $0)/../data/* $OUT

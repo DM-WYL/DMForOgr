@@ -23,6 +23,8 @@
 #include <thread>
 #include <vector>
 
+bool GDALThreadLocalDatasetCacheIsInDestruction();
+
 /** Design notes of this file.
  *
  * This file is at the core of the "RFC 101 - Raster dataset read-only thread-safety".
@@ -68,6 +70,8 @@ class GDALThreadLocalDatasetCache
     std::unique_ptr<lru11::Cache<const GDALThreadSafeDataset *,
                                  std::shared_ptr<GDALDataset>>>
         m_poCache{};
+
+    static thread_local bool tl_inDestruction;
 
     GDALThreadLocalDatasetCache(const GDALThreadLocalDatasetCache &) = delete;
     GDALThreadLocalDatasetCache &
@@ -130,6 +134,11 @@ class GDALThreadLocalDatasetCache
      * most cases.
      */
     std::map<GDALRasterBand *, GDALDataset *> m_oMapReferencedDSFromBand{};
+
+    static bool IsInDestruction()
+    {
+        return tl_inDestruction;
+    }
 };
 
 /************************************************************************/
@@ -418,6 +427,8 @@ class GDALThreadSafeRasterBand final : public GDALProxyRasterBand
 thread_local std::unique_ptr<GDALThreadLocalDatasetCache>
     GDALThreadSafeDataset::tl_poCache;
 
+thread_local bool GDALThreadLocalDatasetCache::tl_inDestruction = false;
+
 /************************************************************************/
 /*                    GDALThreadLocalDatasetCache()                     */
 /************************************************************************/
@@ -450,6 +461,8 @@ GDALThreadLocalDatasetCache::GDALThreadLocalDatasetCache()
  */
 GDALThreadLocalDatasetCache::~GDALThreadLocalDatasetCache()
 {
+    tl_inDestruction = true;
+
     // If GDAL has been de-initialized explicitly (ie GDALDestroyDriverManager()
     // has been called), or we are during process termination, do not try to
     // free m_poCache at all, which would cause the datasets its owned to be
@@ -458,12 +471,13 @@ GDALThreadLocalDatasetCache::~GDALThreadLocalDatasetCache()
     const bool bDriverManagerDestroyed = *GDALGetphDMMutex() == nullptr;
     if (bDriverManagerDestroyed || !bGlobalCacheValid)
     {
+#ifndef __COVERITY__
         // Leak datasets when GDAL has been de-initialized
         if (!m_poCache->empty())
         {
-            // coverity[leaked_storage]
             CPL_IGNORE_RET_VAL(m_poCache.release());
         }
+#endif
         return;
     }
 
@@ -489,6 +503,15 @@ GDALThreadLocalDatasetCache::~GDALThreadLocalDatasetCache()
                  kv.value->GetDescription(), kv.value.get(), m_nThreadID);
     };
     m_oCache.cwalk(lambda);
+}
+
+/************************************************************************/
+/*                 GDALThreadLocalDatasetCacheIsInDestruction()         */
+/************************************************************************/
+
+bool GDALThreadLocalDatasetCacheIsInDestruction()
+{
+    return GDALThreadLocalDatasetCache::IsInDestruction();
 }
 
 /************************************************************************/
@@ -734,7 +757,6 @@ GDALDataset *GDALThreadSafeDataset::RefUnderlyingDataset() const
     // "Clone" the prototype dataset, which in 99% of the cases, involves
     // doing a GDALDataset::Open() call to re-open it. Do that by temporarily
     // dropping the lock that protects poCache->m_oCache.
-    // coverity[uninit_use_in_call]
     oLock.unlock();
     poTLSDS = m_poPrototypeDS->Clone(GDAL_OF_RASTER, /* bCanShareState=*/true);
     if (poTLSDS)
@@ -1145,7 +1167,7 @@ bool GDALDatasetIsThreadSafe(GDALDatasetH hDS, int nScopeFlags,
 /** Return a thread-safe dataset.
  *
  * In the general case, this thread-safe dataset will open a
- * behind-the-scenes per-thread dataset (re-using the name and open options of poDS),
+ * behind-the-scenes per-thread dataset (reusing the name and open options of poDS),
  * the first time a thread calls a method on the thread-safe dataset, and will
  * transparently redirect calls from the calling thread to this behind-the-scenes
  * per-thread dataset. Hence there is an initial setup cost per thread.
@@ -1177,7 +1199,7 @@ GDALGetThreadSafeDataset(std::unique_ptr<GDALDataset> poDS, int nScopeFlags)
 /** Return a thread-safe dataset.
  *
  * In the general case, this thread-safe dataset will open a
- * behind-the-scenes per-thread dataset (re-using the name and open options of poDS),
+ * behind-the-scenes per-thread dataset (reusing the name and open options of poDS),
  * the first time a thread calls a method on the thread-safe dataset, and will
  * transparently redirect calls from the calling thread to this behind-the-scenes
  * per-thread dataset. Hence there is an initial setup cost per thread.
@@ -1225,7 +1247,7 @@ GDALDataset *GDALGetThreadSafeDataset(GDALDataset *poDS, int nScopeFlags)
 /** Return a thread-safe dataset.
  *
  * In the general case, this thread-safe dataset will open a
- * behind-the-scenes per-thread dataset (re-using the name and open options of hDS),
+ * behind-the-scenes per-thread dataset (reusing the name and open options of hDS),
  * the first time a thread calls a method on the thread-safe dataset, and will
  * transparently redirect calls from the calling thread to this behind-the-scenes
  * per-thread dataset. Hence there is an initial setup cost per thread.

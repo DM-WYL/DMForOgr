@@ -10,13 +10,17 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "cpl_float.h"
 #include "cpl_minixml.h"
 #include "cpl_string.h"
 #include "vrtdataset.h"
+#include "vrtexpression.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -33,6 +37,11 @@ static inline double GetDstValue(double dfVal, double dfDstNoData,
                                  bool bDstIntendedDTIsInteger)
 {
     if (bDstIntendedDTIsInteger && std::round(dfVal) == dfDstNoData)
+    {
+        return dfReplacementDstNodata;
+    }
+    else if (eIntendedDstDT == GDT_Float16 &&
+             static_cast<GFloat16>(dfVal) == static_cast<GFloat16>(dfDstNoData))
     {
         return dfReplacementDstNodata;
     }
@@ -825,7 +834,7 @@ LocalScaleOffsetInit(const char * /*pszFuncName*/, void * /*pUserData*/,
         for (const auto &kv : oMapNames)
         {
             const int nInBandIdx = kv.first;
-            const auto osFilename = VRTDataset::BuildSourceFilename(
+            const auto osFilename = GDALDataset::BuildFilename(
                 kv.second.c_str(), pszVRTPath, bRelativeToVRT);
             auto oIter = data->m_oDatasetMap.find(osFilename);
             if (oIter == data->m_oDatasetMap.end())
@@ -835,8 +844,8 @@ LocalScaleOffsetInit(const char * /*pszFuncName*/, void * /*pUserData*/,
                     nullptr, nullptr, nullptr));
                 if (!poDS)
                     return CE_Failure;
-                double adfAuxGT[6];
-                if (poDS->GetGeoTransform(adfAuxGT) != CE_None)
+                GDALGeoTransform auxGT;
+                if (poDS->GetGeoTransform(auxGT) != CE_None)
                 {
                     CPLError(CE_Failure, CPLE_AppDefined,
                              "%s lacks a geotransform", osFilename.c_str());
@@ -910,21 +919,20 @@ static bool LoadAuxData(double dfULX, double dfULY, double dfLRX, double dfLRY,
                         const char *pszAuxType, GDALRasterBand *poAuxBand,
                         std::vector<VRTProcessedDataset::NoInitByte> &abyBuffer)
 {
-    double adfAuxGT[6];
-    double adfAuxInvGT[6];
+    GDALGeoTransform auxGT, auxInvGT;
 
     // Compute pixel/line coordinates from the georeferenced extent
     CPL_IGNORE_RET_VAL(poAuxBand->GetDataset()->GetGeoTransform(
-        adfAuxGT));  // return code already tested
-    CPL_IGNORE_RET_VAL(GDALInvGeoTransform(adfAuxGT, adfAuxInvGT));
+        auxGT));  // return code already tested
+    CPL_IGNORE_RET_VAL(auxGT.GetInverse(auxInvGT));
     const double dfULPixel =
-        adfAuxInvGT[0] + adfAuxInvGT[1] * dfULX + adfAuxInvGT[2] * dfULY;
+        auxInvGT[0] + auxInvGT[1] * dfULX + auxInvGT[2] * dfULY;
     const double dfULLine =
-        adfAuxInvGT[3] + adfAuxInvGT[4] * dfULX + adfAuxInvGT[5] * dfULY;
+        auxInvGT[3] + auxInvGT[4] * dfULX + auxInvGT[5] * dfULY;
     const double dfLRPixel =
-        adfAuxInvGT[0] + adfAuxInvGT[1] * dfLRX + adfAuxInvGT[2] * dfLRY;
+        auxInvGT[0] + auxInvGT[1] * dfLRX + auxInvGT[2] * dfLRY;
     const double dfLRLine =
-        adfAuxInvGT[3] + adfAuxInvGT[4] * dfLRX + adfAuxInvGT[5] * dfLRY;
+        auxInvGT[3] + auxInvGT[4] * dfLRX + auxInvGT[5] * dfLRY;
     if (dfULPixel >= dfLRPixel || dfULLine >= dfLRLine)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
@@ -1112,7 +1120,7 @@ struct TrimmingData
     //! Maximum threshold beyond which we give up saturation
     double m_dfToneCeil = 0;
 
-    //! Margin to allow for dynamics in brighest areas (in [0,1] range)
+    //! Margin to allow for dynamics in brightest areas (in [0,1] range)
     double m_dfTopMargin = 0;
 
     //! Index (zero-based) of input/output red band.
@@ -1249,7 +1257,7 @@ static CPLErr TrimmingInit(const char * /*pszFuncName*/, void * /*pUserData*/,
         return CE_Failure;
     }
 
-    const auto osFilename = VRTDataset::BuildSourceFilename(
+    const auto osFilename = GDALDataset::BuildFilename(
         osTrimmingFilename.c_str(), pszVRTPath, bRelativeToVRT);
     data->m_poTrimmingDS.reset(GDALDataset::Open(
         osFilename.c_str(), GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR, nullptr,
@@ -1264,8 +1272,8 @@ static CPLErr TrimmingInit(const char * /*pszFuncName*/, void * /*pUserData*/,
     }
     data->m_poTrimmingBand = data->m_poTrimmingDS->GetRasterBand(1);
 
-    double adfAuxGT[6];
-    if (data->m_poTrimmingDS->GetGeoTransform(adfAuxGT) != CE_None)
+    GDALGeoTransform auxGT;
+    if (data->m_poTrimmingDS->GetGeoTransform(auxGT) != CE_None)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "%s lacks a geotransform",
                  osFilename.c_str());
@@ -1469,6 +1477,275 @@ static CPLErr TrimmingProcess(
 }
 
 /************************************************************************/
+/*                    ExpressionInit()                                  */
+/************************************************************************/
+
+namespace
+{
+
+class ExpressionData
+{
+  public:
+    ExpressionData(int nInBands, int nBatchSize, std::string_view osExpression,
+                   std::string_view osDialect)
+        : m_nInBands(nInBands), m_nNominalBatchSize(nBatchSize),
+          m_nBatchCount(DIV_ROUND_UP(nInBands, nBatchSize)), m_adfResults{},
+          m_osExpression(std::string(osExpression)),
+          m_osDialect(std::string(osDialect)), m_oNominalBatchEnv{},
+          m_oPartialBatchEnv{}
+    {
+    }
+
+    CPLErr Compile()
+    {
+        auto eErr = m_oNominalBatchEnv.Initialize(m_osExpression, m_osDialect,
+                                                  m_nNominalBatchSize);
+        if (eErr != CE_None)
+        {
+            return eErr;
+        }
+
+        const auto nPartialBatchSize = m_nInBands % m_nNominalBatchSize;
+        if (nPartialBatchSize)
+        {
+            eErr = m_oPartialBatchEnv.Initialize(m_osExpression, m_osDialect,
+                                                 nPartialBatchSize);
+        }
+
+        return eErr;
+    }
+
+    CPLErr Evaluate(const double *padfInputs, size_t nExpectedOutBands)
+    {
+        m_adfResults.clear();
+
+        for (int iBatch = 0; iBatch < m_nBatchCount; iBatch++)
+        {
+            const auto nBandsRemaining =
+                static_cast<int>(m_nInBands - (m_nNominalBatchSize * iBatch));
+            const auto nBatchSize =
+                std::min(m_nNominalBatchSize, nBandsRemaining);
+
+            auto &oEnv = GetEnv(nBatchSize);
+
+            const double *pdfStart = padfInputs + iBatch * m_nNominalBatchSize;
+            const double *pdfEnd = pdfStart + nBatchSize;
+
+            std::copy(pdfStart, pdfEnd, oEnv.m_adfValuesForPixel.begin());
+
+            if (auto eErr = oEnv.m_poExpression->Evaluate(); eErr != CE_None)
+            {
+                return eErr;
+            }
+
+            const auto &adfResults = oEnv.m_poExpression->Results();
+            if (m_nBatchCount > 1)
+            {
+                std::copy(adfResults.begin(), adfResults.end(),
+                          std::back_inserter(m_adfResults));
+            }
+        }
+
+        if (nExpectedOutBands > 0)
+        {
+            if (Results().size() != static_cast<std::size_t>(nExpectedOutBands))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Expression returned %d values but "
+                         "%d output bands were expected.",
+                         static_cast<int>(Results().size()),
+                         static_cast<int>(nExpectedOutBands));
+                return CE_Failure;
+            }
+        }
+
+        return CE_None;
+    }
+
+    const std::vector<double> &Results() const
+    {
+        if (m_nBatchCount == 1)
+        {
+            return m_oNominalBatchEnv.m_poExpression->Results();
+        }
+        else
+        {
+            return m_adfResults;
+        }
+    }
+
+  private:
+    const int m_nInBands;
+    const int m_nNominalBatchSize;
+    const int m_nBatchCount;
+    std::vector<double> m_adfResults;
+
+    const CPLString m_osExpression;
+    const CPLString m_osDialect;
+
+    struct InvocationEnv
+    {
+        std::vector<double> m_adfValuesForPixel;
+        std::unique_ptr<gdal::MathExpression> m_poExpression;
+
+        CPLErr Initialize(const CPLString &osExpression,
+                          const CPLString &osDialect, int nBatchSize)
+        {
+            m_poExpression =
+                gdal::MathExpression::Create(osExpression, osDialect.c_str());
+            // cppcheck-suppress knownConditionTrueFalse
+            if (m_poExpression == nullptr)
+            {
+                return CE_Failure;
+            }
+
+            m_adfValuesForPixel.resize(nBatchSize);
+
+            for (int i = 0; i < nBatchSize; i++)
+            {
+                std::string osVar = "B" + std::to_string(i + 1);
+                m_poExpression->RegisterVariable(osVar,
+                                                 &m_adfValuesForPixel[i]);
+            }
+
+            if (osExpression.ifind("BANDS") != std::string::npos)
+            {
+                m_poExpression->RegisterVector("BANDS", &m_adfValuesForPixel);
+            }
+
+            return m_poExpression->Compile();
+        }
+    };
+
+    InvocationEnv &GetEnv(int nBatchSize)
+    {
+        if (nBatchSize == m_nNominalBatchSize)
+        {
+            return m_oNominalBatchEnv;
+        }
+        else
+        {
+            return m_oPartialBatchEnv;
+        }
+    }
+
+    InvocationEnv m_oNominalBatchEnv;
+    InvocationEnv m_oPartialBatchEnv;
+};
+
+}  // namespace
+
+static CPLErr ExpressionInit(const char * /*pszFuncName*/, void * /*pUserData*/,
+                             CSLConstList papszFunctionArgs, int nInBands,
+                             GDALDataType eInDT, double * /* padfInNoData */,
+                             int *pnOutBands, GDALDataType *peOutDT,
+                             double ** /* ppadfOutNoData */,
+                             const char * /* pszVRTPath */,
+                             VRTPDWorkingDataPtr *ppWorkingData)
+{
+    CPLAssert(eInDT == GDT_Float64);
+
+    *peOutDT = eInDT;
+    *ppWorkingData = nullptr;
+
+    const char *pszBatchSize =
+        CSLFetchNameValue(papszFunctionArgs, "batch_size");
+    auto nBatchSize = nInBands;
+
+    if (pszBatchSize != nullptr)
+    {
+        nBatchSize = std::min(nInBands, std::atoi(pszBatchSize));
+    }
+
+    if (nBatchSize < 1)
+    {
+        CPLError(CE_Failure, CPLE_IllegalArg, "batch_size must be at least 1");
+        return CE_Failure;
+    }
+
+    const char *pszDialect = CSLFetchNameValue(papszFunctionArgs, "dialect");
+    if (pszDialect == nullptr)
+    {
+        pszDialect = "muparser";
+    }
+
+    const char *pszExpression =
+        CSLFetchNameValue(papszFunctionArgs, "expression");
+
+    auto data = std::make_unique<ExpressionData>(nInBands, nBatchSize,
+                                                 pszExpression, pszDialect);
+
+    if (auto eErr = data->Compile(); eErr != CE_None)
+    {
+        return eErr;
+    }
+
+    if (*pnOutBands == 0)
+    {
+        std::vector<double> aDummyValues(nInBands);
+        if (auto eErr = data->Evaluate(aDummyValues.data(), 0); eErr != CE_None)
+        {
+            return eErr;
+        }
+
+        *pnOutBands = static_cast<int>(data->Results().size());
+    }
+
+    *ppWorkingData = data.release();
+
+    return CE_None;
+}
+
+static void ExpressionFree(const char * /* pszFuncName */,
+                           void * /* pUserData */,
+                           VRTPDWorkingDataPtr pWorkingData)
+{
+    ExpressionData *data = static_cast<ExpressionData *>(pWorkingData);
+    delete data;
+}
+
+static CPLErr ExpressionProcess(
+    const char * /* pszFuncName */, void * /* pUserData */,
+    VRTPDWorkingDataPtr pWorkingData, CSLConstList /* papszFunctionArgs */,
+    int nBufXSize, int nBufYSize, const void *pInBuffer,
+    size_t /* nInBufferSize */, GDALDataType eInDT, int nInBands,
+    const double *CPL_RESTRICT /* padfInNoData */, void *pOutBuffer,
+    size_t /* nOutBufferSize */, GDALDataType eOutDT, int nOutBands,
+    const double *CPL_RESTRICT /* padfOutNoData */, double /* dfSrcXOff */,
+    double /* dfSrcYOff */, double /* dfSrcXSize */, double /* dfSrcYSize */,
+    const double /* adfSrcGT */[], const char * /* pszVRTPath "*/,
+    CSLConstList /* papszExtra */)
+{
+    ExpressionData *expr = static_cast<ExpressionData *>(pWorkingData);
+
+    const size_t nElts = static_cast<size_t>(nBufXSize) * nBufYSize;
+
+    CPL_IGNORE_RET_VAL(eInDT);
+    CPLAssert(eInDT == GDT_Float64);
+    const double *CPL_RESTRICT padfSrc = static_cast<const double *>(pInBuffer);
+
+    CPLAssert(eOutDT == GDT_Float64);
+    CPL_IGNORE_RET_VAL(eOutDT);
+    double *CPL_RESTRICT padfDst = static_cast<double *>(pOutBuffer);
+
+    for (size_t i = 0; i < nElts; i++)
+    {
+        if (auto eErr = expr->Evaluate(padfSrc, nOutBands); eErr != CE_None)
+        {
+            return eErr;
+        }
+
+        const auto &adfResults = expr->Results();
+        std::copy(adfResults.begin(), adfResults.end(), padfDst);
+
+        padfDst += nOutBands;
+        padfSrc += nInBands;
+    }
+
+    return CE_None;
+}
+
+/************************************************************************/
 /*              GDALVRTRegisterDefaultProcessedDatasetFuncs()           */
 /************************************************************************/
 
@@ -1563,7 +1840,7 @@ void GDALVRTRegisterDefaultProcessedDatasetFuncs()
         "description='Maximum threshold beyond which we give up saturation' "
         "type='double' required='true'/>"
         "   <Argument name='top_margin' "
-        "description='Margin to allow for dynamics in brighest areas "
+        "description='Margin to allow for dynamics in brightest areas "
         "(between 0 and 1, should be close to 0)' "
         "type='double' required='true'/>"
         "   <Argument name='nodata' type='double' "
@@ -1573,4 +1850,17 @@ void GDALVRTRegisterDefaultProcessedDatasetFuncs()
         "</ProcessedDatasetFunctionArgumentsList>",
         GDT_Float64, nullptr, 0, nullptr, 0, TrimmingInit, TrimmingFree,
         TrimmingProcess, nullptr);
+
+    GDALVRTRegisterProcessedDatasetFunc(
+        "Expression", nullptr,
+        "<ProcessedDatasetFunctionArgumentsList>"
+        "    <Argument name='expression' description='the expression to "
+        "evaluate' type='string' required='true' />"
+        "    <Argument name='dialect' description='expression dialect' "
+        "type='string' />"
+        "    <Argument name='batch_size' description='batch size' "
+        "type='integer' />"
+        "</ProcessedDatasetFunctionArgumentsList>",
+        GDT_Float64, nullptr, 0, nullptr, 0, ExpressionInit, ExpressionFree,
+        ExpressionProcess, nullptr);
 }

@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  jpip read driver
  * Purpose:  GDAL bindings for JPIP.
@@ -175,7 +174,7 @@ class JPIPKAKDataset final : public GDALPamDataset
     int nCodestream = 0;
     long nDatabins = 0;
 
-    double adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
 
     int bWindowDone = FALSE;
     int bGeoTransformValid = FALSE;
@@ -245,7 +244,7 @@ class JPIPKAKDataset final : public GDALPamDataset
                        int nBandCount, const int *panBandList) const;
 
     // gdaldataset methods
-    virtual CPLErr GetGeoTransform(double *) override;
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
     virtual int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;

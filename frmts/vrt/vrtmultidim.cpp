@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Name:     vrtmultidim.cpp
  * Purpose:  Implementation of VRTDriver
@@ -23,6 +22,8 @@
 #include "cpl_minixml.h"
 #include "cpl_multiproc.h"
 #include "vrtdataset.h"
+
+VRTMDArraySource::~VRTMDArraySource() = default;
 
 static std::shared_ptr<GDALMDArray> ParseArray(const CPLXMLNode *psTree,
                                                const char *pszVRTPath,
@@ -1938,8 +1939,8 @@ bool VRTMDArraySourceFromArray::Read(const GUInt64 *arrayStartIdx,
 
     const std::string osFilename =
         m_bRelativeToVRT
-            ? std::string(CPLProjectRelativeFilename(
-                  m_poDstArray->GetVRTPath().c_str(), m_osFilename.c_str()))
+            ? CPLProjectRelativeFilenameSafe(m_poDstArray->GetVRTPath().c_str(),
+                                             m_osFilename.c_str())
             : m_osFilename;
     const std::string key(CreateKey(osFilename));
 
@@ -2223,7 +2224,15 @@ bool VRTMDArray::IRead(const GUInt64 *arrayStartIdx, const size_t *count,
         std::vector<GByte *> abyStackDstPtr;
         size_t iDim = 0;
         abyStackDstPtr.push_back(static_cast<GByte *>(pDstBuffer));
+        // GCC 15.1 on msys2-mingw64
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
         abyStackDstPtr.resize(nDims + 1);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
     lbl_next_depth:
         if (iDim == nDims)
         {
@@ -2669,8 +2678,8 @@ ParseSingleSourceArray(const CPLXMLNode *psSingleSourceArray,
     }
     const std::string osSourceFilename(
         bRelativeToVRT
-            ? CPLProjectRelativeFilename(pszVRTPath, pszSourceFilename)
-            : pszSourceFilename);
+            ? CPLProjectRelativeFilenameSafe(pszVRTPath, pszSourceFilename)
+            : std::string(pszSourceFilename));
     auto poDS = std::unique_ptr<GDALDataset>(
         GDALDataset::Open(osSourceFilename.c_str(),
                           GDAL_OF_MULTIDIM_RASTER | GDAL_OF_VERBOSE_ERROR,

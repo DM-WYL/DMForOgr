@@ -44,7 +44,8 @@ class GDALArgumentParser(argparse.ArgumentParser):
             else:
                 if formatter_class is None:
                     formatter_class = argparse.RawDescriptionHelpFormatter
-                description = f'{title}\n{"-"*(2+len(title))}\n{description}'
+                number_dashes = 2 + len(title)
+                description = f'{title}\n{"-" * number_dashes}\n{description}'
 
         if formatter_class is None:
             formatter_class = argparse.HelpFormatter
@@ -81,10 +82,6 @@ class GDALArgumentParser(argparse.ArgumentParser):
                 default=argparse.SUPPRESS,
                 help="Gives a brief usage message for the generic GDAL OGR command line options and exit",
             )
-
-        if sys.version_info < (3, 8):
-            # extend was introduced to the stdlib in Python 3.8
-            self.register("action", "extend", ExtendAction)
 
         self.custom_format_arg = False
 
@@ -227,7 +224,7 @@ class GDALScript(ABC):
             prog = os.path.basename(sys.argv[0])
         example_list = []
         for idx, (title, args) in enumerate(self.examples):
-            example_list.append(f"example #{idx+1}: {title}\n{prog} {args}")
+            example_list.append(f"example #{idx + 1}: {title}\n{prog} {args}")
         epilog = "\n\n".join(example_list)
         if self.epilog:
             epilog = epilog + "\n\n" + self.epilog

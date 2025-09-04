@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  gdal2tiles.py testing
@@ -34,17 +33,18 @@ class OptionParserInputOutputTest(TestCase):
     def test_vanilla_input_output(self):
         input_file = "../../gcore/data/byte.tif"
         output_folder = tempfile.mkdtemp()
-        parsed_input, parsed_output, options = gdal2tiles.process_args(
+        parsed_input, parsed_output, options, tmsMap = gdal2tiles.process_args(
             [input_file, output_folder]
         )
 
         self.assertEqual(parsed_input, input_file)
         self.assertEqual(parsed_output, output_folder)
         self.assertNotEqual(options, {})
+        self.assertNotEqual(tmsMap, {})
 
     def test_output_folder_is_the_input_file_folder_when_none_passed(self):
         input_file = "../../gcore/data/byte.tif"
-        _, parsed_output, _ = gdal2tiles.process_args([input_file])
+        _, parsed_output, _, _ = gdal2tiles.process_args([input_file])
 
         self.assertEqual(parsed_output, "byte")
 
@@ -159,18 +159,6 @@ class OptionParserPostProcessingTest(TestCase):
             self.DEFAULT_ATTRDICT_OPTIONS, "foo.tiff", "/bar/"
         )
         # No error means it worked as expected
-
-    def test_antialias_resampling_not_supported_wout_numpy(self):
-        gdal2tiles.numpy_available = False
-        if hasattr(gdal2tiles, "numpy"):
-            del gdal2tiles.numpy
-
-        self.DEFAULT_ATTRDICT_OPTIONS["resampling"] = "antialias"
-
-        with self.assertRaises(SystemExit):
-            gdal2tiles.options_post_processing(
-                self.DEFAULT_ATTRDICT_OPTIONS, "foo.tiff", "/bar/"
-            )
 
     def test_zoom_option_not_specified(self):
         self.DEFAULT_ATTRDICT_OPTIONS["zoom"] = None

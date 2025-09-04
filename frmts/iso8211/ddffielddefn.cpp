@@ -380,6 +380,7 @@ void DDFFieldDefn::Dump(FILE *fp)
 
 {
     const char *pszValue = "";
+    CPL_IGNORE_RET_VAL(pszValue);  // Make CSA happy
 
     fprintf(fp, "  DDFFieldDefn:\n");
     fprintf(fp, "      Tag = `%s'\n", pszTag);
@@ -836,7 +837,8 @@ int DDFFieldDefn::ApplyFormats()
  * @return The subfield pointer, or NULL if there isn't any such subfield.
  */
 
-DDFSubfieldDefn *DDFFieldDefn::FindSubfieldDefn(const char *pszMnemonic)
+const DDFSubfieldDefn *
+DDFFieldDefn::FindSubfieldDefn(const char *pszMnemonic) const
 
 {
     for (int i = 0; i < nSubfieldCount; i++)
@@ -862,7 +864,7 @@ DDFSubfieldDefn *DDFFieldDefn::FindSubfieldDefn(const char *pszMnemonic)
  * @return The subfield pointer, or NULL if the index is out of range.
  */
 
-DDFSubfieldDefn *DDFFieldDefn::GetSubfield(int i)
+const DDFSubfieldDefn *DDFFieldDefn::GetSubfield(int i) const
 
 {
     if (i < 0 || i >= nSubfieldCount)

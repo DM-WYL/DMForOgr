@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Shapefile driver testing.
@@ -87,6 +86,13 @@ def shape_ds(poly_feat, tmp_path):
 
 
 def test_ogr_shape_3(shape_ds, poly_feat):
+
+    assert (
+        gdal.GetDriverByName("ESRI Shapefile").GetMetadataItem(
+            gdal.DMD_MAX_STRING_LENGTH
+        )
+        == "254"
+    )
 
     shape_lyr = shape_ds.GetLayer(0)
 
@@ -1747,6 +1753,35 @@ def test_ogr_shape_44():
 
 
 ###############################################################################
+# Test /vsicurl?url=
+
+
+@pytest.mark.require_curl()
+def test_ogr_shape_vsicurl_url():
+
+    conn = gdaltest.gdalurlopen(
+        "https://raw.githubusercontent.com/OSGeo/gdal/release/3.10/autotest/ogr/data/poly.shp"
+    )
+    if conn is None:
+        pytest.skip("cannot open URL")
+    conn.close()
+
+    ds = ogr.Open(
+        "/vsicurl?url=https%3A%2F%2Fraw.githubusercontent.com%2FOSGeo%2Fgdal%2Frelease%2F3.10%2Fautotest%2Fogr%2Fdata%2Fpoly.shp"
+    )
+    assert ds is not None
+
+    lyr = ds.GetLayer(0)
+
+    srs = lyr.GetSpatialRef()
+    wkt = srs.ExportToWkt()
+    assert wkt.find("OSGB") != -1, "did not get expected SRS"
+
+    f = lyr.GetNextFeature()
+    assert f is not None, "did not get expected feature"
+
+
+###############################################################################
 # Test ignored fields works ok on a shapefile.
 
 
@@ -3390,6 +3425,9 @@ def test_ogr_shape_78(tmp_vsimem):
     fd.SetPrecision(1)
     lyr.CreateField(fd)
 
+    fd = ogr.FieldDefn("dblfield3", ogr.OFTReal)
+    lyr.CreateField(fd)
+
     # Integer values up to 2^53 can be exactly converted into a double.
     gdal.ErrorReset()
     f = ogr.Feature(lyr.GetLayerDefn())
@@ -3413,6 +3451,13 @@ def test_ogr_shape_78(tmp_vsimem):
         lyr.CreateFeature(f)
     assert gdal.GetLastErrorMsg() != "", "did not get expected error/warning"
 
+    # Likely precision loss
+    gdal.ErrorReset()
+    f = ogr.Feature(lyr.GetLayerDefn())
+    f.SetField("dblfield3", 1623819823.809)
+    lyr.CreateFeature(f)
+    assert gdal.GetLastErrorMsg() == ""
+
     gdal.ErrorReset()
     ds = None
 
@@ -3420,6 +3465,12 @@ def test_ogr_shape_78(tmp_vsimem):
     lyr = ds.GetLayer(0)
     f = lyr.GetNextFeature()
     assert f.GetField("dblfield") == 9007199254740992.0
+    f = lyr.GetNextFeature()
+    assert f.IsFieldNull("dblfield")
+    f = lyr.GetNextFeature()
+    assert f.GetField("dblfield") == 9007199254740994.0
+    f = lyr.GetNextFeature()
+    assert f.GetField("dblfield3") == 1623819823.809
     ds = None
 
 
@@ -5494,6 +5545,7 @@ def test_ogr_shape_write_multipolygon_parts_non_constant_z(tmp_vsimem):
 # Test renaming a layer
 
 
+@gdaltest.enable_exceptions()
 def test_ogr_shape_rename_layer(tmp_path):
 
     outfilename = tmp_path / "test_rename.shp"
@@ -5503,15 +5555,18 @@ def test_ogr_shape_rename_layer(tmp_path):
     lyr = ds.GetLayer(0)
     assert lyr.TestCapability(ogr.OLCRename) == 1
 
-    with gdal.quiet_errors():
-        assert lyr.Rename("test_rename") != ogr.OGRERR_NONE
+    with pytest.raises(Exception, match="Illegal character"):
+        lyr.Rename("illegal/slash")
+
+    with pytest.raises(Exception):
+        lyr.Rename("test_rename")
 
     f = gdal.VSIFOpenL(tmp_path / "test_rename_foo.dbf", "wb")
     assert f
     gdal.VSIFCloseL(f)
 
-    with gdal.quiet_errors():
-        assert lyr.Rename("test_rename_foo") != ogr.OGRERR_NONE
+    with pytest.raises(Exception):
+        lyr.Rename("test_rename_foo")
 
     gdal.Unlink(tmp_path / "test_rename_foo.dbf")
 
@@ -5744,7 +5799,7 @@ def test_ogr_shape_prj_with_wrong_axis_order(tmp_vsimem):
 @gdaltest.enable_exceptions()
 def test_ogr_shape_write_arrow_fallback_types(tmp_vsimem):
 
-    src_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+    src_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
     src_lyr = src_ds.CreateLayer("test")
     src_lyr.CreateField(ogr.FieldDefn("string", ogr.OFTString))
     src_lyr.CreateField(ogr.FieldDefn("int", ogr.OFTInteger))
@@ -5795,6 +5850,8 @@ def test_ogr_shape_write_arrow_fallback_types(tmp_vsimem):
             break
         lyr.WriteArrowBatch(schema, array, ["FID=OGC_FID"])
 
+    del stream
+
     f = lyr.GetNextFeature()
     assert f["string"] == "foo"
     assert f["int"] == 123
@@ -5817,7 +5874,7 @@ def test_ogr_shape_write_arrow_fallback_types(tmp_vsimem):
 @gdaltest.enable_exceptions()
 def test_ogr_shape_write_arrow_IF_FID_NOT_PRESERVED_ERROR(tmp_vsimem):
 
-    src_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+    src_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
     src_lyr = src_ds.CreateLayer("test")
     f = ogr.Feature(src_lyr.GetLayerDefn())
     f.SetFID(1)
@@ -5840,6 +5897,8 @@ def test_ogr_shape_write_arrow_IF_FID_NOT_PRESERVED_ERROR(tmp_vsimem):
             lyr.WriteArrowBatch(
                 schema, array, ["FID=OGC_FID", "IF_FID_NOT_PRESERVED=ERROR"]
             )
+
+    del stream
 
 
 ###############################################################################
@@ -5872,7 +5931,7 @@ def test_ogr_shape_write_date_0000_00_00(tmp_vsimem):
 
 
 def test_ogr_shape_arrow_stream():
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     pytest.importorskip("numpy")
 
     ds = ogr.Open("data/poly.shp")
@@ -5908,7 +5967,7 @@ def test_ogr_shape_arrow_stream():
 
 
 def test_ogr_shape_arrow_stream_fid_optim(tmp_vsimem):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     pytest.importorskip("numpy")
 
     ds = ogr.Open("data/poly.shp")
@@ -6085,9 +6144,7 @@ def test_ogr_shape_arrow_stream_fid_optim(tmp_vsimem):
 def test_ogr_shape_logical_field(tmp_vsimem):
 
     filename = tmp_vsimem / "test_ogr_shape_logical_field.shp"
-    ds = gdal.GetDriverByName("ESRI Shapefile").Create(
-        filename, 0, 0, 0, gdal.GDT_Unknown
-    )
+    ds = gdal.GetDriverByName("ESRI Shapefile").CreateVector(filename)
     lyr = ds.CreateLayer("test")
     fld_defn = ogr.FieldDefn("bool_field", ogr.OFTInteger)
     fld_defn.SetSubType(ogr.OFSTBoolean)
@@ -6134,3 +6191,34 @@ def test_ogr_shape_read_date_empty_string():
     lyr = ds.GetLayer(0)
     f = lyr.GetNextFeature()
     assert f["date"] is None
+
+
+###############################################################################
+# Verify that we can generate an output that is byte-identical to the expected golden file.
+
+
+@pytest.mark.parametrize(
+    "src_directory",
+    [
+        # Generated with:
+        # ogr2ogr autotest/ogr/data/shp/poly_golden autotest/ogr/data/poly.shp -lco DBF_DATE_LAST_UPDATE=2000-01-01
+        "data/shp/poly_golden",
+    ],
+)
+def test_ogr_shape_write_check_golden_file(tmp_path, src_directory):
+
+    out_directory = str(tmp_path / "test")
+    gdal.VectorTranslate(
+        out_directory,
+        src_directory,
+        format="ESRI Shapefile",
+        layerCreationOptions=["DBF_DATE_LAST_UPDATE=2000-01-01"],
+    )
+    for filename in os.listdir(src_directory):
+        src_filename = os.path.join(src_directory, filename)
+        out_filename = os.path.join(out_directory, filename)
+
+        assert os.stat(src_filename).st_size == os.stat(out_filename).st_size, filename
+        assert (
+            open(src_filename, "rb").read() == open(out_filename, "rb").read()
+        ), filename

@@ -26,7 +26,7 @@ using namespace std;
 
 OGRILI2DataSource::OGRILI2DataSource()
     : pszName(nullptr), poImdReader(new ImdReader(2)), poReader(nullptr),
-      fpOutput(nullptr), nLayers(0), papoLayers(nullptr)
+      nLayers(0), papoLayers(nullptr)
 {
 }
 
@@ -42,14 +42,6 @@ OGRILI2DataSource::~OGRILI2DataSource()
         delete papoLayers[i];
     }
     CPLFree(papoLayers);
-
-    if (fpOutput != nullptr)
-    {
-        VSIFPrintfL(fpOutput, "</%s>\n", poImdReader->mainBasketName.c_str());
-        VSIFPrintfL(fpOutput, "</DATASECTION>\n");
-        VSIFPrintfL(fpOutput, "</TRANSFER>\n");
-        VSIFCloseL(fpOutput);
-    }
 
     DestroyILI2Reader(poReader);
     delete poImdReader;
@@ -151,148 +143,20 @@ int OGRILI2DataSource::Open(const char *pszNewName, char **papszOpenOptionsIn,
 
     poReader->SaveClasses(pszName);
 
-    listLayer = poReader->GetLayers();
-    list<OGRLayer *>::const_iterator layerIt;
-    for (layerIt = listLayer.begin(); layerIt != listLayer.end(); ++layerIt)
-    {
-        (*layerIt)->ResetReading();
-    }
+    for (auto &poLayer : poReader->GetLayers())
+        poLayer->ResetReading();
 
     return TRUE;
-}
-
-/************************************************************************/
-/*                               Create()                               */
-/************************************************************************/
-
-int OGRILI2DataSource::Create(const char *pszFilename,
-                              CPL_UNUSED char **papszOptions)
-
-{
-    char **filenames = CSLTokenizeString2(pszFilename, ",", 0);
-    pszName = CPLStrdup(filenames[0]);
-    const char *pszModelFilename =
-        (CSLCount(filenames) > 1) ? filenames[1] : nullptr;
-
-    if (pszModelFilename == nullptr)
-    {
-        CPLError(
-            CE_Failure, CPLE_AppDefined,
-            "ILI2 Create(): model file not specified in destination filename.");
-        CSLDestroy(filenames);
-        return FALSE;
-    }
-
-    /* -------------------------------------------------------------------- */
-    /*      Create the output file.                                         */
-    /* -------------------------------------------------------------------- */
-
-    if (strcmp(pszName, "/vsistdout/") == 0 ||
-        STARTS_WITH(pszName, "/vsigzip/"))
-    {
-        fpOutput = VSIFOpenL(pszName, "wb");
-    }
-    else if (STARTS_WITH(pszName, "/vsizip/"))
-    {
-        if (EQUAL(CPLGetExtension(pszName), "zip"))
-        {
-            char *pszNewName =
-                CPLStrdup(CPLFormFilename(pszName, "out.xtf", nullptr));
-            CPLFree(pszName);
-            pszName = pszNewName;
-        }
-
-        fpOutput = VSIFOpenL(pszName, "wb");
-    }
-    else
-        fpOutput = VSIFOpenL(pszName, "wb+");
-    if (fpOutput == nullptr)
-    {
-        CPLError(CE_Failure, CPLE_OpenFailed, "Failed to create XTF file %s.",
-                 pszName);
-        CSLDestroy(filenames);
-        return FALSE;
-    }
-
-    /* -------------------------------------------------------------------- */
-    /*      Parse model                                                     */
-    /* -------------------------------------------------------------------- */
-    poImdReader->ReadModel(pszModelFilename);
-
-    /* -------------------------------------------------------------------- */
-    /*      Write headers                                                   */
-    /* -------------------------------------------------------------------- */
-    VSIFPrintfL(fpOutput, "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n");
-    VSIFPrintfL(fpOutput,
-                "<TRANSFER xmlns=\"http://www.interlis.ch/INTERLIS2.3\">\n");
-    VSIFPrintfL(fpOutput,
-                "<HEADERSECTION SENDER=\"OGR/GDAL %s\" VERSION=\"2.3\">\n",
-                GDALVersionInfo("RELEASE_NAME"));
-    VSIFPrintfL(fpOutput, "<MODELS>\n");
-    for (IliModelInfos::const_iterator it = poImdReader->modelInfos.begin();
-         it != poImdReader->modelInfos.end(); ++it)
-    {
-        VSIFPrintfL(fpOutput,
-                    "<MODEL NAME=\"%s\" URI=\"%s\" VERSION=\"%s\"/>\n",
-                    it->name.c_str(), it->uri.c_str(), it->version.c_str());
-    }
-    VSIFPrintfL(fpOutput, "</MODELS>\n");
-    VSIFPrintfL(fpOutput, "</HEADERSECTION>\n");
-    VSIFPrintfL(fpOutput, "<DATASECTION>\n");
-    const char *basketName = poImdReader->mainBasketName.c_str();
-    VSIFPrintfL(fpOutput, "<%s BID=\"%s\">\n", basketName, basketName);
-
-    CSLDestroy(filenames);
-    return TRUE;
-}
-
-/************************************************************************/
-/*                           ICreateLayer()                             */
-/************************************************************************/
-
-OGRLayer *
-OGRILI2DataSource::ICreateLayer(const char *pszLayerName,
-                                const OGRGeomFieldDefn *poGeomFieldDefn,
-                                CSLConstList /*papszOptions*/)
-{
-    if (fpOutput == nullptr)
-        return nullptr;
-
-    const auto eType = poGeomFieldDefn ? poGeomFieldDefn->GetType() : wkbNone;
-
-    FeatureDefnInfo featureDefnInfo =
-        poImdReader->GetFeatureDefnInfo(pszLayerName);
-    OGRFeatureDefn *poFeatureDefn = featureDefnInfo.GetTableDefnRef();
-    if (poFeatureDefn == nullptr)
-    {
-        CPLError(CE_Warning, CPLE_AppDefined,
-                 "Layer '%s' not found in model definition. "
-                 "Creating adhoc layer",
-                 pszLayerName);
-        poFeatureDefn = new OGRFeatureDefn(pszLayerName);
-        poFeatureDefn->SetGeomType(eType);
-    }
-    OGRILI2Layer *poLayer =
-        new OGRILI2Layer(poFeatureDefn, featureDefnInfo.poGeomFieldInfos, this);
-
-    nLayers++;
-    papoLayers = static_cast<OGRILI2Layer **>(
-        CPLRealloc(papoLayers, sizeof(OGRILI2Layer *) * nLayers));
-    papoLayers[nLayers - 1] = poLayer;
-
-    return poLayer;
 }
 
 /************************************************************************/
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRILI2DataSource::TestCapability(const char *pszCap)
+int OGRILI2DataSource::TestCapability(const char *pszCap) const
 
 {
-    if (EQUAL(pszCap, ODsCCreateLayer))
-        return TRUE;
-    else if (EQUAL(pszCap, ODsCCurveGeometries))
+    if (EQUAL(pszCap, ODsCCurveGeometries))
         return TRUE;
     else if (EQUAL(pszCap, ODsCZGeometries))
         return TRUE;
@@ -304,22 +168,17 @@ int OGRILI2DataSource::TestCapability(const char *pszCap)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRILI2DataSource::GetLayer(int iLayer)
+const OGRLayer *OGRILI2DataSource::GetLayer(int iLayer) const
 
 {
-    list<OGRLayer *>::const_iterator layerIt = listLayer.begin();
     int i = 0;
-    while (i < iLayer && layerIt != listLayer.end())
+    for (auto &poLayer : poReader->GetLayers())
     {
+        if (i == iLayer)
+        {
+            return poLayer.get();
+        }
         ++i;
-        ++layerIt;
     }
-
-    if (i == iLayer && layerIt != listLayer.end())
-    {
-        OGRILI2Layer *tmpLayer = reinterpret_cast<OGRILI2Layer *>(*layerIt);
-        return tmpLayer;
-    }
-
     return nullptr;
 }

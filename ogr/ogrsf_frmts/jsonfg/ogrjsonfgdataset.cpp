@@ -199,7 +199,7 @@ bool OGRJSONFGDataset::Open(GDALOpenInfo *poOpenInfo,
             return false;
         }
         SetDescription(pszUnprefixed);
-        osDefaultLayerName = CPLGetBasename(pszUnprefixed);
+        osDefaultLayerName = CPLGetBasenameSafe(pszUnprefixed);
         eAccess = poOpenInfo->eAccess;
 
         // Ingests the first bytes of the file in pszGeoData_
@@ -330,7 +330,7 @@ bool OGRJSONFGDataset::Open(GDALOpenInfo *poOpenInfo,
 /*                  OGRJSONFGDataset::GetLayer()                        */
 /************************************************************************/
 
-OGRLayer *OGRJSONFGDataset::GetLayer(int i)
+const OGRLayer *OGRJSONFGDataset::GetLayer(int i) const
 {
     if (i < 0 || i >= static_cast<int>(apoLayers_.size()))
         return nullptr;
@@ -862,7 +862,7 @@ OGRJSONFGDataset::ICreateLayer(const char *pszNameIn,
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRJSONFGDataset::TestCapability(const char *pszCap)
+int OGRJSONFGDataset::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
         return fpOut_ != nullptr &&

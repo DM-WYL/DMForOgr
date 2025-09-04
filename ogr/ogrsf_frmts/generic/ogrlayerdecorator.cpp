@@ -36,36 +36,12 @@ OGRGeometry *OGRLayerDecorator::GetSpatialFilter()
     return m_poDecoratedLayer->GetSpatialFilter();
 }
 
-void OGRLayerDecorator::SetSpatialFilter(OGRGeometry *poGeom)
+OGRErr OGRLayerDecorator::ISetSpatialFilter(int iGeomField,
+                                            const OGRGeometry *poGeom)
 {
     if (!m_poDecoratedLayer)
-        return;
-    m_poDecoratedLayer->SetSpatialFilter(poGeom);
-}
-
-void OGRLayerDecorator::SetSpatialFilter(int iGeomField, OGRGeometry *poGeom)
-{
-    if (!m_poDecoratedLayer)
-        return;
-    m_poDecoratedLayer->SetSpatialFilter(iGeomField, poGeom);
-}
-
-void OGRLayerDecorator::SetSpatialFilterRect(double dfMinX, double dfMinY,
-                                             double dfMaxX, double dfMaxY)
-{
-    if (!m_poDecoratedLayer)
-        return;
-    m_poDecoratedLayer->SetSpatialFilterRect(dfMinX, dfMinY, dfMaxX, dfMaxY);
-}
-
-void OGRLayerDecorator::SetSpatialFilterRect(int iGeomField, double dfMinX,
-                                             double dfMinY, double dfMaxX,
-                                             double dfMaxY)
-{
-    if (!m_poDecoratedLayer)
-        return;
-    m_poDecoratedLayer->SetSpatialFilterRect(iGeomField, dfMinX, dfMinY, dfMaxX,
-                                             dfMaxY);
+        return OGRERR_FAILURE;
+    return m_poDecoratedLayer->SetSpatialFilter(iGeomField, poGeom);
 }
 
 OGRErr OGRLayerDecorator::SetAttributeFilter(const char *poAttrFilter)
@@ -163,28 +139,28 @@ OGRErr OGRLayerDecorator::DeleteFeature(GIntBig nFID)
     return m_poDecoratedLayer->DeleteFeature(nFID);
 }
 
-const char *OGRLayerDecorator::GetName()
+const char *OGRLayerDecorator::GetName() const
 {
     if (!m_poDecoratedLayer)
         return GetDescription();
     return m_poDecoratedLayer->GetName();
 }
 
-OGRwkbGeometryType OGRLayerDecorator::GetGeomType()
+OGRwkbGeometryType OGRLayerDecorator::GetGeomType() const
 {
     if (!m_poDecoratedLayer)
         return wkbNone;
     return m_poDecoratedLayer->GetGeomType();
 }
 
-OGRFeatureDefn *OGRLayerDecorator::GetLayerDefn()
+const OGRFeatureDefn *OGRLayerDecorator::GetLayerDefn() const
 {
     if (!m_poDecoratedLayer)
         return nullptr;
     return m_poDecoratedLayer->GetLayerDefn();
 }
 
-OGRSpatialReference *OGRLayerDecorator::GetSpatialRef()
+const OGRSpatialReference *OGRLayerDecorator::GetSpatialRef() const
 {
     if (!m_poDecoratedLayer)
         return nullptr;
@@ -198,22 +174,23 @@ GIntBig OGRLayerDecorator::GetFeatureCount(int bForce)
     return m_poDecoratedLayer->GetFeatureCount(bForce);
 }
 
-OGRErr OGRLayerDecorator::GetExtent(OGREnvelope *psExtent, int bForce)
-{
-    if (!m_poDecoratedLayer)
-        return OGRERR_FAILURE;
-    return m_poDecoratedLayer->GetExtent(psExtent, bForce);
-}
-
-OGRErr OGRLayerDecorator::GetExtent(int iGeomField, OGREnvelope *psExtent,
-                                    int bForce)
+OGRErr OGRLayerDecorator::IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                                     bool bForce)
 {
     if (!m_poDecoratedLayer)
         return OGRERR_FAILURE;
     return m_poDecoratedLayer->GetExtent(iGeomField, psExtent, bForce);
 }
 
-int OGRLayerDecorator::TestCapability(const char *pszCapability)
+OGRErr OGRLayerDecorator::IGetExtent3D(int iGeomField, OGREnvelope3D *psExtent,
+                                       bool bForce)
+{
+    if (!m_poDecoratedLayer)
+        return OGRERR_FAILURE;
+    return m_poDecoratedLayer->GetExtent3D(iGeomField, psExtent, bForce);
+}
+
+int OGRLayerDecorator::TestCapability(const char *pszCapability) const
 {
     if (!m_poDecoratedLayer)
         return FALSE;
@@ -317,14 +294,14 @@ OGRErr OGRLayerDecorator::RollbackTransaction()
     return m_poDecoratedLayer->RollbackTransaction();
 }
 
-const char *OGRLayerDecorator::GetFIDColumn()
+const char *OGRLayerDecorator::GetFIDColumn() const
 {
     if (!m_poDecoratedLayer)
         return "";
     return m_poDecoratedLayer->GetFIDColumn();
 }
 
-const char *OGRLayerDecorator::GetGeometryColumn()
+const char *OGRLayerDecorator::GetGeometryColumn() const
 {
     if (!m_poDecoratedLayer)
         return "";

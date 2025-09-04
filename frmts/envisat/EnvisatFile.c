@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  APP ENVISAT Support
  * Purpose:  Low Level Envisat file access (read/write) API.
@@ -244,9 +243,6 @@ int EnvisatFile_Open(EnvisatFile **self_ptr, const char *filename,
      * Create, and initialize the EnvisatFile structure.
      */
     self = (EnvisatFile *)CPLCalloc(sizeof(EnvisatFile), 1);
-    if (self == NULL)
-        return FAILURE;
-
     self->fp = fp;
     self->filename = CPLStrdup(filename);
     self->header_dirty = 0;
@@ -1808,16 +1804,20 @@ int S_NameValueList_Parse(const char *text, int text_offset, int *entry_count,
         /*
          * Add the entry to the name/value list.
          */
-        (*entry_count)++;
-        *entries = (EnvisatNameValue **)CPLRealloc(
-            *entries, *entry_count * sizeof(EnvisatNameValue *));
-
-        if (*entries == NULL)
+        EnvisatNameValue **newEntries = VSI_REALLOC_VERBOSE(
+            *entries, (*entry_count + 1) * sizeof(EnvisatNameValue *));
+        if (!newEntries)
         {
             *entry_count = 0;
+            CPLFree(entry->key);
+            CPLFree(entry->value);
+            CPLFree(entry->literal_line);
+            CPLFree(entry->units);
             CPLFree(entry);
             return FAILURE;
         }
+        (*entry_count)++;
+        *entries = newEntries;
 
         (*entries)[*entry_count - 1] = entry;
     }

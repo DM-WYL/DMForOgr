@@ -48,12 +48,12 @@ class OGRPMTilesDataset final : public GDALDataset
 
     bool Open(GDALOpenInfo *poOpenInfo);
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(m_apoLayers.size());
     }
 
-    OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
     inline int GetMinZoomLevel() const
     {
@@ -250,26 +250,18 @@ class OGRPMTilesVectorLayer final
     OGRFeature *GetNextRawFeature();
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRPMTilesVectorLayer)
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
-    OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
-    OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent, int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
-
-    void SetSpatialFilter(OGRGeometry *) override;
-
-    void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
-    {
-        OGRLayer::SetSpatialFilter(iGeomField, poGeom);
-    }
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
     GIntBig GetFeatureCount(int bForce) override;
 
@@ -364,7 +356,7 @@ class OGRPMTilesWriterDataset final : public GDALDataset
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 };
 
 #endif  // HAVE_MVT_WRITE_SUPPORT

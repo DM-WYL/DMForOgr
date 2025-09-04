@@ -131,7 +131,7 @@ GFFRasterBand::GFFRasterBand(GFFDataset *poDSIn, int nBandIn,
 CPLErr GFFRasterBand::IReadBlock(int /* nBlockXOff */, int nBlockYOff,
                                  void *pImage)
 {
-    GFFDataset *poGDS = (GFFDataset *)poDS;
+    GFFDataset *poGDS = cpl::down_cast<GFFDataset *>(poDS);
     long nOffset = poGDS->nLength;
 
     VSIFSeekL(poGDS->fp,
@@ -190,9 +190,7 @@ GDALDataset *GFFDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The GFF driver does not support update access to existing"
-                 " datasets.\n");
+        ReportUpdateNotSupportedByDriver("GFF");
         return nullptr;
     }
 

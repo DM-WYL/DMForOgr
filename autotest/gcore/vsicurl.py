@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test /vsicurl
@@ -26,9 +25,12 @@ def curl_version():
     actual_version = [0, 0, 0]
     for build_info_item in gdal.VersionInfo("BUILD_INFO").strip().split("\n"):
         if build_info_item.startswith("CURL_VERSION="):
-            actual_version = [
-                int(x) for x in build_info_item[len("CURL_VERSION=") :].split(".")
-            ]
+            curl_version = build_info_item[len("CURL_VERSION=") :]
+            # Remove potential -rcX postfix.
+            dashrc_pos = curl_version.find("-rc")
+            if dashrc_pos > 0:
+                curl_version = curl_version[0:dashrc_pos]
+            actual_version = [int(x) for x in curl_version.split(".")]
     return actual_version
 
 
@@ -424,7 +426,7 @@ def test_vsicurl_test_redirect_with_expires(server):
     current_time = 1500
 
     def method(request):
-        response = "HTTP/1.1 302\r\n"
+        response = "HTTP/1.1 302 Found\r\n"
         response += "Server: foo\r\n"
         response += (
             "Date: "
@@ -471,7 +473,7 @@ def test_vsicurl_test_redirect_with_expires(server):
                 request.end_headers()
         else:
             # After a failed attempt on a HEAD, the client should go there
-            response = "HTTP/1.1 200\r\n"
+            response = "HTTP/1.1 200 OK\r\n"
             response += "Server: foo\r\n"
             response += (
                 "Date: "
@@ -588,7 +590,7 @@ def test_vsicurl_test_redirect_x_amz(server):
     current_time = 1500
 
     def method(request):
-        response = "HTTP/1.1 302\r\n"
+        response = "HTTP/1.1 302 Found\r\n"
         response += "Server: foo\r\n"
         response += (
             "Date: "
@@ -638,7 +640,7 @@ def test_vsicurl_test_redirect_x_amz(server):
                 request.end_headers()
         else:
             # After a failed attempt on a HEAD, the client should go there
-            response = "HTTP/1.1 200\r\n"
+            response = "HTTP/1.1 200 OK\r\n"
             response += "Server: foo\r\n"
             response += (
                 "Date: "
@@ -1367,7 +1369,7 @@ def test_vsicurl_test_CPL_VSIL_CURL_USE_HEAD_NO(server):
     handler.add("GET", "/test_CPL_VSIL_CURL_USE_HEAD_NO/", 404)
 
     def method(request):
-        response = "HTTP/1.1 200\r\n"
+        response = "HTTP/1.1 200 OK\r\n"
         response += "Server: foo\r\n"
         response += "Content-type: text/plain\r\n"
         response += "Content-Length: 1000000\r\n"
@@ -1574,3 +1576,105 @@ def test_vsicurl_cache_control_no_cache(server):
         data = gdal.VSIFReadL(1, 6, f).decode("ascii")
         gdal.VSIFCloseL(f)
         assert data == "barbaz"
+
+
+###############################################################################
+# Test VSICURL_QUERY_STRING path specific option.
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize(
+    "filename,query_string",
+    [
+        ("test_vsicurl_VSICURL_QUERY_STRING.bin", "foo=bar"),
+        ("test_vsicurl_VSICURL_QUERY_STRING.bin?", "foo=bar"),
+        ("test_vsicurl_VSICURL_QUERY_STRING.bin", "?foo=bar"),
+        ("test_vsicurl_VSICURL_QUERY_STRING.bin?", "?foo=bar"),
+    ],
+)
+def test_vsicurl_VSICURL_QUERY_STRING(server, filename, query_string):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "HEAD",
+        "/test_vsicurl_VSICURL_QUERY_STRING.bin?foo=bar",
+        200,
+        {"Content-Length": "3"},
+    )
+
+    with webserver.install_http_handler(handler):
+        full_filename = f"/vsicurl/http://localhost:{server.port}/{filename}"
+        gdal.SetPathSpecificOption(full_filename, "VSICURL_QUERY_STRING", query_string)
+        try:
+            statres = gdal.VSIStatL(full_filename)
+            assert statres.size == 3
+        finally:
+            gdal.SetPathSpecificOption(full_filename, "VSICURL_QUERY_STRING", None)
+
+
+###############################################################################
+# Test /vsicurl?header.foo=bar&
+
+
+@gdaltest.enable_exceptions()
+def test_vsicurl_header_option(server):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "HEAD",
+        "/test_vsicurl_header_option.bin",
+        200,
+        {"Content-Length": "3"},
+        expected_headers={"foo": "bar", "Accept": "application/json"},
+    )
+
+    with webserver.install_http_handler(handler):
+        full_filename = f"/vsicurl?header.foo=bar&header.Accept=application%2Fjson&url=http%3A%2F%2Flocalhost%3A{server.port}%2Ftest_vsicurl_header_option.bin"
+        statres = gdal.VSIStatL(full_filename)
+        assert statres.size == 3
+
+
+###############################################################################
+# Test GDAL_HTTP_MAX_CACHED_CONNECTIONS
+# This test is rather dummy as it cannot check the effect of setting the option
+
+
+@gdaltest.enable_exceptions()
+def test_vsicurl_GDAL_HTTP_MAX_CACHED_CONNECTIONS(server):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add("HEAD", "/test.bin", 200, {"Content-Length": "3"})
+
+    with gdal.config_option(
+        "GDAL_HTTP_MAX_CACHED_CONNECTIONS", "0"
+    ), webserver.install_http_handler(handler):
+        full_filename = f"/vsicurl/http://localhost:{server.port}/test.bin"
+        statres = gdal.VSIStatL(full_filename)
+        assert statres.size == 3
+
+
+###############################################################################
+# Test GDAL_HTTP_MAX_TOTAL_CONNECTIONS
+# This test is rather dummy as it cannot check the effect of setting the option
+
+
+@gdaltest.enable_exceptions()
+def test_vsicurl_GDAL_HTTP_MAX_TOTAL_CONNECTIONS(server):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add("HEAD", "/test.bin", 200, {"Content-Length": "3"})
+
+    with gdal.config_option(
+        "GDAL_HTTP_MAX_TOTAL_CONNECTIONS", "0"
+    ), webserver.install_http_handler(handler):
+        full_filename = f"/vsicurl/http://localhost:{server.port}/test.bin"
+        statres = gdal.VSIStatL(full_filename)
+        assert statres.size == 3

@@ -116,6 +116,11 @@ struct headerv3 {
 	}
 };
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wweak-vtables"
+#endif
+
 struct pmtiles_magic_number_exception : std::exception {
 	const char *what() const noexcept override {
 		return "pmtiles magic number exception";
@@ -127,6 +132,10 @@ struct pmtiles_version_exception : std::exception {
 		return "pmtiles version: must be 3";
 	}
 };
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 template<class T>
 inline void copy_from_lsb(T* ptr, const std::string &s, size_t offset) {
@@ -218,6 +227,11 @@ struct entry_zxy {
 	}
 };
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wweak-vtables"
+#endif
+
 struct varint_too_long_exception : std::exception {
 	const char *what() const noexcept override {
 		return "varint too long exception";
@@ -229,6 +243,10 @@ struct end_of_buffer_exception : std::exception {
 		return "end of buffer exception";
 	}
 };
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 namespace {
 constexpr const int8_t max_varint_length = sizeof(uint64_t) * 8 / 7 + 1;
@@ -417,7 +435,7 @@ inline zxy tileid_to_zxy(uint64_t tileid) {
 	throw std::overflow_error("tile zoom exceeds 64-bit limit");
 }
 
-inline uint64_t zxy_to_tileid(uint8_t z, uint32_t x, uint32_t y) {
+inline uint64_t zxy_to_tileid(uint32_t z, uint32_t x, uint32_t y) {
 	if (z > 31) {
 		throw std::overflow_error("tile zoom exceeds 64-bit limit");
 	}
@@ -425,7 +443,7 @@ inline uint64_t zxy_to_tileid(uint8_t z, uint32_t x, uint32_t y) {
 		throw std::overflow_error("tile x/y outside zoom level bounds");
 	}
 	uint64_t acc = 0;
-	for (uint8_t t_z = 0; t_z < z; t_z++) acc += (1LL << t_z) * (1LL << t_z);
+	for (uint32_t t_z = 0; t_z < z; t_z++) acc += (1LL << t_z) * (1LL << t_z);
 	int64_t n = 1LL << z;
 	int64_t rx, ry, s, d = 0;
 	int64_t tx = x;
@@ -470,11 +488,20 @@ inline std::string serialize_directory(const std::vector<entryv3> &entries) {
 	return data;
 }
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wweak-vtables"
+#endif
+
 struct malformed_directory_exception : std::exception {
 	const char *what() const noexcept override {
 		return "malformed directory exception";
 	}
 };
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 // takes an uncompressed byte buffer
 inline std::vector<entryv3> deserialize_directory(const std::string &decompressed) {

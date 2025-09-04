@@ -15,6 +15,7 @@
 #include "gdal.h"
 #include "cpl_string.h"
 #include "cpl_multiproc.h"
+#include "cpl_vsi_virtual.h"
 #include "commonutils.h"
 #include "gdal_utils_priv.h"
 
@@ -76,6 +77,11 @@ MAIN_START(argc, argv)
 
     GDALInfoOptionsForBinary sOptionsForBinary;
 
+    if (CSLFindString(argv, "-stdout") < 0)
+    {
+        argv = CSLAddString(argv, "-stdout");
+    }
+
     std::unique_ptr<GDALInfoOptions, decltype(&GDALInfoOptionsFree)> psOptions{
         GDALInfoOptionsNew(argv + 1, &sOptionsForBinary), GDALInfoOptionsFree};
     CSLDestroy(argv);
@@ -127,8 +133,8 @@ MAIN_START(argc, argv)
         /*      If argument is a VSIFILE, then print its contents */
         /* --------------------------------------------------------------------
          */
-        if (STARTS_WITH(sOptionsForBinary.osFilename.c_str(), "/vsizip/") ||
-            STARTS_WITH(sOptionsForBinary.osFilename.c_str(), "/vsitar/"))
+        if (VSIFileManager::GetHandler(sOptionsForBinary.osFilename.c_str())
+                ->IsArchive(sOptionsForBinary.osFilename.c_str()))
         {
             const char *const apszOptions[] = {"NAME_AND_TYPE_ONLY=YES",
                                                nullptr};
@@ -185,7 +191,7 @@ MAIN_START(argc, argv)
         if (sOptionsForBinary.nSubdataset > 0)
         {
             char **papszSubdatasets = GDALGetMetadata(hDataset, "SUBDATASETS");
-            int nSubdatasets = CSLCount(papszSubdatasets);
+            const int nSubdatasets = CSLCount(papszSubdatasets) / 2;
 
             if (nSubdatasets > 0 &&
                 sOptionsForBinary.nSubdataset <= nSubdatasets)

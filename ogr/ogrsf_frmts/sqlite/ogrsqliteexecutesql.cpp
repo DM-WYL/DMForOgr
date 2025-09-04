@@ -184,9 +184,9 @@ static void OGR2SQLITEAddLayer(const char *&pszStart, int &nNum,
         {
             oLayerDesc.osSubstitutedName =
                 CPLString().Printf("_OGR_%d", nNum++);
-            osModifiedSQL += "\"";
+            osModifiedSQL += "'";
             osModifiedSQL += oLayerDesc.osSubstitutedName;
-            osModifiedSQL += "\"";
+            osModifiedSQL += "'";
         }
         else
         {
@@ -196,7 +196,7 @@ static void OGR2SQLITEAddLayer(const char *&pszStart, int &nNum,
     }
     if (bInsert)
     {
-        oSet.insert(oLayerDesc);
+        oSet.insert(std::move(oLayerDesc));
     }
     pszStart = pszSQLCommand;
 }
@@ -488,7 +488,7 @@ class OGRSQLiteExecuteSQLLayer final : public OGRSQLiteSelectLayer
                              bool bStringsAsUTF8);
     virtual ~OGRSQLiteExecuteSQLLayer();
 
-    int TestCapability(const char *pszCap) override;
+    int TestCapability(const char *pszCap) const override;
 };
 
 /************************************************************************/
@@ -527,7 +527,7 @@ OGRSQLiteExecuteSQLLayer::~OGRSQLiteExecuteSQLLayer()
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRSQLiteExecuteSQLLayer::TestCapability(const char *pszCap)
+int OGRSQLiteExecuteSQLLayer::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, OLCStringsAsUTF8))
         return m_bStringsAsUTF8;
@@ -1158,7 +1158,8 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
 
     auto poDrv = poDS->GetDriver();
     const bool bCanReopenBaseDS =
-        !(poDrv && EQUAL(poDrv->GetDescription(), "Memory"));
+        !(poDrv && (EQUAL(poDrv->GetDescription(), "MEM") ||
+                    EQUAL(poDrv->GetDescription(), "Memory")));
     OGRSQLiteSelectLayer *poLayer = new OGRSQLiteExecuteSQLLayer(
         pszTmpDBName, poSQLiteDS, pszStatement, hSQLStmt,
         bUseStatementForGetNextFeature, bEmptyLayer, bCanReopenBaseDS,

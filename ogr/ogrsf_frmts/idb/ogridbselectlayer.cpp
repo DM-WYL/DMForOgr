@@ -123,20 +123,20 @@ OGRFeature *OGRIDBSelectLayer::GetFeature(GIntBig nFeatureId)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRIDBSelectLayer::TestCapability(const char *pszCap)
+int OGRIDBSelectLayer::TestCapability(const char *pszCap) const
 
 {
     return OGRIDBLayer::TestCapability(pszCap);
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /*                                                                      */
 /*      Since SELECT layers currently cannot ever have geometry, we     */
-/*      can optimize the GetExtent() method!                            */
+/*      can optimize the IGetExtent() method!                           */
 /************************************************************************/
 
-OGRErr OGRIDBSelectLayer::GetExtent(OGREnvelope *, int)
+OGRErr OGRIDBSelectLayer::IGetExtent(int, OGREnvelope *, bool)
 
 {
     return OGRERR_FAILURE;

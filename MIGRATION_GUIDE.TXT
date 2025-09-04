@@ -1,5 +1,111 @@
+MIGRATION GUIDE FROM GDAL 3.11 to GDAL 3.12
+-------------------------------------------
+
+- The following changes have been done to the "gdal" command line interface:
+
+  * Sub-commands "buffer", "explode-collections", "make-valid", "segmentize",
+    "simplify", "swap-xy" of "gdal vector geom" are now directly available
+    under "gdal vector". Support for the old location is kept for 3.12, but
+    will be definitely removed in 3.13.
+  * Furthermore, sub-command "set-type" of "gdal vector geom" is renamed as
+    "set-geom-type" and also placed under "gdal vector".
+  * Progress bar is emitted to stdout by default unless --quiet/-q is specified.
+  * For gdal raster info, gdal vector info and gdal vsi list, --format=text is
+    now the default when those utilities are invoked from the command line.
+    When they are invoked from the API, the default is still JSON.
+
+- Changes impacting out-of-tree vector drivers:
+  * GDALDataset::GetLayer() is now a const method that returns a const OGRLayer*
+  * GDALDataset::GetLayerCount() is now a const method
+  * GDALDataset::TestCapacility() is now a const method
+  * OGRLayer::GetName() is now a const method
+  * OGRLayer::GetGeomType() is now a const method
+  * OGRLayer::GetLayerDefn() is now a const method that returns a const OGRFeatureDefn*
+  * OGRLayer::GetFIDColumn() is now a const method
+  * OGRLayer::GetGeometryColumn() is now a const method
+  * OGRLayer::GetSpatialRef() is now a const method that returns a const OGRSpatialReference*
+  * OGRLayer::TestCapacility() is now a const method
+
+- Changes impacting C++ users:
+  * OGRLayer::GetSpatialRef() now returns a const OGRSpatialReference* instead of a non-const one.
+
+- The raw file capabilities (VRTRawRasterBand) of the VRT raster driver have
+  been limited by default for security reasons. Consult
+  https://gdal.org/drivers/raster/vrt.html#vrtrawrasterband_restricted_access
+  for more details.
+
+- Methods GDALRasterAttributeTable::SetValue() now return a CPLErr instead of
+  void. This will impact in particular out-of-tree drivers that implement those
+  methods in a subclass of GDALRasterAttributeTable.
+
+- Virtual methods GDALDataset::GetGeoTransform() (resp. SetGeoTransform() have
+  been modified to accept "GDALGeoTransform& gt" (resp. "const GDALGeoTransform& gt")
+  parameters instead of a pointer to 6 doubles. The new class GDALGeoTransform
+  is a thin wrapper around a std::array<double, 6>. This change affects out-of-tree
+  raster drivers.
+
+MIGRATION GUIDE FROM GDAL 3.10 to GDAL 3.11
+-------------------------------------------
+
+- The introduction of the gdal_fwd.h header that normalizes forward declarations
+  of GDAL public opaque types may cause issues with downstream users of the
+  GDAL API that would have redefined themselves those types, particularly when
+  building against a GDAL built in DEBUG mode where the type aliases are stricter
+  than in release mode.
+
+- The OGRLayer::GetExtent(OGREnvelope*, int bForce) and
+  OGRLayer::GetExtent(int iGeomField, OGREnvelope*, int bForce) methods are
+  no longer virtual methods that are implemented by drivers, and the ``int bForce``
+  parameter is now a ``bool bForce``.
+  Drivers may implement the new IGetExtent(int iGeomField, OGREnvelope*,
+  bool bForce) protected virtual method. The public method checks that the
+  iGeomField value is in range.
+  Similarly for OGRLayer::GetExtent3D(int iGeomField, OGREnvelope3D*, int bForce)
+  which is now a user facing method (with the change that the ``int bForce`` is now a
+  ``bool bForce``). Drivers may implement the new IGetExtent3D(int iGeomField, OGREnvelope3D*,
+  bool bForce) protected virtual method. The public method checks that the
+  iGeomField value is in range.
+
+- The OGRLayer::SetSpatialFilter() and SetSpatialFilterRect() methods are
+  no longer virtual methods that are implemented by drivers. They now return
+  OGRErr instead of void, `and accept a ``const OGRGeometry*``). Drivers may implement
+  the new ISetSpatialFilter(int iGeomField, const OGRGeometry*) protected virtual method.
+  The public methods check that the iGeomField value is in range.
+
+- GDAL drivers may now return raster bands with the new data types
+  GDT_Float16 or GDT_CFloat16. Code that use the GDAL API must be
+  ready to react to the new data type, possibly by doing RasterIO()
+  requests with eBufType==GDT_Float32, if they can't deal natively
+  with Float16 values.
+
+- If only a specific GDAL Minor version is to be supported, this must now be
+  specified in the find_package call in CMake via a version range specification.
+
+- The following methods
+  OGRCoordinateTransformation::Transform(size_t nCount, double *x, double *y,
+  double *z, double *t, int *pabSuccess) and
+  OGRCoordinateTransformation::TransformWithErrorCodes(size_t nCount, double *x,
+  double *y, double *z, double *t, int *panErrorCodes) are modified to return
+  FALSE as soon as at least one point fails to transform (to be consistent with
+  the other form of Transform() that doesn't take a "t" argument), whereas
+  previously they would return FALSE only if no transformation was found. When
+  FALSE is returned the pabSuccess[] or panErrorCodes[] arrays indicate which
+  point succeeded or failed to transform.
+
+  The GDALTransformerFunc callback and its implementations (GenImgProjTransformer,
+  RPCTransformer, etc.) are also modified to return FALSE as soon as at least
+  one point fails to transform.
+
 MIGRATION GUIDE FROM GDAL 3.9 to GDAL 3.10
 ------------------------------------------
+
+- The OGR SQL parser has been modified to evaluate NULL values in boolean
+  operations similarly to other SQL engines (SQLite, PostgreSQL, etc.). Previously,
+  with a foo=NULL field, expressions ``foo NOT IN ('bar')`` and ``foo NOT LIKE ('bar')``
+  would evaluate as true. Now the result is false (with the NULL state being
+  propagated to it). Concretely, to get the same results as in previous versions,
+  the above expressions must be rewritten as ``foo IS NULL OR foo NOT IN ('bar')``
+  and ``foo IS NULL OR foo NOT LIKE ('bar')``.
 
 - MEM driver: opening a dataset with the MEM::: syntax is now disabled by
   default because of security implications. This can be enabled by setting the

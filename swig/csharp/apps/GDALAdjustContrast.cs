@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Name:     GDALAdjustContrast.cs
  * Project:  GDAL CSharp Interface
@@ -13,6 +12,8 @@
  *
  * SPDX-License-Identifier: MIT
  *****************************************************************************/
+
+#pragma warning disable CA1416 // Validate platform compatibility
 
 using System;
 using System.Drawing;
@@ -310,3 +311,4 @@ class GDALAdjustContrast {
         }
     }
 }
+#pragma warning restore CA1416 // Validate platform compatibility

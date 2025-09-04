@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  VFK Reader
  * Purpose:  Public Declarations for OGR free VFK Reader code.
@@ -272,6 +271,11 @@ class IVFKDataBlock
     VFKPropertyDefn **m_papoProperty;
 
     int AddProperty(const char *, const char *);
+
+    IVFKDataBlock(IVFKDataBlock &) = delete;
+    IVFKDataBlock &operator=(const IVFKDataBlock &) = delete;
+    IVFKDataBlock(IVFKDataBlock &&) = delete;
+    IVFKDataBlock &operator=(IVFKDataBlock &&) = delete;
 
   protected:
     typedef std::vector<OGRPoint> PointList;

@@ -752,7 +752,7 @@ OGRErr OGRHanaLayer::InitFeatureDefinition(const CPLString &schemaName,
 
         if (!attributeColumnDesc.isFeatureID)
             featureDefn_->AddFieldDefn(field.get());
-        attrColumns_.push_back(attributeColumnDesc);
+        attrColumns_.push_back(std::move(attributeColumnDesc));
     }
 
     return OGRERR_NONE;
@@ -844,7 +844,7 @@ void OGRHanaLayer::ReadGeometryExtent(int geomField, OGREnvelope *extent,
         ReadGeometryExtent(geomField, extent, true);
 }
 
-bool OGRHanaLayer::IsFastExtentAvailable()
+bool OGRHanaLayer::IsFastExtentAvailable() const
 {
     if (geomColumns_.empty())
         return false;
@@ -872,27 +872,11 @@ void OGRHanaLayer::ResetReading()
 }
 
 /************************************************************************/
-/*                            GetExtent()                               */
+/*                           IGetExtent()                               */
 /************************************************************************/
 
-OGRErr OGRHanaLayer::GetExtent(int iGeomField, OGREnvelope *extent, int force)
+OGRErr OGRHanaLayer::IGetExtent(int iGeomField, OGREnvelope *extent, bool force)
 {
-    if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount() ||
-        GetLayerDefn()->GetGeomFieldDefn(iGeomField)->GetType() == wkbNone)
-    {
-        extent->MinX = 0.0;
-        extent->MaxX = 0.0;
-        extent->MinY = 0.0;
-        extent->MaxY = 0.0;
-
-        if (iGeomField != 0)
-        {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "Invalid geometry field index : %d", iGeomField);
-        }
-        return OGRERR_FAILURE;
-    }
-
     try
     {
         if (!force)
@@ -913,10 +897,7 @@ OGRErr OGRHanaLayer::GetExtent(int iGeomField, OGREnvelope *extent, int force)
                  clmName.c_str(), ex.what());
     }
 
-    if (iGeomField == 0)
-        return OGRLayer::GetExtent(extent, force);
-    else
-        return OGRLayer::GetExtent(iGeomField, extent, force);
+    return OGRLayer::IGetExtent(iGeomField, extent, force);
 }
 
 /************************************************************************/
@@ -942,9 +923,9 @@ GIntBig OGRHanaLayer::GetFeatureCount(CPL_UNUSED int force)
 /*                           GetLayerDefn()                             */
 /************************************************************************/
 
-OGRFeatureDefn *OGRHanaLayer::GetLayerDefn()
+const OGRFeatureDefn *OGRHanaLayer::GetLayerDefn() const
 {
-    EnsureInitialized();
+    const_cast<OGRHanaLayer *>(this)->EnsureInitialized();
     return featureDefn_;
 }
 
@@ -952,7 +933,7 @@ OGRFeatureDefn *OGRHanaLayer::GetLayerDefn()
 /*                               GetName()                              */
 /************************************************************************/
 
-const char *OGRHanaLayer::GetName()
+const char *OGRHanaLayer::GetName() const
 {
     return GetDescription();
 }
@@ -984,9 +965,9 @@ OGRFeature *OGRHanaLayer::GetNextFeature()
 /*                            GetFIDColumn()                            */
 /************************************************************************/
 
-const char *OGRHanaLayer::GetFIDColumn()
+const char *OGRHanaLayer::GetFIDColumn() const
 {
-    EnsureInitialized();
+    const_cast<OGRHanaLayer *>(this)->EnsureInitialized();
     return fidFieldName_.c_str();
 }
 
@@ -1012,27 +993,21 @@ OGRErr OGRHanaLayer::SetAttributeFilter(const char *pszQuery)
 }
 
 /************************************************************************/
-/*                          SetSpatialFilter()                          */
+/*                          ISetSpatialFilter()                         */
 /************************************************************************/
 
-void OGRHanaLayer::SetSpatialFilter(int iGeomField, OGRGeometry *poGeom)
+OGRErr OGRHanaLayer::ISetSpatialFilter(int iGeomField,
+                                       const OGRGeometry *poGeom)
 {
-    m_iGeomFieldFilter = 0;
-
-    if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount())
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "Invalid geometry field index : %d", iGeomField);
-        return;
-    }
     m_iGeomFieldFilter = iGeomField;
 
     if (!InstallFilter(poGeom))
-        return;
+        return OGRERR_NONE;
 
     ClearQueryStatement();
     BuildWhereClause();
     ResetReading();
+    return OGRERR_NONE;
 }
 
 }  // namespace OGRHANA

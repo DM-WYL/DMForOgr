@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Name:     Operations.i
  * Project:  GDAL Python Interface
@@ -209,8 +208,9 @@ int  RasterizeLayer( GDALDatasetShadow *dataset,
         return CE_Failure;
     }
 
+    OGRLayerH hLayer = (OGRLayerH)layer;
     eErr = GDALRasterizeLayers( dataset, bands, band_list,
-                                1, &layer,
+                                1, &hLayer,
                                 NULL, NULL,
                                 burn_values_list, options,
                                 callback, callback_data );
@@ -253,8 +253,9 @@ int  RasterizeLayer( GDALDatasetShadow *dataset,
         return CE_Failure;
     }
 
+    OGRLayerH hLayer = (OGRLayerH)layer;
     eErr = GDALRasterizeLayers( dataset, bands, band_list,
-                                1, &layer,
+                                1, &hLayer,
                                 (GDALTransformerFunc) pfnTransformer,
                                 pTransformArg,
                                 burn_values_list, options,
@@ -375,6 +376,8 @@ int  SieveFilter( GDALRasterBandShadow *srcBand,
 #endif /* SWIGJAVA */
 #ifndef SWIGCSHARP
 %apply (int object_list_count, GDALRasterBandShadow **poObjects) {(int overviewBandCount, GDALRasterBandShadow **overviewBands)};
+#else
+%apply GDALRasterBandShadow OBJPTRS_STATIC[] {GDALRasterBandShadow** overviewBands}
 #endif /* SWIGCSHARP */
 #ifdef SWIGJAVA
 %apply (const char* stringWithDefaultValue) {const char *resampling};
@@ -687,6 +690,8 @@ GDALDatasetShadow *AutoCreateWarpedVRT( GDALDatasetShadow *src_ds,
 %newobject CreatePansharpenedVRT;
 #ifndef SWIGCSHARP
 %apply (int object_list_count, GDALRasterBandShadow **poObjects) {(int nInputSpectralBands, GDALRasterBandShadow **ahInputSpectralBands)};
+#else
+%apply GDALRasterBandShadow OBJPTRS_STATIC[] {GDALRasterBandShadow** ahInputSpectralBands}
 #endif /* SWIGCSHARP */
 %apply Pointer NONNULL { GDALRasterBandShadow* panchroBand };
 
@@ -707,6 +712,9 @@ GDALDatasetShadow*  CreatePansharpenedVRT( const char* pszXML,
 /************************************************************************/
 /*                             Transformer                              */
 /************************************************************************/
+
+%rename (GetTranformerOptionList) GDALGetGenImgProjTranformerOptionList;
+const char* GDALGetGenImgProjTranformerOptionList();
 
 #ifndef SWIGPYTHON
 %rename (Transformer) GDALTransformerInfoShadow;
@@ -824,6 +832,8 @@ public:
 %}
 #endif
 
+%rename (WarpGetOptionList) GDALWarpGetOptionList;
+const char* GDALWarpGetOptionList();
 
 /************************************************************************/
 /*                        SuggestedWarpOutput()                         */

@@ -37,7 +37,7 @@
 /*
  * Dummy functions to fill the omitted client procedures.
  */
-static int _tiffDummyMapProc(thandle_t fd, void **pbase, toff_t *psize)
+int _tiffDummyMapProc(thandle_t fd, void **pbase, toff_t *psize)
 {
     (void)fd;
     (void)pbase;
@@ -45,7 +45,7 @@ static int _tiffDummyMapProc(thandle_t fd, void **pbase, toff_t *psize)
     return (0);
 }
 
-static void _tiffDummyUnmapProc(thandle_t fd, void *base, toff_t size)
+void _tiffDummyUnmapProc(thandle_t fd, void *base, toff_t size)
 {
     (void)fd;
     (void)base;
@@ -109,7 +109,7 @@ void TIFFOpenOptionsSetMaxCumulatedMemAlloc(TIFFOpenOptions *opts,
     opts->max_cumulated_mem_alloc = max_cumulated_mem_alloc;
 }
 
-/** Whether a warning should be emitted when encoutering a unknown tag.
+/** Whether a warning should be emitted when encountering a unknown tag.
  * Default is FALSE since libtiff 4.7.1
  */
 void TIFFOpenOptionsSetWarnAboutUnknownTags(TIFFOpenOptions *opts,

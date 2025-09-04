@@ -107,6 +107,9 @@ void OGROCIDriverSetCommonMetadata(GDALDriver *poDriver)
         "  <Option name='FIRST_ID' type='int' description='First id value'/>"
         "  <Option name='NO_LOGGING' type='boolean' description='Create table "
         "with no_logging parameters' default='NO'/>"
+        "  <Option name='TIMESTAMP_WITH_TIME_ZONE' type='boolean' description='"
+        "Whether DateTime fields should be created with TIMESTAMP WITH TIME "
+        "ZONE Oracle type (otherwise without timezone)'/>"
         "</LayerCreationOptionList>");
 
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATATYPES,
@@ -121,6 +124,9 @@ void OGROCIDriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->pfnIdentify = OGROCIDriverIdentify;
     poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS, "Features");
 }
 
 /************************************************************************/

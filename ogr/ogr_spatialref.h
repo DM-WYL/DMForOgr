@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Classes for manipulating spatial reference systems in a
@@ -391,6 +390,8 @@ class CPL_DLL OGRSpatialReference
     int IsSame(const OGRSpatialReference *,
                const char *const *papszOptions) const;
 
+    const char *GetCelestialBodyName() const;
+
     void Clear();
     OGRErr SetLocalCS(const char *);
     OGRErr SetProjCS(const char *);
@@ -674,7 +675,7 @@ class CPL_DLL OGRSpatialReference
     OGRErr SetUTM(int nZone, int bNorth = TRUE);
     int GetUTMZone(int *pbNorth = nullptr) const;
 
-    /** Wagner I -- VII */
+    /** Wagner I \-- VII */
     OGRErr SetWagner(int nVariation, double dfCenterLat, double dfFalseEasting,
                      double dfFalseNorthing);
 
@@ -772,9 +773,7 @@ struct CPL_DLL OGRSpatialReferenceReleaser
 class CPL_DLL OGRCoordinateTransformation
 {
   public:
-    virtual ~OGRCoordinateTransformation()
-    {
-    }
+    virtual ~OGRCoordinateTransformation();
 
     static void DestroyCT(OGRCoordinateTransformation *poCT);
 
@@ -814,8 +813,10 @@ class CPL_DLL OGRCoordinateTransformation
      * @param pabSuccess array of per-point flags set to TRUE if that point
      * transforms, or FALSE if it does not. Might be NULL.
      *
-     * @return TRUE if a transformation could be found (but not all points may
-     * have necessarily succeed to transform), otherwise FALSE.
+     * @return TRUE on success, or FALSE if some or all points fail to
+     * transform. When FALSE is returned the pabSuccess[] array indicates which
+     * points succeeded or failed to transform. When TRUE is returned, all
+     * values in pabSuccess[] are set to true.
      */
     int Transform(size_t nCount, double *x, double *y, double *z = nullptr,
                   int *pabSuccess = nullptr);
@@ -836,8 +837,13 @@ class CPL_DLL OGRCoordinateTransformation
      * @param pabSuccess array of per-point flags set to TRUE if that point
      * transforms, or FALSE if it does not. Might be NULL.
      *
-     * @return TRUE if a transformation could be found (but not all points may
-     * have necessarily succeed to transform), otherwise FALSE.
+     * @return TRUE on success, or FALSE if some or all points fail to
+     * transform. When FALSE is returned the pabSuccess[] array indicates which
+     * points succeeded or failed to transform. When TRUE is returned, all
+     * values in pabSuccess[] are set to true.
+     * Caution: prior to GDAL 3.11, TRUE could be returned if a
+     * transformation could be found but not all points may
+     * have necessarily succeed to transform.
      */
     virtual int Transform(size_t nCount, double *x, double *y, double *z,
                           double *t, int *pabSuccess) = 0;
@@ -858,8 +864,13 @@ class CPL_DLL OGRCoordinateTransformation
      * @param panErrorCodes Output array of nCount value that will be set to 0
      * for success, or a non-zero value for failure. Refer to PROJ 8 public
      * error codes. Might be NULL
-     * @return TRUE if a transformation could be found (but not all points may
-     * have necessarily succeed to transform), otherwise FALSE.
+     * @return TRUE on success, or FALSE if some or all points fail to
+     * transform. When FALSE is returned the panErrorCodes[] array indicates
+     * which points succeeded or failed to transform. When TRUE is returned, all
+     * values in panErrorCodes[] are set to zero.
+     * Caution: prior to GDAL 3.11, TRUE could be returned if a
+     * transformation could be found but not all points may
+     * have necessarily succeed to transform.
      * @since GDAL 3.3, and PROJ 8 to be able to use PROJ public error codes
      */
     virtual int TransformWithErrorCodes(size_t nCount, double *x, double *y,
@@ -957,6 +968,17 @@ class CPL_DLL OGRCoordinateTransformation
      * @since GDAL 3.3
      */
     virtual OGRCoordinateTransformation *GetInverse() const = 0;
+
+  protected:
+    /*! @cond Doxygen_Suppress */
+    OGRCoordinateTransformation() = default;
+    OGRCoordinateTransformation(const OGRCoordinateTransformation &) = default;
+    OGRCoordinateTransformation &
+    operator=(const OGRCoordinateTransformation &) = default;
+    OGRCoordinateTransformation(OGRCoordinateTransformation &&) = default;
+    OGRCoordinateTransformation &
+    operator=(OGRCoordinateTransformation &&) = default;
+    /*! @endcond */
 };
 
 OGRCoordinateTransformation CPL_DLL *

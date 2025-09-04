@@ -431,7 +431,7 @@ OGRFeature *OGRPCIDSKLayer::GetFeature(GIntBig nFID)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRPCIDSKLayer::TestCapability(const char *pszCap)
+int OGRPCIDSKLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))
@@ -476,10 +476,11 @@ GIntBig OGRPCIDSKLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /************************************************************************/
 
-OGRErr OGRPCIDSKLayer::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr OGRPCIDSKLayer::IGetExtent(int /*iGeomField*/, OGREnvelope *psExtent,
+                                  bool bForce)
 
 {
     if (!bForce)

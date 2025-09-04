@@ -13,8 +13,10 @@
  ****************************************************************************/
 
 #include "cpl_port.h"
+#include "cpl_float.h"
 #include "gdal_priv.h"
 
+#include <cassert>
 #include <climits>
 #include <cmath>
 #include <cstdarg>
@@ -30,6 +32,7 @@
 
 #include "cpl_conv.h"
 #include "cpl_error.h"
+#include "cpl_float.h"
 #include "cpl_progress.h"
 #include "cpl_string.h"
 #include "cpl_virtualmem.h"
@@ -38,6 +41,7 @@
 #include "gdal_rat.h"
 #include "gdal_priv_templates.hpp"
 #include "gdal_interpolateatpoint.h"
+#include "gdal_minmax_element.hpp"
 
 /************************************************************************/
 /*                           GDALRasterBand()                           */
@@ -330,7 +334,8 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
         INIT_RASTERIO_EXTRA_ARG(sExtraArg);
         psExtraArg = &sExtraArg;
     }
-    else if (psExtraArg->nVersion != RASTERIO_EXTRA_ARG_CURRENT_VERSION)
+    else if (CPL_UNLIKELY(psExtraArg->nVersion >
+                          RASTERIO_EXTRA_ARG_CURRENT_VERSION))
     {
         ReportError(CE_Failure, CPLE_AppDefined,
                     "Unhandled version of GDALRasterIOExtraArg");
@@ -340,7 +345,7 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     GDALRasterIOExtraArgSetResampleAlg(psExtraArg, nXSize, nYSize, nBufXSize,
                                        nBufYSize);
 
-    if (nullptr == pData)
+    if (CPL_UNLIKELY(nullptr == pData))
     {
         ReportError(CE_Failure, CPLE_AppDefined,
                     "The buffer into which the data should be read is null");
@@ -351,7 +356,8 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     /*      Some size values are "noop".  Lets just return to avoid         */
     /*      stressing lower level functions.                                */
     /* -------------------------------------------------------------------- */
-    if (nXSize < 1 || nYSize < 1 || nBufXSize < 1 || nBufYSize < 1)
+    if (CPL_UNLIKELY(nXSize < 1 || nYSize < 1 || nBufXSize < 1 ||
+                     nBufYSize < 1))
     {
         CPLDebug("GDAL",
                  "RasterIO() skipped for odd window or buffer size.\n"
@@ -364,7 +370,7 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 
     if (eRWFlag == GF_Write)
     {
-        if (eFlushBlockErr != CE_None)
+        if (CPL_UNLIKELY(eFlushBlockErr != CE_None))
         {
             ReportError(eFlushBlockErr, CPLE_AppDefined,
                         "An error occurred while writing a dirty block "
@@ -373,11 +379,8 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
             eFlushBlockErr = CE_None;
             return eErr;
         }
-        if (eAccess != GA_Update)
+        if (EmitErrorMessageIfWriteNotSupported("GDALRasterBand::RasterIO()"))
         {
-            ReportError(CE_Failure, CPLE_AppDefined,
-                        "Write operation not permitted on dataset opened "
-                        "in read-only mode");
             return CE_Failure;
         }
     }
@@ -399,9 +402,9 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     /* -------------------------------------------------------------------- */
     /*      Do some validation of parameters.                               */
     /* -------------------------------------------------------------------- */
-    if (nXOff < 0 || nXOff > INT_MAX - nXSize ||
-        nXOff + nXSize > nRasterXSize || nYOff < 0 ||
-        nYOff > INT_MAX - nYSize || nYOff + nYSize > nRasterYSize)
+    if (CPL_UNLIKELY(nXOff < 0 || nXOff > INT_MAX - nXSize ||
+                     nXOff + nXSize > nRasterXSize || nYOff < 0 ||
+                     nYOff > INT_MAX - nYSize || nYOff + nYSize > nRasterYSize))
     {
         ReportError(CE_Failure, CPLE_IllegalArg,
                     "Access window out of range in RasterIO().  Requested\n"
@@ -410,7 +413,7 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
         return CE_Failure;
     }
 
-    if (eRWFlag != GF_Read && eRWFlag != GF_Write)
+    if (CPL_UNLIKELY(eRWFlag != GF_Read && eRWFlag != GF_Write))
     {
         ReportError(
             CE_Failure, CPLE_IllegalArg,
@@ -418,7 +421,27 @@ CPLErr GDALRasterBand::RasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
             eRWFlag);
         return CE_Failure;
     }
+    if (CPL_UNLIKELY(eBufType == GDT_Unknown || eBufType == GDT_TypeCount))
+    {
+        ReportError(CE_Failure, CPLE_IllegalArg,
+                    "Illegal GDT_Unknown/GDT_TypeCount argument");
+        return CE_Failure;
+    }
 
+    return RasterIOInternal(eRWFlag, nXOff, nYOff, nXSize, nYSize, pData,
+                            nBufXSize, nBufYSize, eBufType, nPixelSpace,
+                            nLineSpace, psExtraArg);
+}
+
+/************************************************************************/
+/*                         RasterIOInternal()                           */
+/************************************************************************/
+
+CPLErr GDALRasterBand::RasterIOInternal(
+    GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize, int nYSize,
+    void *pData, int nBufXSize, int nBufYSize, GDALDataType eBufType,
+    GSpacing nPixelSpace, GSpacing nLineSpace, GDALRasterIOExtraArg *psExtraArg)
+{
     /* -------------------------------------------------------------------- */
     /*      Call the format specific function.                              */
     /* -------------------------------------------------------------------- */
@@ -520,6 +543,7 @@ DEFINE_GetGDTFromCppType(uint32_t, GDT_UInt32);
 DEFINE_GetGDTFromCppType(int32_t, GDT_Int32);
 DEFINE_GetGDTFromCppType(uint64_t, GDT_UInt64);
 DEFINE_GetGDTFromCppType(int64_t, GDT_Int64);
+DEFINE_GetGDTFromCppType(GFloat16, GDT_Float16);
 DEFINE_GetGDTFromCppType(float, GDT_Float32);
 DEFINE_GetGDTFromCppType(double, GDT_Float64);
 // Not allowed by C++ standard
@@ -716,25 +740,10 @@ CPLErr GDALRasterBand::ReadRaster(T *pData, size_t nArrayEltCount,
 
     GDALRasterBand *pThis = const_cast<GDALRasterBand *>(this);
 
-    const bool bCallLeaveReadWrite =
-        CPL_TO_BOOL(pThis->EnterReadWrite(GF_Read));
-    CPLErr eErr;
-    // coverity[identical_branches]
-    if (bForceCachedIO)
-        eErr = pThis->GDALRasterBand::IRasterIO(
-            GF_Read, nXOff, nYOff, nXSize, nYSize, pData,
-            static_cast<int>(nBufXSize), static_cast<int>(nBufYSize), eBufType,
-            nPixelSpace, nLineSpace, &sExtraArg);
-    else
-        eErr = pThis->IRasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize, pData,
-                                static_cast<int>(nBufXSize),
-                                static_cast<int>(nBufYSize), eBufType,
-                                nPixelSpace, nLineSpace, &sExtraArg);
-
-    if (bCallLeaveReadWrite)
-        pThis->LeaveReadWrite();
-
-    return eErr;
+    return pThis->RasterIOInternal(GF_Read, nXOff, nYOff, nXSize, nYSize, pData,
+                                   static_cast<int>(nBufXSize),
+                                   static_cast<int>(nBufYSize), eBufType,
+                                   nPixelSpace, nLineSpace, &sExtraArg);
 }
 
 //! @cond Doxygen_Suppress
@@ -754,6 +763,7 @@ INSTANTIATE_READ_RASTER(uint32_t)
 INSTANTIATE_READ_RASTER(int32_t)
 INSTANTIATE_READ_RASTER(uint64_t)
 INSTANTIATE_READ_RASTER(int64_t)
+INSTANTIATE_READ_RASTER(GFloat16)
 INSTANTIATE_READ_RASTER(float)
 INSTANTIATE_READ_RASTER(double)
 // Not allowed by C++ standard
@@ -945,26 +955,10 @@ CPLErr GDALRasterBand::ReadRaster(std::vector<T> &vData, double dfXOff,
 
     GDALRasterBand *pThis = const_cast<GDALRasterBand *>(this);
 
-    const bool bCallLeaveReadWrite =
-        CPL_TO_BOOL(pThis->EnterReadWrite(GF_Read));
-
-    CPLErr eErr;
-    // coverity[identical_branches]
-    if (bForceCachedIO)
-        eErr = pThis->GDALRasterBand::IRasterIO(
-            GF_Read, nXOff, nYOff, nXSize, nYSize, vData.data(),
-            static_cast<int>(nBufXSize), static_cast<int>(nBufYSize), eBufType,
-            nPixelSpace, nLineSpace, &sExtraArg);
-    else
-        eErr = pThis->IRasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize,
-                                vData.data(), static_cast<int>(nBufXSize),
-                                static_cast<int>(nBufYSize), eBufType,
-                                nPixelSpace, nLineSpace, &sExtraArg);
-
-    if (bCallLeaveReadWrite)
-        pThis->LeaveReadWrite();
-
-    return eErr;
+    return pThis->RasterIOInternal(GF_Read, nXOff, nYOff, nXSize, nYSize,
+                                   vData.data(), static_cast<int>(nBufXSize),
+                                   static_cast<int>(nBufYSize), eBufType,
+                                   nPixelSpace, nLineSpace, &sExtraArg);
 }
 
 //! @cond Doxygen_Suppress
@@ -984,6 +978,7 @@ INSTANTIATE_READ_RASTER_VECTOR(uint32_t)
 INSTANTIATE_READ_RASTER_VECTOR(int32_t)
 INSTANTIATE_READ_RASTER_VECTOR(uint64_t)
 INSTANTIATE_READ_RASTER_VECTOR(int64_t)
+INSTANTIATE_READ_RASTER_VECTOR(GFloat16)
 INSTANTIATE_READ_RASTER_VECTOR(float)
 INSTANTIATE_READ_RASTER_VECTOR(double)
 // Not allowed by C++ standard
@@ -1026,8 +1021,8 @@ INSTANTIATE_READ_RASTER_VECTOR(std::complex<double>)
      int nXBlockSize, nYBlockSize;
 
      poBand->GetBlockSize( &nXBlockSize, &nYBlockSize );
-     int nXBlocks = (poBand->GetXSize() + nXBlockSize - 1) / nXBlockSize;
-     int nYBlocks = (poBand->GetYSize() + nYBlockSize - 1) / nYBlockSize;
+     int nXBlocks = DIV_ROUND_UP(poBand->GetXSize(), nXBlockSize);
+     int nYBlocks = DIV_ROUND_UP(poBand->GetYSize(), nYBlockSize);
 
      GByte *pabyData = (GByte *) CPLMalloc(nXBlockSize * nYBlockSize);
 
@@ -1238,13 +1233,9 @@ CPLErr GDALRasterBand::WriteBlock(int nXBlockOff, int nYBlockOff, void *pImage)
         return (CE_Failure);
     }
 
-    if (eAccess == GA_ReadOnly)
+    if (EmitErrorMessageIfWriteNotSupported("GDALRasterBand::WriteBlock()"))
     {
-        ReportError(CE_Failure, CPLE_NoWriteAccess,
-                    "Attempt to write to read only dataset in"
-                    "GDALRasterBand::WriteBlock().\n");
-
-        return (CE_Failure);
+        return CE_Failure;
     }
 
     if (eFlushBlockErr != CE_None)
@@ -1287,6 +1278,33 @@ CPLErr CPL_STDCALL GDALWriteBlock(GDALRasterBandH hBand, int nXOff, int nYOff,
 
     GDALRasterBand *poBand = GDALRasterBand::FromHandle(hBand);
     return (poBand->WriteBlock(nXOff, nYOff, pData));
+}
+
+/************************************************************************/
+/*                   EmitErrorMessageIfWriteNotSupported()              */
+/************************************************************************/
+
+/**
+ * Emit an error message if a write operation to this band is not supported.
+ *
+ * The base implementation will emit an error message if the access mode is
+ * read-only. Derived classes may implement it to provide a custom message.
+ *
+ * @param pszCaller Calling function.
+ * @return true if an error message has been emitted.
+ */
+bool GDALRasterBand::EmitErrorMessageIfWriteNotSupported(
+    const char *pszCaller) const
+{
+    if (eAccess == GA_ReadOnly)
+    {
+        ReportError(CE_Failure, CPLE_NoWriteAccess,
+                    "%s: attempt to write to dataset opened in read-only mode.",
+                    pszCaller);
+
+        return true;
+    }
+    return false;
 }
 
 /************************************************************************/
@@ -2069,11 +2087,8 @@ CPLErr GDALRasterBand::Fill(double dfRealValue, double dfImaginaryValue)
     // file.)
 
     // Check we can write to the file.
-    if (eAccess == GA_ReadOnly)
+    if (EmitErrorMessageIfWriteNotSupported("GDALRasterBand::Fill()"))
     {
-        ReportError(CE_Failure, CPLE_NoWriteAccess,
-                    "Attempt to write to read only dataset in "
-                    "GDALRasterBand::Fill().");
         return CE_Failure;
     }
 
@@ -2464,6 +2479,115 @@ uint64_t CPL_STDCALL GDALGetRasterNoDataValueAsUInt64(GDALRasterBandH hBand,
 }
 
 /************************************************************************/
+/*                        SetNoDataValueAsString()                      */
+/************************************************************************/
+
+/**
+ * \brief Set the no data value for this band.
+ *
+ * Depending on drivers, changing the no data value may or may not have an
+ * effect on the pixel values of a raster that has just been created. It is
+ * thus advised to explicitly called Fill() if the intent is to initialize
+ * the raster to the nodata value.
+ * In any case, changing an existing no data value, when one already exists and
+ * the dataset exists or has been initialized, has no effect on the pixel whose
+ * value matched the previous nodata value.
+ *
+ * To clear the nodata value, use DeleteNoDataValue().
+ *
+ * @param pszNoData the value to set.
+ * @param[out] pbCannotBeExactlyRepresented Pointer to a boolean, or nullptr.
+ *             If the value cannot be exactly represented on the output data
+ *             type, *pbCannotBeExactlyRepresented will be set to true.
+ *
+ * @return CE_None on success, or CE_Failure on failure.  If unsupported
+ * by the driver, CE_Failure is returned but no error message will have
+ * been emitted.
+ *
+ * @since 3.11
+ */
+
+CPLErr
+GDALRasterBand::SetNoDataValueAsString(const char *pszNoData,
+                                       bool *pbCannotBeExactlyRepresented)
+{
+    if (pbCannotBeExactlyRepresented)
+        *pbCannotBeExactlyRepresented = false;
+    if (eDataType == GDT_Int64)
+    {
+        if (strchr(pszNoData, '.') ||
+            CPLGetValueType(pszNoData) == CPL_VALUE_STRING)
+        {
+            char *endptr = nullptr;
+            const double dfVal = CPLStrtod(pszNoData, &endptr);
+            if (endptr == pszNoData + strlen(pszNoData) &&
+                GDALIsValueExactAs<int64_t>(dfVal))
+            {
+                return SetNoDataValueAsInt64(static_cast<int64_t>(dfVal));
+            }
+        }
+        else
+        {
+            try
+            {
+                const auto val = std::stoll(pszNoData);
+                return SetNoDataValueAsInt64(static_cast<int64_t>(val));
+            }
+            catch (const std::exception &)
+            {
+            }
+        }
+    }
+    else if (eDataType == GDT_UInt64)
+    {
+        if (strchr(pszNoData, '.') ||
+            CPLGetValueType(pszNoData) == CPL_VALUE_STRING)
+        {
+            char *endptr = nullptr;
+            const double dfVal = CPLStrtod(pszNoData, &endptr);
+            if (endptr == pszNoData + strlen(pszNoData) &&
+                GDALIsValueExactAs<uint64_t>(dfVal))
+            {
+                return SetNoDataValueAsUInt64(static_cast<uint64_t>(dfVal));
+            }
+        }
+        else
+        {
+            try
+            {
+                const auto val = std::stoull(pszNoData);
+                return SetNoDataValueAsUInt64(static_cast<uint64_t>(val));
+            }
+            catch (const std::exception &)
+            {
+            }
+        }
+    }
+    else if (eDataType == GDT_Float32)
+    {
+        char *endptr = nullptr;
+        const float fVal = CPLStrtof(pszNoData, &endptr);
+        if (endptr == pszNoData + strlen(pszNoData))
+        {
+            return SetNoDataValue(fVal);
+        }
+    }
+    else
+    {
+        char *endptr = nullptr;
+        const double dfVal = CPLStrtod(pszNoData, &endptr);
+        if (endptr == pszNoData + strlen(pszNoData) &&
+            GDALIsValueExactAs(dfVal, eDataType))
+        {
+            return SetNoDataValue(dfVal);
+        }
+    }
+    if (pbCannotBeExactlyRepresented)
+        *pbCannotBeExactlyRepresented = true;
+    return CE_Failure;
+}
+
+/************************************************************************/
 /*                           SetNoDataValue()                           */
 /************************************************************************/
 
@@ -2490,7 +2614,7 @@ uint64_t CPL_STDCALL GDALGetRasterNoDataValueAsUInt64(GDALRasterBandH hBand,
  * @param dfNoData the value to set.
  *
  * @return CE_None on success, or CE_Failure on failure.  If unsupported
- * by the driver, CE_Failure is returned by no error message will have
+ * by the driver, CE_Failure is returned but no error message will have
  * been emitted.
  */
 
@@ -2563,7 +2687,7 @@ CPLErr CPL_STDCALL GDALSetRasterNoDataValue(GDALRasterBandH hBand,
  * @param nNoDataValue the value to set.
  *
  * @return CE_None on success, or CE_Failure on failure.  If unsupported
- * by the driver, CE_Failure is returned by no error message will have
+ * by the driver, CE_Failure is returned but no error message will have
  * been emitted.
  *
  * @since GDAL 3.5
@@ -2635,7 +2759,7 @@ CPLErr CPL_STDCALL GDALSetRasterNoDataValueAsInt64(GDALRasterBandH hBand,
  * @param nNoDataValue the value to set.
  *
  * @return CE_None on success, or CE_Failure on failure.  If unsupported
- * by the driver, CE_Failure is returned by no error message will have
+ * by the driver, CE_Failure is returned but no error message will have
  * been emitted.
  *
  * @since GDAL 3.5
@@ -2693,7 +2817,7 @@ CPLErr CPL_STDCALL GDALSetRasterNoDataValueAsUInt64(GDALRasterBandH hBand,
  * This method is the same as the C function GDALDeleteRasterNoDataValue().
  *
  * @return CE_None on success, or CE_Failure on failure.  If unsupported
- * by the driver, CE_Failure is returned by no error message will have
+ * by the driver, CE_Failure is returned but no error message will have
  * been emitted.
  *
  * @since GDAL 2.1
@@ -2801,6 +2925,10 @@ double GDALRasterBand::GetMaximum(int *pbSuccess)
         case GDT_UInt64:
             return static_cast<double>(std::numeric_limits<GUInt64>::max());
 
+        case GDT_Float16:
+        case GDT_CFloat16:
+            return 65504.0;
+
         case GDT_Float32:
         case GDT_CFloat32:
             return 4294967295.0;  // Not actually accurate.
@@ -2902,10 +3030,14 @@ double GDALRasterBand::GetMinimum(int *pbSuccess)
             return 0;
 
         case GDT_Int64:
-            return static_cast<double>(std::numeric_limits<GInt64>::min());
+            return static_cast<double>(std::numeric_limits<GInt64>::lowest());
 
         case GDT_UInt64:
             return 0;
+
+        case GDT_Float16:
+        case GDT_CFloat16:
+            return -65504.0;
 
         case GDT_Float32:
         case GDT_CFloat32:
@@ -3862,6 +3994,28 @@ GDALDatasetH CPL_STDCALL GDALGetBandDataset(GDALRasterBandH hBand)
 }
 
 /************************************************************************/
+/*                        ComputeFloat16NoDataValue()                     */
+/************************************************************************/
+
+static inline void ComputeFloat16NoDataValue(GDALDataType eDataType,
+                                             double dfNoDataValue,
+                                             int &bGotNoDataValue,
+                                             GFloat16 &fNoDataValue,
+                                             bool &bGotFloat16NoDataValue)
+{
+    if (eDataType == GDT_Float16 && bGotNoDataValue)
+    {
+        dfNoDataValue = GDALAdjustNoDataCloseToFloatMax(dfNoDataValue);
+        if (GDALIsValueInRange<GFloat16>(dfNoDataValue))
+        {
+            fNoDataValue = static_cast<GFloat16>(dfNoDataValue);
+            bGotFloat16NoDataValue = true;
+            bGotNoDataValue = false;
+        }
+    }
+}
+
+/************************************************************************/
 /*                        ComputeFloatNoDataValue()                     */
 /************************************************************************/
 
@@ -3881,6 +4035,100 @@ static inline void ComputeFloatNoDataValue(GDALDataType eDataType,
             bGotNoDataValue = false;
         }
     }
+}
+
+/************************************************************************/
+/*                        struct GDALNoDataValues                       */
+/************************************************************************/
+
+/**
+ * \brief No-data-values for all types
+ *
+ * The functions below pass various no-data-values around. To avoid
+ * long argument lists, this struct collects the no-data-values for
+ * all types into a single, convenient place.
+ **/
+
+struct GDALNoDataValues
+{
+    int bGotNoDataValue;
+    double dfNoDataValue;
+
+    bool bGotInt64NoDataValue;
+    int64_t nInt64NoDataValue;
+
+    bool bGotUInt64NoDataValue;
+    uint64_t nUInt64NoDataValue;
+
+    bool bGotFloatNoDataValue;
+    float fNoDataValue;
+
+    bool bGotFloat16NoDataValue;
+    GFloat16 hfNoDataValue;
+
+    GDALNoDataValues(GDALRasterBand *poRasterBand, GDALDataType eDataType)
+        : bGotNoDataValue(FALSE), dfNoDataValue(0.0),
+          bGotInt64NoDataValue(false), nInt64NoDataValue(0),
+          bGotUInt64NoDataValue(false), nUInt64NoDataValue(0),
+          bGotFloatNoDataValue(false), fNoDataValue(0.0f),
+          bGotFloat16NoDataValue(false), hfNoDataValue(GFloat16(0.0f))
+    {
+        if (eDataType == GDT_Int64)
+        {
+            int nGot = false;
+            nInt64NoDataValue = poRasterBand->GetNoDataValueAsInt64(&nGot);
+            bGotInt64NoDataValue = CPL_TO_BOOL(nGot);
+            if (bGotInt64NoDataValue)
+            {
+                dfNoDataValue = static_cast<double>(nInt64NoDataValue);
+                bGotNoDataValue =
+                    nInt64NoDataValue <=
+                        std::numeric_limits<int64_t>::max() - 1024 &&
+                    static_cast<int64_t>(dfNoDataValue) == nInt64NoDataValue;
+            }
+            else
+                dfNoDataValue = poRasterBand->GetNoDataValue(&bGotNoDataValue);
+        }
+        else if (eDataType == GDT_UInt64)
+        {
+            int nGot = false;
+            nUInt64NoDataValue = poRasterBand->GetNoDataValueAsUInt64(&nGot);
+            bGotUInt64NoDataValue = CPL_TO_BOOL(nGot);
+            if (bGotUInt64NoDataValue)
+            {
+                dfNoDataValue = static_cast<double>(nUInt64NoDataValue);
+                bGotNoDataValue =
+                    nUInt64NoDataValue <=
+                        std::numeric_limits<uint64_t>::max() - 2048 &&
+                    static_cast<uint64_t>(dfNoDataValue) == nUInt64NoDataValue;
+            }
+            else
+                dfNoDataValue = poRasterBand->GetNoDataValue(&bGotNoDataValue);
+        }
+        else
+        {
+            dfNoDataValue = poRasterBand->GetNoDataValue(&bGotNoDataValue);
+            bGotNoDataValue = bGotNoDataValue && !std::isnan(dfNoDataValue);
+
+            ComputeFloatNoDataValue(eDataType, dfNoDataValue, bGotNoDataValue,
+                                    fNoDataValue, bGotFloatNoDataValue);
+
+            ComputeFloat16NoDataValue(eDataType, dfNoDataValue, bGotNoDataValue,
+                                      hfNoDataValue, bGotFloat16NoDataValue);
+        }
+    }
+};
+
+/************************************************************************/
+/*                            ARE_REAL_EQUAL()                          */
+/************************************************************************/
+
+inline bool ARE_REAL_EQUAL(GFloat16 dfVal1, GFloat16 dfVal2, int ulp = 2)
+{
+    using std::abs;
+    return dfVal1 == dfVal2 || /* Should cover infinity */
+           abs(dfVal1 - dfVal2) < cpl::NumericLimits<GFloat16>::epsilon() *
+                                      abs(dfVal1 + dfVal2) * ulp;
 }
 
 /************************************************************************/
@@ -3986,18 +4234,12 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
     }
     memset(panHistogram, 0, sizeof(GUIntBig) * nBuckets);
 
-    int bGotNoDataValue = FALSE;
-    const double dfNoDataValue = GetNoDataValue(&bGotNoDataValue);
-    bGotNoDataValue = bGotNoDataValue && !std::isnan(dfNoDataValue);
-    bool bGotFloatNoDataValue = false;
-    float fNoDataValue = 0.0f;
-    ComputeFloatNoDataValue(eDataType, dfNoDataValue, bGotNoDataValue,
-                            fNoDataValue, bGotFloatNoDataValue);
+    GDALNoDataValues sNoDataValues(this, eDataType);
     GDALRasterBand *poMaskBand = nullptr;
-    if (!bGotNoDataValue)
+    if (!sNoDataValues.bGotNoDataValue)
     {
         const int l_nMaskFlags = GetMaskFlags();
-        if (l_nMaskFlags != GMF_ALL_VALID && l_nMaskFlags != GMF_NODATA &&
+        if (l_nMaskFlags != GMF_ALL_VALID &&
             GetColorInterpretation() != GCI_AlphaBand)
         {
             poMaskBand = GetMaskBand();
@@ -4121,13 +4363,27 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                         dfValue = static_cast<double>(
                             static_cast<GInt64 *>(pData)[iOffset]);
                         break;
+                    case GDT_Float16:
+                    {
+                        using namespace std;
+                        const GFloat16 hfValue =
+                            static_cast<GFloat16 *>(pData)[iOffset];
+                        if (isnan(hfValue) ||
+                            (sNoDataValues.bGotFloat16NoDataValue &&
+                             ARE_REAL_EQUAL(hfValue,
+                                            sNoDataValues.hfNoDataValue)))
+                            continue;
+                        dfValue = hfValue;
+                        break;
+                    }
                     case GDT_Float32:
                     {
                         const float fValue =
                             static_cast<float *>(pData)[iOffset];
                         if (std::isnan(fValue) ||
-                            (bGotFloatNoDataValue &&
-                             ARE_REAL_EQUAL(fValue, fNoDataValue)))
+                            (sNoDataValues.bGotFloatNoDataValue &&
+                             ARE_REAL_EQUAL(fValue,
+                                            sNoDataValues.fNoDataValue)))
                             continue;
                         dfValue = fValue;
                         break;
@@ -4159,6 +4415,17 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                         dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
                     }
                     break;
+                    case GDT_CFloat16:
+                    {
+                        const double dfReal =
+                            static_cast<GFloat16 *>(pData)[iOffset * 2];
+                        const double dfImag =
+                            static_cast<GFloat16 *>(pData)[iOffset * 2 + 1];
+                        if (std::isnan(dfReal) || std::isnan(dfImag))
+                            continue;
+                        dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                        break;
+                    }
                     case GDT_CFloat32:
                     {
                         const double dfReal =
@@ -4168,8 +4435,8 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                         if (std::isnan(dfReal) || std::isnan(dfImag))
                             continue;
                         dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                        break;
                     }
-                    break;
                     case GDT_CFloat64:
                     {
                         const double dfReal =
@@ -4179,15 +4446,16 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                         if (std::isnan(dfReal) || std::isnan(dfImag))
                             continue;
                         dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                        break;
                     }
-                    break;
                     case GDT_Unknown:
                     case GDT_TypeCount:
                         CPLAssert(false);
                 }
 
-                if (eDataType != GDT_Float32 && bGotNoDataValue &&
-                    ARE_REAL_EQUAL(dfValue, dfNoDataValue))
+                if (eDataType != GDT_Float16 && eDataType != GDT_Float32 &&
+                    sNoDataValues.bGotNoDataValue &&
+                    ARE_REAL_EQUAL(dfValue, sNoDataValues.dfNoDataValue))
                     continue;
 
                 // Given that dfValue and dfMin are not NaN, and dfScale > 0 and
@@ -4272,15 +4540,6 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
             const int iYBlock = static_cast<int>(iSampleBlock / nBlocksPerRow);
             const int iXBlock = static_cast<int>(iSampleBlock % nBlocksPerRow);
 
-            GDALRasterBlock *poBlock = GetLockedBlockRef(iXBlock, iYBlock);
-            if (poBlock == nullptr)
-            {
-                CPLFree(pabyMaskData);
-                return CE_Failure;
-            }
-
-            void *pData = poBlock->GetDataRef();
-
             int nXCheck = 0, nYCheck = 0;
             GetActualBlockSize(iXBlock, iYBlock, &nXCheck, &nYCheck);
 
@@ -4291,9 +4550,17 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                                      0, nBlockXSize, nullptr) != CE_None)
             {
                 CPLFree(pabyMaskData);
-                poBlock->DropLock();
                 return CE_Failure;
             }
+
+            GDALRasterBlock *poBlock = GetLockedBlockRef(iXBlock, iYBlock);
+            if (poBlock == nullptr)
+            {
+                CPLFree(pabyMaskData);
+                return CE_Failure;
+            }
+
+            void *pData = poBlock->GetDataRef();
 
             // this is a special case for a common situation.
             if (eDataType == GDT_Byte && !bSignedByte && dfScale == 1.0 &&
@@ -4308,8 +4575,9 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                 {
                     if (pabyMaskData && pabyMaskData[i] == 0)
                         continue;
-                    if (!(bGotNoDataValue &&
-                          (pabyData[i] == static_cast<GByte>(dfNoDataValue))))
+                    if (!(sNoDataValues.bGotNoDataValue &&
+                          (pabyData[i] ==
+                           static_cast<GByte>(sNoDataValues.dfNoDataValue))))
                     {
                         panHistogram[pabyData[i]]++;
                     }
@@ -4366,13 +4634,27 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                             dfValue = static_cast<double>(
                                 static_cast<GInt64 *>(pData)[iOffset]);
                             break;
+                        case GDT_Float16:
+                        {
+                            using namespace std;
+                            const GFloat16 hfValue =
+                                static_cast<GFloat16 *>(pData)[iOffset];
+                            if (isnan(hfValue) ||
+                                (sNoDataValues.bGotFloat16NoDataValue &&
+                                 ARE_REAL_EQUAL(hfValue,
+                                                sNoDataValues.hfNoDataValue)))
+                                continue;
+                            dfValue = hfValue;
+                            break;
+                        }
                         case GDT_Float32:
                         {
                             const float fValue =
                                 static_cast<float *>(pData)[iOffset];
                             if (std::isnan(fValue) ||
-                                (bGotFloatNoDataValue &&
-                                 ARE_REAL_EQUAL(fValue, fNoDataValue)))
+                                (sNoDataValues.bGotFloatNoDataValue &&
+                                 ARE_REAL_EQUAL(fValue,
+                                                sNoDataValues.fNoDataValue)))
                                 continue;
                             dfValue = fValue;
                             break;
@@ -4389,8 +4671,8 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                             double dfImag =
                                 static_cast<GInt16 *>(pData)[iOffset * 2 + 1];
                             dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                            break;
                         }
-                        break;
                         case GDT_CInt32:
                         {
                             double dfReal =
@@ -4398,8 +4680,19 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                             double dfImag =
                                 static_cast<GInt32 *>(pData)[iOffset * 2 + 1];
                             dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                            break;
                         }
-                        break;
+                        case GDT_CFloat16:
+                        {
+                            double dfReal =
+                                static_cast<GFloat16 *>(pData)[iOffset * 2];
+                            double dfImag =
+                                static_cast<GFloat16 *>(pData)[iOffset * 2 + 1];
+                            if (std::isnan(dfReal) || std::isnan(dfImag))
+                                continue;
+                            dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                            break;
+                        }
                         case GDT_CFloat32:
                         {
                             double dfReal =
@@ -4409,8 +4702,8 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                             if (std::isnan(dfReal) || std::isnan(dfImag))
                                 continue;
                             dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                            break;
                         }
-                        break;
                         case GDT_CFloat64:
                         {
                             double dfReal =
@@ -4420,8 +4713,8 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                             if (std::isnan(dfReal) || std::isnan(dfImag))
                                 continue;
                             dfValue = sqrt(dfReal * dfReal + dfImag * dfImag);
+                            break;
                         }
-                        break;
                         case GDT_Unknown:
                         case GDT_TypeCount:
                             CPLAssert(false);
@@ -4429,8 +4722,9 @@ CPLErr GDALRasterBand::GetHistogram(double dfMin, double dfMax, int nBuckets,
                             return CE_Failure;
                     }
 
-                    if (eDataType != GDT_Float32 && bGotNoDataValue &&
-                        ARE_REAL_EQUAL(dfValue, dfNoDataValue))
+                    if (eDataType != GDT_Float16 && eDataType != GDT_Float32 &&
+                        sNoDataValues.bGotNoDataValue &&
+                        ARE_REAL_EQUAL(dfValue, sNoDataValues.dfNoDataValue))
                         continue;
 
                     // Given that dfValue and dfMin are not NaN, and dfScale > 0
@@ -4608,7 +4902,7 @@ CPLErr GDALRasterBand::GetDefaultHistogram(double *pdfMin, double *pdfMax,
     if (!bForce)
         return CE_Warning;
 
-    const int nBuckets = 256;
+    int nBuckets = 256;
 
     bool bSignedByte = false;
     if (eDataType == GDT_Byte)
@@ -4626,17 +4920,31 @@ CPLErr GDALRasterBand::GetDefaultHistogram(double *pdfMin, double *pdfMax,
         *pdfMin = -0.5;
         *pdfMax = 255.5;
     }
+    else if (GetRasterDataType() == GDT_Int8)
+    {
+        *pdfMin = -128 - 0.5;
+        *pdfMax = 127 + 0.5;
+    }
     else
     {
 
         const CPLErr eErr =
             GetStatistics(TRUE, TRUE, pdfMin, pdfMax, nullptr, nullptr);
-        const double dfHalfBucket = (*pdfMax - *pdfMin) / (2 * (nBuckets - 1));
-        *pdfMin -= dfHalfBucket;
-        *pdfMax += dfHalfBucket;
-
         if (eErr != CE_None)
             return eErr;
+        if (*pdfMin == *pdfMax)
+        {
+            nBuckets = 1;
+            *pdfMin -= 0.5;
+            *pdfMax += 0.5;
+        }
+        else
+        {
+            const double dfHalfBucket =
+                (*pdfMax - *pdfMin) / (2 * (nBuckets - 1));
+            *pdfMin -= dfHalfBucket;
+            *pdfMax += dfHalfBucket;
+        }
     }
 
     *ppanHistogram =
@@ -4978,8 +5286,6 @@ CPLErr CPL_STDCALL GDALGetRasterStatistics(GDALRasterBandH hBand, int bApproxOK,
                                  pdfStdDev);
 }
 
-#ifdef CPL_HAS_GINT64
-
 /************************************************************************/
 /*                         GDALUInt128                                  */
 /************************************************************************/
@@ -5125,7 +5431,7 @@ struct ComputeStatisticsInternalGeneric
                 nSampleCount += static_cast<GUIntBig>(nXCheck) * nYCheck;
             }
         }
-        else if (nMin == std::numeric_limits<T>::min() &&
+        else if (nMin == std::numeric_limits<T>::lowest() &&
                  nMax == std::numeric_limits<T>::max())
         {
             if constexpr (COMPUTE_OTHER_STATS)
@@ -6012,17 +6318,14 @@ struct ComputeStatisticsInternal<GUInt16, COMPUTE_OTHER_STATS>
 // (defined(__x86_64__) || defined(_M_X64)) && (defined(__GNUC__) ||
 // defined(_MSC_VER))
 
-#endif  // CPL_HAS_GINT64
-
 /************************************************************************/
 /*                          GetPixelValue()                             */
 /************************************************************************/
 
 static inline double GetPixelValue(GDALDataType eDataType, bool bSignedByte,
                                    const void *pData, GPtrDiff_t iOffset,
-                                   bool bGotNoDataValue, double dfNoDataValue,
-                                   bool bGotFloatNoDataValue,
-                                   float fNoDataValue, bool &bValid)
+                                   const GDALNoDataValues &sNoDataValues,
+                                   bool &bValid)
 {
     bValid = true;
     double dfValue = 0;
@@ -6059,11 +6362,27 @@ static inline double GetPixelValue(GDALDataType eDataType, bool bSignedByte,
             dfValue = static_cast<double>(
                 static_cast<const std::int64_t *>(pData)[iOffset]);
             break;
+        case GDT_Float16:
+        {
+            using namespace std;
+            const GFloat16 hfValue =
+                static_cast<const GFloat16 *>(pData)[iOffset];
+            if (isnan(hfValue) ||
+                (sNoDataValues.bGotFloat16NoDataValue &&
+                 ARE_REAL_EQUAL(hfValue, sNoDataValues.hfNoDataValue)))
+            {
+                bValid = false;
+                return 0.0;
+            }
+            dfValue = hfValue;
+            return dfValue;
+        }
         case GDT_Float32:
         {
             const float fValue = static_cast<const float *>(pData)[iOffset];
             if (std::isnan(fValue) ||
-                (bGotFloatNoDataValue && ARE_REAL_EQUAL(fValue, fNoDataValue)))
+                (sNoDataValues.bGotFloatNoDataValue &&
+                 ARE_REAL_EQUAL(fValue, sNoDataValues.fNoDataValue)))
             {
                 bValid = false;
                 return 0.0;
@@ -6084,6 +6403,14 @@ static inline double GetPixelValue(GDALDataType eDataType, bool bSignedByte,
             break;
         case GDT_CInt32:
             dfValue = static_cast<const GInt32 *>(pData)[iOffset * 2];
+            break;
+        case GDT_CFloat16:
+            dfValue = static_cast<const GFloat16 *>(pData)[iOffset * 2];
+            if (std::isnan(dfValue))
+            {
+                bValid = false;
+                return 0.0;
+            }
             break;
         case GDT_CFloat32:
             dfValue = static_cast<const float *>(pData)[iOffset * 2];
@@ -6107,7 +6434,8 @@ static inline double GetPixelValue(GDALDataType eDataType, bool bSignedByte,
             break;
     }
 
-    if (bGotNoDataValue && ARE_REAL_EQUAL(dfValue, dfNoDataValue))
+    if (sNoDataValues.bGotNoDataValue &&
+        ARE_REAL_EQUAL(dfValue, sNoDataValues.dfNoDataValue))
     {
         bValid = false;
         return 0.0;
@@ -6264,27 +6592,20 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
     // the difference of the sum of square values with the square of the sum.
     // dfMean and dfM2 are updated at each sample.
     // dfM2 is the sum of square of differences to the current mean.
-    double dfMin = std::numeric_limits<double>::max();
-    double dfMax = -std::numeric_limits<double>::max();
+    double dfMin = std::numeric_limits<double>::infinity();
+    double dfMax = -std::numeric_limits<double>::infinity();
     double dfMean = 0.0;
     double dfM2 = 0.0;
 
     GDALRasterIOExtraArg sExtraArg;
     INIT_RASTERIO_EXTRA_ARG(sExtraArg);
 
-    int bGotNoDataValue = FALSE;
-    const double dfNoDataValue = GetNoDataValue(&bGotNoDataValue);
-    bGotNoDataValue = bGotNoDataValue && !std::isnan(dfNoDataValue);
-    bool bGotFloatNoDataValue = false;
-    float fNoDataValue = 0.0f;
-    ComputeFloatNoDataValue(eDataType, dfNoDataValue, bGotNoDataValue,
-                            fNoDataValue, bGotFloatNoDataValue);
-
+    GDALNoDataValues sNoDataValues(this, eDataType);
     GDALRasterBand *poMaskBand = nullptr;
-    if (!bGotNoDataValue)
+    if (!sNoDataValues.bGotNoDataValue)
     {
         const int l_nMaskFlags = GetMaskFlags();
-        if (l_nMaskFlags != GMF_ALL_VALID && l_nMaskFlags != GMF_NODATA &&
+        if (l_nMaskFlags != GMF_ALL_VALID &&
             GetColorInterpretation() != GCI_AlphaBand)
         {
             poMaskBand = GetMaskBand();
@@ -6373,10 +6694,8 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
                     continue;
 
                 bool bValid = true;
-                double dfValue =
-                    GetPixelValue(eDataType, bSignedByte, pData, iOffset,
-                                  CPL_TO_BOOL(bGotNoDataValue), dfNoDataValue,
-                                  bGotFloatNoDataValue, fNoDataValue, bValid);
+                double dfValue = GetPixelValue(eDataType, bSignedByte, pData,
+                                               iOffset, sNoDataValues, bValid);
                 if (!bValid)
                     continue;
 
@@ -6384,9 +6703,17 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
                 dfMax = std::max(dfMax, dfValue);
 
                 nValidCount++;
-                const double dfDelta = dfValue - dfMean;
-                dfMean += dfDelta / nValidCount;
-                dfM2 += dfDelta * (dfValue - dfMean);
+                if (dfMin == dfMax)
+                {
+                    if (nValidCount == 1)
+                        dfMean = dfMin;
+                }
+                else
+                {
+                    const double dfDelta = dfValue - dfMean;
+                    dfMean += dfDelta / nValidCount;
+                    dfM2 += dfDelta * (dfValue - dfMean);
+                }
             }
         }
 
@@ -6422,7 +6749,6 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
         if (nSampleRate == 1)
             bApproxOK = false;
 
-#ifdef CPL_HAS_GINT64
         // Particular case for GDT_Byte that only use integral types for all
         // intermediate computations. Only possible if the number of pixels
         // explored is lower than GUINTBIG_MAX / (255*255), so that nSumSquare
@@ -6448,11 +6774,13 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
             GUIntBig nSumSquare = 0;
             // If no valid nodata, map to invalid value (256 for Byte)
             const GUInt32 nNoDataValue =
-                (bGotNoDataValue && dfNoDataValue >= 0 &&
-                 dfNoDataValue <= nMaxValueType &&
-                 fabs(dfNoDataValue -
-                      static_cast<GUInt32>(dfNoDataValue + 1e-10)) < 1e-10)
-                    ? static_cast<GUInt32>(dfNoDataValue + 1e-10)
+                (sNoDataValues.bGotNoDataValue &&
+                 sNoDataValues.dfNoDataValue >= 0 &&
+                 sNoDataValues.dfNoDataValue <= nMaxValueType &&
+                 fabs(sNoDataValues.dfNoDataValue -
+                      static_cast<GUInt32>(sNoDataValues.dfNoDataValue +
+                                           1e-10)) < 1e-10)
+                    ? static_cast<GUInt32>(sNoDataValues.dfNoDataValue + 1e-10)
                     : nMaxValueType + 1;
 
             for (GIntBig iSampleBlock = 0;
@@ -6571,7 +6899,6 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
                         "in sampling.");
             return CE_Failure;
         }
-#endif
 
         GByte *pabyMaskData = nullptr;
         if (poMaskBand)
@@ -6592,16 +6919,6 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
             const int iYBlock = static_cast<int>(iSampleBlock / nBlocksPerRow);
             const int iXBlock = static_cast<int>(iSampleBlock % nBlocksPerRow);
 
-            GDALRasterBlock *const poBlock =
-                GetLockedBlockRef(iXBlock, iYBlock);
-            if (poBlock == nullptr)
-            {
-                CPLFree(pabyMaskData);
-                return CE_Failure;
-            }
-
-            void *const pData = poBlock->GetDataRef();
-
             int nXCheck = 0, nYCheck = 0;
             GetActualBlockSize(iXBlock, iYBlock, &nXCheck, &nYCheck);
 
@@ -6612,9 +6929,18 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
                                      0, nBlockXSize, nullptr) != CE_None)
             {
                 CPLFree(pabyMaskData);
-                poBlock->DropLock();
                 return CE_Failure;
             }
+
+            GDALRasterBlock *const poBlock =
+                GetLockedBlockRef(iXBlock, iYBlock);
+            if (poBlock == nullptr)
+            {
+                CPLFree(pabyMaskData);
+                return CE_Failure;
+            }
+
+            void *const pData = poBlock->GetDataRef();
 
             // This isn't the fastest way to do this, but is easier for now.
             for (int iY = 0; iY < nYCheck; iY++)
@@ -6627,10 +6953,9 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
                         continue;
 
                     bool bValid = true;
-                    double dfValue = GetPixelValue(
-                        eDataType, bSignedByte, pData, iOffset,
-                        CPL_TO_BOOL(bGotNoDataValue), dfNoDataValue,
-                        bGotFloatNoDataValue, fNoDataValue, bValid);
+                    double dfValue =
+                        GetPixelValue(eDataType, bSignedByte, pData, iOffset,
+                                      sNoDataValues, bValid);
 
                     if (!bValid)
                         continue;
@@ -6639,9 +6964,17 @@ CPLErr GDALRasterBand::ComputeStatistics(int bApproxOK, double *pdfMin,
                     dfMax = std::max(dfMax, dfValue);
 
                     nValidCount++;
-                    const double dfDelta = dfValue - dfMean;
-                    dfMean += dfDelta / nValidCount;
-                    dfM2 += dfDelta * (dfValue - dfMean);
+                    if (dfMin == dfMax)
+                    {
+                        if (nValidCount == 1)
+                            dfMean = dfMin;
+                    }
+                    else
+                    {
+                        const double dfDelta = dfValue - dfMean;
+                        dfMean += dfDelta / nValidCount;
+                        dfM2 += dfDelta * (dfValue - dfMean);
+                    }
                 }
             }
 
@@ -6854,12 +7187,10 @@ static void ComputeMinMax(const T *buffer, size_t nElts, T nodataValue, T *pMin,
 }
 
 template <GDALDataType eDataType, bool bSignedByte>
-static void ComputeMinMaxGeneric(const void *pData, int nXCheck, int nYCheck,
-                                 int nBlockXSize, bool bGotNoDataValue,
-                                 double dfNoDataValue,
-                                 bool bGotFloatNoDataValue, float fNoDataValue,
-                                 const GByte *pabyMaskData, double &dfMin,
-                                 double &dfMax)
+static void
+ComputeMinMaxGeneric(const void *pData, int nXCheck, int nYCheck,
+                     int nBlockXSize, const GDALNoDataValues &sNoDataValues,
+                     const GByte *pabyMaskData, double &dfMin, double &dfMax)
 {
     double dfLocalMin = dfMin;
     double dfLocalMax = dfMax;
@@ -6873,9 +7204,8 @@ static void ComputeMinMaxGeneric(const void *pData, int nXCheck, int nYCheck,
             if (pabyMaskData && pabyMaskData[iOffset] == 0)
                 continue;
             bool bValid = true;
-            double dfValue = GetPixelValue(
-                eDataType, bSignedByte, pData, iOffset, bGotNoDataValue,
-                dfNoDataValue, bGotFloatNoDataValue, fNoDataValue, bValid);
+            double dfValue = GetPixelValue(eDataType, bSignedByte, pData,
+                                           iOffset, sNoDataValues, bValid);
             if (!bValid)
                 continue;
 
@@ -6890,9 +7220,8 @@ static void ComputeMinMaxGeneric(const void *pData, int nXCheck, int nYCheck,
 
 static void ComputeMinMaxGeneric(const void *pData, GDALDataType eDataType,
                                  bool bSignedByte, int nXCheck, int nYCheck,
-                                 int nBlockXSize, bool bGotNoDataValue,
-                                 double dfNoDataValue,
-                                 bool bGotFloatNoDataValue, float fNoDataValue,
+                                 int nBlockXSize,
+                                 const GDALNoDataValues &sNoDataValues,
                                  const GByte *pabyMaskData, double &dfMin,
                                  double &dfMax)
 {
@@ -6905,80 +7234,90 @@ static void ComputeMinMaxGeneric(const void *pData, GDALDataType eDataType,
             if (bSignedByte)
             {
                 ComputeMinMaxGeneric<GDT_Byte, true>(
-                    pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                    dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+                    pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                    pabyMaskData, dfMin, dfMax);
             }
             else
             {
                 ComputeMinMaxGeneric<GDT_Byte, false>(
-                    pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                    dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+                    pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                    pabyMaskData, dfMin, dfMax);
             }
             break;
         case GDT_Int8:
-            ComputeMinMaxGeneric<GDT_Int8, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_Int8, false>(pData, nXCheck, nYCheck,
+                                                  nBlockXSize, sNoDataValues,
+                                                  pabyMaskData, dfMin, dfMax);
             break;
         case GDT_UInt16:
-            ComputeMinMaxGeneric<GDT_UInt16, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_UInt16, false>(pData, nXCheck, nYCheck,
+                                                    nBlockXSize, sNoDataValues,
+                                                    pabyMaskData, dfMin, dfMax);
             break;
         case GDT_Int16:
-            ComputeMinMaxGeneric<GDT_Int16, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_Int16, false>(pData, nXCheck, nYCheck,
+                                                   nBlockXSize, sNoDataValues,
+                                                   pabyMaskData, dfMin, dfMax);
             break;
         case GDT_UInt32:
-            ComputeMinMaxGeneric<GDT_UInt32, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_UInt32, false>(pData, nXCheck, nYCheck,
+                                                    nBlockXSize, sNoDataValues,
+                                                    pabyMaskData, dfMin, dfMax);
             break;
         case GDT_Int32:
-            ComputeMinMaxGeneric<GDT_Int32, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_Int32, false>(pData, nXCheck, nYCheck,
+                                                   nBlockXSize, sNoDataValues,
+                                                   pabyMaskData, dfMin, dfMax);
             break;
         case GDT_UInt64:
-            ComputeMinMaxGeneric<GDT_UInt64, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_UInt64, false>(pData, nXCheck, nYCheck,
+                                                    nBlockXSize, sNoDataValues,
+                                                    pabyMaskData, dfMin, dfMax);
             break;
         case GDT_Int64:
-            ComputeMinMaxGeneric<GDT_Int64, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_Int64, false>(pData, nXCheck, nYCheck,
+                                                   nBlockXSize, sNoDataValues,
+                                                   pabyMaskData, dfMin, dfMax);
+            break;
+        case GDT_Float16:
+            ComputeMinMaxGeneric<GDT_Float16, false>(
+                pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                pabyMaskData, dfMin, dfMax);
             break;
         case GDT_Float32:
             ComputeMinMaxGeneric<GDT_Float32, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, false, 0,
-                bGotFloatNoDataValue, fNoDataValue, pabyMaskData, dfMin, dfMax);
+                pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                pabyMaskData, dfMin, dfMax);
             break;
         case GDT_Float64:
             ComputeMinMaxGeneric<GDT_Float64, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+                pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                pabyMaskData, dfMin, dfMax);
             break;
         case GDT_CInt16:
-            ComputeMinMaxGeneric<GDT_CInt16, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_CInt16, false>(pData, nXCheck, nYCheck,
+                                                    nBlockXSize, sNoDataValues,
+                                                    pabyMaskData, dfMin, dfMax);
             break;
         case GDT_CInt32:
-            ComputeMinMaxGeneric<GDT_CInt32, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric<GDT_CInt32, false>(pData, nXCheck, nYCheck,
+                                                    nBlockXSize, sNoDataValues,
+                                                    pabyMaskData, dfMin, dfMax);
+            break;
+        case GDT_CFloat16:
+            ComputeMinMaxGeneric<GDT_CFloat16, false>(
+                pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                pabyMaskData, dfMin, dfMax);
             break;
         case GDT_CFloat32:
             ComputeMinMaxGeneric<GDT_CFloat32, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+                pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                pabyMaskData, dfMin, dfMax);
             break;
         case GDT_CFloat64:
             ComputeMinMaxGeneric<GDT_CFloat64, false>(
-                pData, nXCheck, nYCheck, nBlockXSize, bGotNoDataValue,
-                dfNoDataValue, false, 0, pabyMaskData, dfMin, dfMax);
+                pData, nXCheck, nYCheck, nBlockXSize, sNoDataValues,
+                pabyMaskData, dfMin, dfMax);
             break;
         case GDT_TypeCount:
             CPLAssert(false);
@@ -6989,9 +7328,8 @@ static void ComputeMinMaxGeneric(const void *pData, GDALDataType eDataType,
 static bool ComputeMinMaxGenericIterBlocks(
     GDALRasterBand *poBand, GDALDataType eDataType, bool bSignedByte,
     GIntBig nTotalBlocks, int nSampleRate, int nBlocksPerRow,
-    bool bGotNoDataValue, double dfNoDataValue, bool bGotFloatNoDataValue,
-    float fNoDataValue, GDALRasterBand *poMaskBand, double &dfMin,
-    double &dfMax)
+    const GDALNoDataValues &sNoDataValues, GDALRasterBand *poMaskBand,
+    double &dfMin, double &dfMax)
 
 {
     GByte *pabyMaskData = nullptr;
@@ -7014,15 +7352,6 @@ static bool ComputeMinMaxGenericIterBlocks(
         const int iYBlock = static_cast<int>(iSampleBlock / nBlocksPerRow);
         const int iXBlock = static_cast<int>(iSampleBlock % nBlocksPerRow);
 
-        GDALRasterBlock *poBlock = poBand->GetLockedBlockRef(iXBlock, iYBlock);
-        if (poBlock == nullptr)
-        {
-            CPLFree(pabyMaskData);
-            return false;
-        }
-
-        void *const pData = poBlock->GetDataRef();
-
         int nXCheck = 0, nYCheck = 0;
         poBand->GetActualBlockSize(iXBlock, iYBlock, &nXCheck, &nYCheck);
 
@@ -7032,15 +7361,22 @@ static bool ComputeMinMaxGenericIterBlocks(
                                  pabyMaskData, nXCheck, nYCheck, GDT_Byte, 0,
                                  nBlockXSize, nullptr) != CE_None)
         {
-            poBlock->DropLock();
             CPLFree(pabyMaskData);
             return false;
         }
 
+        GDALRasterBlock *poBlock = poBand->GetLockedBlockRef(iXBlock, iYBlock);
+        if (poBlock == nullptr)
+        {
+            CPLFree(pabyMaskData);
+            return false;
+        }
+
+        void *const pData = poBlock->GetDataRef();
+
         ComputeMinMaxGeneric(pData, eDataType, bSignedByte, nXCheck, nYCheck,
-                             nBlockXSize, CPL_TO_BOOL(bGotNoDataValue),
-                             dfNoDataValue, bGotFloatNoDataValue, fNoDataValue,
-                             pabyMaskData, dfMin, dfMax);
+                             nBlockXSize, sNoDataValues, pabyMaskData, dfMin,
+                             dfMax);
 
         poBlock->DropLock();
     }
@@ -7107,19 +7443,12 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
     /* -------------------------------------------------------------------- */
     /*      Read actual data and compute minimum and maximum.               */
     /* -------------------------------------------------------------------- */
-    int bGotNoDataValue = FALSE;
-    const double dfNoDataValue = GetNoDataValue(&bGotNoDataValue);
-    bGotNoDataValue = bGotNoDataValue && !std::isnan(dfNoDataValue);
-    bool bGotFloatNoDataValue = false;
-    float fNoDataValue = 0.0f;
-    ComputeFloatNoDataValue(eDataType, dfNoDataValue, bGotNoDataValue,
-                            fNoDataValue, bGotFloatNoDataValue);
-
+    GDALNoDataValues sNoDataValues(this, eDataType);
     GDALRasterBand *poMaskBand = nullptr;
-    if (!bGotNoDataValue)
+    if (!sNoDataValues.bGotNoDataValue)
     {
         const int l_nMaskFlags = GetMaskFlags();
-        if (l_nMaskFlags != GMF_ALL_VALID && l_nMaskFlags != GMF_NODATA &&
+        if (l_nMaskFlags != GMF_ALL_VALID &&
             GetColorInterpretation() != GCI_AlphaBand)
         {
             poMaskBand = GetMaskBand();
@@ -7149,25 +7478,28 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
     GInt16 nMaxInt16 =
         std::numeric_limits<GInt16>::lowest();  // used for GInt16 case
     double dfMin =
-        std::numeric_limits<double>::max();  // used for generic code path
+        std::numeric_limits<double>::infinity();  // used for generic code path
     double dfMax =
-        -std::numeric_limits<double>::max();  // used for generic code path
+        -std::numeric_limits<double>::infinity();  // used for generic code path
     const bool bUseOptimizedPath =
         !poMaskBand && ((eDataType == GDT_Byte && !bSignedByte) ||
                         eDataType == GDT_Int16 || eDataType == GDT_UInt16);
 
     const auto ComputeMinMaxForBlock =
-        [this, bSignedByte, bGotNoDataValue, dfNoDataValue, &nMin, &nMax,
-         &nMinInt16, &nMaxInt16](const void *pData, int nXCheck,
-                                 int nBufferWidth, int nYCheck)
+        [this, bSignedByte, &sNoDataValues, &nMin, &nMax, &nMinInt16,
+         &nMaxInt16](const void *pData, int nXCheck, int nBufferWidth,
+                     int nYCheck)
     {
         if (eDataType == GDT_Byte && !bSignedByte)
         {
             const bool bHasNoData =
-                bGotNoDataValue && GDALIsValueInRange<GByte>(dfNoDataValue) &&
-                static_cast<GByte>(dfNoDataValue) == dfNoDataValue;
+                sNoDataValues.bGotNoDataValue &&
+                GDALIsValueInRange<GByte>(sNoDataValues.dfNoDataValue) &&
+                static_cast<GByte>(sNoDataValues.dfNoDataValue) ==
+                    sNoDataValues.dfNoDataValue;
             const GUInt32 nNoDataValue =
-                bHasNoData ? static_cast<GByte>(dfNoDataValue) : 0;
+                bHasNoData ? static_cast<GByte>(sNoDataValues.dfNoDataValue)
+                           : 0;
             GUIntBig nSum, nSumSquare, nSampleCount, nValidCount;  // unused
             ComputeStatisticsInternal<GByte,
                                       /* COMPUTE_OTHER_STATS = */ false>::
@@ -7178,10 +7510,13 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
         else if (eDataType == GDT_UInt16)
         {
             const bool bHasNoData =
-                bGotNoDataValue && GDALIsValueInRange<GUInt16>(dfNoDataValue) &&
-                static_cast<GUInt16>(dfNoDataValue) == dfNoDataValue;
+                sNoDataValues.bGotNoDataValue &&
+                GDALIsValueInRange<GUInt16>(sNoDataValues.dfNoDataValue) &&
+                static_cast<GUInt16>(sNoDataValues.dfNoDataValue) ==
+                    sNoDataValues.dfNoDataValue;
             const GUInt32 nNoDataValue =
-                bHasNoData ? static_cast<GUInt16>(dfNoDataValue) : 0;
+                bHasNoData ? static_cast<GUInt16>(sNoDataValues.dfNoDataValue)
+                           : 0;
             GUIntBig nSum, nSumSquare, nSampleCount, nValidCount;  // unused
             ComputeStatisticsInternal<GUInt16,
                                       /* COMPUTE_OTHER_STATS = */ false>::
@@ -7192,12 +7527,14 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
         else if (eDataType == GDT_Int16)
         {
             const bool bHasNoData =
-                bGotNoDataValue && GDALIsValueInRange<int16_t>(dfNoDataValue) &&
-                static_cast<int16_t>(dfNoDataValue) == dfNoDataValue;
+                sNoDataValues.bGotNoDataValue &&
+                GDALIsValueInRange<int16_t>(sNoDataValues.dfNoDataValue) &&
+                static_cast<int16_t>(sNoDataValues.dfNoDataValue) ==
+                    sNoDataValues.dfNoDataValue;
             if (bHasNoData)
             {
                 const int16_t nNoDataValue =
-                    static_cast<int16_t>(dfNoDataValue);
+                    static_cast<int16_t>(sNoDataValues.dfNoDataValue);
                 for (int iY = 0; iY < nYCheck; iY++)
                 {
                     ComputeMinMax<int16_t, true>(
@@ -7283,10 +7620,9 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
         }
         else
         {
-            ComputeMinMaxGeneric(
-                pData, eDataType, bSignedByte, nXReduced, nYReduced, nXReduced,
-                CPL_TO_BOOL(bGotNoDataValue), dfNoDataValue,
-                bGotFloatNoDataValue, fNoDataValue, pabyMaskData, dfMin, dfMax);
+            ComputeMinMaxGeneric(pData, eDataType, bSignedByte, nXReduced,
+                                 nYReduced, nXReduced, sNoDataValues,
+                                 pabyMaskData, dfMin, dfMax);
         }
 
         CPLFree(pData);
@@ -7354,9 +7690,7 @@ CPLErr GDALRasterBand::ComputeRasterMinMax(int bApproxOK, double *adfMinMax)
                 static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn;
             if (!ComputeMinMaxGenericIterBlocks(
                     this, eDataType, bSignedByte, nTotalBlocks, nSampleRate,
-                    nBlocksPerRow, CPL_TO_BOOL(bGotNoDataValue), dfNoDataValue,
-                    bGotFloatNoDataValue, fNoDataValue, poMaskBand, dfMin,
-                    dfMax))
+                    nBlocksPerRow, sNoDataValues, poMaskBand, dfMin, dfMax))
             {
                 return CE_Failure;
             }
@@ -7413,6 +7747,282 @@ CPLErr CPL_STDCALL GDALComputeRasterMinMax(GDALRasterBandH hBand, int bApproxOK,
 
     GDALRasterBand *poBand = GDALRasterBand::FromHandle(hBand);
     return poBand->ComputeRasterMinMax(bApproxOK, adfMinMax);
+}
+
+/************************************************************************/
+/*                    ComputeRasterMinMaxLocation()                     */
+/************************************************************************/
+
+/**
+ * \brief Compute the min/max values for a band, and their location.
+ *
+ * Pixels whose value matches the nodata value or are masked by the mask
+ * band are ignored.
+ *
+ * If the minimum or maximum value is hit in several locations, it is not
+ * specified which one will be returned.
+ *
+ * @param[out] pdfMin Pointer to the minimum value.
+ * @param[out] pdfMax Pointer to the maximum value.
+ * @param[out] pnMinX Pointer to the column where the minimum value is hit.
+ * @param[out] pnMinY Pointer to the line where the minimum value is hit.
+ * @param[out] pnMaxX Pointer to the column where the maximum value is hit.
+ * @param[out] pnMaxY Pointer to the line where the maximum value is hit.
+ *
+ * @return CE_None in case of success, CE_Warning if there are no valid values,
+ *         CE_Failure in case of error.
+ *
+ * @since GDAL 3.11
+ */
+
+CPLErr GDALRasterBand::ComputeRasterMinMaxLocation(double *pdfMin,
+                                                   double *pdfMax, int *pnMinX,
+                                                   int *pnMinY, int *pnMaxX,
+                                                   int *pnMaxY)
+{
+    int nMinX = -1;
+    int nMinY = -1;
+    int nMaxX = -1;
+    int nMaxY = -1;
+    double dfMin = std::numeric_limits<double>::infinity();
+    double dfMax = -std::numeric_limits<double>::infinity();
+    if (pdfMin)
+        *pdfMin = dfMin;
+    if (pdfMax)
+        *pdfMax = dfMax;
+    if (pnMinX)
+        *pnMinX = nMinX;
+    if (pnMinY)
+        *pnMinY = nMinY;
+    if (pnMaxX)
+        *pnMaxX = nMaxX;
+    if (pnMaxY)
+        *pnMaxY = nMaxY;
+
+    if (GDALDataTypeIsComplex(eDataType))
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "Complex data type not supported");
+        return CE_Failure;
+    }
+
+    if (!InitBlockInfo())
+        return CE_Failure;
+
+    GDALNoDataValues sNoDataValues(this, eDataType);
+    GDALRasterBand *poMaskBand = nullptr;
+    if (!sNoDataValues.bGotNoDataValue)
+    {
+        const int l_nMaskFlags = GetMaskFlags();
+        if (l_nMaskFlags != GMF_ALL_VALID &&
+            GetColorInterpretation() != GCI_AlphaBand)
+        {
+            poMaskBand = GetMaskBand();
+        }
+    }
+
+    bool bSignedByte = false;
+    if (eDataType == GDT_Byte)
+    {
+        EnablePixelTypeSignedByteWarning(false);
+        const char *pszPixelType =
+            GetMetadataItem("PIXELTYPE", "IMAGE_STRUCTURE");
+        EnablePixelTypeSignedByteWarning(true);
+        bSignedByte =
+            pszPixelType != nullptr && EQUAL(pszPixelType, "SIGNEDBYTE");
+    }
+
+    GByte *pabyMaskData = nullptr;
+    if (poMaskBand)
+    {
+        pabyMaskData =
+            static_cast<GByte *>(VSI_MALLOC2_VERBOSE(nBlockXSize, nBlockYSize));
+        if (!pabyMaskData)
+        {
+            return CE_Failure;
+        }
+    }
+
+    const GIntBig nTotalBlocks =
+        static_cast<GIntBig>(nBlocksPerRow) * nBlocksPerColumn;
+    bool bNeedsMin = pdfMin || pnMinX || pnMinY;
+    bool bNeedsMax = pdfMax || pnMaxX || pnMaxY;
+    for (GIntBig iBlock = 0; iBlock < nTotalBlocks; ++iBlock)
+    {
+        const int iYBlock = static_cast<int>(iBlock / nBlocksPerRow);
+        const int iXBlock = static_cast<int>(iBlock % nBlocksPerRow);
+
+        int nXCheck = 0, nYCheck = 0;
+        GetActualBlockSize(iXBlock, iYBlock, &nXCheck, &nYCheck);
+
+        if (poMaskBand &&
+            poMaskBand->RasterIO(GF_Read, iXBlock * nBlockXSize,
+                                 iYBlock * nBlockYSize, nXCheck, nYCheck,
+                                 pabyMaskData, nXCheck, nYCheck, GDT_Byte, 0,
+                                 nBlockXSize, nullptr) != CE_None)
+        {
+            CPLFree(pabyMaskData);
+            return CE_Failure;
+        }
+
+        GDALRasterBlock *poBlock = GetLockedBlockRef(iXBlock, iYBlock);
+        if (poBlock == nullptr)
+        {
+            CPLFree(pabyMaskData);
+            return CE_Failure;
+        }
+
+        void *const pData = poBlock->GetDataRef();
+
+        if (poMaskBand || nYCheck < nBlockYSize || nXCheck < nBlockXSize)
+        {
+            for (int iY = 0; iY < nYCheck; ++iY)
+            {
+                for (int iX = 0; iX < nXCheck; ++iX)
+                {
+                    const GPtrDiff_t iOffset =
+                        iX + static_cast<GPtrDiff_t>(iY) * nBlockXSize;
+                    if (pabyMaskData && pabyMaskData[iOffset] == 0)
+                        continue;
+                    bool bValid = true;
+                    double dfValue =
+                        GetPixelValue(eDataType, bSignedByte, pData, iOffset,
+                                      sNoDataValues, bValid);
+                    if (!bValid)
+                        continue;
+                    if (dfValue < dfMin)
+                    {
+                        dfMin = dfValue;
+                        nMinX = iXBlock * nBlockXSize + iX;
+                        nMinY = iYBlock * nBlockYSize + iY;
+                    }
+                    if (dfValue > dfMax)
+                    {
+                        dfMax = dfValue;
+                        nMaxX = iXBlock * nBlockXSize + iX;
+                        nMaxY = iYBlock * nBlockYSize + iY;
+                    }
+                }
+            }
+        }
+        else
+        {
+            size_t pos_min = 0;
+            size_t pos_max = 0;
+            const auto eEffectiveDT = bSignedByte ? GDT_Int8 : eDataType;
+            if (bNeedsMin && bNeedsMax)
+            {
+                std::tie(pos_min, pos_max) = gdal::minmax_element(
+                    pData, static_cast<size_t>(nBlockXSize) * nBlockYSize,
+                    eEffectiveDT, sNoDataValues.bGotNoDataValue,
+                    sNoDataValues.dfNoDataValue);
+            }
+            else if (bNeedsMin)
+            {
+                pos_min = gdal::min_element(
+                    pData, static_cast<size_t>(nBlockXSize) * nBlockYSize,
+                    eEffectiveDT, sNoDataValues.bGotNoDataValue,
+                    sNoDataValues.dfNoDataValue);
+            }
+            else if (bNeedsMax)
+            {
+                pos_max = gdal::max_element(
+                    pData, static_cast<size_t>(nBlockXSize) * nBlockYSize,
+                    eEffectiveDT, sNoDataValues.bGotNoDataValue,
+                    sNoDataValues.dfNoDataValue);
+            }
+
+            if (bNeedsMin)
+            {
+                const int nMinXBlock = static_cast<int>(pos_min % nBlockXSize);
+                const int nMinYBlock = static_cast<int>(pos_min / nBlockXSize);
+                bool bValid = true;
+                const double dfMinValueBlock =
+                    GetPixelValue(eDataType, bSignedByte, pData, pos_min,
+                                  sNoDataValues, bValid);
+                if (bValid && dfMinValueBlock < dfMin)
+                {
+                    dfMin = dfMinValueBlock;
+                    nMinX = iXBlock * nBlockXSize + nMinXBlock;
+                    nMinY = iYBlock * nBlockYSize + nMinYBlock;
+                }
+            }
+
+            if (bNeedsMax)
+            {
+                const int nMaxXBlock = static_cast<int>(pos_max % nBlockXSize);
+                const int nMaxYBlock = static_cast<int>(pos_max / nBlockXSize);
+                bool bValid = true;
+                const double dfMaxValueBlock =
+                    GetPixelValue(eDataType, bSignedByte, pData, pos_max,
+                                  sNoDataValues, bValid);
+                if (bValid && dfMaxValueBlock > dfMax)
+                {
+                    dfMax = dfMaxValueBlock;
+                    nMaxX = iXBlock * nBlockXSize + nMaxXBlock;
+                    nMaxY = iYBlock * nBlockYSize + nMaxYBlock;
+                }
+            }
+        }
+
+        poBlock->DropLock();
+
+        if (eDataType == GDT_Byte)
+        {
+            if (bNeedsMin && dfMin == 0)
+            {
+                bNeedsMin = false;
+            }
+            if (bNeedsMax && dfMax == 255)
+            {
+                bNeedsMax = false;
+            }
+            if (!bNeedsMin && !bNeedsMax)
+            {
+                break;
+            }
+        }
+    }
+
+    CPLFree(pabyMaskData);
+
+    if (pdfMin)
+        *pdfMin = dfMin;
+    if (pdfMax)
+        *pdfMax = dfMax;
+    if (pnMinX)
+        *pnMinX = nMinX;
+    if (pnMinY)
+        *pnMinY = nMinY;
+    if (pnMaxX)
+        *pnMaxX = nMaxX;
+    if (pnMaxY)
+        *pnMaxY = nMaxY;
+    return ((bNeedsMin && nMinX < 0) || (bNeedsMax && nMaxX < 0)) ? CE_Warning
+                                                                  : CE_None;
+}
+
+/************************************************************************/
+/*                    GDALComputeRasterMinMaxLocation()                 */
+/************************************************************************/
+
+/**
+ * \brief Compute the min/max values for a band, and their location.
+ *
+ * @see GDALRasterBand::ComputeRasterMinMax()
+ * @since GDAL 3.11
+ */
+
+CPLErr GDALComputeRasterMinMaxLocation(GDALRasterBandH hBand, double *pdfMin,
+                                       double *pdfMax, int *pnMinX, int *pnMinY,
+                                       int *pnMaxX, int *pnMaxY)
+
+{
+    VALIDATE_POINTER1(hBand, "GDALComputeRasterMinMaxLocation", CE_Failure);
+
+    GDALRasterBand *poBand = GDALRasterBand::FromHandle(hBand);
+    return poBand->ComputeRasterMinMaxLocation(pdfMin, pdfMax, pnMinX, pnMinY,
+                                               pnMaxX, pnMaxY);
 }
 
 /************************************************************************/
@@ -7741,7 +8351,7 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
     /* -------------------------------------------------------------------- */
     if (poDS != nullptr && poDS->oOvManager.HaveMaskFile())
     {
-        poMask.reset(poDS->oOvManager.GetMaskBand(nBand), false);
+        poMask.resetNotOwned(poDS->oOvManager.GetMaskBand(nBand));
         if (poMask != nullptr)
         {
             nMaskFlags = poDS->oOvManager.GetMaskFlags(nBand);
@@ -7754,14 +8364,15 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
     /* -------------------------------------------------------------------- */
     if (poDS != nullptr)
     {
-        const char *pszNoDataValues = poDS->GetMetadataItem("NODATA_VALUES");
-        if (pszNoDataValues != nullptr)
+        const char *pszGDALNoDataValues =
+            poDS->GetMetadataItem("NODATA_VALUES");
+        if (pszGDALNoDataValues != nullptr)
         {
-            char **papszNoDataValues =
-                CSLTokenizeStringComplex(pszNoDataValues, " ", FALSE, FALSE);
+            char **papszGDALNoDataValues = CSLTokenizeStringComplex(
+                pszGDALNoDataValues, " ", FALSE, FALSE);
 
             // Make sure we have as many values as bands.
-            if (CSLCount(papszNoDataValues) == poDS->GetRasterCount() &&
+            if (CSLCount(papszGDALNoDataValues) == poDS->GetRasterCount() &&
                 poDS->GetRasterCount() != 0)
             {
                 // Make sure that all bands have the same data type
@@ -7784,14 +8395,15 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
                     nMaskFlags = GMF_NODATA | GMF_PER_DATASET;
                     try
                     {
-                        poMask.reset(new GDALNoDataValuesMaskBand(poDS), true);
+                        poMask.reset(
+                            std::make_unique<GDALNoDataValuesMaskBand>(poDS));
                     }
                     catch (const std::bad_alloc &)
                     {
                         CPLError(CE_Failure, CPLE_OutOfMemory, "Out of memory");
                         poMask.reset();
                     }
-                    CSLDestroy(papszNoDataValues);
+                    CSLDestroy(papszGDALNoDataValues);
                     return poMask.get();
                 }
                 else
@@ -7811,7 +8423,7 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
                     "Ignoring it for mask.");
             }
 
-            CSLDestroy(papszNoDataValues);
+            CSLDestroy(papszGDALNoDataValues);
         }
     }
 
@@ -7823,7 +8435,7 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
         nMaskFlags = GMF_NODATA;
         try
         {
-            poMask.reset(new GDALNoDataMaskBand(this), true);
+            poMask.reset(std::make_unique<GDALNoDataMaskBand>(this));
         }
         catch (const std::bad_alloc &)
         {
@@ -7843,7 +8455,7 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
         if (poDS->GetRasterBand(2)->GetRasterDataType() == GDT_Byte)
         {
             nMaskFlags = GMF_ALPHA | GMF_PER_DATASET;
-            poMask.reset(poDS->GetRasterBand(2), false);
+            poMask.resetNotOwned(poDS->GetRasterBand(2));
             return poMask.get();
         }
         else if (poDS->GetRasterBand(2)->GetRasterDataType() == GDT_UInt16)
@@ -7851,8 +8463,8 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
             nMaskFlags = GMF_ALPHA | GMF_PER_DATASET;
             try
             {
-                poMask.reset(new GDALRescaledAlphaBand(poDS->GetRasterBand(2)),
-                             true);
+                poMask.reset(std::make_unique<GDALRescaledAlphaBand>(
+                    poDS->GetRasterBand(2)));
             }
             catch (const std::bad_alloc &)
             {
@@ -7871,7 +8483,7 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
         if (poDS->GetRasterBand(4)->GetRasterDataType() == GDT_Byte)
         {
             nMaskFlags = GMF_ALPHA | GMF_PER_DATASET;
-            poMask.reset(poDS->GetRasterBand(4), false);
+            poMask.resetNotOwned(poDS->GetRasterBand(4));
             return poMask.get();
         }
         else if (poDS->GetRasterBand(4)->GetRasterDataType() == GDT_UInt16)
@@ -7879,8 +8491,8 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
             nMaskFlags = GMF_ALPHA | GMF_PER_DATASET;
             try
             {
-                poMask.reset(new GDALRescaledAlphaBand(poDS->GetRasterBand(4)),
-                             true);
+                poMask.reset(std::make_unique<GDALRescaledAlphaBand>(
+                    poDS->GetRasterBand(4)));
             }
             catch (const std::bad_alloc &)
             {
@@ -7897,7 +8509,7 @@ GDALRasterBand *GDALRasterBand::GetMaskBand()
     nMaskFlags = GMF_ALL_VALID;
     try
     {
-        poMask.reset(new GDALAllValidMaskBand(this), true);
+        poMask.reset(std::make_unique<GDALAllValidMaskBand>(this));
     }
     catch (const std::bad_alloc &)
     {
@@ -8472,7 +9084,7 @@ void GDALRasterBand::ReportError(CPLErr eErrClass, CPLErrorNum err_no,
  * uncompressed, scanline oriented (i.e. not tiled). Strips must be organized in
  * the file in sequential order, and be equally spaced (which is generally the
  * case). Only power-of-two bit depths are supported (8 for GDT_Bye, 16 for
- * GDT_Int16/GDT_UInt16, 32 for GDT_Float32 and 64 for GDT_Float64)
+ * GDT_Int16/GDT_UInt16/GDT_Float16, 32 for GDT_Float32 and 64 for GDT_Float64)
  *
  * The pointer returned remains valid until CPLVirtualMemFree() is called.
  * CPLVirtualMemFree() must be called before the raster band object is
@@ -8966,6 +9578,114 @@ const char *GDALRasterBand::GetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
+/*                            WindowIterator                            */
+/************************************************************************/
+
+//! @cond Doxygen_Suppress
+
+GDALRasterBand::WindowIterator::WindowIterator(int nRasterXSize,
+                                               int nRasterYSize,
+                                               int nBlockXSize, int nBlockYSize,
+                                               int nRow, int nCol)
+    : m_nRasterXSize(nRasterXSize), m_nRasterYSize(nRasterYSize),
+      m_nBlockXSize(nBlockXSize), m_nBlockYSize(nBlockYSize), m_row(nRow),
+      m_col(nCol)
+{
+}
+
+bool GDALRasterBand::WindowIterator::operator==(
+    const WindowIterator &other) const
+{
+    return m_row == other.m_row && m_col == other.m_col &&
+           m_nRasterXSize == other.m_nRasterXSize &&
+           m_nRasterYSize == other.m_nRasterYSize &&
+           m_nBlockXSize == other.m_nBlockXSize &&
+           m_nBlockYSize == other.m_nBlockYSize;
+}
+
+bool GDALRasterBand::WindowIterator::operator!=(
+    const WindowIterator &other) const
+{
+    return !(*this == other);
+}
+
+GDALRasterBand::WindowIterator::value_type
+GDALRasterBand::WindowIterator::operator*() const
+{
+    GDALRasterWindow ret;
+    ret.nXOff = m_col * m_nBlockXSize;
+    ret.nYOff = m_row * m_nBlockYSize;
+    ret.nXSize = std::min(m_nBlockXSize, m_nRasterXSize - ret.nXOff);
+    ret.nYSize = std::min(m_nBlockYSize, m_nRasterYSize - ret.nYOff);
+
+    return ret;
+}
+
+GDALRasterBand::WindowIterator &GDALRasterBand::WindowIterator::operator++()
+{
+    m_col++;
+    if (m_col >= DIV_ROUND_UP(m_nRasterXSize, m_nBlockXSize))
+    {
+        m_col = 0;
+        m_row++;
+    }
+    return *this;
+}
+
+GDALRasterBand::WindowIteratorWrapper::WindowIteratorWrapper(
+    const GDALRasterBand &band)
+    : m_nRasterXSize(band.GetXSize()), m_nRasterYSize(band.GetYSize()),
+      m_nBlockXSize(-1), m_nBlockYSize(-1)
+{
+    // If invalid block size is reported, just use a value of 1.
+    CPLErrorStateBackuper state(CPLQuietErrorHandler);
+#ifdef CSA_BUILD
+    assert(this);
+#endif
+    band.GetBlockSize(&m_nBlockXSize, &m_nBlockYSize);
+    m_nBlockXSize = std::max<int>(m_nBlockXSize, 1);
+    m_nBlockYSize = std::max<int>(m_nBlockYSize, 1);
+}
+
+GDALRasterBand::WindowIterator
+GDALRasterBand::WindowIteratorWrapper::begin() const
+{
+    return WindowIterator(m_nRasterXSize, m_nRasterYSize, m_nBlockXSize,
+                          m_nBlockYSize, 0, 0);
+}
+
+GDALRasterBand::WindowIterator
+GDALRasterBand::WindowIteratorWrapper::end() const
+{
+    return WindowIterator(m_nRasterXSize, m_nRasterYSize, m_nBlockXSize,
+                          m_nBlockYSize,
+                          DIV_ROUND_UP(m_nRasterYSize, m_nBlockYSize), 0);
+}
+
+//! @endcond
+
+/** Return an object whose begin() and end() methods can be used to iterate
+ *  over a GDALRasterWindow for each block in this raster band. The iteration
+ *  order is from left to right, then from top to bottom.
+ *
+\code{.cpp}
+    std::vector<double> pixelValues;
+    for (const auto& window : poBand->IterateWindows()) {
+        CPLErr eErr = poBand->ReadRaster(pixelValues, window.nXOff, window.nYOff,
+                                         window.nXSize, window.nYSize);
+        // check eErr
+    }
+\endcode
+ *
+ *
+ *  @since GDAL 3.12
+ */
+GDALRasterBand::WindowIteratorWrapper GDALRasterBand::IterateWindows() const
+{
+    return WindowIteratorWrapper(*this);
+}
+
+/************************************************************************/
 /*                     GDALMDArrayFromRasterBand                        */
 /************************************************************************/
 
@@ -9010,8 +9730,8 @@ class GDALMDArrayFromRasterBand final : public GDALMDArray
             if (bHasNoData)
             {
                 m_pabyNoData.resize(m_dt.GetSize());
-                GDALCopyWords(&nNoData, GDT_Int64, 0, &m_pabyNoData[0],
-                              m_dt.GetNumericDataType(), 0, 1);
+                GDALCopyWords64(&nNoData, GDT_Int64, 0, &m_pabyNoData[0],
+                                m_dt.GetNumericDataType(), 0, 1);
             }
         }
         else if (m_poBand->GetRasterDataType() == GDT_UInt64)
@@ -9020,8 +9740,8 @@ class GDALMDArrayFromRasterBand final : public GDALMDArray
             if (bHasNoData)
             {
                 m_pabyNoData.resize(m_dt.GetSize());
-                GDALCopyWords(&nNoData, GDT_UInt64, 0, &m_pabyNoData[0],
-                              m_dt.GetNumericDataType(), 0, 1);
+                GDALCopyWords64(&nNoData, GDT_UInt64, 0, &m_pabyNoData[0],
+                                m_dt.GetNumericDataType(), 0, 1);
             }
         }
         else
@@ -9030,8 +9750,8 @@ class GDALMDArrayFromRasterBand final : public GDALMDArray
             if (bHasNoData)
             {
                 m_pabyNoData.resize(m_dt.GetSize());
-                GDALCopyWords(&dfNoData, GDT_Float64, 0, &m_pabyNoData[0],
-                              m_dt.GetNumericDataType(), 0, 1);
+                GDALCopyWords64(&dfNoData, GDT_Float64, 0, &m_pabyNoData[0],
+                                m_dt.GetNumericDataType(), 0, 1);
             }
         }
 
@@ -9077,18 +9797,15 @@ class GDALMDArrayFromRasterBand final : public GDALMDArray
                   std::make_shared<GDALDimensionWeakIndexingVar>(
                       "/", "X", osTypeX, osDirectionX, nXSize)};
 
-        double adfGeoTransform[6];
-        if (m_poDS->GetGeoTransform(adfGeoTransform) == CE_None &&
-            adfGeoTransform[2] == 0 && adfGeoTransform[4] == 0)
+        GDALGeoTransform gt;
+        if (m_poDS->GetGeoTransform(gt) == CE_None && gt[2] == 0 && gt[4] == 0)
         {
-            m_varX = GDALMDArrayRegularlySpaced::Create(
-                "/", "X", m_dims[1], adfGeoTransform[0], adfGeoTransform[1],
-                0.5);
+            m_varX = GDALMDArrayRegularlySpaced::Create("/", "X", m_dims[1],
+                                                        gt[0], gt[1], 0.5);
             m_dims[1]->SetIndexingVariable(m_varX);
 
-            m_varY = GDALMDArrayRegularlySpaced::Create(
-                "/", "Y", m_dims[0], adfGeoTransform[3], adfGeoTransform[5],
-                0.5);
+            m_varY = GDALMDArrayRegularlySpaced::Create("/", "Y", m_dims[0],
+                                                        gt[3], gt[5], 0.5);
             m_dims[0]->SetIndexingVariable(m_varY);
         }
     }
@@ -9096,11 +9813,7 @@ class GDALMDArrayFromRasterBand final : public GDALMDArray
     bool IRead(const GUInt64 *arrayStartIdx, const size_t *count,
                const GInt64 *arrayStep, const GPtrDiff_t *bufferStride,
                const GDALExtendedDataType &bufferDataType,
-               void *pDstBuffer) const override
-    {
-        return ReadWrite(GF_Read, arrayStartIdx, count, arrayStep, bufferStride,
-                         bufferDataType, pDstBuffer);
-    }
+               void *pDstBuffer) const override;
 
     bool IWrite(const GUInt64 *arrayStartIdx, const size_t *count,
                 const GInt64 *arrayStep, const GPtrDiff_t *bufferStride,
@@ -9228,10 +9941,7 @@ class GDALMDArrayFromRasterBand final : public GDALMDArray
         }
 
         const std::vector<std::shared_ptr<GDALDimension>> &
-        GetDimensions() const override
-        {
-            return m_dims;
-        }
+        GetDimensions() const override;
 
         const GDALExtendedDataType &GetDataType() const override
         {
@@ -9269,6 +9979,21 @@ class GDALMDArrayFromRasterBand final : public GDALMDArray
         return res;
     }
 };
+
+bool GDALMDArrayFromRasterBand::IRead(
+    const GUInt64 *arrayStartIdx, const size_t *count, const GInt64 *arrayStep,
+    const GPtrDiff_t *bufferStride, const GDALExtendedDataType &bufferDataType,
+    void *pDstBuffer) const
+{
+    return ReadWrite(GF_Read, arrayStartIdx, count, arrayStep, bufferStride,
+                     bufferDataType, pDstBuffer);
+}
+
+const std::vector<std::shared_ptr<GDALDimension>> &
+GDALMDArrayFromRasterBand::MDIAsAttribute::GetDimensions() const
+{
+    return m_dims;
+}
 
 /************************************************************************/
 /*                            ReadWrite()                               */
@@ -9377,8 +10102,8 @@ std::shared_ptr<GDALMDArray> GDALRasterBand::AsMDArray() const
 /************************************************************************/
 
 /**
- * \brief Interpolates the value between pixels using
- * a resampling algorithm
+ * \brief Interpolates the value between pixels using a resampling algorithm,
+ * taking pixel/line coordinates as input.
  *
  * @param dfPixel pixel coordinate as a double, where interpolation should be done.
  * @param dfLine line coordinate as a double, where interpolation should be done.
@@ -9441,3 +10166,1998 @@ CPLErr GDALRasterInterpolateAtPoint(GDALRasterBandH hBand, double dfPixel,
     return poBand->InterpolateAtPoint(dfPixel, dfLine, eInterpolation,
                                       pdfRealValue, pdfImagValue);
 }
+
+/************************************************************************/
+/*                    InterpolateAtGeolocation()                        */
+/************************************************************************/
+
+/**
+ * \brief Interpolates the value between pixels using a resampling algorithm,
+ * taking georeferenced coordinates as input.
+ *
+ * When poSRS is null, those georeferenced coordinates (dfGeolocX, dfGeolocY)
+ * must be in the "natural" SRS of the dataset, that is the one returned by
+ * GetSpatialRef() if there is a geotransform, GetGCPSpatialRef() if there are
+ * GCPs, WGS 84 if there are RPC coefficients, or the SRS of the geolocation
+ * array (generally WGS 84) if there is a geolocation array.
+ * If that natural SRS is a geographic one, dfGeolocX must be a longitude, and
+ * dfGeolocY a latitude. If that natural SRS is a projected one, dfGeolocX must
+ * be a easting, and dfGeolocY a northing.
+ *
+ * When poSRS is set to a non-null value, (dfGeolocX, dfGeolocY) must be
+ * expressed in that CRS, and that tuple must be conformant with the
+ * data-axis-to-crs-axis setting of poSRS, that is the one returned by
+ * the OGRSpatialReference::GetDataAxisToSRSAxisMapping(). If you want to be sure
+ * of the axis order, then make sure to call poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER)
+ * before calling this method, and in that case, dfGeolocX must be a longitude
+ * or an easting value, and dfGeolocX a latitude or a northing value.
+ *
+ * The GDALDataset::GeolocationToPixelLine() will be used to transform from
+ * (dfGeolocX,dfGeolocY) georeferenced coordinates to (pixel, line). Refer to
+ * it for details on how that transformation is done.
+ *
+ * @param dfGeolocX X coordinate of the position (longitude or easting if poSRS
+ * is null, otherwise consistent with poSRS data-axis-to-crs-axis mapping),
+ * where interpolation should be done.
+ * @param dfGeolocY Y coordinate of the position (latitude or northing if poSRS
+ * is null, otherwise consistent with poSRS data-axis-to-crs-axis mapping),
+ * where interpolation should be done.
+ * @param poSRS If set, override the natural CRS in which dfGeolocX, dfGeolocY are expressed
+ * @param eInterpolation interpolation type. Only near, bilinear, cubic and cubicspline are allowed.
+ * @param pdfRealValue pointer to real part of interpolated value
+ * @param pdfImagValue pointer to imaginary part of interpolated value (may be null if not needed)
+ * @param papszTransformerOptions Options accepted by GDALDataset::GeolocationToPixelLine() (GDALCreateGenImgProjTransformer2()), or nullptr.
+ *
+ * @return CE_None on success, or an error code on failure.
+ * @since GDAL 3.11
+ */
+
+CPLErr GDALRasterBand::InterpolateAtGeolocation(
+    double dfGeolocX, double dfGeolocY, const OGRSpatialReference *poSRS,
+    GDALRIOResampleAlg eInterpolation, double *pdfRealValue,
+    double *pdfImagValue, CSLConstList papszTransformerOptions) const
+{
+    double dfPixel;
+    double dfLine;
+    if (poDS->GeolocationToPixelLine(dfGeolocX, dfGeolocY, poSRS, &dfPixel,
+                                     &dfLine,
+                                     papszTransformerOptions) != CE_None)
+    {
+        return CE_Failure;
+    }
+    return InterpolateAtPoint(dfPixel, dfLine, eInterpolation, pdfRealValue,
+                              pdfImagValue);
+}
+
+/************************************************************************/
+/*                  GDALRasterInterpolateAtGeolocation()                */
+/************************************************************************/
+
+/**
+ * \brief Interpolates the value between pixels using a resampling algorithm,
+ * taking georeferenced coordinates as input.
+ *
+ * @see GDALRasterBand::InterpolateAtGeolocation()
+ * @since GDAL 3.11
+ */
+
+CPLErr GDALRasterInterpolateAtGeolocation(GDALRasterBandH hBand,
+                                          double dfGeolocX, double dfGeolocY,
+                                          OGRSpatialReferenceH hSRS,
+                                          GDALRIOResampleAlg eInterpolation,
+                                          double *pdfRealValue,
+                                          double *pdfImagValue,
+                                          CSLConstList papszTransformerOptions)
+{
+    VALIDATE_POINTER1(hBand, "GDALRasterInterpolateAtGeolocation", CE_Failure);
+
+    GDALRasterBand *poBand = GDALRasterBand::FromHandle(hBand);
+    return poBand->InterpolateAtGeolocation(
+        dfGeolocX, dfGeolocY, OGRSpatialReference::FromHandle(hSRS),
+        eInterpolation, pdfRealValue, pdfImagValue, papszTransformerOptions);
+}
+
+/************************************************************************/
+/*                    GDALRasterBand::SplitRasterIO()                   */
+/************************************************************************/
+
+//! @cond Doxygen_Suppress
+
+/** Implements IRasterIO() by dividing the request in 2.
+ *
+ * Should only be called when nBufXSize == nXSize && nBufYSize == nYSize
+ *
+ * Return CE_Warning if the split could not be done, CE_None in case of
+ * success and CE_Failure in case of error.
+ *
+ * @since 3.12
+ */
+CPLErr GDALRasterBand::SplitRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
+                                     [[maybe_unused]] int nXSize,
+                                     [[maybe_unused]] int nYSize, void *pData,
+                                     int nBufXSize, int nBufYSize,
+                                     GDALDataType eBufType,
+                                     GSpacing nPixelSpace, GSpacing nLineSpace,
+                                     GDALRasterIOExtraArg *psExtraArg)
+{
+    CPLAssert(nBufXSize == nXSize && nBufYSize == nYSize);
+
+    GByte *pabyData = static_cast<GByte *>(pData);
+    if ((nBufXSize == nRasterXSize || nBufYSize >= nBufXSize) && nBufYSize >= 2)
+    {
+        GDALRasterIOExtraArg sArg;
+        INIT_RASTERIO_EXTRA_ARG(sArg);
+        const int nHalfHeight = nBufYSize / 2;
+
+        sArg.pfnProgress = GDALScaledProgress;
+        sArg.pProgressData = GDALCreateScaledProgress(
+            0, 0.5, psExtraArg->pfnProgress, psExtraArg->pProgressData);
+        if (sArg.pProgressData == nullptr)
+            sArg.pfnProgress = nullptr;
+        CPLErr eErr = IRasterIO(eRWFlag, nXOff, nYOff, nBufXSize, nHalfHeight,
+                                pabyData, nBufXSize, nHalfHeight, eBufType,
+                                nPixelSpace, nLineSpace, &sArg);
+        GDALDestroyScaledProgress(sArg.pProgressData);
+
+        if (eErr == CE_None)
+        {
+            sArg.pfnProgress = GDALScaledProgress;
+            sArg.pProgressData = GDALCreateScaledProgress(
+                0.5, 1, psExtraArg->pfnProgress, psExtraArg->pProgressData);
+            if (sArg.pProgressData == nullptr)
+                sArg.pfnProgress = nullptr;
+            eErr = IRasterIO(eRWFlag, nXOff, nYOff + nHalfHeight, nBufXSize,
+                             nBufYSize - nHalfHeight,
+                             pabyData + nHalfHeight * nLineSpace, nBufXSize,
+                             nBufYSize - nHalfHeight, eBufType, nPixelSpace,
+                             nLineSpace, &sArg);
+            GDALDestroyScaledProgress(sArg.pProgressData);
+        }
+        return eErr;
+    }
+    else if (nBufXSize >= 2)
+    {
+        GDALRasterIOExtraArg sArg;
+        INIT_RASTERIO_EXTRA_ARG(sArg);
+        const int nHalfWidth = nBufXSize / 2;
+
+        sArg.pfnProgress = GDALScaledProgress;
+        sArg.pProgressData = GDALCreateScaledProgress(
+            0, 0.5, psExtraArg->pfnProgress, psExtraArg->pProgressData);
+        if (sArg.pProgressData == nullptr)
+            sArg.pfnProgress = nullptr;
+        CPLErr eErr = IRasterIO(eRWFlag, nXOff, nYOff, nHalfWidth, nBufYSize,
+                                pabyData, nHalfWidth, nBufYSize, eBufType,
+                                nPixelSpace, nLineSpace, &sArg);
+        GDALDestroyScaledProgress(sArg.pProgressData);
+
+        if (eErr == CE_None)
+        {
+            sArg.pfnProgress = GDALScaledProgress;
+            sArg.pProgressData = GDALCreateScaledProgress(
+                0.5, 1, psExtraArg->pfnProgress, psExtraArg->pProgressData);
+            if (sArg.pProgressData == nullptr)
+                sArg.pfnProgress = nullptr;
+            eErr = IRasterIO(eRWFlag, nXOff + nHalfWidth, nYOff,
+                             nBufXSize - nHalfWidth, nBufYSize,
+                             pabyData + nHalfWidth * nPixelSpace,
+                             nBufXSize - nHalfWidth, nBufYSize, eBufType,
+                             nPixelSpace, nLineSpace, &sArg);
+            GDALDestroyScaledProgress(sArg.pProgressData);
+        }
+        return eErr;
+    }
+
+    return CE_Warning;
+}
+
+//! @endcond
+
+/************************************************************************/
+/*                         ThrowIfNotSameDimensions()                   */
+/************************************************************************/
+
+//! @cond Doxygen_Suppress
+/* static */
+void GDALRasterBand::ThrowIfNotSameDimensions(const GDALRasterBand &first,
+                                              const GDALRasterBand &second)
+{
+    if (first.GetXSize() != second.GetXSize() ||
+        first.GetYSize() != second.GetYSize())
+    {
+        throw std::runtime_error("Bands do not have the same dimensions");
+    }
+}
+
+//! @endcond
+
+/************************************************************************/
+/*                          GDALRasterBandUnaryOp()                     */
+/************************************************************************/
+
+/** Apply a unary operation on this band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH
+GDALRasterBandUnaryOp(GDALRasterBandH hBand,
+                      GDALRasterAlgebraUnaryOperation eOp)
+{
+    VALIDATE_POINTER1(hBand, __func__, nullptr);
+    GDALComputedRasterBand::Operation cppOp{};
+    switch (eOp)
+    {
+        case GRAUO_LOGICAL_NOT:
+            return new GDALComputedRasterBand(
+                GDALComputedRasterBand::Operation::OP_NE,
+                *(GDALRasterBand::FromHandle(hBand)), true);
+        case GRAUO_ABS:
+            cppOp = GDALComputedRasterBand::Operation::OP_ABS;
+            break;
+        case GRAUO_SQRT:
+            cppOp = GDALComputedRasterBand::Operation::OP_SQRT;
+            break;
+        case GRAUO_LOG:
+#ifndef HAVE_MUPARSER
+            CPLError(
+                CE_Failure, CPLE_NotSupported,
+                "log(band) not available on a GDAL build without muparser");
+            return nullptr;
+#else
+            cppOp = GDALComputedRasterBand::Operation::OP_LOG;
+            break;
+#endif
+        case GRAUO_LOG10:
+            cppOp = GDALComputedRasterBand::Operation::OP_LOG10;
+            break;
+    }
+    return new GDALComputedRasterBand(cppOp,
+                                      *(GDALRasterBand::FromHandle(hBand)));
+}
+
+/************************************************************************/
+/*            ConvertGDALRasterAlgebraBinaryOperationToCpp()            */
+/************************************************************************/
+
+static GDALComputedRasterBand::Operation
+ConvertGDALRasterAlgebraBinaryOperationToCpp(
+    GDALRasterAlgebraBinaryOperation eOp)
+{
+    switch (eOp)
+    {
+        case GRABO_ADD:
+            return GDALComputedRasterBand::Operation::OP_ADD;
+        case GRABO_SUB:
+            return GDALComputedRasterBand::Operation::OP_SUBTRACT;
+        case GRABO_MUL:
+            return GDALComputedRasterBand::Operation::OP_MULTIPLY;
+        case GRABO_DIV:
+            return GDALComputedRasterBand::Operation::OP_DIVIDE;
+        case GRABO_GT:
+            return GDALComputedRasterBand::Operation::OP_GT;
+        case GRABO_GE:
+            return GDALComputedRasterBand::Operation::OP_GE;
+        case GRABO_LT:
+            return GDALComputedRasterBand::Operation::OP_LT;
+        case GRABO_LE:
+            return GDALComputedRasterBand::Operation::OP_LE;
+        case GRABO_EQ:
+            return GDALComputedRasterBand::Operation::OP_EQ;
+        case GRABO_NE:
+            break;
+        case GRABO_LOGICAL_AND:
+            return GDALComputedRasterBand::Operation::OP_LOGICAL_AND;
+        case GRABO_LOGICAL_OR:
+            return GDALComputedRasterBand::Operation::OP_LOGICAL_OR;
+        case GRABO_POW:
+            return GDALComputedRasterBand::Operation::OP_POW;
+    }
+    return GDALComputedRasterBand::Operation::OP_NE;
+}
+
+/************************************************************************/
+/*                     GDALRasterBandBinaryOpBand()                     */
+/************************************************************************/
+
+/** Apply a binary operation on this band with another one.
+ *
+ * e.g. GDALRasterBandBinaryOpBand(hBand1, GRABO_SUB, hBand2) performs
+ * "hBand1 - hBand2".
+ *
+ * The resulting band is lazy evaluated. A reference is taken on both input
+ * datasets.
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH
+GDALRasterBandBinaryOpBand(GDALRasterBandH hBand,
+                           GDALRasterAlgebraBinaryOperation eOp,
+                           GDALRasterBandH hOtherBand)
+{
+    VALIDATE_POINTER1(hBand, __func__, nullptr);
+    VALIDATE_POINTER1(hOtherBand, __func__, nullptr);
+#ifndef HAVE_MUPARSER
+    if (eOp >= GRABO_GT && eOp <= GRABO_NE)
+    {
+        CPLError(
+            CE_Failure, CPLE_NotSupported,
+            "Band comparison operators not available on a GDAL build without "
+            "muparser");
+        return nullptr;
+    }
+    else if (eOp == GRABO_POW)
+    {
+        CPLError(
+            CE_Failure, CPLE_NotSupported,
+            "pow(band, band) not available on a GDAL build without muparser");
+        return nullptr;
+    }
+#endif
+    auto &firstBand = *(GDALRasterBand::FromHandle(hBand));
+    auto &secondBand = *(GDALRasterBand::FromHandle(hOtherBand));
+    try
+    {
+        GDALRasterBand::ThrowIfNotSameDimensions(firstBand, secondBand);
+    }
+    catch (const std::exception &e)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "%s", e.what());
+        return nullptr;
+    }
+    return new GDALComputedRasterBand(
+        ConvertGDALRasterAlgebraBinaryOperationToCpp(eOp), firstBand,
+        secondBand);
+}
+
+/************************************************************************/
+/*                     GDALRasterBandBinaryOpDouble()                   */
+/************************************************************************/
+
+/** Apply a binary operation on this band with a constant
+ *
+ * e.g. GDALRasterBandBinaryOpDouble(hBand, GRABO_SUB, constant) performs
+ * "hBand - constant".
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH
+GDALRasterBandBinaryOpDouble(GDALRasterBandH hBand,
+                             GDALRasterAlgebraBinaryOperation eOp,
+                             double constant)
+{
+    VALIDATE_POINTER1(hBand, __func__, nullptr);
+#ifndef HAVE_MUPARSER
+    if (eOp >= GRABO_GT && eOp <= GRABO_NE)
+    {
+        CPLError(
+            CE_Failure, CPLE_NotSupported,
+            "Band comparison operators not available on a GDAL build without "
+            "muparser");
+        return nullptr;
+    }
+#endif
+    return new GDALComputedRasterBand(
+        ConvertGDALRasterAlgebraBinaryOperationToCpp(eOp),
+        *(GDALRasterBand::FromHandle(hBand)), constant);
+}
+
+/************************************************************************/
+/*                   GDALRasterBandBinaryOpDoubleToBand()               */
+/************************************************************************/
+
+/** Apply a binary operation on the constant with this band
+ *
+ * e.g. GDALRasterBandBinaryOpDoubleToBand(constant, GRABO_SUB, hBand) performs
+ * "constant - hBand".
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH
+GDALRasterBandBinaryOpDoubleToBand(double constant,
+                                   GDALRasterAlgebraBinaryOperation eOp,
+                                   GDALRasterBandH hBand)
+{
+    VALIDATE_POINTER1(hBand, __func__, nullptr);
+#ifndef HAVE_MUPARSER
+    if (eOp >= GRABO_GT && eOp <= GRABO_NE)
+    {
+        CPLError(
+            CE_Failure, CPLE_NotSupported,
+            "Band comparison operators not available on a GDAL build without "
+            "muparser");
+        return nullptr;
+    }
+#endif
+    switch (eOp)
+    {
+        case GRABO_ADD:
+        case GRABO_MUL:
+        {
+            return new GDALComputedRasterBand(
+                ConvertGDALRasterAlgebraBinaryOperationToCpp(eOp),
+                *(GDALRasterBand::FromHandle(hBand)), constant);
+        }
+
+        case GRABO_DIV:
+        case GRABO_GT:
+        case GRABO_GE:
+        case GRABO_LT:
+        case GRABO_LE:
+        case GRABO_EQ:
+        case GRABO_NE:
+        case GRABO_LOGICAL_AND:
+        case GRABO_LOGICAL_OR:
+        case GRABO_POW:
+        {
+            return new GDALComputedRasterBand(
+                ConvertGDALRasterAlgebraBinaryOperationToCpp(eOp), constant,
+                *(GDALRasterBand::FromHandle(hBand)));
+        }
+
+        case GRABO_SUB:
+        {
+            break;
+        }
+    }
+
+    return new GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_ADD,
+        GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_MULTIPLY,
+                               *(GDALRasterBand::FromHandle(hBand)), -1.0),
+        constant);
+}
+
+/************************************************************************/
+/*                           operator+()                                */
+/************************************************************************/
+
+/** Add this band with another one.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on both input
+ * datasets.
+ *
+ * @since 3.12
+ * @throw std::runtime_error if both bands do not have the same dimensions.
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator+(const GDALRasterBand &other) const
+{
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_ADD,
+                                  *this, other);
+}
+
+/************************************************************************/
+/*                           operator+()                                */
+/************************************************************************/
+
+/** Add this band with a constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator+(double constant) const
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_ADD,
+                                  *this, constant);
+}
+
+/************************************************************************/
+/*                           operator+()                                */
+/************************************************************************/
+
+/** Add a band with a constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator+(double constant, const GDALRasterBand &other)
+{
+    return other + constant;
+}
+
+/************************************************************************/
+/*                           operator-()                                */
+/************************************************************************/
+
+/** Return a band whose value is the opposite value of the band for each
+ * pixel.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator-() const
+{
+    return 0 - *this;
+}
+
+/************************************************************************/
+/*                           operator-()                                */
+/************************************************************************/
+
+/** Subtract this band with another one.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on both input
+ * datasets.
+ *
+ * @since 3.12
+ * @throw std::runtime_error if both bands do not have the same dimensions.
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator-(const GDALRasterBand &other) const
+{
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_SUBTRACT, *this, other);
+}
+
+/************************************************************************/
+/*                           operator-()                                */
+/************************************************************************/
+
+/** Subtract this band with a constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator-(double constant) const
+{
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_SUBTRACT, *this, constant);
+}
+
+/************************************************************************/
+/*                           operator-()                                */
+/************************************************************************/
+
+/** Subtract a constant with a band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator-(double constant, const GDALRasterBand &other)
+{
+    return other * (-1.0) + constant;
+}
+
+/************************************************************************/
+/*                           operator*()                                */
+/************************************************************************/
+
+/** Multiply this band with another one.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on both input
+ * datasets.
+ *
+ * @since 3.12
+ * @throw std::runtime_error if both bands do not have the same dimensions.
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator*(const GDALRasterBand &other) const
+{
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_MULTIPLY, *this, other);
+}
+
+/************************************************************************/
+/*                           operator*()                                */
+/************************************************************************/
+
+/** Multiply this band by a constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator*(double constant) const
+{
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_MULTIPLY, *this, constant);
+}
+
+/************************************************************************/
+/*                           operator*()                                */
+/************************************************************************/
+
+/** Multiply a band with a constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator*(double constant, const GDALRasterBand &other)
+{
+    return other * constant;
+}
+
+/************************************************************************/
+/*                           operator/()                                */
+/************************************************************************/
+
+/** Divide this band with another one.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on both input
+ * datasets.
+ *
+ * @since 3.12
+ * @throw std::runtime_error if both bands do not have the same dimensions.
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator/(const GDALRasterBand &other) const
+{
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_DIVIDE,
+                                  *this, other);
+}
+
+/************************************************************************/
+/*                           operator/()                                */
+/************************************************************************/
+
+/** Divide this band by a constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator/(double constant) const
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_DIVIDE,
+                                  *this, constant);
+}
+
+/************************************************************************/
+/*                           operator/()                                */
+/************************************************************************/
+
+/** Divide a constant by a band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator/(double constant, const GDALRasterBand &other)
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_DIVIDE,
+                                  constant, other);
+}
+
+/************************************************************************/
+/*                          ThrowIfNotMuparser()                        */
+/************************************************************************/
+
+#ifndef HAVE_MUPARSER
+static GDALComputedRasterBand ThrowIfNotMuparser()
+{
+    throw std::runtime_error("Operator not available on a "
+                             "GDAL build without muparser");
+}
+#endif
+
+/************************************************************************/
+/*                           operator>()                                */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is greater than the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator>(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_GT,
+                                  *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator>()                                */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is greater than the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator>(double constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_GT,
+                                  *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator>()                                */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is greater than the pixel
+ * value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator>(double constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_GT,
+                                  constant, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator>=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is greater or equal to the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator>=(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_GE,
+                                  *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator>=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is greater or equal to the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator>=(double constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_GE,
+                                  *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator>=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is greater or equal to
+ * the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator>=(double constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_GE,
+                                  constant, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator<()                                */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is lesser than the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator<(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LT,
+                                  *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator<()                                */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is lesser than the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator<(double constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LT,
+                                  *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator<()                                */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is lesser than the pixel
+ * value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator<(double constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LT,
+                                  constant, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator<=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is lesser or equal to the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator<=(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LE,
+                                  *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator<=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is lesser or equal to the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator<=(double constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LE,
+                                  *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator<=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is lesser or equal to
+ * the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator<=(double constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LE,
+                                  constant, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator==()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is equal to the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator==(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_EQ,
+                                  *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator==()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is equal to the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator==(double constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_EQ,
+                                  *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator==()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is equal to
+ * the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator==(double constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_EQ,
+                                  constant, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator!=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is different from the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator!=(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_NE,
+                                  *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator!=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is different from the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator!=(double constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_NE,
+                                  *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator!=()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is different from
+ * the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator!=(double constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_NE,
+                                  constant, other);
+#endif
+}
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Weffc++"
+#endif
+
+/************************************************************************/
+/*                           operator&&()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left and right
+ * operands is true.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator&&(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_LOGICAL_AND, *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator&&()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is true, as well as the constant
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator&&(bool constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_LOGICAL_AND, *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator&&()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is true, as well as
+ * the pixel value of the right operand.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator&&(bool constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_LOGICAL_AND, constant, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator||()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left or right
+ * operands is true.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand
+GDALRasterBand::operator||(const GDALRasterBand &other) const
+{
+#ifndef HAVE_MUPARSER
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    ThrowIfNotSameDimensions(*this, other);
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_LOGICAL_OR, *this, other);
+#endif
+}
+
+/************************************************************************/
+/*                           operator||()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the pixel value of the left operand
+ * is true, or if the constant is true
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator||(bool constant) const
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_LOGICAL_OR, *this, constant);
+#endif
+}
+
+/************************************************************************/
+/*                           operator||()                               */
+/************************************************************************/
+
+/** Return a band whose value is 1 if the constant is true, or
+ * the pixel value of the right operand is true
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand operator||(bool constant, const GDALRasterBand &other)
+{
+#ifndef HAVE_MUPARSER
+    (void)constant;
+    (void)other;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_LOGICAL_OR, constant, other);
+#endif
+}
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
+/************************************************************************/
+/*                            operator!()                               */
+/************************************************************************/
+
+/** Return a band whose value is the logical negation of the pixel value
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::operator!() const
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_NE,
+                                  *this, true);
+}
+
+namespace gdal
+{
+
+/************************************************************************/
+/*                           IfThenElse()                               */
+/************************************************************************/
+
+/** Return a band whose value is thenBand if the corresponding pixel in condBand
+ * is not zero, or the one from elseBand otherwise.
+ *
+ * Variants of this method exits where thenBand and/or elseBand can be double
+ * values.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * datasets.
+ *
+ * This method is the same as the C function GDALRasterBandIfThenElse()
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand IfThenElse(const GDALRasterBand &condBand,
+                                  const GDALRasterBand &thenBand,
+                                  const GDALRasterBand &elseBand)
+{
+#ifndef HAVE_MUPARSER
+    (void)condBand;
+    (void)thenBand;
+    (void)elseBand;
+    return ThrowIfNotMuparser();
+#else
+    GDALRasterBand::ThrowIfNotSameDimensions(condBand, thenBand);
+    GDALRasterBand::ThrowIfNotSameDimensions(condBand, elseBand);
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_TERNARY,
+        std::vector<const GDALRasterBand *>{&condBand, &thenBand, &elseBand});
+#endif
+}
+
+//! @cond Doxygen_Suppress
+
+/************************************************************************/
+/*                           IfThenElse()                               */
+/************************************************************************/
+
+/** Return a band whose value is thenValue if the corresponding pixel in condBand
+ * is not zero, or the one from elseBand otherwise.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * datasets.
+ *
+ * This method is the same as the C function GDALRasterBandIfThenElse(),
+ * with thenBand = (condBand * 0) + thenValue
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand IfThenElse(const GDALRasterBand &condBand,
+                                  double thenValue,
+                                  const GDALRasterBand &elseBand)
+{
+#ifndef HAVE_MUPARSER
+    (void)condBand;
+    (void)thenValue;
+    (void)elseBand;
+    return ThrowIfNotMuparser();
+#else
+    GDALRasterBand::ThrowIfNotSameDimensions(condBand, elseBand);
+    auto thenBand =
+        (condBand * 0)
+            .AsType(GDALDataTypeUnionWithValue(GDT_Unknown, thenValue, false)) +
+        thenValue;
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_TERNARY,
+        std::vector<const GDALRasterBand *>{&condBand, &thenBand, &elseBand});
+#endif
+}
+
+/************************************************************************/
+/*                           IfThenElse()                               */
+/************************************************************************/
+
+/** Return a band whose value is thenBand if the corresponding pixel in condBand
+ * is not zero, or the one from elseValue otherwise.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * datasets.
+ *
+ * This method is the same as the C function GDALRasterBandIfThenElse(),
+ * with elseBand = (condBand * 0) + elseValue
+
+ * @since 3.12
+ */
+GDALComputedRasterBand IfThenElse(const GDALRasterBand &condBand,
+                                  const GDALRasterBand &thenBand,
+                                  double elseValue)
+{
+#ifndef HAVE_MUPARSER
+    (void)condBand;
+    (void)thenBand;
+    (void)elseValue;
+    return ThrowIfNotMuparser();
+#else
+    GDALRasterBand::ThrowIfNotSameDimensions(condBand, thenBand);
+    auto elseBand =
+        (condBand * 0)
+            .AsType(GDALDataTypeUnionWithValue(GDT_Unknown, elseValue, false)) +
+        elseValue;
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_TERNARY,
+        std::vector<const GDALRasterBand *>{&condBand, &thenBand, &elseBand});
+#endif
+}
+
+/************************************************************************/
+/*                           IfThenElse()                               */
+/************************************************************************/
+
+/** Return a band whose value is thenValue if the corresponding pixel in condBand
+ * is not zero, or the one from elseValue otherwise.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * datasets.
+ *
+ * This method is the same as the C function GDALRasterBandIfThenElse(),
+ * with thenBand = (condBand * 0) + thenValue and elseBand = (condBand * 0) + elseValue
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand IfThenElse(const GDALRasterBand &condBand,
+                                  double thenValue, double elseValue)
+{
+#ifndef HAVE_MUPARSER
+    (void)condBand;
+    (void)thenValue;
+    (void)elseValue;
+    return ThrowIfNotMuparser();
+#else
+    auto thenBand =
+        (condBand * 0)
+            .AsType(GDALDataTypeUnionWithValue(GDT_Unknown, thenValue, false)) +
+        thenValue;
+    auto elseBand =
+        (condBand * 0)
+            .AsType(GDALDataTypeUnionWithValue(GDT_Unknown, elseValue, false)) +
+        elseValue;
+    return GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_TERNARY,
+        std::vector<const GDALRasterBand *>{&condBand, &thenBand, &elseBand});
+#endif
+}
+
+//! @endcond
+
+}  // namespace gdal
+
+/************************************************************************/
+/*                     GDALRasterBandIfThenElse()                       */
+/************************************************************************/
+
+/** Return a band whose value is hThenBand if the corresponding pixel in hCondBand
+ * is not zero, or the one from hElseBand otherwise.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * datasets.
+ *
+ * This function is the same as the C++ method gdal::IfThenElse()
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBandH GDALRasterBandIfThenElse(GDALRasterBandH hCondBand,
+                                                 GDALRasterBandH hThenBand,
+                                                 GDALRasterBandH hElseBand)
+{
+    VALIDATE_POINTER1(hCondBand, __func__, nullptr);
+    VALIDATE_POINTER1(hThenBand, __func__, nullptr);
+    VALIDATE_POINTER1(hElseBand, __func__, nullptr);
+#ifndef HAVE_MUPARSER
+    CPLError(CE_Failure, CPLE_NotSupported,
+             "Band comparison operators not available on a GDAL build without "
+             "muparser");
+    return nullptr;
+#else
+
+    auto &condBand = *(GDALRasterBand::FromHandle(hCondBand));
+    auto &thenBand = *(GDALRasterBand::FromHandle(hThenBand));
+    auto &elseBand = *(GDALRasterBand::FromHandle(hElseBand));
+    try
+    {
+        GDALRasterBand::ThrowIfNotSameDimensions(condBand, thenBand);
+        GDALRasterBand::ThrowIfNotSameDimensions(condBand, elseBand);
+    }
+    catch (const std::exception &e)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "%s", e.what());
+        return nullptr;
+    }
+    return new GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_TERNARY,
+        std::vector<const GDALRasterBand *>{&condBand, &thenBand, &elseBand});
+#endif
+}
+
+/************************************************************************/
+/*                       GDALRasterBand::AsType()                       */
+/************************************************************************/
+
+/** Cast this band to another type.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * This method is the same as the C function GDALRasterBandAsDataType()
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand GDALRasterBand::AsType(GDALDataType dt) const
+{
+    if (dt == GDT_Unknown)
+    {
+        throw std::runtime_error("AsType(GDT_Unknown) is not supported");
+    }
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_CAST,
+                                  *this, dt);
+}
+
+/************************************************************************/
+/*                       GDALRasterBandAsDataType()                     */
+/************************************************************************/
+
+/** Cast this band to another type.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * This function is the same as the C++ method GDALRasterBand::AsType()
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH GDALRasterBandAsDataType(GDALRasterBandH hBand,
+                                                 GDALDataType eDT)
+{
+    VALIDATE_POINTER1(hBand, __func__, nullptr);
+    if (eDT == GDT_Unknown)
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "GDALRasterBandAsDataType(GDT_Unknown) not supported");
+        return nullptr;
+    }
+    return new GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_CAST,
+        *(GDALRasterBand::FromHandle(hBand)), eDT);
+}
+
+/************************************************************************/
+/*                         GetBandVector()                              */
+/************************************************************************/
+
+static std::vector<const GDALRasterBand *>
+GetBandVector(size_t nBandCount, GDALRasterBandH *pahBands)
+{
+    std::vector<const GDALRasterBand *> bands;
+    for (size_t i = 0; i < nBandCount; ++i)
+    {
+        if (i > 0)
+        {
+            GDALRasterBand::ThrowIfNotSameDimensions(
+                *(GDALRasterBand::FromHandle(pahBands[0])),
+                *(GDALRasterBand::FromHandle(pahBands[i])));
+        }
+        bands.push_back(GDALRasterBand::FromHandle(pahBands[i]));
+    }
+    return bands;
+}
+
+/************************************************************************/
+/*                       GDALOperationOnNBands()                        */
+/************************************************************************/
+
+static GDALComputedRasterBandH
+GDALOperationOnNBands(GDALComputedRasterBand::Operation op, size_t nBandCount,
+                      GDALRasterBandH *pahBands)
+{
+    VALIDATE_POINTER1(pahBands, __func__, nullptr);
+    if (nBandCount == 0)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "At least one band should be passed");
+        return nullptr;
+    }
+
+    std::vector<const GDALRasterBand *> bands;
+    try
+    {
+        bands = GetBandVector(nBandCount, pahBands);
+    }
+    catch (const std::exception &e)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "%s", e.what());
+        return nullptr;
+    }
+    return GDALRasterBand::ToHandle(new GDALComputedRasterBand(op, bands));
+}
+
+/************************************************************************/
+/*                       GDALMaximumOfNBands()                          */
+/************************************************************************/
+
+/** Return a band whose each pixel value is the maximum of the corresponding
+ * pixel values in the input bands.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * This function is the same as the C ++ method gdal::max()
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH GDALMaximumOfNBands(size_t nBandCount,
+                                            GDALRasterBandH *pahBands)
+{
+    return GDALOperationOnNBands(GDALComputedRasterBand::Operation::OP_MAX,
+                                 nBandCount, pahBands);
+}
+
+/************************************************************************/
+/*                               gdal::max()                            */
+/************************************************************************/
+
+namespace gdal
+{
+/** Return a band whose each pixel value is the maximum of the corresponding
+ * pixel values in the inputs (bands or constants)
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * Two or more bands can be passed.
+ *
+ * This method is the same as the C function GDALMaximumOfNBands()
+ *
+ * @since 3.12
+ * @throw std::runtime_error if bands do not have the same dimensions.
+ */
+GDALComputedRasterBand max(const GDALRasterBand &first,
+                           const GDALRasterBand &second)
+{
+    GDALRasterBand::ThrowIfNotSameDimensions(first, second);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_MAX,
+                                  first, second);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                     GDALRasterBandMaxConstant()                      */
+/************************************************************************/
+
+/** Return a band whose each pixel value is the maximum of the corresponding
+ * pixel values in the input band and the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * This function is the same as the C ++ method gdal::max()
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH GDALRasterBandMaxConstant(GDALRasterBandH hBand,
+                                                  double dfConstant)
+{
+    return GDALRasterBand::ToHandle(new GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_MAX,
+        std::vector<const GDALRasterBand *>{GDALRasterBand::FromHandle(hBand)},
+        dfConstant));
+}
+
+/************************************************************************/
+/*                       GDALMinimumOfNBands()                          */
+/************************************************************************/
+
+/** Return a band whose each pixel value is the minimum of the corresponding
+ * pixel values in the input bands.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * This function is the same as the C ++ method gdal::min()
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH GDALMinimumOfNBands(size_t nBandCount,
+                                            GDALRasterBandH *pahBands)
+{
+    return GDALOperationOnNBands(GDALComputedRasterBand::Operation::OP_MIN,
+                                 nBandCount, pahBands);
+}
+
+/************************************************************************/
+/*                               gdal::min()                            */
+/************************************************************************/
+
+namespace gdal
+{
+/** Return a band whose each pixel value is the minimum of the corresponding
+ * pixel values in the inputs (bands or constants)
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * Two or more bands can be passed.
+ *
+ * This method is the same as the C function GDALMinimumOfNBands()
+ *
+ * @since 3.12
+ * @throw std::runtime_error if bands do not have the same dimensions.
+ */
+GDALComputedRasterBand min(const GDALRasterBand &first,
+                           const GDALRasterBand &second)
+{
+    GDALRasterBand::ThrowIfNotSameDimensions(first, second);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_MIN,
+                                  first, second);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                     GDALRasterBandMinConstant()                      */
+/************************************************************************/
+
+/** Return a band whose each pixel value is the minimum of the corresponding
+ * pixel values in the input band and the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on the input
+ * dataset.
+ *
+ * This function is the same as the C ++ method gdal::min()
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH GDALRasterBandMinConstant(GDALRasterBandH hBand,
+                                                  double dfConstant)
+{
+    return GDALRasterBand::ToHandle(new GDALComputedRasterBand(
+        GDALComputedRasterBand::Operation::OP_MIN,
+        std::vector<const GDALRasterBand *>{GDALRasterBand::FromHandle(hBand)},
+        dfConstant));
+}
+
+/************************************************************************/
+/*                         GDALMeanOfNBands()                           */
+/************************************************************************/
+
+/** Return a band whose each pixel value is the arithmetic mean of the
+ * corresponding pixel values in the input bands.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * This function is the same as the C ++ method gdal::mean()
+ *
+ * @since 3.12
+ * @return a handle to free with GDALComputedRasterBandRelease(), or nullptr if error.
+ */
+GDALComputedRasterBandH GDALMeanOfNBands(size_t nBandCount,
+                                         GDALRasterBandH *pahBands)
+{
+    return GDALOperationOnNBands(GDALComputedRasterBand::Operation::OP_MEAN,
+                                 nBandCount, pahBands);
+}
+
+/************************************************************************/
+/*                              gdal::mean()                            */
+/************************************************************************/
+
+namespace gdal
+{
+
+/** Return a band whose each pixel value is the arithmetic mean of the
+ * corresponding pixel values in the input bands.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * Two or more bands can be passed.
+ *
+ * This method is the same as the C function GDALMeanOfNBands()
+ *
+ * @since 3.12
+ * @throw std::runtime_error if bands do not have the same dimensions.
+ */
+GDALComputedRasterBand mean(const GDALRasterBand &first,
+                            const GDALRasterBand &second)
+{
+    GDALRasterBand::ThrowIfNotSameDimensions(first, second);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_MEAN,
+                                  first, second);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                              gdal::abs()                             */
+/************************************************************************/
+
+namespace gdal
+{
+
+/** Return a band whose each pixel value is the absolute value (or module
+ * for complex data type) of the corresponding pixel value in the input band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand abs(const GDALRasterBand &band)
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_ABS,
+                                  band);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                             gdal::fabs()                             */
+/************************************************************************/
+
+namespace gdal
+{
+
+/** Return a band whose each pixel value is the absolute value (or module
+ * for complex data type) of the corresponding pixel value in the input band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand fabs(const GDALRasterBand &band)
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_ABS,
+                                  band);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                             gdal::sqrt()                             */
+/************************************************************************/
+
+namespace gdal
+{
+
+/** Return a band whose each pixel value is the square root of the
+ * corresponding pixel value in the input band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand sqrt(const GDALRasterBand &band)
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_SQRT,
+                                  band);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                             gdal::log()                              */
+/************************************************************************/
+
+namespace gdal
+{
+
+/** Return a band whose each pixel value is the natural logarithm of the
+ * corresponding pixel value in the input band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand log(const GDALRasterBand &band)
+{
+#ifndef HAVE_MUPARSER
+    (void)band;
+    return ThrowIfNotMuparser();
+#else
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LOG,
+                                  band);
+#endif
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                             gdal::log10()                            */
+/************************************************************************/
+
+namespace gdal
+{
+
+/** Return a band whose each pixel value is the logarithm base 10 of the
+ * corresponding pixel value in the input band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand log10(const GDALRasterBand &band)
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_LOG10,
+                                  band);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                             gdal::pow()                              */
+/************************************************************************/
+
+namespace gdal
+{
+
+#ifndef DOXYGEN_SKIP
+/** Return a band whose each pixel value is the constant raised to the power of
+ * the corresponding pixel value in the input band.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand pow(double constant, const GDALRasterBand &band)
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_POW,
+                                  constant, band);
+}
+#endif
+
+}  // namespace gdal
+
+/************************************************************************/
+/*                             gdal::pow()                              */
+/************************************************************************/
+
+namespace gdal
+{
+
+/** Return a band whose each pixel value is the the corresponding pixel value
+ * in the input band raised to the power of the constant.
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ */
+GDALComputedRasterBand pow(const GDALRasterBand &band, double constant)
+{
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_POW,
+                                  band, constant);
+}
+}  // namespace gdal
+
+/************************************************************************/
+/*                             gdal::pow()                              */
+/************************************************************************/
+
+namespace gdal
+{
+
+#ifndef DOXYGEN_SKIP
+/** Return a band whose each pixel value is the the corresponding pixel value
+ * in the input band1 raised to the power of the corresponding pixel value
+ * in the input band2
+ *
+ * The resulting band is lazy evaluated. A reference is taken on input
+ * datasets.
+ *
+ * @since 3.12
+ * @throw std::runtime_error if bands do not have the same dimensions.
+ */
+GDALComputedRasterBand pow(const GDALRasterBand &band1,
+                           const GDALRasterBand &band2)
+{
+#ifndef HAVE_MUPARSER
+    (void)band1;
+    (void)band2;
+    return ThrowIfNotMuparser();
+#else
+    GDALRasterBand::ThrowIfNotSameDimensions(band1, band2);
+    return GDALComputedRasterBand(GDALComputedRasterBand::Operation::OP_POW,
+                                  band1, band2);
+#endif
+}
+#endif
+}  // namespace gdal

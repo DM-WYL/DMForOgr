@@ -179,6 +179,10 @@ void OGRDXFLayer::TranslateGenericProperty(OGRDXFFeature *poFeature, int nCode,
             poFeature->oStyleProperties["TrueColor"] = pszValue;
             break;
 
+        case 440:
+            poFeature->oStyleProperties["Transparency"] = pszValue;
+            break;
+
         case 6:
             poFeature->SetField("Linetype", TextRecode(pszValue));
             break;
@@ -290,7 +294,114 @@ void OGRDXFLayer::PrepareBrushStyle(
 
 {
     CPLString osStyle = "BRUSH(fc:";
-    osStyle += poFeature->GetColor(poDS, poBlockFeature);
+    const std::string osForegroundColor =
+        poFeature->GetColor(poDS, poBlockFeature);
+    osStyle += osForegroundColor;
+
+    if (poFeature->oStyleProperties.count("FillFlag") > 0 &&
+        poFeature->oStyleProperties["FillFlag"] == "Pattern")
+    {
+        if (poFeature->oStyleProperties.count("HatchBackgroundColor") > 0)
+        {
+            unsigned nColor = static_cast<unsigned>(
+                atoi(poFeature->oStyleProperties["HatchBackgroundColor"]));
+            if ((nColor >> 24) == 0xC3)
+            {
+                // Indexed color
+                nColor &= 0xFFFFFF;
+                if (nColor < 256)
+                {
+                    const unsigned char *pabyDXFColors = ACGetColorTable();
+
+                    osStyle += CPLSPrintf(",bc:#%02x%02x%02x",
+                                          pabyDXFColors[nColor * 3 + 0],
+                                          pabyDXFColors[nColor * 3 + 1],
+                                          pabyDXFColors[nColor * 3 + 2]);
+                }
+            }
+            else if ((nColor >> 24) == 0xC2)
+            {
+                // True color
+                nColor &= 0xFFFFFF;
+
+                osStyle += CPLSPrintf(",bc:#%06x", nColor);
+            }
+        }
+
+        double dfRotation = 0.0;
+        if (poFeature->oStyleProperties.count("HatchPatternRotation") > 0)
+        {
+            dfRotation =
+                CPLAtof(poFeature->oStyleProperties["HatchPatternRotation"]);
+        }
+
+        const char *pszPatternName = poFeature->GetFieldAsString("Text");
+        if (EQUAL(pszPatternName, "ANSI31"))
+        {
+            if (std::fabs(dfRotation - -45) < 1e-12 ||
+                std::fabs(dfRotation - 315) < 1e-12)
+            {
+                osStyle += ",id:\"ogr-brush-2\"";
+            }
+            else if (std::fabs(dfRotation - 45) < 1e-12 ||
+                     std::fabs(dfRotation - 225) < 1e-12)
+            {
+                osStyle += ",id:\"ogr-brush-3\"";
+            }
+            else if (std::fabs(dfRotation - 90) < 1e-12 ||
+                     std::fabs(dfRotation - -90) < 1e-12 ||
+                     std::fabs(dfRotation - 270) < 1e-12)
+            {
+                osStyle += ",id:\"ogr-brush-4\"";
+            }
+            else if (std::fabs(dfRotation) < 1e-12)
+            {
+                osStyle += ",id:\"ogr-brush-5\"";
+            }
+            else
+            {
+                osStyle += ",id:\"ogr-brush-5\"";
+                osStyle += CPLSPrintf(",a:%f", dfRotation);
+            }
+        }
+        else if (EQUAL(pszPatternName, "ANSI37"))
+        {
+            if (std::fabs(dfRotation - 45) < 1e-12 ||
+                std::fabs(dfRotation - 225) < 1e-12)
+            {
+                osStyle += ",id:\"ogr-brush-6\"";
+            }
+            else if (std::fabs(dfRotation) < 1e-12)
+            {
+                osStyle += ",id:\"ogr-brush-7\"";
+            }
+            else
+            {
+                osStyle += ",id:\"ogr-brush-7\"";
+                osStyle += CPLSPrintf(",a:%f", dfRotation);
+            }
+        }
+        else if (EQUAL(pszPatternName, "null"))
+        {
+            // NOTE: null is a totally made up name to express the intent
+            osStyle += ",id:\"ogr-brush-1\"";
+        }
+
+        if (poFeature->oStyleProperties.count("HatchPatternScale") > 0)
+        {
+            const double dfScale =
+                CPLAtof(poFeature->oStyleProperties["HatchPatternScale"]);
+            if (std::fabs(dfScale - 1) > 1e-12)
+            {
+                osStyle += CPLSPrintf(",s:%f", dfScale);
+            }
+        }
+    }
+    else if (osForegroundColor == "#00000000")
+    {
+        osStyle += ",id:\"ogr-brush-1\"";
+    }
+
     osStyle += ")";
 
     poFeature->SetStyleString(osStyle);
@@ -339,7 +450,9 @@ void OGRDXFLayer::PrepareLineStyle(
     // Use layer lineweight?
     if (CPLAtof(osWeight) == -1)
     {
-        osWeight = poDS->LookupLayerProperty(osLayer, "LineWeight");
+        auto osLayerLineWeight =
+            poDS->LookupLayerProperty(osLayer, "LineWeight");
+        osWeight = osLayerLineWeight ? *osLayerLineWeight : CPLString();
     }
 
     // Will be zero in the case of an invalid value
@@ -348,26 +461,28 @@ void OGRDXFLayer::PrepareLineStyle(
     /* -------------------------------------------------------------------- */
     /*      Do we have a dash/dot line style?                               */
     /* -------------------------------------------------------------------- */
-    const char *pszLinetype = poFeature->GetFieldAsString("Linetype");
+    CPLString osLinetype = poFeature->GetFieldAsString("Linetype");
 
     // Use ByBlock line style?
-    if (pszLinetype && EQUAL(pszLinetype, "ByBlock") && poBlockFeature)
+    if (!osLinetype.empty() && EQUAL(osLinetype, "ByBlock") && poBlockFeature)
     {
-        pszLinetype = poBlockFeature->GetFieldAsString("Linetype");
+        osLinetype = poBlockFeature->GetFieldAsString("Linetype");
 
         // Use the inherited line style if we regenerate the style string
         // again during block insertion
-        if (pszLinetype)
-            poFeature->SetField("Linetype", pszLinetype);
+        if (!osLinetype.empty())
+            poFeature->SetField("Linetype", osLinetype);
     }
 
     // Use layer line style?
-    if (pszLinetype && EQUAL(pszLinetype, ""))
+    if (osLinetype.empty())
     {
-        pszLinetype = poDS->LookupLayerProperty(osLayer, "Linetype");
+        auto osLayerLineType = poDS->LookupLayerProperty(osLayer, "Linetype");
+        if (osLayerLineType)
+            osLinetype = *osLayerLineType;
     }
 
-    const std::vector<double> oLineType = poDS->LookupLineType(pszLinetype);
+    const std::vector<double> oLineType = poDS->LookupLineType(osLinetype);
 
     // Linetype scale is not inherited from the block feature
     double dfLineTypeScale = CPLAtof(poDS->GetVariable("$LTSCALE", "1.0"));
@@ -2040,12 +2155,14 @@ OGRDXFFeature *OGRDXFLayer::TranslateSPLINE()
     int nCode;
     auto poFeature = std::make_unique<OGRDXFFeature>(poFeatureDefn);
 
-    std::vector<double> adfControlPoints(1, 0.0);
-    std::vector<double> adfKnots(1, 0.0);
-    std::vector<double> adfWeights(1, 0.0);
+    std::vector<double> adfControlPoints(FORTRAN_INDEXING, 0.0);
+    std::vector<double> adfKnots(FORTRAN_INDEXING, 0.0);
+    std::vector<double> adfWeights(FORTRAN_INDEXING, 0.0);
     int nDegree = -1;
     int nControlPoints = -1;
     int nKnots = -1;
+    bool bInsertNullZ = false;
+    bool bHasZ = false;
 
     /* -------------------------------------------------------------------- */
     /*      Process values.                                                 */
@@ -2056,12 +2173,23 @@ OGRDXFFeature *OGRDXFLayer::TranslateSPLINE()
         switch (nCode)
         {
             case 10:
+                if (bInsertNullZ)
+                {
+                    adfControlPoints.push_back(0.0);
+                    bInsertNullZ = false;
+                }
                 adfControlPoints.push_back(CPLAtof(szLineBuf));
                 break;
 
             case 20:
                 adfControlPoints.push_back(CPLAtof(szLineBuf));
-                adfControlPoints.push_back(0.0);
+                bInsertNullZ = true;
+                break;
+
+            case 30:
+                adfControlPoints.push_back(CPLAtof(szLineBuf));
+                bHasZ = true;
+                bInsertNullZ = false;
                 break;
 
             case 40:
@@ -2136,12 +2264,25 @@ OGRDXFFeature *OGRDXFLayer::TranslateSPLINE()
     if (nCode == 0)
         poDS->UnreadValue();
 
+    if (bInsertNullZ)
+    {
+        adfControlPoints.push_back(0.0);
+    }
+
+    if (static_cast<int>(adfControlPoints.size() % 3) != FORTRAN_INDEXING)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "Invalid number of values for spline control points");
+        DXF_LAYER_READER_ERROR();
+        return nullptr;
+    }
+
     /* -------------------------------------------------------------------- */
     /*      Use the helper function to check the input data and insert      */
     /*      the spline.                                                     */
     /* -------------------------------------------------------------------- */
     auto poLS =
-        InsertSplineWithChecks(nDegree, adfControlPoints, nControlPoints,
+        InsertSplineWithChecks(nDegree, adfControlPoints, bHasZ, nControlPoints,
                                adfKnots, nKnots, adfWeights);
 
     if (!poLS)
@@ -2165,7 +2306,7 @@ OGRDXFFeature *OGRDXFLayer::TranslateSPLINE()
 /************************************************************************/
 
 std::unique_ptr<OGRLineString> OGRDXFLayer::InsertSplineWithChecks(
-    const int nDegree, std::vector<double> &adfControlPoints,
+    const int nDegree, std::vector<double> &adfControlPoints, bool bHasZ,
     int nControlPoints, std::vector<double> &adfKnots, int nKnots,
     std::vector<double> &adfWeights)
 {
@@ -2178,11 +2319,13 @@ std::unique_ptr<OGRLineString> OGRDXFLayer::InsertSplineWithChecks(
     if (bResult == true)
     {
         // Check whether nctrlpts value matches number of vertices read
-        int nCheck = (static_cast<int>(adfControlPoints.size()) - 1) / 3;
+        int nCheck =
+            (static_cast<int>(adfControlPoints.size()) - FORTRAN_INDEXING) / 3;
 
         if (nControlPoints == -1)
             nControlPoints =
-                (static_cast<int>(adfControlPoints.size()) - 1) / 3;
+                (static_cast<int>(adfControlPoints.size()) - FORTRAN_INDEXING) /
+                3;
 
         // min( num(ctrlpts) ) = order
         bResult = (nControlPoints >= nOrder && nControlPoints == nCheck);
@@ -2191,7 +2334,7 @@ std::unique_ptr<OGRLineString> OGRDXFLayer::InsertSplineWithChecks(
     bool bCalculateKnots = false;
     if (bResult == true)
     {
-        int nCheck = static_cast<int>(adfKnots.size()) - 1;
+        int nCheck = static_cast<int>(adfKnots.size()) - FORTRAN_INDEXING;
 
         // Recalculate knots when:
         // - no knots data present, nknots is -1 and ncheck is 0
@@ -2203,13 +2346,13 @@ std::unique_ptr<OGRLineString> OGRDXFLayer::InsertSplineWithChecks(
             for (int i = 0; i < (nControlPoints + nOrder); i++)
                 adfKnots.push_back(0.0);
 
-            nCheck = static_cast<int>(adfKnots.size()) - 1;
+            nCheck = static_cast<int>(adfKnots.size()) - FORTRAN_INDEXING;
         }
         // Adjust nknots value when:
         // - nknots value not present, knot vertices present
         //   nknots is -1, ncheck is (nctrlpts + order)
         if (nKnots == -1)
-            nKnots = static_cast<int>(adfKnots.size()) - 1;
+            nKnots = static_cast<int>(adfKnots.size()) - FORTRAN_INDEXING;
 
         // num(knots) = num(ctrlpts) + order
         bResult = (nKnots == (nControlPoints + nOrder) && nKnots == nCheck);
@@ -2217,14 +2360,14 @@ std::unique_ptr<OGRLineString> OGRDXFLayer::InsertSplineWithChecks(
 
     if (bResult == true)
     {
-        int nWeights = static_cast<int>(adfWeights.size()) - 1;
+        int nWeights = static_cast<int>(adfWeights.size()) - FORTRAN_INDEXING;
 
         if (nWeights == 0)
         {
             for (int i = 0; i < nControlPoints; i++)
                 adfWeights.push_back(1.0);
 
-            nWeights = static_cast<int>(adfWeights.size()) - 1;
+            nWeights = static_cast<int>(adfWeights.size()) - FORTRAN_INDEXING;
         }
 
         // num(weights) = num(ctrlpts)
@@ -2238,11 +2381,7 @@ std::unique_ptr<OGRLineString> OGRDXFLayer::InsertSplineWithChecks(
     /*      Interpolate spline                                              */
     /* -------------------------------------------------------------------- */
     int p1 = nControlPoints * 8;
-    std::vector<double> p;
-
-    p.push_back(0.0);
-    for (int i = 0; i < 3 * p1; i++)
-        p.push_back(0.0);
+    std::vector<double> p(3 * p1 + FORTRAN_INDEXING);
 
     rbspline2(nControlPoints, nOrder, p1, &(adfControlPoints[0]),
               &(adfWeights[0]), bCalculateKnots, &(adfKnots[0]), &(p[0]));
@@ -2253,8 +2392,19 @@ std::unique_ptr<OGRLineString> OGRDXFLayer::InsertSplineWithChecks(
     auto poLS = std::make_unique<OGRLineString>();
 
     poLS->setNumPoints(p1);
-    for (int i = 0; i < p1; i++)
-        poLS->setPoint(i, p[i * 3 + 1], p[i * 3 + 2]);
+    if (bHasZ)
+    {
+        for (int i = 0; i < p1; i++)
+            poLS->setPoint(i, p[i * 3 + FORTRAN_INDEXING],
+                           p[i * 3 + FORTRAN_INDEXING + 1],
+                           p[i * 3 + FORTRAN_INDEXING + 2]);
+    }
+    else
+    {
+        for (int i = 0; i < p1; i++)
+            poLS->setPoint(i, p[i * 3 + FORTRAN_INDEXING],
+                           p[i * 3 + FORTRAN_INDEXING + 1]);
+    }
 
     return poLS;
 }
@@ -2721,6 +2871,150 @@ OGRDXFLayer::SimplifyBlockGeometry(OGRGeometryCollection *poCollection)
 }
 
 /************************************************************************/
+/*                        TranslateWIPEOUT()                            */
+/*                                                                      */
+/*     Translate Autodesk Wipeout entities                              */
+/*     This function reads only the geometry of the image outline and   */
+/*     doesn't output the embedded image                                */
+/************************************************************************/
+
+OGRDXFFeature *OGRDXFLayer::TranslateWIPEOUT()
+
+{
+    char szLineBuf[257];
+    int nCode;
+    auto poFeature = std::make_unique<OGRDXFFeature>(poFeatureDefn);
+    double dfX = 0.0, dfY = 0.0, dfXOffset = 0.0, dfYOffset = 0.0;
+    double dfXscale = 1.0, dfYscale = 1.0;
+
+    int nNumVertices = 0;
+    int nBoundaryVertexCount = 0;
+    int nFormat = 0;
+
+    DXFSmoothPolyline smoothPolyline;
+
+    smoothPolyline.setCoordinateDimension(2);
+
+    /* Read main feature properties as class, insertion point (in WCS) */
+    while ((nCode = poDS->ReadValue(szLineBuf, sizeof(szLineBuf))) > 0)
+    {
+        if (nBoundaryVertexCount > nNumVertices)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Too many vertices found in WIPEOUT.");
+            return nullptr;
+        }
+
+        switch (nCode)
+        {
+                /* Group codes 10, 20 control the insertion point of the lower
+                   left corner of your image. */
+            case 10:
+                dfXOffset = CPLAtof(szLineBuf);
+                break;
+
+            case 20:
+                dfYOffset = CPLAtof(szLineBuf);
+                smoothPolyline.AddPoint(dfXOffset, dfYOffset, 0.0, 0.0);
+                break;
+
+                /* --------------------------------------------------------------------- */
+                /* The group codes 11, 21 and 31 are used to define a vector in 3D space */
+                /* that is the endpoint of a line whose start point is assumed to be     */
+                /* 0,0,0, regardless of the origin point of the image.                   */
+                /* These group codes describe a relative vector.                         */
+                /* --------------------------------------------------------------------- */
+
+            case 11:
+                dfXscale = CPLAtof(szLineBuf);
+                break;
+
+            case 22:
+                dfYscale = CPLAtof(szLineBuf);
+                break;
+
+            case 31:
+                break;
+
+            /* Read image properties and set them in feature style (contrast...) */
+            case 281:
+                break;
+
+            case 282:
+                break;
+
+            case 293:
+                break;
+
+            case 71:
+                nFormat = atoi(szLineBuf);
+                if (nFormat == 1)
+                {
+                    // Here ignore feature because point format set to 1 is not supported
+                    CPLError(
+                        CE_Warning, CPLE_AppDefined,
+                        "Format of points in WIPEOUT entity not supported.");
+                    return nullptr;
+                }
+                break;
+
+            case 91:
+                nNumVertices = atoi(szLineBuf);
+                break;
+
+            /* -------------------------------------------------------------------- */
+            /*      Read clipping boundary properties and set them feature geometry */
+            /*      Collect vertices as a smooth polyline.                          */
+            /* -------------------------------------------------------------------- */
+            case 14:
+                dfX = CPLAtof(szLineBuf);
+                break;
+
+            case 24:
+                dfY = CPLAtof(szLineBuf);
+                smoothPolyline.AddPoint(dfXOffset + (0.5 + dfX) * dfXscale,
+                                        dfYOffset + (0.5 - dfY) * dfYscale, 0.0,
+                                        0.0);
+                nBoundaryVertexCount++;
+                break;
+
+            default:
+                TranslateGenericProperty(poFeature.get(), nCode, szLineBuf);
+                break;
+        }
+    }
+    if (nCode < 0)
+    {
+        DXF_LAYER_READER_ERROR();
+        return nullptr;
+    }
+
+    if (nCode == 0)
+        poDS->UnreadValue();
+
+    if (smoothPolyline.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    /* -------------------------------------------------------------------- */
+    /*      Close polyline to output polygon geometry.                      */
+    /* -------------------------------------------------------------------- */
+    smoothPolyline.Close();
+
+    OGRGeometry *poGeom = smoothPolyline.Tessellate(TRUE);
+
+    poFeature->SetGeometryDirectly(poGeom);
+
+    // Set style pen color
+    PrepareLineStyle(poFeature.get());
+
+    return poFeature.release();
+}
+
+/************************************************************************/
+
+/************************************************************************/
 /*                       InsertBlockReference()                         */
 /*                                                                      */
 /*     Returns a point geometry located at the block's insertion        */
@@ -3132,7 +3426,7 @@ bool OGRDXFLayer::TranslateINSERT()
 
             case 70:
                 m_oInsertState.m_nColumnCount = atoi(szLineBuf);
-                if (m_oInsertState.m_nColumnCount <= 0)
+                if (m_oInsertState.m_nColumnCount < 0)
                 {
                     DXF_LAYER_READER_ERROR();
                     m_oInsertState.m_nRowCount = 0;
@@ -3143,7 +3437,7 @@ bool OGRDXFLayer::TranslateINSERT()
 
             case 71:
                 m_oInsertState.m_nRowCount = atoi(szLineBuf);
-                if (m_oInsertState.m_nRowCount <= 0)
+                if (m_oInsertState.m_nRowCount < 0)
                 {
                     DXF_LAYER_READER_ERROR();
                     m_oInsertState.m_nRowCount = 0;
@@ -3168,6 +3462,14 @@ bool OGRDXFLayer::TranslateINSERT()
         m_oInsertState.m_nRowCount = 0;
         m_oInsertState.m_nColumnCount = 0;
         return false;
+    }
+
+    if (m_oInsertState.m_nRowCount == 0 || m_oInsertState.m_nColumnCount == 0)
+    {
+        // AutoCad doesn't allow setting to 0 in its UI, but interprets 0
+        // as 1 (but other software such as LibreCAD interpret 0 as 0)
+        m_oInsertState.m_nRowCount = 1;
+        m_oInsertState.m_nColumnCount = 1;
     }
 
     /* -------------------------------------------------------------------- */
@@ -3479,6 +3781,10 @@ OGRDXFFeature *OGRDXFLayer::GetNextUnfilteredFeature()
         {
             poFeature = TranslateMLEADER();
         }
+        else if (EQUAL(szLineBuf, "WIPEOUT"))
+        {
+            poFeature = TranslateWIPEOUT();
+        }
         else if (EQUAL(szLineBuf, "3DSOLID") || EQUAL(szLineBuf, "BODY") ||
                  EQUAL(szLineBuf, "REGION") || EQUAL(szLineBuf, "SURFACE"))
         {
@@ -3542,7 +3848,7 @@ OGRFeature *OGRDXFLayer::GetNextFeature()
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRDXFLayer::TestCapability(const char *pszCap)
+int OGRDXFLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCStringsAsUTF8))

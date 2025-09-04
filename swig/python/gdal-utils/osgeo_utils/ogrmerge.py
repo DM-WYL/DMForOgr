@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR samples
 # Purpose:  Merge the content of several vector datasets into a single one.
@@ -42,7 +41,7 @@ def Usage(isError):
     print("            [-src_layer_field_content <layer_name_template>]", file=f)
     print("", file=f)
     print(
-        "* layer_name_template can contain the following substituable " "variables:",
+        "* layer_name_template can contain the following substitutable " "variables:",
         file=f,
     )
     print(
@@ -97,7 +96,7 @@ def _Esc(x):
     return gdal.EscapeString(x, gdal.CPLES_XML).decode("UTF-8")
 
 
-class XMLWriter(object):
+class XMLWriter:
     def __init__(self, f):
         self.f = f
         self.inc = 0
@@ -212,12 +211,27 @@ def process(argv, progress=None, progress_arg=None):
         elif arg == "-a_srs" and i + 1 < len(argv):
             i = i + 1
             a_srs = argv[i]
+            srs = osr.SpatialReference()
+            try:
+                srs.SetFromUserInput(a_srs)
+            except Exception:
+                raise ValueError("Invalid value for -a_srs")
         elif arg == "-s_srs" and i + 1 < len(argv):
             i = i + 1
             s_srs = argv[i]
+            srs = osr.SpatialReference()
+            try:
+                srs.SetFromUserInput(s_srs)
+            except Exception:
+                raise ValueError("Invalid value for -s_srs")
         elif arg == "-t_srs" and i + 1 < len(argv):
             i = i + 1
             t_srs = argv[i]
+            srs = osr.SpatialReference()
+            try:
+                srs.SetFromUserInput(t_srs)
+            except Exception:
+                raise ValueError("Invalid value for -t_srs")
         elif arg == "-nln" and i + 1 < len(argv):
             i = i + 1
             layer_name_template = argv[i]

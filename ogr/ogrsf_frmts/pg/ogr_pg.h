@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Private definitions for OGR/PostgreSQL driver.
@@ -141,13 +140,7 @@ class OGRPGFeatureDefn CPL_NON_FINAL : public OGRFeatureDefn
         SetGeomType(wkbNone);
     }
 
-    virtual void UnsetLayer()
-    {
-        const int nGeomFieldCount = GetGeomFieldCount();
-        for (int i = 0; i < nGeomFieldCount; i++)
-            cpl::down_cast<OGRPGGeomFieldDefn *>(apoGeomFieldDefn[i].get())
-                ->UnsetLayer();
-    }
+    virtual void UnsetLayer();
 
     OGRPGGeomFieldDefn *GetGeomFieldDefn(int i) override
     {
@@ -232,21 +225,16 @@ class OGRPGLayer CPL_NON_FINAL : public OGRLayer
 
     virtual void ResetReading() override;
 
-    virtual OGRPGFeatureDefn *GetLayerDefn() override
+    const OGRPGFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override
-    {
-        return GetExtent(0, psExtent, bForce);
-    }
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override;
-
-    OGRErr GetExtent3D(int iGeomField, OGREnvelope3D *psExtent3D,
-                       int bForce) override;
+    OGRErr IGetExtent3D(int iGeomField, OGREnvelope3D *psExtent3D,
+                        bool bForce) override;
 
     virtual OGRErr StartTransaction() override;
     virtual OGRErr CommitTransaction() override;
@@ -254,7 +242,7 @@ class OGRPGLayer CPL_NON_FINAL : public OGRLayer
 
     void InvalidateCursor();
 
-    virtual const char *GetFIDColumn() override;
+    const char *GetFIDColumn() const override;
 
     virtual OGRErr SetNextByIndex(GIntBig nIndex) override;
 
@@ -345,8 +333,6 @@ class OGRPGTableLayer final : public OGRPGLayer
 
     CPLString m_osFirstGeometryFieldName{};
 
-    std::vector<bool> m_abGeneratedColumns{};
-
     std::string m_osLCOGeomType{};
 
     virtual CPLString GetFromClauseForGetExtent() override
@@ -377,12 +363,8 @@ class OGRPGTableLayer final : public OGRPGLayer
     virtual OGRFeature *GetNextFeature() override;
     virtual GIntBig GetFeatureCount(int) override;
 
-    virtual void SetSpatialFilter(OGRGeometry *poGeom) override
-    {
-        SetSpatialFilter(0, poGeom);
-    }
-
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override;
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
     virtual OGRErr SetAttributeFilter(const char *) override;
 
@@ -407,15 +389,10 @@ class OGRPGTableLayer final : public OGRPGLayer
                        const OGRGeomFieldDefn *poNewGeomFieldDefn,
                        int nFlagsIn) override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override
-    {
-        return GetExtent(0, psExtent, bForce);
-    }
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
     const char *GetTableName()
     {
@@ -427,7 +404,7 @@ class OGRPGTableLayer final : public OGRPGLayer
         return pszSchemaName;
     }
 
-    virtual const char *GetFIDColumn() override;
+    const char *GetFIDColumn() const override;
 
     virtual char **GetMetadataDomainList() override;
     virtual char **GetMetadata(const char *pszDomain = "") override;
@@ -550,14 +527,10 @@ class OGRPGResultLayer final : public OGRPGLayer
     virtual void ResetReading() override;
     virtual GIntBig GetFeatureCount(int) override;
 
-    virtual void SetSpatialFilter(OGRGeometry *poGeom) override
-    {
-        SetSpatialFilter(0, poGeom);
-    }
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override;
-
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRFeature *GetNextFeature() override;
 
@@ -690,8 +663,8 @@ class OGRPGDataSource final : public GDALDataset
               const char *pszSchemaName, const char *pszDescription,
               const char *pszGeomColForced, int bUpdate, int bTestOpen);
 
-    int GetLayerCount() override;
-    OGRLayer *GetLayer(int) override;
+    int GetLayerCount() const override;
+    const OGRLayer *GetLayer(int) const override;
     OGRLayer *GetLayerByName(const char *pszName) override;
 
     virtual CPLErr FlushCache(bool bAtClosing) override;
@@ -700,7 +673,7 @@ class OGRPGDataSource final : public GDALDataset
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRErr StartTransaction(int bForce = FALSE) override;
     virtual OGRErr CommitTransaction() override;

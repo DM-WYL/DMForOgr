@@ -41,8 +41,9 @@ string(REPLACE "#define SWIGPYTHON"
                "#define SWIGPYTHON\n\#define SED_HACKS"
        _CONTENTS "${_CONTENTS}")
 
+# patch to avoid memory leaks on exception (see 594fe48)
 string(REPLACE "return resultobj;"
-               "if ( ReturnSame(bLocalUseExceptionsCode) ) { CPLErr eclass = CPLGetLastErrorType(); if ( eclass == CE_Failure || eclass == CE_Fatal ) { Py_XDECREF(resultobj); SWIG_Error( SWIG_RuntimeError, CPLGetLastErrorMsg() ); return NULL; } }\n  return resultobj;"
+               "if ( ReturnSame(bLocalUseExceptionsCode) ) { CPLErr eclass = CPLGetLastErrorType(); if ( eclass == CE_Failure || eclass == CE_Fatal ) { std::string osMsg = CPLGetLastErrorMsg(); Py_XDECREF(resultobj); SWIG_Error( SWIG_RuntimeError, osMsg.c_str() ); return NULL; } }\n  return resultobj;"
        _CONTENTS "${_CONTENTS}")
 
 # Below works around https://github.com/swig/swig/issues/2638 and https://github.com/swig/swig/issues/2037#issuecomment-874372082
@@ -55,13 +56,17 @@ string(REPLACE "return resultobj;"
 # The following hack just makes SWIG_Python_DestroyModule() a no-op, which
 # will leak a bit of memory, but anyway SWIG currently can only free one single
 # SWIG module, so we had already memleaks
-# To be revisted if above mentioned SWIG issues are resolved
+# To be revisited if above mentioned SWIG issues are resolved
 string(REPLACE "if (--interpreter_counter != 0) // another sub-interpreter may still be using the swig_module's types"
                "/* Even Rouault / GDAL hack for SWIG >= 4.1 related to objects not being freed. See swig/python/modify_cpp_files.cmake for more details */\nif( 1 )"
        _CONTENTS "${_CONTENTS}")
 
 # Works around https://github.com/swig/swig/issues/3061
+# For SWIG 4.3.0:
 string(REPLACE "# define SWIG_HEAPTYPES" "// Below is disabled because of https://github.com/swig/swig/issues/3061\n// # define SWIG_HEAPTYPES"
+       _CONTENTS "${_CONTENTS}")
+# For SWIG 4.3.1:
+string(REPLACE "#define SWIG_HEAPTYPES" "// Below is disabled because of https://github.com/swig/swig/issues/3061\n// # define SWIG_HEAPTYPES"
        _CONTENTS "${_CONTENTS}")
 
 file(WRITE ${FILE} "${_CONTENTS}")

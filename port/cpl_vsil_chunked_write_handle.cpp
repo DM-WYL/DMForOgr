@@ -91,7 +91,8 @@ void VSIChunkedWriteHandle::InvalidateParentDirectory()
     std::string osFilenameWithoutSlash(m_osFilename);
     if (!osFilenameWithoutSlash.empty() && osFilenameWithoutSlash.back() == '/')
         osFilenameWithoutSlash.pop_back();
-    m_poFS->InvalidateDirContent(CPLGetDirname(osFilenameWithoutSlash.c_str()));
+    m_poFS->InvalidateDirContent(
+        CPLGetDirnameSafe(osFilenameWithoutSlash.c_str()));
 }
 
 /************************************************************************/
@@ -222,8 +223,7 @@ size_t VSIChunkedWriteHandle::Write(const void *pBuffer, size_t nSize,
                 m_aosHTTPOptions.List()));
             headers = VSICurlSetCreationHeadersFromOptions(
                 headers, m_aosOptions.List(), m_osFilename.c_str());
-            headers = VSICurlMergeHeaders(
-                headers, m_poS3HandleHelper->GetCurlHeaders("PUT", headers));
+            headers = m_poS3HandleHelper->GetCurlHeaders("PUT", headers);
             unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_HTTPHEADER,
                                        headers);
 
@@ -459,8 +459,7 @@ bool VSIChunkedWriteHandle::DoEmptyPUT()
                               m_aosHTTPOptions.List()));
         headers = VSICurlSetCreationHeadersFromOptions(
             headers, m_aosOptions.List(), m_osFilename.c_str());
-        headers = VSICurlMergeHeaders(
-            headers, m_poS3HandleHelper->GetCurlHeaders("PUT", headers, "", 0));
+        headers = m_poS3HandleHelper->GetCurlHeaders("PUT", headers, "", 0);
         headers = curl_slist_append(headers, "Expect: 100-continue");
 
         CurlRequestHelper requestHelper;

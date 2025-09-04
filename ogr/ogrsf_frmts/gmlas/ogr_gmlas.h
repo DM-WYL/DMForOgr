@@ -51,9 +51,7 @@ GDALDataset *OGRGMLASDriverCreateCopy(const char *pszFilename,
 class IGMLASInputSourceClosing
 {
   public:
-    virtual ~IGMLASInputSourceClosing()
-    {
-    }
+    virtual ~IGMLASInputSourceClosing();
 
     virtual void notifyClosing(const CPLString &osFilename) = 0;
 };
@@ -240,7 +238,7 @@ class GMLASErrorHandler : public ErrorHandler
 class GMLASXLinkResolutionConf
 {
   public:
-    /* See data/gmlasconf.xsd for docomentation of the fields */
+    /* See data/gmlasconf.xsd for documentation of the fields */
 
     typedef enum
     {
@@ -451,8 +449,6 @@ class GMLASConfiguration
 
     bool Load(const char *pszFilename);
     void Finalize();
-
-    static CPLString GetBaseCacheDirectory();
 
     static std::string GetDefaultConfFile(bool &bUnlinkAfterUse);
 };
@@ -1405,8 +1401,8 @@ class OGRGMLASDataSource final : public GDALDataset
 
     ~OGRGMLASDataSource();
 
-    virtual int GetLayerCount() override;
-    virtual OGRLayer *GetLayer(int) override;
+    int GetLayerCount() const override;
+    const OGRLayer *GetLayer(int) const override;
     virtual OGRLayer *GetLayerByName(const char *pszName) override;
 
     virtual void ResetReading() override;
@@ -1414,7 +1410,7 @@ class OGRGMLASDataSource final : public GDALDataset
                                        double *pdfProgressPct,
                                        GDALProgressFunc pfnProgress,
                                        void *pProgressData) override;
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     bool Open(GDALOpenInfo *poOpenInfo);
 
@@ -1508,7 +1504,7 @@ class OGRGMLASLayer final : public OGRLayer
 
     OGRGMLASDataSource *m_poDS = nullptr;
     GMLASFeatureClass m_oFC{};
-    bool m_bLayerDefnFinalized = false;
+    mutable bool m_bLayerDefnFinalized = false;
     int m_nMaxFieldIndex = 0;
     OGRFeatureDefn *m_poFeatureDefn = nullptr;
 
@@ -1563,16 +1559,17 @@ class OGRGMLASLayer final : public OGRLayer
     explicit OGRGMLASLayer(const char *pszLayerName);
     virtual ~OGRGMLASLayer();
 
-    virtual const char *GetName() override
+    const char *GetName() const override
     {
         return GetDescription();
     }
 
-    virtual OGRFeatureDefn *GetLayerDefn() override;
+    using OGRLayer::GetLayerDefn;
+    const OGRFeatureDefn *GetLayerDefn() const override;
     virtual void ResetReading() override;
     virtual OGRFeature *GetNextFeature() override;
 
-    virtual int TestCapability(const char *) override
+    int TestCapability(const char *) const override
     {
         return FALSE;
     }
@@ -1639,6 +1636,11 @@ class OGRGMLASLayer final : public OGRLayer
     CPLString
     CreateLinkForAttrToOtherLayer(const CPLString &osFieldName,
                                   const CPLString &osTargetLayerXPath);
+
+    const std::map<CPLString, int> &GetMapFieldXPathToOGRFieldIdx() const
+    {
+        return m_oMapFieldXPathToOGRFieldIdx;
+    }
 };
 
 /************************************************************************/
@@ -1888,6 +1890,16 @@ class GMLASReader final : public DefaultHandler
     /*    e.g  (layer Bar, field_xpath) -> [foo.1, foo.2] */
     std::map<std::pair<OGRGMLASLayer *, CPLString>, std::vector<CPLString>>
         m_oMapFieldXPathToLinkValue{};
+
+    /* Map layer's XPath to layer (for layers that are not group) */
+    std::map<CPLString, OGRGMLASLayer *> m_oMapXPathToLayer{};
+
+    /* Map OGR field XPath to layer (for layers that are group) */
+    std::map<CPLString, OGRGMLASLayer *> m_oMapFieldXPathToGroupLayer{};
+
+    /* Map layer's XPath to layer (for layers that are repeated sequences) */
+    std::map<CPLString, std::vector<OGRGMLASLayer *>>
+        m_oMapXPathToLayerRepeadedSequence{};
 
     void SetField(OGRFeature *poFeature, OGRGMLASLayer *poLayer, int nAttrIdx,
                   const CPLString &osAttrValue);

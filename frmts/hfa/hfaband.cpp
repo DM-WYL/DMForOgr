@@ -19,9 +19,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-#if HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
 #include <algorithm>
 
 #include "cpl_conv.h"
@@ -174,10 +171,10 @@ CPLErr HFABand::LoadOverviews()
             if (psHFA == nullptr)
             {
                 char *pszBasename =
-                    CPLStrdup(CPLGetBasename(psInfo->pszFilename));
+                    CPLStrdup(CPLGetBasenameSafe(psInfo->pszFilename).c_str());
 
-                pszJustFilename =
-                    CPLStrdup(CPLFormFilename(nullptr, pszBasename, "rrd"));
+                pszJustFilename = CPLStrdup(
+                    CPLFormFilenameSafe(nullptr, pszBasename, "rrd").c_str());
                 CPLDebug("HFA",
                          "Failed to find overview file with "
                          "expected name, try %s instead.",
@@ -233,12 +230,13 @@ CPLErr HFABand::LoadOverviews()
     HFAEntry *poBandProxyNode = poNode;
     HFAInfo_t *psOvHFA = psInfo;
 
-    if (nOverviews == 0 && EQUAL(CPLGetExtension(psInfo->pszFilename), "aux"))
+    if (nOverviews == 0 &&
+        EQUAL(CPLGetExtensionSafe(psInfo->pszFilename).c_str(), "aux"))
     {
         const CPLString osRRDFilename =
-            CPLResetExtension(psInfo->pszFilename, "rrd");
+            CPLResetExtensionSafe(psInfo->pszFilename, "rrd");
         const CPLString osFullRRD =
-            CPLFormFilename(psInfo->pszPath, osRRDFilename, nullptr);
+            CPLFormFilenameSafe(psInfo->pszPath, osRRDFilename, nullptr);
         VSIStatBufL sStatBuf;
 
         if (VSIStatL(osFullRRD, &sStatBuf) == 0)
@@ -463,8 +461,8 @@ CPLErr HFABand::LoadExternalBlockInfo()
     nLayerStackIndex = poDMS->GetIntField("layerStackIndex");
 
     // Open raw data file.
-    const char *pszFullFilename = HFAGetIGEFilename(psInfo);
-    if (pszFullFilename == nullptr)
+    const std::string osFullFilename = HFAGetIGEFilename(psInfo);
+    if (osFullFilename.empty())
     {
         CPLError(CE_Failure, CPLE_OpenFailed,
                  "Cannot find external data file name");
@@ -472,13 +470,14 @@ CPLErr HFABand::LoadExternalBlockInfo()
     }
 
     if (psInfo->eAccess == HFA_ReadOnly)
-        fpExternal = VSIFOpenL(pszFullFilename, "rb");
+        fpExternal = VSIFOpenL(osFullFilename.c_str(), "rb");
     else
-        fpExternal = VSIFOpenL(pszFullFilename, "r+b");
+        fpExternal = VSIFOpenL(osFullFilename.c_str(), "r+b");
     if (fpExternal == nullptr)
     {
         CPLError(CE_Failure, CPLE_OpenFailed,
-                 "Unable to open external data file: %s", pszFullFilename);
+                 "Unable to open external data file: %s",
+                 osFullFilename.c_str());
         return CE_Failure;
     }
 
@@ -489,7 +488,8 @@ CPLErr HFABand::LoadExternalBlockInfo()
         !STARTS_WITH(szHeader, "ERDAS_IMG_EXTERNAL_RASTER"))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-                 "Raw data file %s appears to be corrupt.", pszFullFilename);
+                 "Raw data file %s appears to be corrupt.",
+                 osFullFilename.c_str());
         return CE_Failure;
     }
 
@@ -658,8 +658,7 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
             // Now apply to the output buffer in a type specific way.
             if (eDataType == EPT_u8)
             {
-                ((GByte *)pabyDest)[nPixelsOutput] =
-                    static_cast<GByte>(nDataValue);
+                pabyDest[nPixelsOutput] = static_cast<GByte>(nDataValue);
             }
             else if (eDataType == EPT_u1)
             {
@@ -700,33 +699,35 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
             }
             else if (eDataType == EPT_s8)
             {
-                ((GInt8 *)pabyDest)[nPixelsOutput] =
+                reinterpret_cast<GInt8 *>(pabyDest)[nPixelsOutput] =
                     static_cast<GInt8>(nDataValue);
             }
             else if (eDataType == EPT_u16)
             {
-                ((GUInt16 *)pabyDest)[nPixelsOutput] =
+                reinterpret_cast<GUInt16 *>(pabyDest)[nPixelsOutput] =
                     static_cast<GUInt16>(nDataValue);
             }
             else if (eDataType == EPT_s16)
             {
-                ((GInt16 *)pabyDest)[nPixelsOutput] =
+                reinterpret_cast<GInt16 *>(pabyDest)[nPixelsOutput] =
                     static_cast<GInt16>(nDataValue);
             }
             else if (eDataType == EPT_s32)
             {
-                ((GInt32 *)pabyDest)[nPixelsOutput] = nDataValue;
+                reinterpret_cast<GInt32 *>(pabyDest)[nPixelsOutput] =
+                    nDataValue;
             }
             else if (eDataType == EPT_u32)
             {
-                ((GUInt32 *)pabyDest)[nPixelsOutput] = nDataValue;
+                reinterpret_cast<GUInt32 *>(pabyDest)[nPixelsOutput] =
+                    nDataValue;
             }
             else if (eDataType == EPT_f32)
             {
                 // Note, floating point values are handled as if they were
                 // signed 32-bit integers (bug #1000).
-                memcpy(&(((float *)pabyDest)[nPixelsOutput]), &nDataValue,
-                       sizeof(float));
+                memcpy(&(reinterpret_cast<float *>(pabyDest)[nPixelsOutput]),
+                       &nDataValue, sizeof(float));
             }
             else
             {
@@ -873,8 +874,7 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
                 // Bad data can trigger this assert.  r23498
                 CPLAssert(nDataValue < 256);
 #endif
-                ((GByte *)pabyDest)[nPixelsOutput++] =
-                    static_cast<GByte>(nDataValue);
+                pabyDest[nPixelsOutput++] = static_cast<GByte>(nDataValue);
             }
         }
         else if (eDataType == EPT_u16)
@@ -885,7 +885,7 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
                 CPLAssert(nDataValue >= 0);
                 CPLAssert(nDataValue < 65536);
 #endif
-                ((GUInt16 *)pabyDest)[nPixelsOutput++] =
+                reinterpret_cast<GUInt16 *>(pabyDest)[nPixelsOutput++] =
                     static_cast<GUInt16>(nDataValue);
             }
         }
@@ -913,7 +913,7 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
                 CPLAssert(nDataValue >= -32768);
                 CPLAssert(nDataValue < 32768);
 #endif
-                ((GInt16 *)pabyDest)[nPixelsOutput++] =
+                reinterpret_cast<GInt16 *>(pabyDest)[nPixelsOutput++] =
                     static_cast<GInt16>(nDataValue);
             }
         }
@@ -926,7 +926,7 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
                 // Bad data can trigger this assert.  r23498
                 CPLAssert(nDataValue >= 0);
 #endif
-                ((GUInt32 *)pabyDest)[nPixelsOutput++] =
+                reinterpret_cast<GUInt32 *>(pabyDest)[nPixelsOutput++] =
                     static_cast<GUInt32>(nDataValue);
             }
         }
@@ -934,7 +934,7 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
         {
             for (int i = 0; i < nRepeatCount; i++)
             {
-                ((GInt32 *)pabyDest)[nPixelsOutput++] =
+                reinterpret_cast<GInt32 *>(pabyDest)[nPixelsOutput++] =
                     static_cast<GInt32>(nDataValue);
             }
         }
@@ -945,7 +945,8 @@ static CPLErr UncompressBlock(GByte *pabyCData, int nSrcBytes, GByte *pabyDest,
             memcpy(&fDataValue, &nDataValue, 4);
             for (int i = 0; i < nRepeatCount; i++)
             {
-                ((float *)pabyDest)[nPixelsOutput++] = fDataValue;
+                reinterpret_cast<float *>(pabyDest)[nPixelsOutput++] =
+                    fDataValue;
             }
         }
         else if (eDataType == EPT_u1)
@@ -2028,16 +2029,11 @@ static int HFAGetOverviewBlockSize()
     if (nOvrBlockSize < 32 || nOvrBlockSize > 2048 ||
         !CPLIsPowerOfTwo(nOvrBlockSize))
     {
-        static bool bHasWarned = false;
-        if (!bHasWarned)
-        {
-            CPLError(CE_Warning, CPLE_NotSupported,
+        CPLErrorOnce(CE_Warning, CPLE_NotSupported,
                      "Wrong value for GDAL_HFA_OVR_BLOCKSIZE : %s. "
                      "Should be a power of 2 between 32 and 2048. "
                      "Defaulting to 64",
                      pszVal);
-            bHasWarned = true;
-        }
         nOvrBlockSize = 64;
     }
 
@@ -2051,8 +2047,8 @@ static int HFAGetOverviewBlockSize()
 int HFABand::CreateOverview(int nOverviewLevel, const char *pszResampling)
 
 {
-    const int nOXSize = (psInfo->nXSize + nOverviewLevel - 1) / nOverviewLevel;
-    const int nOYSize = (psInfo->nYSize + nOverviewLevel - 1) / nOverviewLevel;
+    const int nOXSize = DIV_ROUND_UP(psInfo->nXSize, nOverviewLevel);
+    const int nOYSize = DIV_ROUND_UP(psInfo->nYSize, nOverviewLevel);
 
     // Do we want to use a dependent file (.rrd) for the overviews?
     // Or just create them directly in this file?

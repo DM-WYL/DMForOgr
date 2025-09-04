@@ -14,7 +14,6 @@
 #include "gdal_utils.h"
 #include "gdal_utils_priv.h"
 
-#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -34,7 +33,7 @@
 #include "gdal_priv.h"
 #include "ogr_api.h"
 #include "ogr_core.h"
-#include "ogr_mem.h"
+#include "memdataset.h"
 #include "ogrsf_frmts.h"
 #include "ogr_spatialref.h"
 #include "gdalargumentparser.h"
@@ -292,85 +291,91 @@ class GDALFootprintMaskBand final : public GDALRasterBand
     }
 
   protected:
-    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pData) override
-    {
-        int nWindowXSize;
-        int nWindowYSize;
-        m_poSrcBand->GetActualBlockSize(nBlockXOff, nBlockYOff, &nWindowXSize,
-                                        &nWindowYSize);
-        GDALRasterIOExtraArg sExtraArg;
-        INIT_RASTERIO_EXTRA_ARG(sExtraArg);
-        return IRasterIO(GF_Read, nBlockXOff * nBlockXSize,
-                         nBlockYOff * nBlockYSize, nWindowXSize, nWindowYSize,
-                         pData, nWindowXSize, nWindowYSize, GDT_Byte, 1,
-                         nBlockXSize, &sExtraArg);
-    }
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pData) override;
 
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                      int nYSize, void *pData, int nBufXSize, int nBufYSize,
                      GDALDataType eBufType, GSpacing nPixelSpace,
                      GSpacing nLineSpace,
-                     GDALRasterIOExtraArg *psExtraArg) override
-    {
-        if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
-            eBufType == GDT_Byte && nPixelSpace == 1)
-        {
-            // Request when band seen as the mask band for GDALPolygonize()
-
-            if (m_poSrcBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize,
-                                      pData, nBufXSize, nBufYSize, eBufType,
-                                      nPixelSpace, nLineSpace,
-                                      psExtraArg) != CE_None)
-            {
-                return CE_Failure;
-            }
-            GByte *pabyData = static_cast<GByte *>(pData);
-            for (int iY = 0; iY < nYSize; ++iY)
-            {
-                for (int iX = 0; iX < nXSize; ++iX)
-                {
-                    if (pabyData[iX])
-                        pabyData[iX] = 1;
-                }
-                pabyData += nLineSpace;
-            }
-
-            return CE_None;
-        }
-
-        if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
-            eBufType == GDT_Int64 &&
-            nPixelSpace == static_cast<int>(sizeof(int64_t)) &&
-            (nLineSpace % nPixelSpace) == 0)
-        {
-            // Request when band seen as the value band for GDALPolygonize()
-
-            if (m_poSrcBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize,
-                                      pData, nBufXSize, nBufYSize, eBufType,
-                                      nPixelSpace, nLineSpace,
-                                      psExtraArg) != CE_None)
-            {
-                return CE_Failure;
-            }
-            int64_t *panData = static_cast<int64_t *>(pData);
-            for (int iY = 0; iY < nYSize; ++iY)
-            {
-                for (int iX = 0; iX < nXSize; ++iX)
-                {
-                    if (panData[iX])
-                        panData[iX] = 1;
-                }
-                panData += (nLineSpace / nPixelSpace);
-            }
-
-            return CE_None;
-        }
-
-        return GDALRasterBand::IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize,
-                                         pData, nBufXSize, nBufYSize, eBufType,
-                                         nPixelSpace, nLineSpace, psExtraArg);
-    }
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
+
+CPLErr GDALFootprintMaskBand::IReadBlock(int nBlockXOff, int nBlockYOff,
+                                         void *pData)
+{
+    int nWindowXSize;
+    int nWindowYSize;
+    m_poSrcBand->GetActualBlockSize(nBlockXOff, nBlockYOff, &nWindowXSize,
+                                    &nWindowYSize);
+    GDALRasterIOExtraArg sExtraArg;
+    INIT_RASTERIO_EXTRA_ARG(sExtraArg);
+    return IRasterIO(GF_Read, nBlockXOff * nBlockXSize,
+                     nBlockYOff * nBlockYSize, nWindowXSize, nWindowYSize,
+                     pData, nWindowXSize, nWindowYSize, GDT_Byte, 1,
+                     nBlockXSize, &sExtraArg);
+}
+
+CPLErr GDALFootprintMaskBand::IRasterIO(
+    GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize, int nYSize,
+    void *pData, int nBufXSize, int nBufYSize, GDALDataType eBufType,
+    GSpacing nPixelSpace, GSpacing nLineSpace, GDALRasterIOExtraArg *psExtraArg)
+{
+    if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
+        eBufType == GDT_Byte && nPixelSpace == 1)
+    {
+        // Request when band seen as the mask band for GDALPolygonize()
+
+        if (m_poSrcBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize, pData,
+                                  nBufXSize, nBufYSize, eBufType, nPixelSpace,
+                                  nLineSpace, psExtraArg) != CE_None)
+        {
+            return CE_Failure;
+        }
+        GByte *pabyData = static_cast<GByte *>(pData);
+        for (int iY = 0; iY < nYSize; ++iY)
+        {
+            for (int iX = 0; iX < nXSize; ++iX)
+            {
+                if (pabyData[iX])
+                    pabyData[iX] = 1;
+            }
+            pabyData += nLineSpace;
+        }
+
+        return CE_None;
+    }
+
+    if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
+        eBufType == GDT_Int64 &&
+        nPixelSpace == static_cast<int>(sizeof(int64_t)) &&
+        (nLineSpace % nPixelSpace) == 0)
+    {
+        // Request when band seen as the value band for GDALPolygonize()
+
+        if (m_poSrcBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize, pData,
+                                  nBufXSize, nBufYSize, eBufType, nPixelSpace,
+                                  nLineSpace, psExtraArg) != CE_None)
+        {
+            return CE_Failure;
+        }
+        int64_t *panData = static_cast<int64_t *>(pData);
+        for (int iY = 0; iY < nYSize; ++iY)
+        {
+            for (int iX = 0; iX < nXSize; ++iX)
+            {
+                if (panData[iX])
+                    panData[iX] = 1;
+            }
+            panData += (nLineSpace / nPixelSpace);
+        }
+
+        return CE_None;
+    }
+
+    return GDALRasterBand::IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize,
+                                     pData, nBufXSize, nBufYSize, eBufType,
+                                     nPixelSpace, nLineSpace, psExtraArg);
+}
 
 /************************************************************************/
 /*                   GDALFootprintCombinedMaskBand                      */
@@ -395,141 +400,147 @@ class GDALFootprintCombinedMaskBand final : public GDALRasterBand
     }
 
   protected:
-    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pData) override
-    {
-        int nWindowXSize;
-        int nWindowYSize;
-        m_apoSrcBands[0]->GetActualBlockSize(nBlockXOff, nBlockYOff,
-                                             &nWindowXSize, &nWindowYSize);
-        GDALRasterIOExtraArg sExtraArg;
-        INIT_RASTERIO_EXTRA_ARG(sExtraArg);
-        return IRasterIO(GF_Read, nBlockXOff * nBlockXSize,
-                         nBlockYOff * nBlockYSize, nWindowXSize, nWindowYSize,
-                         pData, nWindowXSize, nWindowYSize, GDT_Byte, 1,
-                         nBlockXSize, &sExtraArg);
-    }
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pData) override;
 
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                      int nYSize, void *pData, int nBufXSize, int nBufYSize,
                      GDALDataType eBufType, GSpacing nPixelSpace,
                      GSpacing nLineSpace,
-                     GDALRasterIOExtraArg *psExtraArg) override
-    {
-        if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
-            eBufType == GDT_Byte && nPixelSpace == 1)
-        {
-            // Request when band seen as the mask band for GDALPolygonize()
-            {
-                GByte *pabyData = static_cast<GByte *>(pData);
-                for (int iY = 0; iY < nYSize; ++iY)
-                {
-                    memset(pabyData, m_bUnion ? 0 : 1, nXSize);
-                    pabyData += nLineSpace;
-                }
-            }
-
-            std::vector<GByte> abyTmp(static_cast<size_t>(nXSize) * nYSize);
-            for (auto poBand : m_apoSrcBands)
-            {
-                if (poBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize,
-                                     abyTmp.data(), nBufXSize, nBufYSize,
-                                     GDT_Byte, 1, nXSize,
-                                     psExtraArg) != CE_None)
-                {
-                    return CE_Failure;
-                }
-                GByte *pabyData = static_cast<GByte *>(pData);
-                size_t iTmp = 0;
-                for (int iY = 0; iY < nYSize; ++iY)
-                {
-                    if (m_bUnion)
-                    {
-                        for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
-                        {
-                            if (abyTmp[iTmp])
-                                pabyData[iX] = 1;
-                        }
-                    }
-                    else
-                    {
-                        for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
-                        {
-                            if (abyTmp[iTmp] == 0)
-                                pabyData[iX] = 0;
-                        }
-                    }
-                    pabyData += nLineSpace;
-                }
-            }
-
-            return CE_None;
-        }
-
-        if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
-            eBufType == GDT_Int64 &&
-            nPixelSpace == static_cast<int>(sizeof(int64_t)) &&
-            (nLineSpace % nPixelSpace) == 0)
-        {
-            // Request when band seen as the value band for GDALPolygonize()
-            {
-                int64_t *panData = static_cast<int64_t *>(pData);
-                for (int iY = 0; iY < nYSize; ++iY)
-                {
-                    if (m_bUnion)
-                    {
-                        memset(panData, 0, nXSize * sizeof(int64_t));
-                    }
-                    else
-                    {
-                        int64_t nOne = 1;
-                        GDALCopyWords(&nOne, GDT_Int64, 0, panData, GDT_Int64,
-                                      sizeof(int64_t), nXSize);
-                    }
-                    panData += (nLineSpace / nPixelSpace);
-                }
-            }
-
-            std::vector<GByte> abyTmp(static_cast<size_t>(nXSize) * nYSize);
-            for (auto poBand : m_apoSrcBands)
-            {
-                if (poBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize,
-                                     abyTmp.data(), nBufXSize, nBufYSize,
-                                     GDT_Byte, 1, nXSize,
-                                     psExtraArg) != CE_None)
-                {
-                    return CE_Failure;
-                }
-                size_t iTmp = 0;
-                int64_t *panData = static_cast<int64_t *>(pData);
-                for (int iY = 0; iY < nYSize; ++iY)
-                {
-                    if (m_bUnion)
-                    {
-                        for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
-                        {
-                            if (abyTmp[iTmp])
-                                panData[iX] = 1;
-                        }
-                    }
-                    else
-                    {
-                        for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
-                        {
-                            if (abyTmp[iTmp] == 0)
-                                panData[iX] = 0;
-                        }
-                    }
-                    panData += (nLineSpace / nPixelSpace);
-                }
-            }
-            return CE_None;
-        }
-
-        return GDALRasterBand::IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize,
-                                         pData, nBufXSize, nBufYSize, eBufType,
-                                         nPixelSpace, nLineSpace, psExtraArg);
-    }
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
+
+CPLErr GDALFootprintCombinedMaskBand::IReadBlock(int nBlockXOff, int nBlockYOff,
+                                                 void *pData)
+{
+    int nWindowXSize;
+    int nWindowYSize;
+    m_apoSrcBands[0]->GetActualBlockSize(nBlockXOff, nBlockYOff, &nWindowXSize,
+                                         &nWindowYSize);
+    GDALRasterIOExtraArg sExtraArg;
+    INIT_RASTERIO_EXTRA_ARG(sExtraArg);
+    return IRasterIO(GF_Read, nBlockXOff * nBlockXSize,
+                     nBlockYOff * nBlockYSize, nWindowXSize, nWindowYSize,
+                     pData, nWindowXSize, nWindowYSize, GDT_Byte, 1,
+                     nBlockXSize, &sExtraArg);
+}
+
+CPLErr GDALFootprintCombinedMaskBand::IRasterIO(
+    GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize, int nYSize,
+    void *pData, int nBufXSize, int nBufYSize, GDALDataType eBufType,
+    GSpacing nPixelSpace, GSpacing nLineSpace, GDALRasterIOExtraArg *psExtraArg)
+{
+    if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
+        eBufType == GDT_Byte && nPixelSpace == 1)
+    {
+        // Request when band seen as the mask band for GDALPolygonize()
+        {
+            GByte *pabyData = static_cast<GByte *>(pData);
+            for (int iY = 0; iY < nYSize; ++iY)
+            {
+                memset(pabyData, m_bUnion ? 0 : 1, nXSize);
+                pabyData += nLineSpace;
+            }
+        }
+
+        std::vector<GByte> abyTmp(static_cast<size_t>(nXSize) * nYSize);
+        for (auto poBand : m_apoSrcBands)
+        {
+            if (poBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize,
+                                 abyTmp.data(), nBufXSize, nBufYSize, GDT_Byte,
+                                 1, nXSize, psExtraArg) != CE_None)
+            {
+                return CE_Failure;
+            }
+            GByte *pabyData = static_cast<GByte *>(pData);
+            size_t iTmp = 0;
+            for (int iY = 0; iY < nYSize; ++iY)
+            {
+                if (m_bUnion)
+                {
+                    for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
+                    {
+                        if (abyTmp[iTmp])
+                            pabyData[iX] = 1;
+                    }
+                }
+                else
+                {
+                    for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
+                    {
+                        if (abyTmp[iTmp] == 0)
+                            pabyData[iX] = 0;
+                    }
+                }
+                pabyData += nLineSpace;
+            }
+        }
+
+        return CE_None;
+    }
+
+    if (eRWFlag == GF_Read && nXSize == nBufXSize && nYSize == nBufYSize &&
+        eBufType == GDT_Int64 &&
+        nPixelSpace == static_cast<int>(sizeof(int64_t)) &&
+        (nLineSpace % nPixelSpace) == 0)
+    {
+        // Request when band seen as the value band for GDALPolygonize()
+        {
+            int64_t *panData = static_cast<int64_t *>(pData);
+            for (int iY = 0; iY < nYSize; ++iY)
+            {
+                if (m_bUnion)
+                {
+                    memset(panData, 0, nXSize * sizeof(int64_t));
+                }
+                else
+                {
+                    int64_t nOne = 1;
+                    GDALCopyWords(&nOne, GDT_Int64, 0, panData, GDT_Int64,
+                                  sizeof(int64_t), nXSize);
+                }
+                panData += (nLineSpace / nPixelSpace);
+            }
+        }
+
+        std::vector<GByte> abyTmp(static_cast<size_t>(nXSize) * nYSize);
+        for (auto poBand : m_apoSrcBands)
+        {
+            if (poBand->RasterIO(GF_Read, nXOff, nYOff, nXSize, nYSize,
+                                 abyTmp.data(), nBufXSize, nBufYSize, GDT_Byte,
+                                 1, nXSize, psExtraArg) != CE_None)
+            {
+                return CE_Failure;
+            }
+            size_t iTmp = 0;
+            int64_t *panData = static_cast<int64_t *>(pData);
+            for (int iY = 0; iY < nYSize; ++iY)
+            {
+                if (m_bUnion)
+                {
+                    for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
+                    {
+                        if (abyTmp[iTmp])
+                            panData[iX] = 1;
+                    }
+                }
+                else
+                {
+                    for (int iX = 0; iX < nXSize; ++iX, ++iTmp)
+                    {
+                        if (abyTmp[iTmp] == 0)
+                            panData[iX] = 0;
+                    }
+                }
+                panData += (nLineSpace / nPixelSpace);
+            }
+        }
+        return CE_None;
+    }
+
+    return GDALRasterBand::IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize,
+                                     pData, nBufXSize, nBufYSize, eBufType,
+                                     nPixelSpace, nLineSpace, psExtraArg);
+}
 
 /************************************************************************/
 /*                    GetOutputLayerAndUpdateDstDS()                    */
@@ -568,7 +579,8 @@ GetOutputLayerAndUpdateDstDS(const char *pszDest, GDALDatasetH &hDstDS,
                 {
                     CPLError(CE_Warning, CPLE_AppDefined,
                              "Several drivers matching %s extension. Using %s",
-                             CPLGetExtension(pszDest), aoDrivers[0].c_str());
+                             CPLGetExtensionSafe(pszDest).c_str(),
+                             aoDrivers[0].c_str());
                 }
                 osFormat = aoDrivers[0];
             }
@@ -606,25 +618,31 @@ GetOutputLayerAndUpdateDstDS(const char *pszDest, GDALDatasetH &hDstDS,
     /* -------------------------------------------------------------------- */
     auto poDstDS = GDALDataset::FromHandle(hDstDS);
     OGRLayer *poLayer = nullptr;
-    if (!psOptions->osDestLayerName.empty())
+
+    if (!bCreateOutput)
     {
-        poLayer = poDstDS->GetLayerByName(psOptions->osDestLayerName.c_str());
-        if (!poLayer)
+        if (poDstDS->GetLayerCount() == 1 && poDstDS->GetDriver() &&
+            EQUAL(poDstDS->GetDriver()->GetDescription(), "ESRI Shapefile"))
         {
-            CPLError(CE_Failure, CPLE_AppDefined, "Cannot find layer %s",
-                     psOptions->osDestLayerName.c_str());
-            return nullptr;
+            poLayer = poDstDS->GetLayer(0);
+        }
+        else if (!psOptions->osDestLayerName.empty())
+        {
+            poLayer =
+                poDstDS->GetLayerByName(psOptions->osDestLayerName.c_str());
+            if (!poLayer)
+            {
+                CPLError(CE_Failure, CPLE_AppDefined, "Cannot find layer %s",
+                         psOptions->osDestLayerName.c_str());
+                return nullptr;
+            }
+        }
+        else
+        {
+            poLayer = poDstDS->GetLayerByName(DEFAULT_LAYER_NAME);
         }
     }
-    else if (poDstDS->GetLayerCount() == 1 && poDstDS->GetDriver() &&
-             EQUAL(poDstDS->GetDriver()->GetDescription(), "ESRI Shapefile"))
-    {
-        poLayer = poDstDS->GetLayer(0);
-    }
-    else
-    {
-        poLayer = poDstDS->GetLayerByName(DEFAULT_LAYER_NAME);
-    }
+
     if (!poLayer)
     {
         std::string osDestLayerName = psOptions->osDestLayerName;
@@ -633,7 +651,7 @@ GetOutputLayerAndUpdateDstDS(const char *pszDest, GDALDatasetH &hDstDS,
             if (poDstDS->GetDriver() &&
                 EQUAL(poDstDS->GetDriver()->GetDescription(), "ESRI Shapefile"))
             {
-                osDestLayerName = CPLGetBasename(pszDest);
+                osDestLayerName = CPLGetBasenameSafe(pszDest);
             }
             else
             {
@@ -678,19 +696,15 @@ GetOutputLayerAndUpdateDstDS(const char *pszDest, GDALDatasetH &hDstDS,
 class GeoTransformCoordinateTransformation final
     : public OGRCoordinateTransformation
 {
-    const std::array<double, 6> m_gt;
+    const GDALGeoTransform &m_gt;
 
   public:
-    explicit GeoTransformCoordinateTransformation(
-        const std::array<double, 6> &gt)
+    explicit GeoTransformCoordinateTransformation(const GDALGeoTransform &gt)
         : m_gt(gt)
     {
     }
 
-    const OGRSpatialReference *GetSourceCS() const override
-    {
-        return nullptr;
-    }
+    const OGRSpatialReference *GetSourceCS() const override;
 
     const OGRSpatialReference *GetTargetCS() const override
     {
@@ -725,6 +739,12 @@ class GeoTransformCoordinateTransformation final
         return TRUE;
     }
 };
+
+const OGRSpatialReference *
+GeoTransformCoordinateTransformation::GetSourceCS() const
+{
+    return nullptr;
+}
 
 /************************************************************************/
 /*                             CountPoints()                            */
@@ -956,21 +976,13 @@ static bool GDALFootprintProcess(GDALDataset *poSrcDS, OGRLayer *poDstLayer,
     }
 
     std::unique_ptr<OGRCoordinateTransformation> poCT_GT;
-    std::array<double, 6> adfGeoTransform{{0.0, 1.0, 0.0, 0.0, 0.0, 1.0}};
-    if (psOptions->bOutCSGeoref &&
-        poSrcDS->GetGeoTransform(adfGeoTransform.data()) == CE_None)
+    GDALGeoTransform gt;
+    if (psOptions->bOutCSGeoref && poSrcDS->GetGeoTransform(gt) == CE_None)
     {
         auto poMaskBand = apoSrcMaskBands[0];
-        adfGeoTransform[1] *=
-            double(poSrcDS->GetRasterXSize()) / poMaskBand->GetXSize();
-        adfGeoTransform[2] *=
-            double(poSrcDS->GetRasterYSize()) / poMaskBand->GetYSize();
-        adfGeoTransform[4] *=
-            double(poSrcDS->GetRasterXSize()) / poMaskBand->GetXSize();
-        adfGeoTransform[5] *=
-            double(poSrcDS->GetRasterYSize()) / poMaskBand->GetYSize();
-        poCT_GT = std::make_unique<GeoTransformCoordinateTransformation>(
-            adfGeoTransform);
+        gt.Rescale(double(poSrcDS->GetRasterXSize()) / poMaskBand->GetXSize(),
+                   double(poSrcDS->GetRasterYSize()) / poMaskBand->GetYSize());
+        poCT_GT = std::make_unique<GeoTransformCoordinateTransformation>(gt);
     }
     else if (psOptions->bOutCSGeorefRequested)
     {
@@ -984,14 +996,11 @@ static bool GDALFootprintProcess(GDALDataset *poSrcDS, OGRLayer *poDstLayer,
         // Transform from overview pixel coordinates to full resolution
         // pixel coordinates
         auto poMaskBand = apoSrcMaskBands[0];
-        adfGeoTransform[1] =
-            double(poSrcDS->GetRasterXSize()) / poMaskBand->GetXSize();
-        adfGeoTransform[2] = 0;
-        adfGeoTransform[4] = 0;
-        adfGeoTransform[5] =
-            double(poSrcDS->GetRasterYSize()) / poMaskBand->GetYSize();
-        poCT_GT = std::make_unique<GeoTransformCoordinateTransformation>(
-            adfGeoTransform);
+        gt[1] = double(poSrcDS->GetRasterXSize()) / poMaskBand->GetXSize();
+        gt[2] = 0;
+        gt[4] = 0;
+        gt[5] = double(poSrcDS->GetRasterYSize()) / poMaskBand->GetYSize();
+        poCT_GT = std::make_unique<GeoTransformCoordinateTransformation>(gt);
     }
 
     std::unique_ptr<GDALRasterBand> poMaskForRasterize;
@@ -1115,17 +1124,49 @@ static bool GDALFootprintProcess(GDALDataset *poSrcDS, OGRLayer *poDstLayer,
                 continue;
         }
 
+        const auto GeomIsNullOrEmpty = [&poGeom]
+        { return !poGeom || poGeom->IsEmpty(); };
+
         if (psOptions->bConvexHull)
         {
             poGeom.reset(poGeom->ConvexHull());
-            if (!poGeom || poGeom->IsEmpty())
+            if (GeomIsNullOrEmpty())
                 continue;
         }
 
+        const auto DoSimplification = [&poMemLayer, &poGeom](double dfTolerance)
+        {
+            std::string osLastErrorMsg;
+            {
+                CPLErrorStateBackuper oBackuper(CPLQuietErrorHandler);
+                CPLErrorReset();
+                poGeom.reset(poGeom->Simplify(dfTolerance));
+                osLastErrorMsg = CPLGetLastErrorMsg();
+            }
+            if (!poGeom || poGeom->IsEmpty())
+            {
+                if (poMemLayer->GetFeatureCount(false) == 1)
+                {
+                    if (!osLastErrorMsg.empty())
+                        CPLError(CE_Failure, CPLE_AppDefined, "%s",
+                                 osLastErrorMsg.c_str());
+                    else
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "Simplification resulted in empty geometry");
+                    return false;
+                }
+                if (!osLastErrorMsg.empty())
+                    CPLError(CE_Warning, CPLE_AppDefined, "%s",
+                             osLastErrorMsg.c_str());
+            }
+            return true;
+        };
+
         if (psOptions->dfSimplifyTolerance != 0)
         {
-            poGeom.reset(poGeom->Simplify(psOptions->dfSimplifyTolerance));
-            if (!poGeom || poGeom->IsEmpty())
+            if (!DoSimplification(psOptions->dfSimplifyTolerance))
+                return false;
+            if (GeomIsNullOrEmpty())
                 continue;
         }
 
@@ -1163,8 +1204,10 @@ static bool GDALFootprintProcess(GDALDataset *poSrcDS, OGRLayer *poDstLayer,
                     tolMin = tol;
                 }
             }
-            poGeom.reset(poGeom->Simplify(tolMax));
-            if (!poGeom || poGeom->IsEmpty())
+
+            if (!DoSimplification(tolMax))
+                return false;
+            if (GeomIsNullOrEmpty())
                 continue;
         }
 
@@ -1187,8 +1230,8 @@ static bool GDALFootprintProcess(GDALDataset *poSrcDS, OGRLayer *poDstLayer,
                 char *pszCurDir = CPLGetCurrentDir();
                 if (pszCurDir)
                 {
-                    osFilename = CPLProjectRelativeFilename(pszCurDir,
-                                                            osFilename.c_str());
+                    osFilename = CPLProjectRelativeFilenameSafe(
+                        pszCurDir, osFilename.c_str());
                     CPLFree(pszCurDir);
                 }
             }

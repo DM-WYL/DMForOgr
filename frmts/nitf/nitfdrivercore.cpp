@@ -47,9 +47,11 @@ int NITFDriverIdentify(GDALOpenInfo *poOpenInfo)
     if (poOpenInfo->nHeaderBytes < 4)
         return FALSE;
 
-    if (!STARTS_WITH_CI((char *)poOpenInfo->pabyHeader, "NITF") &&
-        !STARTS_WITH_CI((char *)poOpenInfo->pabyHeader, "NSIF") &&
-        !STARTS_WITH_CI((char *)poOpenInfo->pabyHeader, "NITF"))
+    const char *pszHeader =
+        reinterpret_cast<const char *>(poOpenInfo->pabyHeader);
+    if (!STARTS_WITH_CI(pszHeader, "NITF") &&
+        !STARTS_WITH_CI(pszHeader, "NSIF") &&
+        !STARTS_WITH_CI(pszHeader, "NITF"))
         return FALSE;
 
     /* Check that it is not in fact a NITF A.TOC file, which is handled by the
@@ -58,7 +60,7 @@ int NITFDriverIdentify(GDALOpenInfo *poOpenInfo)
                             static_cast<int>(strlen("A.TOC"));
          i++)
     {
-        if (STARTS_WITH_CI((const char *)poOpenInfo->pabyHeader + i, "A.TOC"))
+        if (STARTS_WITH_CI(pszHeader + i, "A.TOC"))
             return FALSE;
     }
 
@@ -79,6 +81,7 @@ void NITFDriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/nitf.html");
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "ntf");
     poDriver->SetMetadataItem(GDAL_DMD_SUBDATASETS, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CREATE_SUBDATASETS, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
                               "Byte UInt16 Int16 UInt32 Int32 Float32");
 
@@ -98,6 +101,9 @@ void NITFDriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATECOPY, "YES");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS, "RasterValues");
 }
 
 /************************************************************************/
@@ -126,9 +132,11 @@ int RPFTOCDriverIdentify(GDALOpenInfo *poOpenInfo)
     if (RPFTOCIsNonNITFFileTOC(poOpenInfo, pszFilename))
         return TRUE;
 
-    if (!STARTS_WITH_CI((char *)poOpenInfo->pabyHeader, "NITF") &&
-        !STARTS_WITH_CI((char *)poOpenInfo->pabyHeader, "NSIF") &&
-        !STARTS_WITH_CI((char *)poOpenInfo->pabyHeader, "NITF"))
+    const char *pszHeader =
+        reinterpret_cast<const char *>(poOpenInfo->pabyHeader);
+    if (!STARTS_WITH_CI(pszHeader, "NITF") &&
+        !STARTS_WITH_CI(pszHeader, "NSIF") &&
+        !STARTS_WITH_CI(pszHeader, "NITF"))
         return FALSE;
 
     /* If it is a NITF A.TOC file, it must contain A.TOC in its header */
@@ -136,7 +144,7 @@ int RPFTOCDriverIdentify(GDALOpenInfo *poOpenInfo)
                             static_cast<int>(strlen("A.TOC"));
          i++)
     {
-        if (STARTS_WITH_CI((const char *)poOpenInfo->pabyHeader + i, "A.TOC"))
+        if (STARTS_WITH_CI(pszHeader + i, "A.TOC"))
             return TRUE;
     }
 

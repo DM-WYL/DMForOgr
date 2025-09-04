@@ -34,11 +34,7 @@ class GDALRasterAttributeTableFromMDArrays final
         const std::vector<GDALRATFieldUsage> &aeUsages);
 
     //
-    GDALRasterAttributeTable *Clone() const override
-    {
-        return new GDALRasterAttributeTableFromMDArrays(
-            m_eTableType, m_apoArrays, m_aeUsages);
-    }
+    GDALRasterAttributeTable *Clone() const override;
 
     //
     int GetColumnCount() const override
@@ -77,6 +73,7 @@ class GDALRasterAttributeTableFromMDArrays final
             case GDT_UInt32:
             case GDT_Int64:
             case GDT_UInt64:
+            case GDT_Float16:
             case GDT_Float32:
             case GDT_Float64:
                 return GFT_Real;
@@ -269,27 +266,30 @@ class GDALRasterAttributeTableFromMDArrays final
     }
 
     //
-    void SetValue(int, int, const char *) override
+    CPLErr SetValue(int, int, const char *) override
     {
         CPLError(
             CE_Failure, CPLE_NotSupported,
             "GDALRasterAttributeTableFromMDArrays::SetValue(): not supported");
+        return CE_Failure;
     }
 
     //
-    void SetValue(int, int, int) override
+    CPLErr SetValue(int, int, int) override
     {
         CPLError(
             CE_Failure, CPLE_NotSupported,
             "GDALRasterAttributeTableFromMDArrays::SetValue(): not supported");
+        return CE_Failure;
     }
 
     //
-    void SetValue(int, int, double) override
+    CPLErr SetValue(int, int, double) override
     {
         CPLError(
             CE_Failure, CPLE_NotSupported,
             "GDALRasterAttributeTableFromMDArrays::SetValue(): not supported");
+        return CE_Failure;
     }
 
     //
@@ -318,6 +318,13 @@ class GDALRasterAttributeTableFromMDArrays final
         return m_eTableType;
     }
 };
+
+//
+GDALRasterAttributeTable *GDALRasterAttributeTableFromMDArrays::Clone() const
+{
+    return new GDALRasterAttributeTableFromMDArrays(m_eTableType, m_apoArrays,
+                                                    m_aeUsages);
+}
 
 /************************************************************************/
 /*               GDALRasterAttributeTableFromMDArrays()                 */

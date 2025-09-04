@@ -76,32 +76,31 @@ typedef enum
 /*      Low level rasterizer API.                                       */
 /************************************************************************/
 
-typedef void (*llScanlineFunc)(void *, int, int, int, double);
-typedef void (*llPointFunc)(void *, int, int, double);
+typedef void (*llScanlineFunc)(GDALRasterizeInfo *, int, int, int, double);
+typedef void (*llPointFunc)(GDALRasterizeInfo *, int, int, double);
 
 void GDALdllImagePoint(int nRasterXSize, int nRasterYSize, int nPartCount,
                        const int *panPartSize, const double *padfX,
                        const double *padfY, const double *padfVariant,
-                       llPointFunc pfnPointFunc, void *pCBData);
+                       llPointFunc pfnPointFunc, GDALRasterizeInfo *pCBData);
 
 void GDALdllImageLine(int nRasterXSize, int nRasterYSize, int nPartCount,
                       const int *panPartSize, const double *padfX,
                       const double *padfY, const double *padfVariant,
-                      llPointFunc pfnPointFunc, void *pCBData);
+                      llPointFunc pfnPointFunc, GDALRasterizeInfo *pCBData);
 
-void GDALdllImageLineAllTouched(int nRasterXSize, int nRasterYSize,
-                                int nPartCount, const int *panPartSize,
-                                const double *padfX, const double *padfY,
-                                const double *padfVariant,
-                                llPointFunc pfnPointFunc, void *pCBData,
-                                bool bAvoidBurningSamePoints,
-                                bool bIntersectOnly);
+void GDALdllImageLineAllTouched(
+    int nRasterXSize, int nRasterYSize, int nPartCount, const int *panPartSize,
+    const double *padfX, const double *padfY, const double *padfVariant,
+    llPointFunc pfnPointFunc, GDALRasterizeInfo *pCBData,
+    bool bAvoidBurningSamePoints, bool bIntersectOnly);
 
 void GDALdllImageFilledPolygon(int nRasterXSize, int nRasterYSize,
                                int nPartCount, const int *panPartSize,
                                const double *padfX, const double *padfY,
                                const double *padfVariant,
-                               llScanlineFunc pfnScanlineFunc, void *pCBData,
+                               llScanlineFunc pfnScanlineFunc,
+                               GDALRasterizeInfo *pCBData,
                                bool bAvoidBurningSamePoints);
 
 CPL_C_END
@@ -158,6 +157,8 @@ constexpr const char *GDAL_APPROX_TRANSFORMER_CLASS_NAME =
 constexpr const char *GDAL_GEN_IMG_TRANSFORMER_CLASS_NAME =
     "GDALGenImgProjTransformer";
 constexpr const char *GDAL_RPC_TRANSFORMER_CLASS_NAME = "GDALRPCTransformer";
+constexpr const char *GDAL_REPROJECTION_TRANSFORMER_CLASS_NAME =
+    "GDALReprojectionTransformer";
 
 bool GDALIsTransformer(void *hTransformerArg, const char *pszClassName);
 
@@ -173,7 +174,7 @@ void GDALCleanupTransformDeserializerMutex();
 /* Transformer cloning */
 
 void *GDALCreateTPSTransformerInt(int nGCPCount, const GDAL_GCP *pasGCPList,
-                                  int bReversed, char **papszOptions);
+                                  int bReversed, CSLConstList papszOptions);
 
 void CPL_DLL *GDALCloneTransformer(void *pTransformerArg);
 
@@ -275,36 +276,64 @@ struct GDALReprojectionTransformInfo
 
 /************************************************************************/
 /* ==================================================================== */
+/*      Approximate transformer.                                        */
+/* ==================================================================== */
+/************************************************************************/
+
+struct GDALApproxTransformInfo
+{
+    GDALTransformerInfo sTI;
+
+    GDALTransformerFunc pfnBaseTransformer = nullptr;
+    void *pBaseCBData = nullptr;
+    double dfMaxErrorForward = 0;
+    double dfMaxErrorReverse = 0;
+
+    int bOwnSubtransformer = 0;
+
+    GDALApproxTransformInfo() : sTI()
+    {
+        memset(&sTI, 0, sizeof(sTI));
+    }
+
+    GDALApproxTransformInfo(const GDALApproxTransformInfo &) = delete;
+    GDALApproxTransformInfo &
+    operator=(const GDALApproxTransformInfo &) = delete;
+};
+
+/************************************************************************/
+/* ==================================================================== */
 /*                       GDALGenImgProjTransformer                      */
 /* ==================================================================== */
 /************************************************************************/
+
+struct GDALGenImgProjTransformPart
+{
+    double adfGeoTransform[6];
+    double adfInvGeoTransform[6];
+
+    void *pTransformArg;
+    GDALTransformerFunc pTransformer;
+};
 
 typedef struct
 {
 
     GDALTransformerInfo sTI;
 
-    double adfSrcGeoTransform[6];
-    double adfSrcInvGeoTransform[6];
-
-    void *pSrcTransformArg;
-    GDALTransformerFunc pSrcTransformer;
+    GDALGenImgProjTransformPart sSrcParams;
 
     void *pReprojectArg;
     GDALTransformerFunc pReproject;
 
-    double adfDstGeoTransform[6];
-    double adfDstInvGeoTransform[6];
-
-    void *pDstTransformArg;
-    GDALTransformerFunc pDstTransformer;
+    GDALGenImgProjTransformPart sDstParams;
 
     // Memorize the value of the CHECK_WITH_INVERT_PROJ at the time we
     // instantiated the object, to be able to decide if
     // GDALRefreshGenImgProjTransformer() must do something or not.
     bool bCheckWithInvertPROJ;
 
-    // Set to TRUE when the transformation pipline is a custom one.
+    // Set to TRUE when the transformation pipeline is a custom one.
     bool bHasCustomTransformationPipeline;
 
 } GDALGenImgProjTransformInfo;
@@ -358,14 +387,14 @@ struct FloatEqualityTest
     }
 };
 
-bool GDALComputeAreaOfInterest(OGRSpatialReference *poSRS, double adfGT[6],
-                               int nXSize, int nYSize,
+bool GDALComputeAreaOfInterest(const OGRSpatialReference *poSRS,
+                               double adfGT[6], int nXSize, int nYSize,
                                double &dfWestLongitudeDeg,
                                double &dfSouthLatitudeDeg,
                                double &dfEastLongitudeDeg,
                                double &dfNorthLatitudeDeg);
 
-bool GDALComputeAreaOfInterest(OGRSpatialReference *poSRS, double dfX1,
+bool GDALComputeAreaOfInterest(const OGRSpatialReference *poSRS, double dfX1,
                                double dfY1, double dfX2, double dfY2,
                                double &dfWestLongitudeDeg,
                                double &dfSouthLatitudeDeg,

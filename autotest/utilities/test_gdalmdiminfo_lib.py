@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  test librarified gdalmdiminfo
@@ -289,3 +288,22 @@ def test_gdalmdiminfo_lib_uint64():
 
     ret = gdal.MultiDimInfo(ds, detailed=True)
     assert ret["arrays"]["ar"]["values"] == [10000000000]
+
+
+###############################################################################
+
+
+def test_gdalmdiminfo_lib_null_string():
+
+    drv = gdal.GetDriverByName("MEM")
+    ds = drv.CreateMultiDimensional("")
+    rg = ds.GetRootGroup()
+    rg.CreateAttribute("null_string", [], gdal.ExtendedDataType.CreateString())
+
+    ret = gdal.MultiDimInfo(ds)
+    assert ret == {
+        "type": "group",
+        "driver": "MEM",
+        "name": "/",
+        "attributes": {"null_string": None},
+    }

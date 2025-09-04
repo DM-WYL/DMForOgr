@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  Interlis 2 Reader
  * Purpose:  Public Declarations for Reader code.
@@ -30,8 +29,8 @@ class IILI2Reader
                           const char *modelFilename) = 0;
     virtual int SaveClasses(const char *pszFilename) = 0;
 
-    virtual std::list<OGRLayer *> GetLayers() = 0;
-    virtual int GetLayerCount() = 0;
+    virtual std::vector<std::unique_ptr<OGRLayer>> &GetLayers() = 0;
+    virtual int GetLayerCount() const = 0;
 };
 
 IILI2Reader *CreateILI2Reader();

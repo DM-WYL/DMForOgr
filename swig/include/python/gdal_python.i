@@ -1,5 +1,4 @@
 /*
- * $Id$
  *
  * python specific code for gdal bindings.
  */
@@ -8,10 +7,13 @@
 %feature("autodoc");
 
 %include "gdal_docs.i"
+%include "gdal_algorithm_docs.i"
 %include "gdal_band_docs.i"
 %include "gdal_dataset_docs.i"
 %include "gdal_driver_docs.i"
+%include "gdal_mdm_docs.i"
 %include "gdal_operations_docs.i"
+%include "gdal_rat_docs.i"
 
 %init %{
   /* gdal_python.i %init code */
@@ -35,6 +37,7 @@ static int getAlignment(GDALDataType ntype)
             return 1;
         case GDT_Int16:
         case GDT_UInt16:
+        case GDT_Float16:
             return 2;
         case GDT_Int32:
         case GDT_UInt32:
@@ -45,6 +48,7 @@ static int getAlignment(GDALDataType ntype)
         case GDT_UInt64:
             return 8;
         case GDT_CInt16:
+        case GDT_CFloat16:
             return 2;
         case GDT_CInt32:
         case GDT_CFloat32:
@@ -178,6 +182,7 @@ static void readraster_releasebuffer(CPLErr eErr,
   from osgeo.gdalconst import *
   from osgeo import gdalconst
 
+  import os
   import sys
   byteorders = {"little": "<",
                 "big": ">"}
@@ -185,8 +190,12 @@ static void readraster_releasebuffer(CPLErr eErr,
                   gdalconst.GDT_UInt16:   ("%su2" % byteorders[sys.byteorder]),
                   gdalconst.GDT_Int32:    ("%si4" % byteorders[sys.byteorder]),
                   gdalconst.GDT_UInt32:   ("%su4" % byteorders[sys.byteorder]),
+                  gdalconst.GDT_Int64:    ("%si8" % byteorders[sys.byteorder]),
+                  gdalconst.GDT_UInt64:   ("%su8" % byteorders[sys.byteorder]),
+                  gdalconst.GDT_Float16:  ("%sf2" % byteorders[sys.byteorder]),
                   gdalconst.GDT_Float32:  ("%sf4" % byteorders[sys.byteorder]),
                   gdalconst.GDT_Float64:  ("%sf8" % byteorders[sys.byteorder]),
+                  gdalconst.GDT_CFloat16: ("%sf2" % byteorders[sys.byteorder]),
                   gdalconst.GDT_CFloat32: ("%sf4" % byteorders[sys.byteorder]),
                   gdalconst.GDT_CFloat64: ("%sf8" % byteorders[sys.byteorder]),
                   gdalconst.GDT_Byte:     ("%st8" % byteorders[sys.byteorder]),
@@ -239,6 +248,264 @@ static void readraster_releasebuffer(CPLErr eErr,
             yield entry
     finally:
         CloseDir(dir)
+
+  def where(cond_band, then_band, else_band):
+      """Ternary operator. Return a band whose value is then_band if the
+         corresponding pixel in cond_band is not zero, or the one from else_band
+         otherwise.
+
+         cond_band must be a band or convertible to a band. then_band or else_band
+         can be band, convertible to band or numeric constants.
+
+         The resulting band is lazily evaluated.
+
+         :since: 3.12
+      """
+      cond_band = Band._get_as_band_if_possible(cond_band)
+      then_band = Band._get_as_band_if_possible(then_band)
+      else_band = Band._get_as_band_if_possible(else_band)
+
+      if not isinstance(then_band, Band):
+          then_band = (cond_band * 0).astype(DataTypeUnionWithValue(gdalconst.GDT_Unknown, then_band, False)) + then_band
+
+      if not isinstance(else_band, Band):
+          else_band = (cond_band * 0).astype(DataTypeUnionWithValue(gdalconst.GDT_Unknown, else_band, False)) + else_band
+
+      return _gdal.Band_IfThenElse(cond_band, then_band, else_band)._add_parent_references([cond_band, then_band, else_band])
+
+  Where = where
+
+  def minimum(*args):
+      """Return a band whose each pixel value is the minimum of the corresponding
+         pixel values in the input arguments which may be gdal.Band or a numeric constant.
+
+         The resulting band is lazily evaluated.
+
+         :since: 3.12
+      """
+      constant = None
+      band_refs = []
+      band_args = []
+      for arg in args:
+          band_arg = Band._get_as_band_if_possible(arg)
+          if isinstance(band_arg, Band):
+              band_args.append(band_arg)
+              band_refs.append(arg)
+          elif constant is None or arg < constant:
+              constant = arg
+      if not band_args:
+          raise RuntimeError("At least one argument should be a band (or convertible to a band)")
+      res = _gdal.Band_MinimumOfNBands(band_args)._add_parent_references(band_refs)
+      if constant is not None:
+          res = _gdal.Band_MinConstant(res, constant)._add_parent_references([res])
+      return res
+
+  Minimum = minimum
+
+  def maximum(*args):
+      """Return a band whose each pixel value is the maximum of the corresponding
+         pixel values in the input arguments which may be gdal.Band or a numeric constant.
+
+         The resulting band is lazily evaluated.
+
+         :since: 3.12
+      """
+      constant = None
+      band_refs = []
+      band_args = []
+      for arg in args:
+          band_arg = Band._get_as_band_if_possible(arg)
+          if isinstance(band_arg, Band):
+              band_args.append(band_arg)
+              band_refs.append(arg)
+          elif constant is None or arg > constant:
+              constant = arg
+      if not band_args:
+          raise RuntimeError("At least one argument should be a band (or convertible to a band)")
+      res = _gdal.Band_MaximumOfNBands(band_args)._add_parent_references(band_refs)
+      if constant is not None:
+          res = _gdal.Band_MaxConstant(res, constant)._add_parent_references([res])
+      return res
+
+  Maximum = maximum
+
+  def mean(*args):
+      """Return a band whose each pixel value is the arithmetic mean of the corresponding
+         pixel values in the input bands.
+
+         The resulting band is lazily evaluated.
+
+         :since: 3.12
+      """
+      bands = [Band._get_as_band_if_possible(band) for band in args]
+      band_refs = [band for band in args]
+      return _gdal.Band_MeanOfNBands(bands)._add_parent_references(band_refs)
+
+  Mean = mean
+
+
+  def logical_and(x1, x2):
+      """Perform a logical and between two objects, such objects being
+         a raster band a numpy array or a constant
+
+         The resulting band is lazily evaluated.
+      """
+      x1 = Band._get_as_band_if_possible(x1)
+      x2 = Band._get_as_band_if_possible(x2)
+      if isinstance(x1, Band) and isinstance(x2, Band):
+          return _gdal.Band_BinaryOpBand(x1, GRABO_LOGICAL_AND, x2)._add_parent_references([x1, x2])
+      elif isinstance(x1, Band):
+          return _gdal.Band_BinaryOpDouble(x1, GRABO_LOGICAL_AND, x2)._add_parent_references([x1])
+      else:
+          return _gdal.Band_BinaryOpDouble(x2, GRABO_LOGICAL_AND, x1)._add_parent_references([x2])
+
+  LogicalAnd = logical_and
+
+
+  def logical_or(x1, x2):
+      """Perform a logical or between two objects, such objects being
+         a raster band a numpy array or a constant
+
+         The resulting band is lazily evaluated.
+      """
+      x1 = Band._get_as_band_if_possible(x1)
+      x2 = Band._get_as_band_if_possible(x2)
+      if isinstance(x1, Band) and isinstance(x2, Band):
+          return _gdal.Band_BinaryOpBand(x1, GRABO_LOGICAL_OR, x2)._add_parent_references([x1, x2])
+      elif isinstance(x1, Band):
+          return _gdal.Band_BinaryOpDouble(x1, GRABO_LOGICAL_OR, x2)._add_parent_references([x1])
+      else:
+          return _gdal.Band_BinaryOpDouble(x2, GRABO_LOGICAL_OR, x1)._add_parent_references([x2])
+
+  LogicalOr = logical_or
+
+
+  def logical_not(band):
+      """Perform a logical not on a raster band or a numpy array.
+
+         The resulting band is lazily evaluated.
+      """
+      band = Band._get_as_band_if_possible(band)
+      return _gdal.Band_UnaryOp(band, GRAUO_LOGICAL_NOT)._add_parent_references([band])
+
+  LogicalNot = logical_not
+
+  def abs(band):
+      """Return the absolute value (or module for complex data type) of a raster band or a numpy array.
+
+         The resulting band is lazily evaluated.
+      """
+      band = Band._get_as_band_if_possible(band)
+      return _gdal.Band_UnaryOp(band, GRAUO_ABS)._add_parent_references([band])
+
+  Abs = abs
+
+  def sqrt(band):
+      """Return the square root of a raster band or a numpy array.
+
+         The resulting band is lazily evaluated.
+      """
+      band = Band._get_as_band_if_possible(band)
+      return _gdal.Band_UnaryOp(band, GRAUO_SQRT)._add_parent_references([band])
+
+  Sqrt = sqrt
+
+  def log10(band):
+      """Return the logarithm base 10 of a raster band or a numpy array.
+
+         The resulting band is lazily evaluated.
+      """
+      band = Band._get_as_band_if_possible(band)
+      return _gdal.Band_UnaryOp(band, GRAUO_LOG10)._add_parent_references([band])
+
+  Log10 = log10
+
+  def log(band):
+      """Return the natural logarithm of a raster band or a numpy array.
+
+         The resulting band is lazily evaluated.
+      """
+      band = Band._get_as_band_if_possible(band)
+      return _gdal.Band_UnaryOp(band, GRAUO_LOG)._add_parent_references([band])
+
+  Log = log
+
+
+  def pow(x1, x2):
+      """Raise x1 to the power of x2 between two objects, such objects being
+         a raster band a numpy array or a constant
+
+         The resulting band is lazily evaluated.
+      """
+      x1 = Band._get_as_band_if_possible(x1)
+      x2 = Band._get_as_band_if_possible(x2)
+      if isinstance(x1, Band) and isinstance(x2, Band):
+          return _gdal.Band_BinaryOpBand(x1, GRABO_POW, x2)._add_parent_references([x1, x2])
+      elif isinstance(x1, Band):
+          return _gdal.Band_BinaryOpDouble(x1, GRABO_POW, x2)._add_parent_references([x1])
+      else:
+          return _gdal.Band_BinaryOpDoubleToBand(x1, GRABO_POW, x2)._add_parent_references([x2])
+
+  Pow = pow
+
+  class Window:
+      def __init__(self, xoff, yoff, xsize, ysize):
+          self.data = [xoff, yoff, xsize, ysize]
+
+      def __copy__(self):
+          return Window(*self.data)
+
+      def __getitem__(self, i):
+          return self.data[i]
+
+      def __setitem__(self, i, value):
+          self.data[i] = value
+
+      def __iter__(self):
+          return iter(self.data)
+
+      def __eq__(self, other):
+          if isinstance(other, Window):
+              return self.data == other.data
+          if type(other) is tuple:
+              return tuple(self.data) == other
+          return self.data == other
+
+      def __repr__(self):
+          return f'Window({self.data[0]}, {self.data[1]}, {self.data[2]}, {self.data[3]})'
+
+      @property
+      def xoff(self):
+          return self.data[0]
+
+      @xoff.setter
+      def xoff(self, value):
+          self.data[0] = value
+
+      @property
+      def yoff(self):
+          return self.data[1]
+
+      @yoff.setter
+      def yoff(self, value):
+          self.data[1] = value
+
+      @property
+      def xsize(self):
+          return self.data[2]
+
+      @xsize.setter
+      def xsize(self, value):
+          self.data[2] = value
+
+      @property
+      def ysize(self):
+          return self.data[3]
+
+      @ysize.setter
+      def ysize(self, value):
+          self.data[3] = value
+
 %}
 
 %{
@@ -452,7 +719,7 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
 
     size_t buf_size = static_cast<size_t>(
         ComputeBandRasterIOSize( nxsize, nysize,
-                                 GDALGetDataTypeSize( ntype ) / 8,
+                                 GDALGetDataTypeSizeBytes( ntype ),
                                  pixel_space, line_space, FALSE ) );
     if (buf_size == 0)
     {
@@ -515,7 +782,7 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
     int nBlockXSize, nBlockYSize;
     GDALGetBlockSize(self, &nBlockXSize, &nBlockYSize);
     GDALDataType ntype = GDALGetRasterDataType(self);
-    int nDataTypeSize = (GDALGetDataTypeSize(ntype) / 8);
+    int nDataTypeSize = GDALGetDataTypeSizeBytes(ntype);
     size_t buf_size = static_cast<size_t>(nBlockXSize) *
                                                 nBlockYSize * nDataTypeSize;
 
@@ -541,6 +808,202 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
 
 
 %pythoncode %{
+
+  def _add_parent_references(self, parents):
+      if not hasattr(self, '_parent_references'):
+          self._parent_references = set()
+      for parent in parents:
+          if hasattr(parent, '_parent_references'):
+              for parent_of_parent in parent._parent_references:
+                  if parent_of_parent not in self._parent_references:
+                      parent_of_parent._add_child_ref(self)
+                      self._parent_references.add(parent_of_parent)
+          elif hasattr(parent, "_parent_ds"):
+              parent_ds = parent._parent_ds()
+              if parent_ds and parent_ds not in self._parent_references:
+                  parent_ds._add_child_ref(self)
+                  self._parent_references.add(parent_ds)
+      return self
+
+  @staticmethod
+  def _get_as_band_if_possible(o):
+        if hasattr(o, "shape"):
+            from osgeo import gdal_array
+            ds = gdal_array.OpenArray(o)
+            if ds.RasterCount != 1:
+                raise ValueError("numpy array must hold a single band")
+            band = ds.GetRasterBand(1)
+            band._hard_ref_to_parent = ds
+            return band
+        else:
+            return o
+
+  def __key(self):
+      return str(self)
+
+  def __hash__(self):
+      return hash(self.__key())
+
+  def __add__(self, other):
+      """Add this raster band to a raster band, a numpy array or a constant
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_ADD, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_ADD, other)._add_parent_references([self])
+
+  def __radd__(self, constant):
+      """Add a constant to this raster band
+
+         The resulting band is lazily evaluated.
+      """
+      return _gdal.Band_BinaryOpDoubleToBand(constant, GRABO_ADD, self)._add_parent_references([self])
+
+  def __sub__(self, other):
+      """Subtract this raster band with a raster band, a numpy array or constant
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_SUB, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_SUB, other)._add_parent_references([self])
+
+  def __rsub__(self, constant):
+      """Subtract a constant with a raster band
+
+         The resulting band is lazily evaluated.
+      """
+      return _gdal.Band_BinaryOpDoubleToBand(constant, GRABO_SUB, self)._add_parent_references([self])
+
+  def __mul__(self, other):
+      """Multiply this raster band with a raster band, a numpy array or a constant
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_MUL, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_MUL, other)._add_parent_references([self])
+
+  def __rmul__(self, constant):
+      """Multiply a constant with this raster band
+
+         The resulting band is lazily evaluated.
+      """
+      return _gdal.Band_BinaryOpDoubleToBand(constant, GRABO_MUL, self)._add_parent_references([self])
+
+  def __truediv__(self, other):
+      """Divide this raster band by a raster band, a numpy array or a constant
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_DIV, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_DIV, other)._add_parent_references([self])
+
+  def __rtruediv__(self, constant):
+      """Divide a constant by a raster band
+
+         The resulting band is lazily evaluated.
+      """
+      return _gdal.Band_BinaryOpDoubleToBand(constant, GRABO_DIV, self)._add_parent_references([self])
+
+  def __gt__(self, other):
+      """Return a band whose value is 1 if the pixel value of the left operand
+         is greater than the pixel value of the right operand.
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_GT, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_GT, other)._add_parent_references([self])
+
+  def __ge__(self, other):
+      """Return a band whose value is 1 if the pixel value of the left operand
+         is greater or equal to the pixel value of the right operand.
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_GE, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_GE, other)._add_parent_references([self])
+
+  def __lt__(self, other):
+      """Return a band whose value is 1 if the pixel value of the left operand
+         is lesser than the pixel value of the right operand.
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_LT, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_LT, other)._add_parent_references([self])
+
+  def __le__(self, other):
+      """Return a band whose value is 1 if the pixel value of the left operand
+         is lesser or equal to the pixel value of the right operand.
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_LE, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_LE, other)._add_parent_references([self])
+
+  def __eq__(self, other):
+      """Return a band whose value is 1 if the pixel value of the left operand
+         is equal to the pixel value of the right operand.
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_EQ, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_EQ, other)._add_parent_references([self])
+
+  def __ne__(self, other):
+      """Return a band whose value is 1 if the pixel value of the left operand
+         is not equal to the pixel value of the right operand.
+
+         The resulting band is lazily evaluated.
+      """
+      other = Band._get_as_band_if_possible(other)
+      if isinstance(other, Band):
+          return _gdal.Band_BinaryOpBand(self, GRABO_NE, other)._add_parent_references([self, other])
+      else:
+          return _gdal.Band_BinaryOpDouble(self, GRABO_NE, other)._add_parent_references([self])
+
+  def astype(self, dt):
+      """Cast this band to the specified data type
+
+         The data type can be one of the constant of the GDAL ``GDT_`` enumeration
+         or a numpy dtype.
+
+         The resulting band is lazily evaluated.
+      """
+      if not isinstance(dt, int):
+          try:
+              from osgeo import gdal_array
+              dt = gdal_array.NumericTypeCodeToGDALTypeCode(dt)
+          except Exception:
+              raise ValueError( "Invalid dt value")
+
+      return _gdal.Band_AsType(self, dt)._add_parent_references([self])
 
   def ReadRaster(self, xoff=0, yoff=0, xsize=None, ysize=None,
                  buf_xsize=None, buf_ysize=None, buf_type=None,
@@ -593,6 +1056,7 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
   def ReadAsMaskedArray(self, xoff=0, yoff=0, win_xsize=None, win_ysize=None,
                   buf_xsize=None, buf_ysize=None, buf_type=None,
                   resample_alg=gdalconst.GRIORA_NearestNeighbour,
+                  mask_resample_alg=gdalconst.GRIORA_NearestNeighbour,
                   callback=None,
                   callback_data=None):
       """
@@ -600,8 +1064,10 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
 
       Values of the mask will be ``True`` where pixels are invalid.
 
-      See :py:meth:`ReadAsArray` for a description of arguments.
+      Starting in GDAL 3.11, if resampling (``buf_xsize`` != ``xsize``, or ``buf_ysize`` != ``ysize``) the mask
+      band will be resampled using the algorithm specified by ``mask_resample_alg``.
 
+      See :py:meth:`ReadAsArray` for a description of additional arguments.
       """
       import numpy
       array = self.ReadAsArray(xoff=xoff, yoff=yoff,
@@ -619,7 +1085,7 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
                                          win_ysize=win_ysize,
                                          buf_xsize=buf_xsize,
                                          buf_ysize=buf_ysize,
-                                         resample_alg=resample_alg).astype(bool)
+                                         resample_alg=mask_resample_alg).astype(bool)
       else:
           mask_array = None
       return numpy.ma.array(array, mask=mask_array)
@@ -814,6 +1280,32 @@ void wrapper_VSIGetMemFileBuffer(const char *utf8_path, GByte **out, vsi_l_offse
             virtualmem = self.GetTiledVirtualMem(eAccess, xoff, yoff, xsize, ysize, tilexsize, tileysize, datatype, cache_size, options)
         return gdal_array.VirtualMemGetArray( virtualmem )
 
+  def BlockWindows(self):
+       """Yield a window ``(xOff, yOff, xSize, ySize)`` corresponding to
+       each block in this ``Band``. Iteration order is from left to right,
+       then from top to bottom.
+
+
+       Examples
+       --------
+       >>> for window in src_band.BlockWindows():
+       >>>    values = src_band.ReadAsArray(*window)
+       >>>    dst_band.WriteArray(values + 20, window.xoff, window.yoff)
+       0
+       """
+       import math
+       blockXSize, blockYSize = self.GetBlockSize()
+       nBlocksX = math.ceil(self.XSize / blockXSize)
+       nBlocksY = math.ceil(self.YSize / blockYSize)
+       for winrow in range(0, nBlocksY):
+           yOff = winrow * blockYSize
+           ySize = min(blockYSize, self.YSize - yOff)
+           for wincol in range(0, nBlocksX):
+               xOff = wincol * blockXSize
+               xSize = min(blockXSize, self.XSize - xOff)
+               yield Window(xOff, yOff, xSize, ySize)
+
+
 %}
 
 %feature("pythonappend") GetMaskBand %{
@@ -976,7 +1468,13 @@ def ComputeRasterMinMax(self, *args, **kwargs):
         kwargs["can_return_none"] = kwargs["can_return_null"];
         del kwargs["can_return_null"]
 
-    return $action(self, *args, **kwargs)
+    if "can_return_none" in kwargs and kwargs["can_return_none"]:
+        try:
+            return $action(self, *args, **kwargs)
+        except Exception:
+            return None
+    else:
+        return $action(self, *args, **kwargs)
 %}
 
 }
@@ -1020,7 +1518,7 @@ CPLErr ReadRaster1( double xoff, double yoff, double xsize, double ysize,
     GIntBig line_space = (buf_line_space == 0) ? 0 : *buf_line_space;
     GIntBig band_space = (buf_band_space == 0) ? 0 : *buf_band_space;
 
-    int ntypesize = GDALGetDataTypeSize( ntype ) / 8;
+    int ntypesize = GDALGetDataTypeSizeBytes( ntype );
     size_t buf_size = static_cast<size_t>(
         ComputeDatasetRasterIOSize (nxsize, nysize, ntypesize,
                                     band_list ? band_list :
@@ -1097,6 +1595,48 @@ CPLErr ReadRaster1( double xoff, double yoff, double xsize, double ysize,
 %clear (GIntBig*);
 
 %pythoncode %{
+
+    def ReadAsMaskedArray(self, xoff=0, yoff=0, xsize=None, ysize=None,
+                    buf_xsize=None, buf_ysize=None, buf_type=None,
+                    resample_alg=gdalconst.GRIORA_NearestNeighbour,
+                    mask_resample_alg=gdalconst.GRIORA_NearestNeighbour,
+                    callback=None,
+                    callback_data=None,
+                    band_list=None):
+        """
+        Read a window from raster bands into a NumPy masked array.
+
+        Values of the mask will be ``True`` where pixels are invalid.
+
+        If resampling (``buf_xsize`` != ``xsize``, or ``buf_ysize`` != ``ysize``) the mask band will be resampled
+        using the algorithm specified by ``mask_resample_alg``.
+
+        See :py:meth:`ReadAsArray` for a description of additional arguments.
+        """
+
+        import numpy as np
+
+        arr = self.ReadAsArray(xoff=xoff, yoff=yoff, xsize=xsize, ysize=ysize,
+                               buf_xsize=buf_xsize, buf_ysize=buf_ysize, buf_type=buf_type,
+                               resample_alg=resample_alg, band_list=band_list)
+
+        if band_list is None:
+            band_list = [i+1 for i in range(self.RasterCount)]
+
+        all_valid = all(self.GetRasterBand(band).GetMaskFlags() == GMF_ALL_VALID for band in band_list)
+
+        if all_valid:
+            return np.ma.masked_array(arr, False)
+
+        masks = [self.GetRasterBand(band).GetMaskBand().ReadAsArray(
+                xoff=xoff, yoff=yoff,
+                win_xsize=xsize, win_ysize=ysize,
+                buf_xsize=buf_xsize, buf_ysize=buf_ysize,
+                resample_alg=mask_resample_alg) != 255
+                 for band in band_list]
+
+        return np.ma.masked_array(arr, np.vstack(masks))
+
 
     def ReadAsArray(self, xoff=0, yoff=0, xsize=None, ysize=None, buf_obj=None,
                     buf_xsize=None, buf_ysize=None, buf_type=None,
@@ -1445,7 +1985,7 @@ CPLErr ReadRaster1( double xoff, double yoff, double xsize, double ysize,
 
         if buf_obj is None:
             from sys import version_info
-            nRequiredSize = int(buf_xsize * buf_ysize * len(band_list) * (_gdal.GetDataTypeSize(buf_type) / 8))
+            nRequiredSize = int(buf_xsize * buf_ysize * len(band_list) * _gdal.GetDataTypeSizeBytes(buf_type))
             if version_info >= (3, 0, 0):
                 buf_obj_ar = [None]
                 exec("buf_obj_ar[0] = b' ' * nRequiredSize")
@@ -1624,13 +2164,29 @@ CPLErr ReadRaster1( double xoff, double yoff, double xsize, double ysize,
         self._child_references.add(val)
 %}
 
-%feature("pythonprepend") Close %{
-    self._invalidate_children()
-%}
+%feature("shadow") Close %{
+    def Close(self, *args):
+        r"""
+        Close(Dataset self) -> CPLErr
 
-%feature("pythonappend") Close %{
-    self.thisown = 0
-    self.this = None
+        Closes opened dataset and releases allocated resources.
+
+        This method can be used to force the dataset to close
+        when one more references to the dataset are still
+        reachable. If :py:meth:`Close` is never called, the dataset will
+        be closed automatically during garbage collection.
+
+        In most cases, it is preferable to open or create a dataset
+        using a context manager instead of calling :py:meth:`Close`
+        directly.
+        """
+
+        self._invalidate_children()
+        try:
+            return _gdal.Dataset_Close(self, *args)
+        finally:
+            self.thisown = 0
+            self.this = None
 %}
 
 %feature("shadow") ExecuteSQL %{
@@ -1696,13 +2252,40 @@ def ExecuteSQL(self, statement, spatialFilter=None, dialect="", keep_ref_on_ds=F
     ...     print(lyr.GetFeatureCount())
     """
 
-    sql_lyr = $action(self, statement, spatialFilter, dialect)
+    class MyHandler:
+        def __init__(self):
+            self.errors = []
+
+        def callback(self, err_type, err_no, err_msg):
+            self.errors.append([err_type, err_no, err_msg])
+
+    my_error_handler = MyHandler()
+    if GetUseExceptions():
+        with ExceptionMgr(useExceptions=False):
+            PushErrorHandler(my_error_handler.callback)
+            try:
+                sql_lyr = $action(self, statement, spatialFilter, dialect)
+            finally:
+                PopErrorHandler()
+    else:
+        sql_lyr = $action(self, statement, spatialFilter, dialect)
     if sql_lyr:
         import weakref
         sql_lyr._to_release = True
         sql_lyr._dataset_weak_ref = weakref.ref(self)
         if keep_ref_on_ds:
             sql_lyr._dataset_strong_ref = self
+
+    if my_error_handler.errors and my_error_handler.errors[-1][0] == CE_Failure:
+        if sql_lyr:
+            self.ReleaseResultSet(sql_lyr)
+        raise RuntimeError(my_error_handler.errors[-1][2])
+
+    elif my_error_handler.errors:
+        for err_type, err_no, err_msg in my_error_handler.errors:
+            if err_type == CE_Warning:
+                Error(err_type, err_no, err_msg)
+
     return sql_lyr
 %}
 
@@ -1754,7 +2337,7 @@ def ReleaseResultSet(self, sql_lyr):
 %extend GDALMajorObjectShadow {
 %pythoncode %{
   def GetMetadata(self, domain=''):
-    if domain and domain[:4] == 'xml:':
+    if domain and (domain[:4] == 'xml:' or domain[:5] == 'json:'):
       return self.GetMetadata_List(domain)
     return self.GetMetadata_Dict(domain)
 %}
@@ -1763,11 +2346,57 @@ def ReleaseResultSet(self, sql_lyr):
 %extend GDALRasterAttributeTableShadow {
 %pythoncode %{
   def WriteArray(self, array, field, start=0):
+      """
+      Write a NumPy array to a single column of a RAT.
+
+      Parameters
+      ----------
+      array : np.ndarray
+          One-dimensional array of values to write
+      field : int
+          The index of the column to write (starting at 0)
+      start : int, default = 0
+          The index of the first row to write (starting at 0)
+
+      Returns
+      -------
+      int:
+          Error code, or ``gdal.CE_None`` if no error occurred.
+      """
       from osgeo import gdal_array
 
       return gdal_array.RATWriteArray(self, array, field, start)
 
   def ReadAsArray(self, field, start=0, length=None):
+      """
+      Read a single column of a RAT into a NumPy array.
+
+      Parameters
+      ----------
+      field : int
+          The index of the column to read (starting at 0)
+      start : int, default = 0
+          The index of the first row to read (starting at 0)
+      length : int, default = None
+          The number of rows to read
+
+
+      Returns
+      -------
+      np.ndarray
+
+      Examples
+      --------
+      >>> ds = gdal.Open('clc2018_v2020_20u1.tif')
+      >>> rat = ds.GetRasterBand(1).GetDefaultRAT()
+      >>> rat.ReadAsArray(0)
+      array([ 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
+             18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+             35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 48], dtype=int32)
+      >>> rat.ReadAsArray(0, 5, 3)
+      array([6, 7, 8], dtype=int32)
+      """
+
       from osgeo import gdal_array
 
       return gdal_array.RATReadArray(self, field, start, length)
@@ -1803,6 +2432,13 @@ def GetMDArrayNames(self, options = []) -> "list[str]":
     return ret
 %}
 
+%pythoncode %{
+  def GetDataTypes(self):
+      """Return data types associated with that group (typically enumerations)
+      """
+      return [self.GetDataType(i) for i in range(self.GetDataTypeCount())]
+%}
+
 }
 
 %extend GDALMDArrayHS {
@@ -1830,6 +2466,10 @@ def GetMDArrayNames(self, options = []) -> "list[str]":
         buffer_stride.reverse()
       if not buffer_datatype:
         buffer_datatype = self.GetDataType()
+        if buffer_datatype.GetClass() == GEDTC_NUMERIC and buffer_datatype.GetNumericDataType() == gdalconst.GDT_Float16:
+          buffer_datatype = ExtendedDataType.Create(GDT_Float32)
+        elif buffer_datatype.GetClass() == GEDTC_NUMERIC and buffer_datatype.GetNumericDataType() == gdalconst.GDT_CFloat16:
+          buffer_datatype = ExtendedDataType.Create(GDT_CFloat32)
       return _gdal.MDArray_Read(self, array_start_idx, count, array_step, buffer_stride, buffer_datatype)
 
   def ReadAsArray(self,
@@ -1907,8 +2547,12 @@ def GetMDArrayNames(self, options = []) -> "list[str]":
              ('l', 4): GDT_Int32,
              ('q', 8): GDT_Int64,
              ('Q', 8): GDT_UInt64,
+             ('e', 2): GDT_Float16,
              ('f', 4): GDT_Float32,
-             ('d', 8): GDT_Float64
+             ('d', 8): GDT_Float64,
+             # ('E', 2): GDT_CFloat16,
+             ('F', 4): GDT_CFloat32,
+             ('D', 8): GDT_CFloat64
           }
           key = (buffer.typecode, buffer.itemsize)
           if key not in map_typecode_itemsize_to_gdal:
@@ -2119,7 +2763,6 @@ def _WarnIfUserHasNotSpecifiedIfUsingOgrExceptions():
 %}
 
 %pythonprepend GeneralCmdLineProcessor %{
-    import os
     for i in range(len(args[0])):
         if isinstance(args[0][i], (os.PathLike, int)):
             args[0][i] = str(args[0][i])
@@ -2165,6 +2808,14 @@ def _WarnIfUserHasNotSpecifiedIfUsingOgrExceptions():
 
 %pythonprepend CreateCopy %{
     _WarnIfUserHasNotSpecifiedIfUsingExceptions()
+
+    if len(args) >= 2 and isinstance(args[1], Band):
+        ds = args[1].GetDataset()
+        if ds:
+            args = [arg for arg in args]
+            args[1] = ds
+            args = tuple(args)
+
 %}
 
 %pythonprepend Delete %{
@@ -2174,22 +2825,47 @@ def _WarnIfUserHasNotSpecifiedIfUsingOgrExceptions():
 %pythoncode %{
 
 def CreateDataSource(self, utf8_path, options=None):
+    """
+    Synonym for :py:meth:`CreateVector`.
+    """
     return self.Create(utf8_path, 0, 0, 0, GDT_Unknown, options or [])
 
 def CopyDataSource(self, ds, utf8_path, options=None):
+    """
+    Synonym for :py:meth:`CreateCopy`.
+    """
     return self.CreateCopy(utf8_path, ds, options = options or [])
 
 def DeleteDataSource(self, utf8_path):
+    """
+    Synonym for :py:meth:`Delete`.
+    """
     return self.Delete(utf8_path)
 
 def Open(self, utf8_path, update=False):
+    """
+    Attempt to open a specified path with this driver.
+
+    Parameters
+    ----------
+    utf8_path : str
+       The path to open
+    update : bool, default = False
+       Whether to open the dataset in update mode.
+
+    Returns
+    -------
+    Dataset, or None on error
+    """
     return OpenEx(utf8_path,
                   OF_VECTOR | (OF_UPDATE if update else 0),
                   [self.GetDescription()])
 
 def GetName(self):
+    """
+    Synonym for :py:meth:`GetDescription`.
+    """
     return self.GetDescription()
-
 %}
 
 }
@@ -2282,8 +2958,6 @@ def Info(ds, **kwargs):
         (opts, format, deserialize) = InfoOptions(**kwargs)
     else:
         (opts, format, deserialize) = kwargs['options']
-
-    import os
 
     if isinstance(ds, (str, os.PathLike)):
         ds = Open(ds)
@@ -2404,8 +3078,6 @@ def VectorInfo(ds, **kwargs):
     else:
         (opts, format, deserialize) = kwargs['options']
 
-    import os
-
     if isinstance(ds, (str, os.PathLike)):
         ds = OpenEx(ds, OF_VERBOSE_ERROR | OF_VECTOR)
     ret = VectorInfoInternal(ds, opts)
@@ -2459,8 +3131,6 @@ def MultiDimInfo(ds, **kwargs):
         opts = kwargs['options']
         as_text = True
 
-    import os
-
     if isinstance(ds, (str, os.PathLike)):
         ds = OpenEx(ds, OF_VERBOSE_ERROR | OF_MULTIDIM_RASTER)
     ret = MultiDimInfoInternal(ds, opts)
@@ -2507,8 +3177,10 @@ def TranslateOptions(options=None, format=None,
               noData=None, rgbExpand=None,
               stats = False, rat = True, xmp = True, resampleAlg=None,
               overviewLevel = 'AUTO',
+              colorInterpretation=None,
               callback=None, callback_data=None,
-              domainMetadataOptions = None):
+              domainMetadataOptions = None,
+              errorIfWindowOutsideSource = False):
     """Create a TranslateOptions() object that can be passed to gdal.Translate()
 
     Parameters
@@ -2577,12 +3249,16 @@ def TranslateOptions(options=None, format=None,
         resampling mode
     overviewLevel:
         To specify which overview level of source files must be used
+    colorInterpretation:
+        Band color interpretation, as a single value or a list, of the following values ("red", "green", "blue", "alpha", "grey", "undefined", etc.) or their GCI_xxxx symbolic names
     callback:
         callback method
     callback_data:
         user data for callback
     domainMetadataOptions:
         list or dict of domain-specific metadata options
+    errorIfWindowOutsideSource : {True, False, "partially", "completely"}, default=True
+         raise an error if the requested window is partially or completely outside the source dataset. ("True" is a synonym for "partially"). This corresponds to the ``-epo`` and ``-eco`` options of ``gdal_translate``.
     """
 
     # Only used for tests
@@ -2694,9 +3370,25 @@ def TranslateOptions(options=None, format=None,
                 overviewLevel = str(overviewLevel)
         else:
             overviewLevel = None
+        if colorInterpretation is not None:
+            def colorInterpAsString(x):
+                return GetColorInterpretationName(x) if isinstance(x, int) else x
+            if isinstance(colorInterpretation, list):
+                new_options += ['-colorinterp', ','.join([colorInterpAsString(x) for x in colorInterpretation])]
+            else:
+                new_options += ['-colorinterp', colorInterpAsString(colorInterpretation)]
 
         if overviewLevel is not None and overviewLevel != 'AUTO':
             new_options += ['-ovr', overviewLevel]
+
+        if errorIfWindowOutsideSource is not False:
+            if errorIfWindowOutsideSource in ("partially", True):
+                new_options.append('-epo')
+            elif errorIfWindowOutsideSource == "completely":
+                new_options.append('-eco')
+            else:
+                raise RuntimeError("errorIfWindowOutsideSource must be one of True / 'partially', False, or 'completely'")
+
 
     if return_option_list:
         return new_options
@@ -2720,15 +3412,19 @@ def Translate(destName, srcDS, **kwargs):
 
     _WarnIfUserHasNotSpecifiedIfUsingExceptions()
 
+    filenamePrefix = ""
     if 'options' not in kwargs or isinstance(kwargs['options'], (list, str)):
         (opts, callback, callback_data) = TranslateOptions(**kwargs)
+        if "format" in kwargs and kwargs["format"].upper() == "ZARR" and "creationOptions" in kwargs:
+            for opt in kwargs["creationOptions"]:
+                if opt.upper() in ("CONVERT_TO_KERCHUNK_PARQUET_REFERENCE=YES", "CONVERT_TO_KERCHUNK_PARQUET_REFERENCE=ON", "CONVERT_TO_KERCHUNK_PARQUET_REFERENCE=TRUE"):
+                    filenamePrefix = "ZARR_DUMMY:"
+
     else:
         (opts, callback, callback_data) = kwargs['options']
 
-    import os
-
     if isinstance(srcDS, (str, os.PathLike)):
-        srcDS = Open(srcDS)
+        srcDS = Open(filenamePrefix + str(srcDS))
 
     return TranslateInternal(destName, srcDS, opts, callback, callback_data)
 
@@ -2797,7 +3493,7 @@ def WarpOptions(options=None, format=None,
     workingType:
         working type (gdalconst.GDT_Byte, etc...)
     warpOptions:
-        list or dict of warping options
+        list or dict of warping options. For a list of available options, see :cpp:member:`GDALWarpOptions::papszWarpOptions`.
     errorThreshold:
         error threshold for approximation transformer (in pixels)
     warpMemoryLimit:
@@ -2823,9 +3519,9 @@ def WarpOptions(options=None, format=None,
     transformerOptions:
         list or dict of transformer options
     cutlineDSName:
-        cutline dataset name (mutually exclusive with cutlineDSName)
+        cutline dataset name (mutually exclusive with cutlineWKT)
     cutlineWKT:
-        cutline WKT geometry (POLYGON or MULTIPOLYGON) (mutually exclusive with cutlineWKT)
+        cutline WKT geometry (POLYGON or MULTIPOLYGON) (mutually exclusive with cutlineDSName)
     cutlineSRS:
         set/override cutline SRS
     cutlineLayer:
@@ -3025,8 +3721,6 @@ def Warp(destNameOrDestDS, srcDSOrSrcDSTab, **kwargs):
     else:
         (opts, callback, callback_data) = kwargs['options']
 
-    import os
-
     if isinstance(srcDSOrSrcDSTab, (str, os.PathLike)):
         srcDSTab = [Open(srcDSOrSrcDSTab)]
     elif isinstance(srcDSOrSrcDSTab, list):
@@ -3049,6 +3743,7 @@ def VectorTranslateOptions(options=None, format=None,
          accessMode=None,
          srcSRS=None, dstSRS=None, reproject=True,
          coordinateOperation=None,
+         coordinateOperationOptions=None,
          SQLStatement=None, SQLDialect=None, where=None, selectFields=None,
          addFields=False,
          relaxedFieldNameMatch=False,
@@ -3105,6 +3800,8 @@ def VectorTranslateOptions(options=None, format=None,
         output SRS (with reprojection if reproject = True)
     coordinateOperation:
         coordinate operation as a PROJ string or WKT string
+    coordinateOperationOptions:
+        list or dict of coordinate operation options (ALLOW_BALLPARK=NO, ONLY_BEST=YES, WARN_ABOUT_DIFFERENT_COORD_OP=NO)
     reproject:
         whether to do reprojection
     SQLStatement:
@@ -3247,6 +3944,15 @@ def VectorTranslateOptions(options=None, format=None,
                 new_options += ['-a_srs', str(dstSRS)]
         if coordinateOperation is not None:
             new_options += ['-ct', coordinateOperation]
+
+        if coordinateOperationOptions is not None:
+            if isinstance(coordinateOperationOptions, dict):
+                for k, v in coordinateOperationOptions.items():
+                    new_options += ['-ct_opt', f'{k}={v}']
+            else:
+                for opt in coordinateOperationOptions:
+                    new_options += ['-ct_opt', opt]
+
         if SQLStatement is not None:
             new_options += ['-sql', str(SQLStatement)]
         if SQLDialect is not None:
@@ -3453,8 +4159,6 @@ def VectorTranslate(destNameOrDestDS, srcDS, **kwargs):
     else:
         (opts, callback, callback_data) = kwargs['options']
 
-    import os
-
     if isinstance(srcDS, (str, os.PathLike)):
         srcDS = OpenEx(srcDS, gdalconst.OF_VECTOR)
 
@@ -3465,7 +4169,7 @@ def VectorTranslate(destNameOrDestDS, srcDS, **kwargs):
 
 def DEMProcessingOptions(options=None, colorFilename=None, format=None,
               creationOptions=None, computeEdges=False, alg=None, band=1,
-              zFactor=None, scale=None, azimuth=None, altitude=None,
+              zFactor=None, scale=None, xscale=None, yscale=None, azimuth=None, altitude=None,
               combined=False, multiDirectional=False, igor=False,
               slopeFormat=None, trigonometric=False, zeroForFlat=False,
               addAlpha=None, colorSelection=None,
@@ -3492,6 +4196,10 @@ def DEMProcessingOptions(options=None, colorFilename=None, format=None,
         (hillshade only) vertical exaggeration used to pre-multiply the elevations.
     scale:
         ratio of vertical units to horizontal.
+    xscale:
+        Ratio of vertical units to horizontal X axis units.
+    yscale:
+        Ratio of vertical units to horizontal Y axis units.
     azimuth:
         (hillshade only) azimuth of the light, in degrees. 0 if it comes from the top of the raster, 90 from the east, ... The default value, 315, should rarely be changed as it is the value generally used to generate shaded maps.
     altitude:
@@ -3542,6 +4250,10 @@ def DEMProcessingOptions(options=None, colorFilename=None, format=None,
             new_options += ['-z', str(zFactor)]
         if scale is not None:
             new_options += ['-s', str(scale)]
+        if xscale is not None:
+            new_options += ['-xscale', str(xscale)]
+        if yscale is not None:
+            new_options += ['-yscale', str(yscale)]
         if azimuth is not None:
             new_options += ['-az', str(azimuth)]
         if altitude is not None:
@@ -3599,8 +4311,6 @@ def DEMProcessing(destName, srcDS, processing, **kwargs):
         (opts, colorFilename, callback, callback_data) = DEMProcessingOptions(**kwargs)
     else:
         (opts, colorFilename, callback, callback_data) = kwargs['options']
-
-    import os
 
     if isinstance(srcDS, (str, os.PathLike)):
         srcDS = Open(srcDS)
@@ -3713,8 +4423,6 @@ def Nearblack(destNameOrDestDS, srcDS, **kwargs):
         (opts, callback, callback_data) = NearblackOptions(**kwargs)
     else:
         (opts, callback, callback_data) = kwargs['options']
-
-    import os
 
     if isinstance(srcDS, (str, os.PathLike)):
         srcDS = OpenEx(srcDS)
@@ -3863,12 +4571,180 @@ def Grid(destName, srcDS, **kwargs):
     else:
         (opts, callback, callback_data) = kwargs['options']
 
-    import os
-
     if isinstance(srcDS, (str, os.PathLike)):
         srcDS = OpenEx(srcDS, gdalconst.OF_VECTOR)
 
     return GridInternal(destName, srcDS, opts, callback, callback_data)
+
+def ContourOptions(
+    options=None,
+    format=None,
+    band=1,
+    elevationName=None,
+    minName=None,
+    maxName=None,
+    with3d=False,
+    srcNodata=None,
+    offset=None,
+    datasetCreationOptions=None,
+    layerCreationOptions=None,
+    interval=None,
+    fixedLevels=None,
+    exponentialBase=None,
+    layerName="contour",
+    polygonize=False,
+    groupTransactions=100000,
+    callback=None,
+    callback_data=None):
+    """Create a ContourOptions() object that can be passed to gdal.Contour()
+
+    Parameters
+    ----------
+    options:
+        can be be an array of strings, a string or let empty and filled from other keywords.
+    format:
+        output format ("ESRI Shapefile", etc...)
+    band:
+        band number to use (default = 1)
+    elevationName:
+        name of the attribute in which to put the elevation.
+        If not provided no elevation attribute is attached.
+        Ignored in polygonal contouring (polygonize) mode.
+    minName:
+        name for the attribute in which to put the minimum elevation of contour polygon.
+        If not provided no minimum elevation attribute is attached.
+        Ignored in default line contouring mode.
+    maxName:
+        name for the attribute in which to put the maximum elevation of contour polygon.
+        If not provided no maximum elevation attribute is attached.
+        Ignored in default line contouring mode.
+    with3d:
+        Force production of 3D vectors instead of 2D. Includes elevation at every vertex.
+    srcNodata:
+        Input pixel value to treat as "nodata".
+    offset:
+        Offset to apply to the elevation values.
+    datasetCreationOptions:
+        List or dict of dataset creation options.
+    layerCreationOptions:
+        List or dict of layer creation options.
+    interval:
+        Elevation interval between contours. Must specify either "interval" or "fixedLevels" or "exponentialBase".
+    fixedLevels:
+        Name one or more "fixed levels" to extract. Must specify either "interval" or "fixedLevels" or "exponentialBase".
+    exponentialBase:
+        Generate levels on an exponential scale: base ^ k, for k an integer. Must specify either. Must specify either "interval" or "fixedLevels" or "exponentialBase".
+    layerName:
+        Name for the output vector layer, defaults to "contour".
+    polygonize:
+        Produce polygons instead of lines (default = False).
+    groupTransactions:
+        Group n features per transaction (default 100 000). Increase the value for better performance when writing into
+        DBMS drivers that have transaction support. n can be set to unlimited to load the data into a single transaction.
+        If set to 0, no explicit transaction is done.
+    callback:
+        Callback method.
+    callback_data:
+        User data for callback.
+    """
+
+    # Only used for tests
+    return_option_list = options == '__RETURN_OPTION_LIST__'
+
+    if return_option_list:
+        options = []
+    else:
+        options = [] if options is None else options
+
+    if isinstance(options, str):
+        new_options = ParseCommandLine(options)
+    else:
+        import copy
+        new_options = copy.copy(options)
+
+        if format is not None:
+            new_options += ['-of', format]
+        if elevationName is not None:
+            new_options += ['-a', elevationName]
+        if minName is not None:
+            new_options += ['-amin', minName]
+        if maxName is not None:
+            new_options += ['-amax', maxName]
+        if with3d:
+            new_options += ['-3d']
+        if srcNodata is not None:
+            new_options += ['-snodata', str(srcNodata)]
+        if offset is not None:
+            new_options += ['-off', str(offset)]
+        if datasetCreationOptions is not None:
+            if isinstance(datasetCreationOptions, dict):
+                for k, v in datasetCreationOptions.items():
+                    new_options += ['-dsco', f'{k}={v}']
+            else:
+                for opt in datasetCreationOptions:
+                    new_options += ['-dsco', opt]
+        if layerCreationOptions is not None:
+            if isinstance(layerCreationOptions, dict):
+                for k, v in layerCreationOptions.items():
+                    new_options += ['-lco', f'{k}={v}']
+            else:
+                for opt in layerCreationOptions:
+                    new_options += ['-lco', opt]
+        if interval is not None:
+            new_options += ['-i', str(interval)]
+        if fixedLevels is not None:
+            for level in fixedLevels:
+                new_options += ['-fl', str(level)]
+        if exponentialBase is not None:
+            new_options += ['-e', str(exponentialBase)]
+        if layerName is not None:
+            new_options += ['-nln', layerName]
+        if polygonize:
+            new_options += ['-p']
+        if groupTransactions is not None:
+            new_options += ['-gt', str(groupTransactions)]
+
+    if return_option_list:
+        return new_options
+
+    return (GDALContourOptions(new_options), callback, callback_data)
+
+
+def Contour(destNameOrDestDS, srcDS, **kwargs):
+    """Create contour lines or polygons from raster data.
+
+    Parameters
+    ----------
+    destNameOrDestDS:
+        Output dataset name or object
+
+        If passed as a dataset name, a potentially existing output dataset of
+        the same name will be overwritten. To update an existing output dataset,
+        it must be passed as a dataset object.
+
+    srcDS:
+        a Dataset object or a filename
+    kwargs:
+        options: return of gdal.ContourOptions(), string or array of strings,
+        other keywords arguments of gdal.ContourOptions().
+        If options is provided as a gdal.ContourOptions() object, other keywords are ignored.
+    """
+
+    _WarnIfUserHasNotSpecifiedIfUsingExceptions()
+
+    if 'options' not in kwargs or isinstance(kwargs['options'], (list, str)):
+        (opts, callback, callback_data) = ContourOptions(**kwargs)
+    else:
+        (opts, callback, callback_data) = kwargs['options']
+
+    if isinstance(srcDS, (str, os.PathLike)):
+        srcDS = OpenEx(srcDS)
+
+    if isinstance(destNameOrDestDS, (str, os.PathLike)):
+        return wrapper_GDALContourDestName(destNameOrDestDS, srcDS, opts, callback, callback_data)
+    else:
+        return wrapper_GDALContourDestDS(destNameOrDestDS, srcDS, opts, callback, callback_data)
+
 
 def RasterizeOptions(options=None, format=None,
          outputType=gdalconst.GDT_Unknown,
@@ -4059,8 +4935,6 @@ def Rasterize(destNameOrDestDS, srcDS, **kwargs):
     """
 
     _WarnIfUserHasNotSpecifiedIfUsingExceptions()
-
-    import os
 
     if 'options' not in kwargs or isinstance(kwargs['options'], (list, str)):
         (opts, callback, callback_data) = RasterizeOptions(**kwargs)
@@ -4268,8 +5142,6 @@ def Footprint(destNameOrDestDS, srcDS, **kwargs):
     else:
         (opts, callback, callback_data) = kwargs['options']
 
-    import os
-
     if isinstance(srcDS, (str, os.PathLike)):
         srcDS = OpenEx(srcDS, gdalconst.OF_RASTER)
 
@@ -4304,8 +5176,6 @@ def Footprint(destNameOrDestDS, srcDS, **kwargs):
             if VSIStatL(temp_filename):
                 Unlink(temp_filename)
 
-    import os
-
     if isinstance(destNameOrDestDS, (str, os.PathLike)):
         return wrapper_GDALFootprintDestName(destNameOrDestDS, srcDS, opts, callback, callback_data)
     else:
@@ -4329,6 +5199,9 @@ def BuildVRTOptions(options=None,
                     hideNodata=None,
                     nodataMaxMaskThreshold=None,
                     strict=False,
+                    writeAbsolutePath=False,
+                    pixelFunction=None,
+                    pixelFunctionArgs=None,
                     creationOptions=None,
                     callback=None, callback_data=None):
     """Create a BuildVRTOptions() object that can be passed to gdal.BuildVRT()
@@ -4370,8 +5243,16 @@ def BuildVRTOptions(options=None,
         value of the mask band of a source below which the source band values should be replaced by VRTNodata (or 0 if not specified)
     strict:
         set to True if warnings should be failures
+    pixelFunction: str
+        a pixel function to use to calculate output pixel values when multiple
+        sources overlap. For a list of available pixel functions, see
+        :ref:`builtin_pixel_functions`.
+    pixelFunctionArgs:
+        list or dict of pixel function arguments
     creationOptions:
         list or dict of creation options
+    writeAbsolutePath:
+        Enables writing the absolute path of the input datasets. By default, input filenames are written in a relative way with respect to the VRT filename (when possible)
     callback:
         callback method.
     callback_data:
@@ -4424,8 +5305,22 @@ def BuildVRTOptions(options=None,
             new_options += ['-hidenodata']
         if strict:
             new_options += ['-strict']
+        if writeAbsolutePath:
+            new_options += ['-write_absolute_path']
         if creationOptions is not None:
             _addCreationOptions(new_options, creationOptions)
+        if pixelFunction:
+            new_options += ['-pixel-function', pixelFunction]
+        if pixelFunctionArgs:
+            if isinstance(pixelFunctionArgs, str):
+                new_options += ['-pixel-function-arg', pixelFunctionArgs]
+            elif isinstance(pixelFunctionArgs, dict):
+                for k, v in pixelFunctionArgs.items():
+                    new_options += ['-pixel-function-arg', f'{k}={v}']
+            else:
+                for opt in pixelFunctionArgs:
+                    new_options += ['-pixel-function-arg', opt]
+
 
     if return_option_list:
         return new_options
@@ -4457,8 +5352,6 @@ def BuildVRT(destName, srcDSOrSrcDSTab, **kwargs):
 
     srcDSTab = []
     srcDSNamesTab = []
-
-    import os
 
     if isinstance(srcDSOrSrcDSTab, (str, os.PathLike)):
         srcDSNamesTab = [str(srcDSOrSrcDSTab)]
@@ -4541,7 +5434,7 @@ def TileIndexOptions(options=None,
     outputBounds:
         output bounds as [minx, miny, maxx, maxy]
     colorInterpretation:
-        tile color interpretation, as a single value or a list, of the following values: "red", "green", "blue", "alpha", "grey", "undefined"
+        Tile color interpretation, as a single value or a list, of the following values ("red", "green", "blue", "alpha", "grey", "undefined", etc.) or their GCI_xxxx symbolic names
     noData:
         tile nodata value, as a single value or a list
     bandCount:
@@ -4614,10 +5507,12 @@ def TileIndexOptions(options=None,
         if outputBounds is not None:
             new_options += ['-te', _strHighPrec(outputBounds[0]), _strHighPrec(outputBounds[1]), _strHighPrec(outputBounds[2]), _strHighPrec(outputBounds[3])]
         if colorInterpretation is not None:
-            if isinstance(noData, list):
-                new_options += ['-colorinterp', ','.join(colorInterpretation)]
+            def colorInterpAsString(x):
+                return GetColorInterpretationName(x) if isinstance(x, int) else x
+            if isinstance(colorInterpretation, list):
+                new_options += ['-colorinterp', ','.join([colorInterpAsString(x) for x in colorInterpretation])]
             else:
-                new_options += ['-colorinterp', colorInterpretation]
+                new_options += ['-colorinterp', colorInterpAsString(colorInterpretation)]
         if noData is not None:
             if isinstance(noData, list):
                 new_options += ['-nodata', ','.join([_strHighPrec(x) for x in noData])]
@@ -4674,8 +5569,6 @@ def TileIndex(destName, srcFilenames, **kwargs):
         (opts, callback, callback_data) = kwargs['options']
 
     srcDSNamesTab = []
-
-    import os
 
     if isinstance(srcFilenames, (str, os.PathLike)):
         srcDSNamesTab = [str(srcFilenames)]
@@ -4916,7 +5809,7 @@ def config_option(key, value, thread_local=True):
 
 @contextlib.contextmanager
 def quiet_errors():
-    """Temporarily install an error handler that silents all warnings and errors.
+    """Temporarily install an error handler that silences all warnings and errors.
 
        Returns
        -------
@@ -4933,6 +5826,96 @@ def quiet_errors():
         yield
     finally:
         PopErrorHandler()
+
+@contextlib.contextmanager
+def quiet_warnings():
+    """Temporarily install an error handler that silences all warnings.
+
+       .. versionadded:: 3.11
+
+       Returns
+       -------
+            A context manager
+
+       Example
+       -------
+
+       >>> with gdal.ExceptionMgr(useExceptions=False), gdal.quiet_warnings():
+       ...     gdal.Error(gdal.CE_Warning, gdal.CPLE_AppDefined, "you will never see me")
+    """
+    PushErrorHandler("CPLQuietWarningsErrorHandler")
+    try:
+        yield
+    finally:
+        PopErrorHandler()
+
+
+def Run(*alg, arguments={}, progress=None, **kwargs):
+    """Run a GDAL algorithm and return it.
+
+       .. versionadded:: 3.11
+
+       This method can also be used within a context manager, in which case
+       :py:meth:`osgeo.gdal.Algorithm.Finalize` will be called at the exit of the
+       context manager.  An exception will be raised if the algorithm fails,
+       even if :py:meth:`osgeo.gdal.UseExceptions()` has not been called.
+
+       Parameters
+       ----------
+       alg: str, list[str], tuple[str] or Algorithm
+            Path to the algorithm or algorithm instance itself. For example "raster info", ["raster", "info"] or "raster", "info".
+       arguments: dict
+            Input arguments of the algorithm. For example {"format": "json", "input": "byte.tif"}
+       progress: callable
+            Progress function whose arguments are a progress ratio, a string and a user data
+       kwargs:
+            Instead of using the ``arguments`` parameter, it is possible to pass
+            algorithm arguments directly as named parameters of gdal.Run().
+            If the named argument has dash characters in it, the corresponding
+            parameter must replace them with an underscore character.
+            For example ``dst_crs`` as a a parameter of gdal.Run(), instead of
+            ``dst-crs`` which is the name to use on the command line.
+
+       Returns
+       -------
+       Algorithm
+
+       Examples
+       --------
+
+       >>> alg = gdal.Run(["raster", "info"], {"input": "byte.tif"})
+       >>> print(alg.output()["bands"])
+
+       >>> with gdal.Run("raster", "reproject", input="byte.tif", output_format="MEM", dst_crs="EPSG:4326") as alg
+       ...     print(alg.output().ReadAsArray())
+    """
+
+    new_alg = []
+    for v in alg:
+        if isinstance(v, dict):
+            arguments = v
+            break
+        new_alg.append(v)
+    alg = new_alg
+
+    if len(alg) == 1 and isinstance(alg[0], Algorithm):
+        alg = alg[0]
+    elif len(alg) >= 1 and (isinstance(alg[0], list) or isinstance(alg[0], str)):
+        alg = Algorithm(*alg)
+    else:
+        raise RuntimeError("Wrong type for alg. Expected string, list of strings or Algorithm")
+
+    for k in arguments:
+        alg[k.replace('_', '-')] = arguments[k]
+
+    for k in kwargs:
+        alg[k.replace('_', '-')] = kwargs[k]
+
+    if not alg.Run(progress):
+        # We go here only if gdal.UseExceptions() has not been called
+        raise RuntimeError("Algorithm.Run() failed: %s" % GetLastErrorMsg())
+
+    return alg
 
 %}
 
@@ -4997,6 +5980,119 @@ def InterpolateAtPoint(self, *args, **kwargs):
         return ret[1]
 %}
 
+%feature("shadow") InterpolateAtGeolocation %{
+def InterpolateAtGeolocation(self, *args, **kwargs):
+    """Return the interpolated value at georeferenced coordinates.
+       See :cpp:func:`GDALRasterBand::InterpolateAtGeolocation`.
+
+       When srs is None, those georeferenced coordinates (geolocX, geolocY)
+       must be in the "natural" SRS of the dataset, that is the one returned by
+       GetSpatialRef() if there is a geotransform, GetGCPSpatialRef() if there are
+       GCPs, WGS 84 if there are RPC coefficients, or the SRS of the geolocation
+       array (generally WGS 84) if there is a geolocation array.
+       If that natural SRS is a geographic one, geolocX must be a longitude, and
+       geolocY a latitude. If that natural SRS is a projected one, geolocX must
+       be a easting, and geolocY a northing.
+
+       When srs is set to a non-None value, (geolocX, geolocY) must be
+       expressed in that CRS, and that tuple must be conformant with the
+       data-axis-to-crs-axis setting of srs, that is the one returned by
+       the :py:func:`osgeo.osr.SpatialReference.GetDataAxisToSRSAxisMapping`.
+       If you want to be sure of the axis order, then make sure to call
+       ``srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)``
+       before calling this method, and in that case, geolocX must be a longitude
+       or an easting value, and geolocX a latitude or a northing value.
+
+       Parameters
+       ----------
+       geolocX : float
+           X coordinate of the position where interpolation should be done.
+           Longitude or easting in "natural" CRS if `srs` is None,
+           otherwise consistent with first axis of `srs`,
+           taking into account the data-axis-to-crs-axis mapping
+       geolocY : float
+           Y coordinate of the position where interpolation should be done.
+           Latitude or northing in "natural" CRS if `srs` is None,
+           otherwise consistent with second axis of `srs`,
+           taking into account the data-axis-to-crs-axis mapping
+       srs : osgeo.osr.SpatialReference
+           If set, override the natural CRS in which geolocX, geolocY are expressed
+       interpolation : GRIOResampleAlg (nearest, bilinear, cubic, cubicspline)
+
+       Returns
+       -------
+       float:
+           Interpolated value, or ``None`` if it has any error.
+
+       Example
+       -------
+
+       >>> from osgeo import gdal, osr
+       >>> with gdal.Open("my.tif") as ds:
+       ...    wgs84_srs = osr.SpatialReference()
+       ...    wgs84_srs.SetFromUserInput("WGS84")
+       ...    wgs84_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+       ...    val = ds.GetRasterBand(1).InterpolateAtGeolocation(longitude_degree,
+                                                                 latitude_degree,
+                                                                 wgs84_srs,
+                                                                 gdal.GRIORA_Bilinear)
+    """
+
+    ret = $action(self, *args, **kwargs)
+    if ret[0] != CE_None:
+        return None
+
+    from . import gdal
+    if gdal.DataTypeIsComplex(self.DataType):
+        return complex(ret[1], ret[2])
+    else:
+        return ret[1]
+%}
+
+%feature("shadow") ComputeMinMaxLocation %{
+def ComputeMinMaxLocation(self, *args, **kwargs):
+    """Compute the min/max values for a band, and their location.
+
+       Pixels whose value matches the nodata value or are masked by the mask
+       band are ignored.
+
+       If the minimum or maximum value is hit in several locations, it is not
+       specified which one will be returned.
+
+       This is a mapping of :cpp:func:`GDALRasterBand::ComputeRasterMinMaxLocation`.
+
+       Parameters
+       ----------
+       None
+
+       Returns
+       -------
+       a named tuple (min, max, minX, minY, maxX, maxY) or or ``None``
+       in case of error or no valid pixel.
+    """
+
+    ret = $action(self, *args, **kwargs)
+    if ret[0] != CE_None:
+        return None
+
+    import collections
+    tuple = collections.namedtuple('ComputeMinMaxLocationResult',
+            ['min',
+             'max',
+             'minX',
+             'minY',
+             'maxX',
+             'maxY',
+             ])
+    tuple.min = ret[1]
+    tuple.max = ret[2]
+    tuple.minX = ret[3]
+    tuple.minY = ret[4]
+    tuple.maxX = ret[5]
+    tuple.maxY = ret[6]
+    return tuple
+%}
+
 %pythoncode %{
 
 # VSIFile: Copyright (c) 2024, Dan Baston <dbaston at gmail.com>
@@ -5018,6 +6114,7 @@ class VSIFile(BytesIO):
 
         self._fp = VSIFOpenExL(self._path, self._mode, True)
         if self._fp is None:
+            self._closed = True
             raise OSError(VSIGetLastErrorMsg())
 
         self._closed = False
@@ -5095,3 +6192,468 @@ class VSIFile(BytesIO):
     def tell(self):
         return VSIFTellL(self._fp)
 %}
+
+
+/* -------------------------------------------------------------------- */
+/* GDALAlgorithmRegistryHS                                              */
+/* -------------------------------------------------------------------- */
+
+%extend GDALAlgorithmRegistryHS {
+%pythoncode %{
+
+    def __getitem__(self, key):
+        """Instantiate an algorithm
+
+           Shortcut for self.InstantiateAlg(key)
+
+           Example
+           -------
+           >>> gdal.GetGlobalAlgorithmRegistry()["raster"]
+        """
+
+        alg = self.InstantiateAlg(key)
+        if not alg:
+            raise RuntimeError(f"'{key}' is not a valid algorithm")
+        return alg
+%}
+}
+
+/* -------------------------------------------------------------------- */
+/* GDALAlgorithmHS                                                      */
+/* -------------------------------------------------------------------- */
+
+%extend GDALAlgorithmHS {
+%pythoncode %{
+
+    def __init__(self, *path):
+
+        """Instantiate an existing GDAL algorithm from its path.
+
+           .. versionadded:: 3.11
+
+           Parameters
+           ----------
+           path: str, list[str] or tuple[str]
+                Path to the algorithm. For example "raster info", ["raster", "info"] or "raster", "info"
+
+           Returns
+           -------
+                An algorithm
+
+           Example
+           -------
+
+           >>> alg = gdal.Algorithm("raster", "info")
+           >>> # or alg = gdal.Algorithm(["raster", "info"])
+           >>> # or alg = gdal.Algorithm("raster info")
+           >>> alg.Run()
+           >>> print(alg.Output()["bands"])
+        """
+
+        alg = None
+        if len(path) == 1:
+            if isinstance(path[0], list):
+                alg = GetGlobalAlgorithmRegistry()
+                alg_is_registry = True
+                for i, v in enumerate(path[0]):
+                    if i == 0 and v == "gdal":
+                        continue
+                    alg_is_registry = False
+                    alg = alg[v]
+                if alg_is_registry:
+                    alg = alg["gdal"]
+            elif isinstance(path[0], str):
+                alg = GetGlobalAlgorithmRegistry()
+                alg_is_registry = True
+                for v in path[0].lstrip("gdal ").split(' '):
+                    alg_is_registry = False
+                    alg = alg[v]
+                if alg_is_registry:
+                    alg = alg["gdal"]
+        elif len(path) > 1:
+            alg = GetGlobalAlgorithmRegistry()
+            for i, v in enumerate(path):
+                if i == 0 and v == "gdal":
+                    continue
+                alg = alg[v]
+        if not alg:
+            raise RuntimeError("Wrong type for algorithm path. Expected string or list of strings")
+
+        self.this = alg.this
+        self.thisown = True
+
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        if hasattr(self, "has_run") and not self.Finalize():
+            # We go here only if gdal.UseExceptions() has not been called
+            raise RuntimeError("Algorithm.Finalize() failed: %s" % GetLastErrorMsg())
+
+    def _get_arg_value(self, arg, parse_json):
+        val = arg.Get()
+        if parse_json and arg.GetType() == GAAT_STRING and \
+           ((val.startswith('{') and (val.endswith('}') or val.endswith('}\n'))) or \
+           (val.startswith('[') and (val.endswith(']') or val.endswith(']\n')))):
+            import json
+            try:
+                return json.loads(val)
+            except Exception:
+                return val
+        elif arg.GetType() == GAAT_DATASET:
+            return val.GetDataset()
+        else:
+            return val
+
+
+    def Output(self, parse_json=True):
+        """Return the single output value of this algorithm, after it has been run.
+
+           If there are multiple output values, this method will raise an exception,
+           and the :py:meth:`Outputs` (plural) method should be called instead.
+
+           Arguments of type GAAT_DATASET are returned as a
+           :py:class:`osgeo.gdal.Dataset` instance.
+
+           Parameters
+           -----------
+           parse_json: bool, default=True
+               Whether a JSON string should be returned as a dict or list (instead of a string).
+
+           Returns
+           -------
+           The single output argument value
+
+           Example
+           -------
+           >>> with gdal.Run("raster", "info", input="byte.tif") as alg:
+           ...    print(alg.Output()["bands"])
+        """
+
+        if not hasattr(self, "has_run"):
+            raise RuntimeError("Algorithm.Run() must be called before")
+
+        output_args = []
+        output_args_set = []
+        for name in self.GetArgNames():
+            arg = self.GetArg(name)
+            if arg.IsOutput():
+                output_args.append(arg)
+                if arg.IsExplicitlySet():
+                    output_args_set.append(arg)
+
+        if len(output_args) == 1:
+            return self._get_arg_value(output_args[0], parse_json)
+        elif len(output_args_set) == 1:
+            return self._get_arg_value(output_args_set[0], parse_json)
+        elif len(output_args) >= 2:
+            raise RuntimeError("Cannot use 'output' method on this algorithm as it supports multiple output arguments. Use 'Outputs' (plural) instead")
+        else:
+            return None
+
+
+    def Outputs(self, parse_json=True):
+        """Return the output value(s) of this algorithm as a dict, after it has been run.
+
+           Most algorithms only return a single output, in which case the :py:meth:`Output`
+           method (singular) is preferable for easier use.
+
+           Arguments of type GAAT_DATASET are returned as a
+           :py:class:`osgeo.gdal.Dataset` instance.
+
+           Parameters
+           -----------
+           parse_json: bool, default=True
+               Whether a JSON string should be returned as a dict or list (instead of a string).
+
+           Returns
+           -------
+           A dict whose keys are arguments that have outputs and whose values
+           are the argument values.
+
+           Example
+           -------
+           >>> with gdal.Run("raster", "reproject", input="byte.tif", output_format="MEM", dst_crs="EPSG:4326") as alg:
+           ...    print(alg.Outputs()["output"].ReadAsArray())
+        """
+
+        if not hasattr(self, "has_run"):
+            raise RuntimeError("Algorithm.Run() must be called before")
+
+        res = {}
+        for name in self.GetArgNames():
+            arg = self.GetArg(name)
+            if arg.IsOutput():
+                res[name] = self._get_arg_value(arg, parse_json)
+        return res
+
+
+    def __getitem__(self, key):
+        """Get the value of an argument.
+
+           Shortcut for self.GetActualAlgorithm().GetArg(key).Get()
+           or self.InstantiateSubAlgorithm(key) for a non-leaf algorithm
+
+           Parameters
+           -----------
+           key: str
+               Name of a known argument of the algorithm
+           value:
+               Value of the argument
+
+           Example
+           -------
+           >>> alg["output-string"]
+           >>> alg["output"].GetName()
+           >>> alg["output"].GetDataset()
+           >>> gdal.GetGlobalAlgorithmRegistry()["raster"]["info"]
+        """
+
+        if self.HasSubAlgorithms():
+            subalg = self.InstantiateSubAlgorithm(key.replace('_', '-'))
+            if not subalg:
+                raise RuntimeError(f"'{key}' is not a valid sub-algorithm of '{self.GetName()}'")
+            return subalg
+        else:
+            actual_alg = self.GetActualAlgorithm()
+            arg = actual_alg.GetArg(key.replace('_', '-'))
+            if not arg:
+                raise RuntimeError(f"'{key}' is not a valid argument of '{actual_alg.GetName()}'")
+            return arg.Get()
+
+
+    def __setitem__(self, key, value):
+        """Set the value of an argument.
+
+           Shortcut for self.GetArg(key).Set(value)
+
+           Parameters
+           -----------
+           key: str
+               Name of a known argument of the algorithm
+           value:
+               Value of the argument
+
+           Examples
+           --------
+           >>> alg["bbox"] = [2, 49, 3, 50]
+           >>> alg["where"] = "country = 'France'"
+           >>> alg["input"] = "byte.tif"
+           >>> alg["input"] = gdal.Open("byte.tif")
+           >>> alg["target-aligned-pixels"] = True
+
+           >>> # Multiple input datasets
+           >>> alg["input"] = ["one.tif", "two.tif"]
+           >>> alg["input"] = [one_ds, two_ds]
+        """
+
+        arg = self.GetArgNonConst(key.replace('_', '-'))
+        if not arg:
+            raise RuntimeError(f"'{key}' is not a valid argument of '{self.GetName()}'")
+        if not arg.Set(value):
+            raise RuntimeError(f"Cannot set argument '{key}' to '{value}'")
+%}
+}
+
+%pythonprepend GDALAlgorithmHS::Run %{
+    self.has_run = True
+%}
+
+%pythonprepend GDALAlgorithmHS::ParseCommandLineArguments %{
+    # Convert PathLike to str
+    import copy
+    args = copy.deepcopy(args)
+    if isinstance(args[0], list):
+        for i in range(len(args[0])):
+            args[0][i] = str(args[0][i])
+
+%}
+
+%pythonprepend GDALAlgorithmHS::ParseRunAndFinalize %{
+    # Convert PathLike to str
+    import copy
+    args = copy.deepcopy(args)
+    if isinstance(args[0], list):
+        for i in range(len(args[0])):
+            args[0][i] = str(args[0][i])
+
+%}
+
+/* -------------------------------------------------------------------- */
+/* GDALAlgorithmArgHS                                                   */
+/* -------------------------------------------------------------------- */
+
+%extend GDALAlgorithmArgHS {
+%pythoncode %{
+
+    def Get(self):
+        """Return the argument value in its native type.
+
+           Note: using the ``[]`` operator of Algorithm is also a convenient
+           way of getting the value of an argument.
+
+           Examples
+           --------
+           >>> arg = alg.GetArg("output")
+           >>> arg.Get()
+        """
+
+        type = self.GetType()
+        if type == GAAT_BOOLEAN:
+            return self.GetAsBoolean()
+        if type == GAAT_STRING:
+            return self.GetAsString()
+        if type == GAAT_INTEGER:
+            return self.GetAsInteger()
+        if type == GAAT_REAL:
+            return self.GetAsDouble()
+        if type == GAAT_DATASET:
+            return self.GetAsDatasetValue()
+        if type == GAAT_STRING_LIST:
+            return self.GetAsStringList()
+        if type == GAAT_INTEGER_LIST:
+            return self.GetAsIntegerList()
+        if type == GAAT_REAL_LIST:
+            return self.GetAsDoubleList()
+
+        # should not happen
+        raise RuntimeError("Unhandled algorithm argument data type")
+
+    def Set(self, value):
+        """Sets the value of an argument.
+
+           Note: using the ``[]`` operator of Algorithm is also a convenient
+           way of setting the value of an argument.
+
+           Examples
+           --------
+           >>> arg = alg.GetArg("input")
+           >>> arg.Set("in.tif")
+        """
+
+        arg_type = self.GetType()
+
+        def ToInt(v):
+            if int(v) == v:
+                return int(v)
+            raise TypeError(f"{v} is not an integer")
+
+        if arg_type == GAAT_BOOLEAN:
+            if value in (1, "1", "yes", "YES", "true", "True", "TRUE", "on", "ON"):
+                return self.SetAsBoolean(True)
+            elif value in (0, "0", "no", "NO", "false", "False", "FALSE", "off", "OFF"):
+                return self.SetAsBoolean(False)
+            else:
+                return self.SetAsBoolean(value)
+
+        if arg_type == GAAT_STRING:
+            if isinstance(value, int):
+                metadata_item = self.GetMetadataItem("type")
+                if metadata_item and ("GDALDataType" in metadata_item) and value >= GDT_Byte and value < GDT_TypeCount:
+                    return self.SetAsString(GetDataTypeName(value))
+                else:
+                    return self.SetAsString(str(value))
+            elif isinstance(value, str) or isinstance(value, float) or isinstance(value, os.PathLike):
+                return self.SetAsString(str(value))
+            elif isinstance(value, osr.SpatialReference):
+                return self.SetAsString(value.ExportToWkt(["FORMAT=WKT2_2019"]))
+            elif isinstance(value, list) and len(value) >= 1 and (isinstance(value[0], str) or isinstance(value[0], int) or isinstance(value[0], float) or isinstance(value[0], os.PathLike)):
+                if len(value) > 1:
+                    raise RuntimeError("Only one value supported for an argument of type String")
+                return self.Set(value[0])
+            raise TypeError("Unexpected value type %s for an argument of type String" % str(type(value)))
+
+        if arg_type == GAAT_INTEGER:
+            if isinstance(value, int):
+                return self.SetAsInteger(value)
+            elif isinstance(value, str):
+                return self.SetAsInteger(int(value))
+            elif isinstance(value, float):
+                return self.SetAsInteger(ToInt(value))
+            elif isinstance(value, list) and len(value) >= 1 and (isinstance(value[0], str) or isinstance(value[0], int) or isinstance(value[0], float)):
+                if len(value) > 1:
+                    raise RuntimeError("Only one value supported for an argument of type Integer")
+                return self.Set(value[0])
+            raise TypeError("Unexpected value type %s for an argument of type Integer" % str(type(value)))
+
+        if arg_type == GAAT_REAL:
+            if isinstance(value, str):
+                return self.SetAsDouble(float(value))
+            elif isinstance(value, int) or isinstance(value, float):
+                return self.SetAsDouble(value)
+            elif isinstance(value, list) and len(value) >= 1 and (isinstance(value[0], str) or isinstance(value[0], int) or isinstance(value[0], float)):
+                if len(value) > 1:
+                        raise RuntimeError("Only one value supported for an argument of type Real")
+                return self.Set(value[0])
+            raise TypeError("Unexpected value type %s for an argument of type Real" % str(type(value)))
+
+        if arg_type == GAAT_DATASET:
+            if isinstance(value, str) or isinstance(value, os.PathLike):
+                self.GetAsDatasetValue().SetName(str(value))
+                return True
+            elif isinstance(value, Dataset):
+                self.GetAsDatasetValue().SetDataset(value)
+                return True
+            elif isinstance(value, list) and len(value) >= 1 and (isinstance(value[0], str) or isinstance(value[0], os.PathLike) or isinstance(value[0], Dataset) or isinstance(value[0], ArgDatasetValue)):
+                if len(value) > 1:
+                    raise RuntimeError("Only one value supported for an argument of type Dataset")
+                return self.Set(value[0])
+            elif isinstance(value, ArgDatasetValue):
+                return self.SetAsDatasetValue(value)
+            raise TypeError("Unexpected value type %s for an argument of type Dataset" % str(type(value)))
+
+        if arg_type == GAAT_STRING_LIST:
+            if isinstance(value, list):
+                if self.GetName() == "gcp" and len(value) >= 1 and \
+                   isinstance(value[0], list) and len(value[0]) >= 4 and \
+                   (isinstance(value[0][0], int) or isinstance(value[0][0], float)):
+                    return self.SetAsStringList([','.join(["%.17g" % x for x in v]) for v in value])
+                elif self.GetName() == "gcp" and len(value) >= 1 and isinstance(value[0], GCP):
+                    return self.SetAsStringList(["%.17g,%.17g,%.17g,%.17g,%.17g" % (gcp.GCPPixel, gcp.GCPLine, gcp.GCPX, gcp.GCPY, gcp.GCPZ) for gcp in value])
+                else:
+                    return self.SetAsStringList([str(v) for v in value])
+            elif isinstance(value, dict):
+                return self.SetAsStringList([f"{k}={str(value[k])}" for k in value])
+            else:
+                return self.SetAsStringList([str(value)])
+
+        if arg_type == GAAT_INTEGER_LIST:
+            if isinstance(value, int):
+                return self.SetAsIntegerList([value])
+            elif isinstance(value, float):
+                return self.SetAsIntegerList([ToInt(value)])
+            elif isinstance(value, str):
+                return self.SetAsIntegerList([int(value)])
+            elif isinstance(value, list) and len(value) >= 1 and isinstance(value[0], str):
+                return self.SetAsIntegerList([int(v) for v in value])
+            elif isinstance(value, list) and len(value) >= 1 and isinstance(value[0], float):
+                return self.SetAsIntegerList([ToInt(v) for v in value])
+            else:
+                return self.SetAsIntegerList(value)
+
+        if arg_type == GAAT_REAL_LIST:
+            if isinstance(value, int) or isinstance(value, float) or isinstance(value, str):
+                return self.SetAsDoubleList([float(value)])
+            elif isinstance(value, list) and len(value) >= 1 and isinstance(value[0], str):
+                return self.SetAsDoubleList([float(v) for v in value])
+            else:
+                return self.SetAsDoubleList(value)
+
+        if arg_type == GAAT_DATASET_LIST:
+            if isinstance(value, list) and len(value) > 0 and (isinstance(value[0], str) or isinstance(value[0], os.PathLike)):
+                return self.SetDatasetNames([str(v) for v in value])
+            elif isinstance(value, list) and (len(value) == 0 or isinstance(value[0], Dataset)):
+                return self.SetDatasets(value)
+            elif isinstance(value, str) or isinstance(value, os.PathLike):
+                return self.SetDatasetNames([str(value)])
+            elif isinstance(value, Dataset):
+                return self.SetDatasets([value])
+            else:
+                raise TypeError("Unexpected value type %s for an argument of type DatasetList" % str(type(value)))
+
+        # should not happen
+        raise RuntimeError("Unhandled algorithm argument data type")
+
+%}
+}

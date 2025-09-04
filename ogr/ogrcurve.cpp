@@ -488,6 +488,8 @@ void OGRPointIterator::destroy(OGRPointIterator *poIter)
 /*                     OGRSimpleCurve::Iterator                         */
 /************************************************************************/
 
+OGRIteratedPoint::~OGRIteratedPoint() = default;
+
 void OGRIteratedPoint::setX(double xIn)
 {
     OGRPoint::setX(xIn);
@@ -756,7 +758,7 @@ int OGRCurve::isClockwise() const
     for (int i = 1; i < nPointCount - 1; i++)
     {
         ++oIter;
-        OGRPoint oPointCur = *oIter;
+        const OGRPoint oPointCur = *oIter;
         if (bNextPointIsNextSel)
         {
             oPointNextSel = oPointCur;

@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  GDAL algorithms
  * Purpose:  Tests for the marching squares algorithm
@@ -61,7 +60,7 @@ class TestRingAppender
         {
             ring.push_back(Point(pt.x, pt.y));
         }
-        v.push_back(ring);
+        v.push_back(std::move(ring));
     }
 
     bool hasRing(double level, const std::vector<Point> &other) const

@@ -213,7 +213,11 @@ class VSILibArchiveReader final : public VSIArchiveReader
         return m_pArchive;
     }
 
-    int GotoFirstFileForced();
+    int GotoFirstFileForced()
+    {
+        m_bFirst = false;
+        return GotoFirstFile();
+    }
 
     virtual int GotoFirstFile() override;
     virtual int GotoNextFile() override;
@@ -304,7 +308,11 @@ struct VSILibArchiveEntryFileOffset : public VSIArchiveEntryFileOffset
         : m_osFilename(osFilename)
     {
     }
+
+    ~VSILibArchiveEntryFileOffset() override;
 };
+
+VSILibArchiveEntryFileOffset::~VSILibArchiveEntryFileOffset() = default;
 
 /************************************************************************/
 /*                          GetFileOffset()                             */
@@ -398,6 +406,7 @@ class VSILibArchiveHandler final : public VSIVirtualHandle
 
     virtual int Close() override
     {
+        m_poReader.reset();
         return 0;
     }
 };
@@ -410,17 +419,25 @@ size_t VSILibArchiveHandler::Read(void *pBuffer, size_t nSize, size_t nCount)
 {
     if (m_bError || nSize == 0 || nCount == 0)
         return 0;
-    if (m_nOffset == m_poReader->GetFileSize())
+    const auto nFileSize = m_poReader->GetFileSize();
+    if (m_nOffset == nFileSize)
     {
         m_bEOF = true;
         return 0;
     }
     size_t nToRead = nSize * nCount;
-    auto nRead = static_cast<size_t>(
-        archive_read_data(m_poReader->GetArchiveHandler(), pBuffer, nToRead));
+    auto pArchive = m_poReader->GetArchiveHandler();
+    auto nReadUnsigned = archive_read_data(pArchive, pBuffer, nToRead);
+    if (nReadUnsigned < 0)
+    {
+        m_bError = true;
+        CPLDebug("VSIARCH", "Read(): %s", archive_error_string(pArchive));
+        return 0;
+    }
+    const auto nRead = static_cast<size_t>(nReadUnsigned);
     if (nRead < nToRead)
     {
-        if (m_nOffset + nRead == m_poReader->GetFileSize())
+        if (m_nOffset + nRead == nFileSize)
             m_bEOF = true;
         else
             m_bError = true;
@@ -488,12 +505,12 @@ class VSILibArchiveFilesystemHandler final : public VSIArchiveFilesystemHandler
 
     const std::string m_osPrefix;
 
-    virtual const char *GetPrefix() override
+    virtual const char *GetPrefix() const override
     {
         return m_osPrefix.c_str();
     }
 
-    virtual std::vector<CPLString> GetExtensions() override
+    virtual std::vector<CPLString> GetExtensions() const override
     {
         if (m_osPrefix == "/vsi7z")
         {
@@ -505,7 +522,7 @@ class VSILibArchiveFilesystemHandler final : public VSIArchiveFilesystemHandler
         }
     }
 
-    virtual VSIArchiveReader *
+    virtual std::unique_ptr<VSIArchiveReader>
     CreateReader(const char *pszArchiveFileName) override;
 
   public:
@@ -514,7 +531,7 @@ class VSILibArchiveFilesystemHandler final : public VSIArchiveFilesystemHandler
     {
     }
 
-    virtual VSIVirtualHandle *Open(const char *pszFilename,
+    VSIVirtualHandleUniquePtr Open(const char *pszFilename,
                                    const char *pszAccess, bool bSetError,
                                    CSLConstList papszOptions) override;
 };
@@ -523,9 +540,10 @@ class VSILibArchiveFilesystemHandler final : public VSIArchiveFilesystemHandler
 /*                                 Open()                               */
 /************************************************************************/
 
-VSIVirtualHandle *VSILibArchiveFilesystemHandler::Open(const char *pszFilename,
-                                                       const char *pszAccess,
-                                                       bool, CSLConstList)
+VSIVirtualHandleUniquePtr
+VSILibArchiveFilesystemHandler::Open(const char *pszFilename,
+                                     const char *pszAccess, bool bSetError,
+                                     CSLConstList)
 {
     if (strchr(pszAccess, 'w') != nullptr || strchr(pszAccess, '+') != nullptr)
     {
@@ -536,26 +554,32 @@ VSIVirtualHandle *VSILibArchiveFilesystemHandler::Open(const char *pszFilename,
 
     CPLString osFileInArchive;
     char *pszArchiveFileName =
-        SplitFilename(pszFilename, osFileInArchive, TRUE);
+        SplitFilename(pszFilename, osFileInArchive, true, bSetError);
     if (pszArchiveFileName == nullptr)
         return nullptr;
 
-    VSILibArchiveReader *poReader = cpl::down_cast<VSILibArchiveReader *>(
-        OpenArchiveFile(pszArchiveFileName, osFileInArchive));
+    auto poReader = std::unique_ptr<VSILibArchiveReader>(
+        cpl::down_cast<VSILibArchiveReader *>(
+            OpenArchiveFile(pszArchiveFileName, osFileInArchive).release()));
     CPLFree(pszArchiveFileName);
     if (poReader == nullptr)
     {
         return nullptr;
     }
 
-    return new VSILibArchiveHandler(pszFilename, poReader);
+    if (osFileInArchive.empty())
+        poReader->GotoFirstFileForced();
+
+    return VSIVirtualHandleUniquePtr(
+        std::make_unique<VSILibArchiveHandler>(pszFilename, poReader.release())
+            .release());
 }
 
 /************************************************************************/
 /*                           CreateReader()                             */
 /************************************************************************/
 
-VSIArchiveReader *
+std::unique_ptr<VSIArchiveReader>
 VSILibArchiveFilesystemHandler::CreateReader(const char *pszArchiveFileName)
 {
     auto pArchive = VSICreateArchiveHandle(m_osPrefix);
@@ -567,7 +591,8 @@ VSILibArchiveFilesystemHandler::CreateReader(const char *pszArchiveFileName)
         archive_read_free(pArchive);
         return nullptr;
     }
-    return new VSILibArchiveReader(pszArchiveFileName, pArchive, m_osPrefix);
+    return std::make_unique<VSILibArchiveReader>(pszArchiveFileName, pArchive,
+                                                 m_osPrefix);
 }
 
 //! @endcond

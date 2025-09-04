@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  gdalinfo testing
@@ -329,7 +328,7 @@ def test_gdalinfo_19(gdalinfo_path, tmp_path):
 def test_gdalinfo_20(gdalinfo_path):
 
     ret = gdaltest.runexternal(gdalinfo_path + " --formats", check_memleak=False)
-    assert "GTiff -raster- (rw+vs): GeoTIFF" in ret
+    assert "GTiff -raster- (rw+uvs): GeoTIFF" in ret
 
 
 ###############################################################################
@@ -346,7 +345,7 @@ def test_gdalinfo_formats_json(gdalinfo_path):
         "short_name": "VRT",
         "long_name": "Virtual Raster",
         "scopes": ["raster", "multidimensional_raster"],
-        "capabilities": ["open", "create", "create_copy", "virtual_io"],
+        "capabilities": ["open", "create", "create_copy", "update", "virtual_io"],
         "file_extensions": ["vrt"],
     } in ret
 
@@ -551,7 +550,7 @@ def test_gdalinfo_33(gdalinfo_path):
     ret = gdaltest.runexternal(gdalinfo_path + " -json ../gdrivers/data/hfa/int.img")
     ret = json.loads(ret)
     assert "overviews" in ret["bands"][0]
-    assert "rat" in ret
+    assert "rat" in ret["bands"][0]
 
 
 ###############################################################################

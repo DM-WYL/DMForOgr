@@ -225,7 +225,7 @@ static void *GDALCreateGCPTransformerEx(int nGCPCount,
         psInfo->asGCPs[0].Y() != psInfo->asGCPs[1].Y())
     {
         // Assumes that the 2 GCPs form opposite corners of a rectangle,
-        // and synthetize a 3rd corner
+        // and synthesize a 3rd corner
         gdal::GCP newGCP;
         newGCP.X() = psInfo->asGCPs[1].X();
         newGCP.Y() = psInfo->asGCPs[0].Y();
@@ -422,7 +422,7 @@ void GDALDestroyGCPTransformer(void *pTransformArg)
  * @param panSuccess array in which a flag indicating success (TRUE) or
  * failure (FALSE) of the transformation are placed.
  *
- * @return TRUE.
+ * @return TRUE if all points have been successfully transformed.
  */
 
 int GDALGCPTransform(void *pTransformArg, int bDstToSrc, int nPointCount,
@@ -436,10 +436,12 @@ int GDALGCPTransform(void *pTransformArg, int bDstToSrc, int nPointCount,
     if (psInfo->bReversed)
         bDstToSrc = !bDstToSrc;
 
+    int bRet = TRUE;
     for (i = 0; i < nPointCount; i++)
     {
         if (x[i] == HUGE_VAL || y[i] == HUGE_VAL)
         {
+            bRet = FALSE;
             panSuccess[i] = FALSE;
             continue;
         }
@@ -459,7 +461,7 @@ int GDALGCPTransform(void *pTransformArg, int bDstToSrc, int nPointCount,
         panSuccess[i] = TRUE;
     }
 
-    return TRUE;
+    return bRet;
 }
 
 /************************************************************************/

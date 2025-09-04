@@ -923,10 +923,7 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
     {
         CPLErrorStateBackuper oErrorStateBackuper(CPLQuietErrorHandler);
 
-        json_object *poLinearRing = json_object_new_array();
         json_object *poCornerCoordinates = json_object_new_object();
-        json_object *poLongLatExtent = json_object_new_object();
-        json_object *poLongLatExtentType = json_object_new_string("Polygon");
         json_object *poLongLatExtentCoordinates = json_object_new_array();
 
         GDALInfoReportCorner(psOptions, hDataset, hTransform, "upperLeft", 0.0,
@@ -955,12 +952,26 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
 
         json_object_object_add(poJsonObject, "cornerCoordinates",
                                poCornerCoordinates);
-        json_object_object_add(poLongLatExtent, "type", poLongLatExtentType);
-        json_object_array_add(poLinearRing, poLongLatExtentCoordinates);
-        json_object_object_add(poLongLatExtent, "coordinates", poLinearRing);
-        json_object_object_add(poJsonObject,
-                               bTransformToWGS84 ? "wgs84Extent" : "extent",
-                               poLongLatExtent);
+
+        if (json_object_array_length(poLongLatExtentCoordinates) > 0)
+        {
+            json_object *poLinearRing = json_object_new_array();
+            json_object *poLongLatExtent = json_object_new_object();
+            json_object *poLongLatExtentType =
+                json_object_new_string("Polygon");
+            json_object_object_add(poLongLatExtent, "type",
+                                   poLongLatExtentType);
+            json_object_array_add(poLinearRing, poLongLatExtentCoordinates);
+            json_object_object_add(poLongLatExtent, "coordinates",
+                                   poLinearRing);
+            json_object_object_add(poJsonObject,
+                                   bTransformToWGS84 ? "wgs84Extent" : "extent",
+                                   poLongLatExtent);
+        }
+        else
+        {
+            json_object_put(poLongLatExtentCoordinates);
+        }
     }
     else if (GDALGetRasterXSize(hDataset))
     {
@@ -1071,6 +1082,9 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
                 case GDT_Int64:
                     stacDataType = "int64";
                     break;
+                case GDT_Float16:
+                    stacDataType = "float16";
+                    break;
                 case GDT_Float32:
                     stacDataType = "float32";
                     break;
@@ -1082,6 +1096,9 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
                     break;
                 case GDT_CInt32:
                     stacDataType = "cint32";
+                    break;
+                case GDT_CFloat16:
+                    stacDataType = "cfloat16";
                     break;
                 case GDT_CFloat32:
                     stacDataType = "cfloat32";
@@ -1479,8 +1496,12 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
                 if (bJson)
                 {
                     json_object *poNoDataValue =
-                        gdal_json_object_new_double_significant_digits(
-                            dfNoData, nSignificantDigits);
+                        (GDALDataTypeIsInteger(eDT) && dfNoData >= INT_MIN &&
+                         dfNoData <= INT_MAX &&
+                         static_cast<int>(dfNoData) == dfNoData)
+                            ? json_object_new_int(static_cast<int>(dfNoData))
+                            : gdal_json_object_new_double_significant_digits(
+                                  dfNoData, nSignificantDigits);
                     json_object *poStacNoDataValue = nullptr;
                     json_object_deep_copy(poNoDataValue, &poStacNoDataValue,
                                           nullptr);
@@ -1880,7 +1901,7 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
             {
                 json_object *poRAT =
                     static_cast<json_object *>(GDALRATSerializeJSON(hRAT));
-                json_object_object_add(poJsonObject, "rat", poRAT);
+                json_object_object_add(poBand, "rat", poRAT);
             }
             else
             {

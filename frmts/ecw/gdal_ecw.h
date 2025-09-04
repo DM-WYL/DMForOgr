@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  GDAL
  * Purpose:  ECW (ERDAS Wavelet Compression Format) Driver Definitions
@@ -215,16 +214,17 @@ class VSIIOStream final : public CNCSJPCIOStream
         CPLString osFilenameUsed = pszFilename;
 
 #if ECWSDK_VERSION < 55
-        CPLString osPath = CPLGetPath(pszFilename);
+        CPLString osPath = CPLGetPathSafe(pszFilename);
         struct stat sStatBuf;
         if (!osPath.empty() && stat(osPath, &sStatBuf) != 0)
         {
-            osFilenameUsed = CPLGenerateTempFilename(nullptr);
+            osFilenameUsed = CPLGenerateTempFilenameSafe(nullptr);
             // try to preserve the extension.
-            if (strlen(CPLGetExtension(pszFilename)) > 0)
+            const auto osExt = CPLGetExtensionSafe(pszFilename);
+            if (!osExt.empty())
             {
                 osFilenameUsed += ".";
-                osFilenameUsed += CPLGetExtension(pszFilename);
+                osFilenameUsed += osExt;
             }
             CPLDebug("ECW",
                      "Using filename '%s' for temporary directory "
@@ -594,7 +594,7 @@ class CPL_DLL ECWDataset final : public GDALJP2AbstractDataset
                                         const char *pszDomain = "") override;
     virtual char **GetMetadata(const char *pszDomain = "") override;
 
-    virtual CPLErr SetGeoTransform(double *padfGeoTransform) override;
+    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
     virtual CPLErr SetMetadataItem(const char *pszName, const char *pszValue,

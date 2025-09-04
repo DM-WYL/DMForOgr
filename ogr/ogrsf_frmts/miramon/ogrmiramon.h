@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  C++ classes for the MiraMon driver
@@ -84,22 +83,20 @@ class OGRMiraMonLayer final
 
     OGRErr TranslateFieldsToMM();
     OGRErr TranslateFieldsValuesToMM(OGRFeature *poFeature);
-    OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
+    static int MM_SprintfDoubleSignifFigures(char *szChain, size_t size_szChain,
+                                             int nSignifFigures,
+                                             double dfRealValue);
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
-    OGRFeatureDefn *GetLayerDefn() override;
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
+    const OGRFeatureDefn *GetLayerDefn() const override;
 
     OGRErr ICreateFeature(OGRFeature *poFeature) override;
 
     virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = TRUE) override;
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
     void AddToFileList(CPLStringList &oFileList);
 
     GDALDataset *GetDataset() override
@@ -127,19 +124,19 @@ class OGRMiraMonDataSource final : public GDALDataset
               const OGRSpatialReference *poSRS, CSLConstList papszOpenOptions);
     bool Create(const char *pszFilename, CSLConstList papszOptions);
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(m_apoLayers.size());
     }
 
-    OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
     char **GetFileList() override;
 
     OGRLayer *ICreateLayer(const char *pszLayerName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 };
 
 #endif /* OGRMIRAMON_H_INCLUDED */

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ******************************************************************************
-#  $Id$
 #
 # Project:  Google Summer of Code 2007, 2008 (http://code.google.com/soc/)
 # Support:  BRGM (http://www.brgm.fr)
@@ -20,8 +19,6 @@
 # SPDX-License-Identifier: MIT
 # ******************************************************************************
 
-from __future__ import division
-
 import contextlib
 import glob
 import json
@@ -35,7 +32,7 @@ import sys
 import tempfile
 import threading
 from functools import partial
-from typing import Any, List, NoReturn, Optional, Tuple
+from typing import Any, Dict, List, NoReturn, Optional, Tuple
 from uuid import uuid4
 from xml.etree import ElementTree
 
@@ -44,18 +41,7 @@ from osgeo_utils.auxiliary.util import enable_gdal_exceptions
 
 Options = Any
 
-try:
-    import numpy
-    from PIL import Image
-
-    import osgeo.gdal_array as gdalarray
-
-    numpy_available = True
-except ImportError:
-    # 'antialias' resampling is not available
-    numpy_available = False
-
-__version__ = "$Id$"
+__version__ = gdal.__version__
 
 resampling_list = (
     "average",
@@ -90,7 +76,7 @@ def isfile(path):
     """Wrapper for os.path.isfile() that can work with /vsi files too"""
     if path.startswith("/vsi"):
         stat_res = gdal.VSIStatL(path)
-        if stat is None:
+        if stat_res is None:
             return False
         return stat.S_ISREG(stat_res.mode)
     else:
@@ -129,7 +115,7 @@ class UnsupportedTileMatrixSet(Exception):
     pass
 
 
-class TileMatrixSet(object):
+class TileMatrixSet:
     def __init__(self) -> None:
         self.identifier = None
         self.srs = None
@@ -254,14 +240,12 @@ class TileMatrixSet(object):
         return tms
 
 
-tmsMap = {}
-
-
-def get_profile_list():
+def get_profile_list_and_tmsMap():
     profile_list = ["mercator", "geodetic", "raster"]
 
     # Read additional tile matrix sets from GDAL data directory
     filename = gdal.FindFile("gdal", "tms_MapML_APSTILE.json")
+    tmsMap = {}
     if filename:
         dirname = os.path.dirname(filename)
         for tmsfilename in glob.glob(os.path.join(dirname, "tms_*.json")):
@@ -284,7 +268,7 @@ def get_profile_list():
             tmsMap[tms.identifier] = tms
             profile_list.append(tms.identifier)
 
-    return profile_list
+    return profile_list, tmsMap
 
 
 threadLocal = threading.local()
@@ -328,7 +312,7 @@ Class is available under the open-source GDAL license (www.gdal.org).
 MAXZOOMLEVEL = 32
 
 
-class GlobalMercator(object):
+class GlobalMercator:
     r"""
     TMS Global Mercator Profile
     ---------------------------
@@ -547,7 +531,7 @@ class GlobalMercator(object):
         return quadKey
 
 
-class GlobalGeodetic(object):
+class GlobalGeodetic:
     r"""
     TMS Global Geodetic Profile
     ---------------------------
@@ -644,7 +628,7 @@ class GlobalGeodetic(object):
         return (b[1], b[0], b[3], b[2])
 
 
-class Zoomify(object):
+class Zoomify:
     """
     Tiles compatible with the Zoomify viewer
     ----------------------------------------
@@ -723,7 +707,7 @@ def set_cache_max(cache_in_bytes: int) -> None:
 
 
 def generate_kml(
-    tx, ty, tz, tileext, tile_size, tileswne, options, children=None, **args
+    tx, ty, tz, tileext, tile_size, tileswne, options, tmsMap, children=None, **args
 ):
     """
     Template for the KML. Returns filled string.
@@ -748,7 +732,7 @@ def generate_kml(
         args["xml_escaped_title"] = gdal.EscapeString(options.title, gdal.CPLES_XML)
     else:
         tilekml = True
-        args["realtiley"] = GDAL2Tiles.getYTile(ty, tz, options)
+        args["realtiley"] = GDAL2Tiles.getYTile(ty, tz, options, tmsMap)
         args["xml_escaped_title"] = "%d/%d/%d.kml" % (tz, tx, args["realtiley"])
         args["south"], args["west"], args["north"], args["east"] = tileswne(tx, ty, tz)
 
@@ -812,7 +796,7 @@ def generate_kml(
 
     for cx, cy, cz in children:
         csouth, cwest, cnorth, ceast = tileswne(cx, cy, cz)
-        ytile = GDAL2Tiles.getYTile(cy, cz, options)
+        ytile = GDAL2Tiles.getYTile(cy, cz, options, tmsMap)
         s += """
     <NetworkLink>
       <name>%d/%d/%d.%s</name>
@@ -909,40 +893,6 @@ def scale_query_to_tile(dsquery, dstile, options, tilefilename=""):
                 exit_with_error(
                     "RegenerateOverview() failed on %s, error %d" % (tilefilename, res)
                 )
-
-    elif options.resampling == "antialias" and numpy_available:
-
-        if tilefilename.startswith("/vsi"):
-            raise Exception(
-                "Outputting to /vsi file systems with antialias mode is not supported"
-            )
-
-        # Scaling by PIL (Python Imaging Library) - improved Lanczos
-        array = numpy.zeros((querysize, querysize, tilebands), numpy.uint8)
-        for i in range(tilebands):
-            array[:, :, i] = gdalarray.BandReadAsArray(
-                dsquery.GetRasterBand(i + 1), 0, 0, querysize, querysize
-            )
-        if options.tiledriver == "JPEG" and tilebands == 2:
-            im = Image.fromarray(array[:, :, 0], "L")
-        elif options.tiledriver == "JPEG" and tilebands == 4:
-            im = Image.fromarray(array[:, :, 0:3], "RGB")
-        else:
-            im = Image.fromarray(array, "RGBA")
-        im1 = im.resize((tile_size, tile_size), Image.LANCZOS)
-        if os.path.exists(tilefilename):
-            im0 = Image.open(tilefilename)
-            im1 = Image.composite(im1, im0, im1)
-
-        params = {}
-        if options.tiledriver == "WEBP":
-            if options.webp_lossless:
-                params["lossless"] = True
-            else:
-                params["quality"] = options.webp_quality
-        elif options.tiledriver == "JPEG":
-            params["quality"] = options.jpeg_quality
-        im1.save(tilefilename, options.tiledriver, **params)
 
     else:
 
@@ -1056,7 +1006,7 @@ def setup_input_srs(
 
 
 def setup_output_srs(
-    input_srs: Optional[osr.SpatialReference], options: Options
+    input_srs: Optional[osr.SpatialReference], options: Options, tmsMap: dict
 ) -> Optional[osr.SpatialReference]:
     """
     Setup the desired SRS (based on options)
@@ -1330,7 +1280,12 @@ def _get_creation_options(options):
     return copts
 
 
-def create_base_tile(tile_job_info: "TileJobInfo", tile_detail: "TileDetail") -> None:
+def create_base_tile(
+    tile_job_info: "TileJobInfo", tmsMap: dict, tile_detail: "TileDetail"
+) -> None:
+
+    if tmsMap is None:
+        _, tmsMap = get_profile_list_and_tmsMap()
 
     dataBandsCount = tile_job_info.nb_data_bands
     output = tile_job_info.output_file_path
@@ -1440,21 +1395,18 @@ def create_base_tile(tile_job_info: "TileJobInfo", tile_detail: "TileDetail") ->
 
     del data
 
-    if options.resampling != "antialias":
-        # Write a copy of tile to png/jpg
-        out_drv.CreateCopy(
-            tilefilename,
-            dstile
-            if tile_job_info.tile_driver != "JPEG"
-            else remove_alpha_band(dstile),
-            strict=0,
-            options=_get_creation_options(options),
-        )
+    # Write a copy of tile to png/jpg
+    out_drv.CreateCopy(
+        tilefilename,
+        dstile if tile_job_info.tile_driver != "JPEG" else remove_alpha_band(dstile),
+        strict=0,
+        options=_get_creation_options(options),
+    )
 
-        # Remove useless side car file
-        aux_xml = tilefilename + ".aux.xml"
-        if gdal.VSIStatL(aux_xml) is not None:
-            gdal.Unlink(aux_xml)
+    # Remove useless side car file
+    aux_xml = tilefilename + ".aux.xml"
+    if gdal.VSIStatL(aux_xml) is not None:
+        gdal.Unlink(aux_xml)
 
     del dstile
 
@@ -1466,19 +1418,20 @@ def create_base_tile(tile_job_info: "TileJobInfo", tile_detail: "TileDetail") ->
                 output,
                 str(tz),
                 str(tx),
-                "%d.kml" % GDAL2Tiles.getYTile(ty, tz, options),
+                "%d.kml" % ty,
             )
             if not options.resume or not isfile(kmlfilename):
                 with my_open(kmlfilename, "wb") as f:
                     f.write(
                         generate_kml(
                             tx,
-                            ty,
+                            tile_detail.ty_tms,
                             tz,
                             tile_job_info.tile_extension,
                             tile_job_info.tile_size,
                             swne,
                             tile_job_info.options,
+                            tmsMap,
                         ).encode("utf-8")
                     )
 
@@ -1521,13 +1474,17 @@ def create_overview_tile(
     output_folder: str,
     tile_job_info: "TileJobInfo",
     options: Options,
+    tmsMap: dict,
 ):
     """Generating an overview tile from no more than 4 underlying tiles(base tiles)"""
+
+    if tmsMap is None:
+        _, tmsMap = get_profile_list_and_tmsMap()
 
     overview_tz = base_tz - 1
     overview_tx = base_tiles[0][0] >> 1
     overview_ty = base_tiles[0][1] >> 1
-    overview_ty_real = GDAL2Tiles.getYTile(overview_ty, overview_tz, options)
+    overview_ty_real = GDAL2Tiles.getYTile(overview_ty, overview_tz, options, tmsMap)
 
     tilefilename = os.path.join(
         output_folder,
@@ -1563,7 +1520,7 @@ def create_overview_tile(
     for base_tile in base_tiles:
         base_tx = base_tile[0]
         base_ty = base_tile[1]
-        base_ty_real = GDAL2Tiles.getYTile(base_ty, base_tz, options)
+        base_ty_real = GDAL2Tiles.getYTile(base_ty, base_tz, options, tmsMap)
 
         base_tile_path = os.path.join(
             output_folder,
@@ -1661,21 +1618,18 @@ def create_overview_tile(
         return
 
     scale_query_to_tile(dsquery, dstile, options, tilefilename=tilefilename)
+
     # Write a copy of tile to png/jpg
-    if options.resampling != "antialias":
-        # Write a copy of tile to png/jpg
-        out_driver.CreateCopy(
-            tilefilename,
-            dstile
-            if tile_job_info.tile_driver != "JPEG"
-            else remove_alpha_band(dstile),
-            strict=0,
-            options=_get_creation_options(options),
-        )
-        # Remove useless side car file
-        aux_xml = tilefilename + ".aux.xml"
-        if gdal.VSIStatL(aux_xml) is not None:
-            gdal.Unlink(aux_xml)
+    out_driver.CreateCopy(
+        tilefilename,
+        dstile if tile_job_info.tile_driver != "JPEG" else remove_alpha_band(dstile),
+        strict=0,
+        options=_get_creation_options(options),
+    )
+    # Remove useless side car file
+    aux_xml = tilefilename + ".aux.xml"
+    if gdal.VSIStatL(aux_xml) is not None:
+        gdal.Unlink(aux_xml)
 
     if options.verbose:
         logger.debug(
@@ -1703,6 +1657,7 @@ def create_overview_tile(
                         tile_job_info.tile_size,
                         swne,
                         options,
+                        tmsMap,
                         [(t[0], t[1], base_tz) for t in base_tiles],
                     ).encode("utf-8")
                 )
@@ -1746,13 +1701,13 @@ def count_overview_tiles(tile_job_info: "TileJobInfo") -> int:
     return tile_number
 
 
-def optparse_init() -> optparse.OptionParser:
+def optparse_init() -> Tuple[optparse.OptionParser, Dict[Any, Any]]:
     """Prepare the option parser for input (argv)"""
 
     usage = "Usage: %prog [options] input_file [output]"
     p = optparse.OptionParser(usage, version="%prog " + __version__)
 
-    profile_list = get_profile_list()
+    profile_list, tmsMap = get_profile_list_and_tmsMap()
 
     p.add_option(
         "-p",
@@ -2004,11 +1959,13 @@ def optparse_init() -> optparse.OptionParser:
         processes=1,
     )
 
-    return p
+    return p, tmsMap
 
 
-def process_args(argv: List[str], called_from_main=False) -> Tuple[str, str, Options]:
-    parser = optparse_init()
+def process_args(
+    argv: List[str], called_from_main=False
+) -> Tuple[str, str, Options, Dict[Any, Any]]:
+    parser, tmsMap = optparse_init()
     options, args = parser.parse_args(args=argv)
 
     # Args should be either an input file OR an input file and an output folder
@@ -2053,7 +2010,7 @@ def process_args(argv: List[str], called_from_main=False) -> Tuple[str, str, Opt
 
     options = options_post_processing(options, input_file, output_folder)
 
-    return input_file, output_folder, options
+    return input_file, output_folder, options, tmsMap
 
 
 def options_post_processing(
@@ -2094,11 +2051,11 @@ def options_post_processing(
         options.url += os.path.basename(out_path) + "/"
 
     # Supported options
-    if options.resampling == "antialias" and not numpy_available:
-        exit_with_error(
-            "'antialias' resampling algorithm is not available.",
-            "Install PIL (Python Imaging Library) and numpy.",
+    if options.resampling == "antialias":
+        print(
+            "Use of --resampling antialias is deprecated. It is now an equivalent of lanczos"
         )
+        options.resampling = "lanczos"
 
     if options.tiledriver == "WEBP":
         if gdal.GetDriverByName(options.tiledriver) is None:
@@ -2126,9 +2083,10 @@ def options_post_processing(
     return options
 
 
-class TileDetail(object):
+class TileDetail:
     tx = 0
     ty = 0
+    ty_tms = 0
     tz = 0
     rx = 0
     ry = 0
@@ -2145,9 +2103,6 @@ class TileDetail(object):
             if hasattr(self, key):
                 setattr(self, key, kwargs[key])
 
-    def __unicode__(self):
-        return "TileDetail %s\n%s\n%s\n" % (self.tx, self.ty, self.tz)
-
     def __str__(self):
         return "TileDetail %s\n%s\n%s\n" % (self.tx, self.ty, self.tz)
 
@@ -2155,7 +2110,7 @@ class TileDetail(object):
         return "TileDetail %s\n%s\n%s\n" % (self.tx, self.ty, self.tz)
 
 
-class TileJobInfo(object):
+class TileJobInfo:
     """
     Plain object to hold tile job configuration for a dataset
     """
@@ -2196,9 +2151,12 @@ class Gdal2TilesError(Exception):
     pass
 
 
-class GDAL2Tiles(object):
-    def __init__(self, input_file: str, output_folder: str, options: Options) -> None:
+class GDAL2Tiles:
+    def __init__(
+        self, input_file: str, output_folder: str, options: Options, tmsMap: dict
+    ) -> None:
         """Constructor function - initialization"""
+        self.tmsMap = tmsMap
         self.out_drv = None
         self.mem_drv = None
         self.warped_input_dataset = None
@@ -2350,7 +2308,7 @@ class GDAL2Tiles(object):
 
         self.in_srs, self.in_srs_wkt = setup_input_srs(input_dataset, self.options)
 
-        self.out_srs = setup_output_srs(self.in_srs, self.options)
+        self.out_srs = setup_output_srs(self.in_srs, self.options, self.tmsMap)
 
         # If input and output reference systems are different, we reproject the input dataset into
         # the output reference system for easier manipulation
@@ -2379,15 +2337,19 @@ class GDAL2Tiles(object):
                 self.warped_input_dataset = reproject_dataset(
                     input_dataset, self.in_srs, self.out_srs
                 )
-
-                if in_nodata:
-                    self.warped_input_dataset = update_no_data_values(
-                        self.warped_input_dataset, in_nodata, options=self.options
-                    )
-                else:
+                if not in_nodata:
                     self.warped_input_dataset = update_alpha_value_for_non_alpha_inputs(
                         self.warped_input_dataset, options=self.options
                     )
+            else:
+                self.warped_input_dataset = gdal.GetDriverByName("VRT").CreateCopy(
+                    "", input_dataset
+                )
+
+            if in_nodata:
+                self.warped_input_dataset = update_no_data_values(
+                    self.warped_input_dataset, in_nodata, options=self.options
+                )
 
             if self.warped_input_dataset and self.options.verbose:
                 logger.debug(
@@ -2593,11 +2555,10 @@ class GDAL2Tiles(object):
                 # one, generate an oversample temporary VRT file, and tile from
                 # it
                 oversample_factor = 1 << (self.tmaxz - self.nativezoom)
-                if self.options.resampling in ("average", "antialias"):
-                    resampleAlg = "average"
-                elif self.options.resampling in (
+                if self.options.resampling in (
                     "near",
                     "bilinear",
+                    "average",
                     "cubic",
                     "cubicspline",
                     "lanczos",
@@ -2660,7 +2621,7 @@ class GDAL2Tiles(object):
 
         else:
 
-            tms = tmsMap[self.options.profile]
+            tms = self.tmsMap[self.options.profile]
 
             # Function which generates SWNE in LatLong for given tile
             self.tileswne = None  # not implemented
@@ -2828,6 +2789,7 @@ class GDAL2Tiles(object):
                                 self.tile_size,
                                 self.tileswne,
                                 self.options,
+                                self.tmsMap,
                                 children,
                             ).encode("utf-8")
                         )
@@ -2873,7 +2835,7 @@ class GDAL2Tiles(object):
             for tx in range(tminx, tmaxx + 1):
 
                 ti += 1
-                ytile = GDAL2Tiles.getYTile(ty, tz, self.options)
+                ytile = GDAL2Tiles.getYTile(ty, tz, self.options, self.tmsMap)
                 tilefilename = os.path.join(
                     self.output_folder,
                     str(tz),
@@ -2894,7 +2856,7 @@ class GDAL2Tiles(object):
                 elif self.options.profile == "geodetic":
                     b = self.geodetic.TileBounds(tx, ty, tz)
                 elif self.options.profile != "raster":
-                    b = tmsMap[self.options.profile].TileBounds(
+                    b = self.tmsMap[self.options.profile].TileBounds(
                         tx, ty, tz, self.tile_size
                     )
 
@@ -2963,6 +2925,7 @@ class GDAL2Tiles(object):
                 tile_details.append(
                     TileDetail(
                         tx=tx,
+                        ty_tms=ty,
                         ty=ytile,
                         tz=tz,
                         rx=rx,
@@ -3989,7 +3952,7 @@ function ExtDraggableObject(src, opt_drag) {
             zoom: %(beginzoom)s,
             minZoom: %(minzoom)s,
             maxZoom: %(maxzoom)s,
-            layers: [osm]
+            layers: [osm, lyr]
         });
 
         var basemaps = {"OpenStreetMap": osm, "CartoDB Positron": cartodb, "Without background": white}
@@ -4282,7 +4245,7 @@ function ExtDraggableObject(src, opt_drag) {
 
         else:
 
-            tms = tmsMap[self.options.profile]
+            tms = self.tmsMap[self.options.profile]
             base_res = tms.resolution
             resolutions = [base_res / 2**i for i in range(self.tmaxz + 1)]
             args["maxres"] = resolutions[self.tminz]
@@ -4415,16 +4378,19 @@ function ExtDraggableObject(src, opt_drag) {
         else:
             tiling_scheme = self.options.profile
 
+        s = s.replace("${TITLE}", gdal.EscapeString(self.options.title, gdal.CPLES_XML))
         s = s.replace("${TILING_SCHEME}", tiling_scheme)
         s = s.replace("${URL}", self.options.url if self.options.url else "./")
         tminx, tminy, tmaxx, tmaxy = self.tminmax[self.tmaxz]
         s = s.replace("${MINTILEX}", str(tminx))
         s = s.replace(
-            "${MINTILEY}", str(GDAL2Tiles.getYTile(tmaxy, self.tmaxz, self.options))
+            "${MINTILEY}",
+            str(GDAL2Tiles.getYTile(tmaxy, self.tmaxz, self.options, self.tmsMap)),
         )
         s = s.replace("${MAXTILEX}", str(tmaxx))
         s = s.replace(
-            "${MAXTILEY}", str(GDAL2Tiles.getYTile(tminy, self.tmaxz, self.options))
+            "${MAXTILEY}",
+            str(GDAL2Tiles.getYTile(tminy, self.tmaxz, self.options, self.tmsMap)),
         )
         s = s.replace("${CURZOOM}", str(self.tmaxz))
         s = s.replace("${MINZOOM}", str(self.tminz))
@@ -4434,7 +4400,7 @@ function ExtDraggableObject(src, opt_drag) {
         return s
 
     @staticmethod
-    def getYTile(ty, tz, options):
+    def getYTile(ty, tz, options, tmsMap):
         """
         Calculates the y-tile number based on whether XYZ or TMS (default) system is used
         :param ty: The y-tile number
@@ -4454,16 +4420,16 @@ function ExtDraggableObject(src, opt_drag) {
 
 
 def worker_tile_details(
-    input_file: str, output_folder: str, options: Options
+    input_file: str, output_folder: str, options: Options, tmsMap: dict
 ) -> Tuple[TileJobInfo, List[TileDetail]]:
-    gdal2tiles = GDAL2Tiles(input_file, output_folder, options)
+    gdal2tiles = GDAL2Tiles(input_file, output_folder, options, tmsMap)
     gdal2tiles.open_input()
     gdal2tiles.generate_metadata()
     tile_job_info, tile_details = gdal2tiles.generate_base_tiles()
     return tile_job_info, tile_details
 
 
-class ProgressBar(object):
+class ProgressBar:
     def __init__(self, total_items: int, progress_cbk=gdal.TermProgress_nocb) -> None:
         self.total_items = total_items
         self.nb_items_done = 0
@@ -4531,7 +4497,7 @@ def get_tile_swne(tile_job_info, options):
 
 
 def single_threaded_tiling(
-    input_file: str, output_folder: str, options: Options
+    input_file: str, output_folder: str, options: Options, tmsMap: dict
 ) -> None:
     """
     Keep a single threaded version that stays clear of multiprocessing, for platforms that would not
@@ -4539,7 +4505,7 @@ def single_threaded_tiling(
     """
     if options.verbose:
         logger.debug("Begin tiles details calc")
-    conf, tile_details = worker_tile_details(input_file, output_folder, options)
+    conf, tile_details = worker_tile_details(input_file, output_folder, options, tmsMap)
 
     if options.verbose:
         logger.debug("Tiles details calc complete.")
@@ -4549,7 +4515,7 @@ def single_threaded_tiling(
         base_progress_bar.start()
 
     for tile_detail in tile_details:
-        create_base_tile(conf, tile_detail)
+        create_base_tile(conf, tmsMap, tile_detail)
 
         if not options.verbose and not options.quiet:
             base_progress_bar.log_progress()
@@ -4569,7 +4535,9 @@ def single_threaded_tiling(
     for base_tz in range(conf.tmaxz, conf.tminz, -1):
         base_tile_groups = group_overview_base_tiles(base_tz, output_folder, conf)
         for base_tiles in base_tile_groups:
-            create_overview_tile(base_tz, base_tiles, output_folder, conf, options)
+            create_overview_tile(
+                base_tz, base_tiles, output_folder, conf, options, tmsMap
+            )
             if not options.verbose and not options.quiet:
                 overview_progress_bar.log_progress()
 
@@ -4578,14 +4546,14 @@ def single_threaded_tiling(
 
 @enable_gdal_exceptions
 def multi_threaded_tiling(
-    input_file: str, output_folder: str, options: Options, pool
+    input_file: str, output_folder: str, options: Options, pool, tmsMap: dict
 ) -> None:
     nb_processes = options.nb_processes or 1
 
     if options.verbose:
         logger.debug("Begin tiles details calc")
 
-    conf, tile_details = worker_tile_details(input_file, output_folder, options)
+    conf, tile_details = worker_tile_details(input_file, output_folder, options, tmsMap)
 
     if options.verbose:
         logger.debug("Tiles details calc complete.")
@@ -4598,7 +4566,7 @@ def multi_threaded_tiling(
     # TODO: gbataille - assign an ID to each job for print in verbose mode "ReadRaster Extent ..."
     chunksize = max(1, min(128, len(tile_details) // nb_processes))
     for _ in pool.imap_unordered(
-        partial(create_base_tile, conf), tile_details, chunksize=chunksize
+        partial(create_base_tile, conf, None), tile_details, chunksize=chunksize
     ):
         if not options.verbose and not options.quiet:
             base_progress_bar.log_progress()
@@ -4622,6 +4590,7 @@ def multi_threaded_tiling(
                 output_folder=output_folder,
                 tile_job_info=conf,
                 options=options,
+                tmsMap=None,
             ),
             base_tile_groups,
             chunksize=chunksize,
@@ -4632,7 +4601,7 @@ def multi_threaded_tiling(
     shutil.rmtree(os.path.dirname(conf.src_file))
 
 
-class DividedCache(object):
+class DividedCache:
     def __init__(self, nb_processes):
         self.nb_processes = nb_processes
 
@@ -4682,7 +4651,7 @@ def submain(argv: List[str], pool=None, pool_size=0, called_from_main=False) -> 
     argv = gdal.GeneralCmdLineProcessor(argv)
     if argv is None:
         return 0
-    input_file, output_folder, options = process_args(
+    input_file, output_folder, options, tmsMap = process_args(
         argv[1:], called_from_main=called_from_main
     )
     if pool_size:
@@ -4690,9 +4659,9 @@ def submain(argv: List[str], pool=None, pool_size=0, called_from_main=False) -> 
     nb_processes = options.nb_processes or 1
 
     if pool is not None:  # MPI
-        multi_threaded_tiling(input_file, output_folder, options, pool)
+        multi_threaded_tiling(input_file, output_folder, options, pool, tmsMap)
     elif nb_processes == 1:
-        single_threaded_tiling(input_file, output_folder, options)
+        single_threaded_tiling(input_file, output_folder, options, tmsMap)
     else:
         # Trick inspired from https://stackoverflow.com/questions/45720153/python-multiprocessing-error-attributeerror-module-main-has-no-attribute
         # and https://bugs.python.org/issue42949
@@ -4703,7 +4672,7 @@ def submain(argv: List[str], pool=None, pool_size=0, called_from_main=False) -> 
         from multiprocessing import Pool
 
         with DividedCache(nb_processes), Pool(processes=nb_processes) as pool:
-            multi_threaded_tiling(input_file, output_folder, options, pool)
+            multi_threaded_tiling(input_file, output_folder, options, pool, tmsMap)
 
     return 0
 

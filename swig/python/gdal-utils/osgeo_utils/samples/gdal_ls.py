@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 #  Project:  GDAL samples
 #  Purpose:  Display the list of files in a virtual directory, like /vsicurl or /vsizip
@@ -203,7 +202,7 @@ def gdal_ls(argv, fout=sys.stdout):
 
     argv = gdal.GeneralCmdLineProcessor(argv)
     if argv is None:
-        return -1
+        return 0
 
     i = 1
     argc = len(argv)
@@ -273,9 +272,8 @@ def main(argv=sys.argv):
 
 
 if __name__ == "__main__":
-    version_num = int(gdal.VersionInfo("VERSION_NUM"))
-    if version_num < 1800:
-        sys.stderr.write("ERROR: Python bindings of GDAL 1.8.0 or later required\n")
-        sys.exit(1)
+    # hack to force load the Zarr driver and /vsikerchunk if it is built as a driver
+    with gdal.quiet_errors():
+        gdal.Open("ZARR:")
 
     sys.exit(main(sys.argv))

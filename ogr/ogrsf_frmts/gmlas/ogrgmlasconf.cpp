@@ -23,44 +23,6 @@
 #endif
 
 /************************************************************************/
-/*                        GetBaseCacheDirectory()                       */
-/************************************************************************/
-
-CPLString GMLASConfiguration::GetBaseCacheDirectory()
-{
-#ifdef _WIN32
-    const char *pszHome = CPLGetConfigOption("USERPROFILE", nullptr);
-#else
-    const char *pszHome = CPLGetConfigOption("HOME", nullptr);
-#endif
-    if (pszHome != nullptr)
-    {
-        return CPLFormFilename(pszHome, ".gdal", nullptr);
-    }
-    else
-    {
-        const char *pszDir = CPLGetConfigOption("CPL_TMPDIR", nullptr);
-
-        if (pszDir == nullptr)
-            pszDir = CPLGetConfigOption("TMPDIR", nullptr);
-
-        if (pszDir == nullptr)
-            pszDir = CPLGetConfigOption("TEMP", nullptr);
-
-        const char *pszUsername = CPLGetConfigOption("USERNAME", nullptr);
-        if (pszUsername == nullptr)
-            pszUsername = CPLGetConfigOption("USER", nullptr);
-
-        if (pszDir != nullptr && pszUsername != nullptr)
-        {
-            return CPLFormFilename(pszDir, CPLSPrintf(".gdal_%s", pszUsername),
-                                   nullptr);
-        }
-    }
-    return CPLString();
-}
-
-/************************************************************************/
 /*                              Finalize()                              */
 /************************************************************************/
 
@@ -68,7 +30,7 @@ void GMLASConfiguration::Finalize()
 {
     if (m_bAllowXSDCache && m_osXSDCacheDirectory.empty())
     {
-        m_osXSDCacheDirectory = GetBaseCacheDirectory();
+        m_osXSDCacheDirectory = GDALGetCacheDirectory();
         if (m_osXSDCacheDirectory.empty())
         {
             CPLError(CE_Warning, CPLE_AppDefined,
@@ -76,8 +38,8 @@ void GMLASConfiguration::Finalize()
         }
         else
         {
-            m_osXSDCacheDirectory = CPLFormFilename(m_osXSDCacheDirectory,
-                                                    "gmlas_xsd_cache", nullptr);
+            m_osXSDCacheDirectory = CPLFormFilenameSafe(
+                m_osXSDCacheDirectory, "gmlas_xsd_cache", nullptr);
             CPLDebug("GMLAS", "XSD cache directory: %s",
                      m_osXSDCacheDirectory.c_str());
         }
@@ -561,10 +523,10 @@ bool GMLASXLinkResolutionConf::LoadFromXML(CPLXMLNode *psRoot)
     m_osCacheDirectory = CPLGetXMLValue(psRoot, "CacheDirectory", "");
     if (m_osCacheDirectory.empty())
     {
-        m_osCacheDirectory = GMLASConfiguration::GetBaseCacheDirectory();
+        m_osCacheDirectory = GDALGetCacheDirectory();
         if (!m_osCacheDirectory.empty())
         {
-            m_osCacheDirectory = CPLFormFilename(
+            m_osCacheDirectory = CPLFormFilenameSafe(
                 m_osCacheDirectory, "xlink_resolved_cache", nullptr);
         }
     }
@@ -630,11 +592,11 @@ bool GMLASXLinkResolutionConf::LoadFromXML(CPLXMLNode *psRoot)
                     oField.m_osName = CPLGetXMLValue(psIter, "Name", "");
                     oField.m_osType = CPLGetXMLValue(psIter, "Type", "");
                     oField.m_osXPath = CPLGetXMLValue(psIter, "XPath", "");
-                    oItem.m_aoFields.push_back(oField);
+                    oItem.m_aoFields.push_back(std::move(oField));
                 }
             }
 
-            m_aoURLSpecificRules.push_back(oItem);
+            m_aoURLSpecificRules.push_back(std::move(oItem));
         }
     }
 

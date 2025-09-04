@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  PDF driver
  * Purpose:  GDALDataset driver for PDF dataset.
@@ -27,6 +26,11 @@
 #ifdef EMBED_RESOURCE_FILES
 #include "embedded_resources.h"
 #endif
+
+GDALPDFComposerWriter::Action::~Action() = default;
+GDALPDFComposerWriter::GotoPageAction::~GotoPageAction() = default;
+GDALPDFComposerWriter::SetLayerStateAction::~SetLayerStateAction() = default;
+GDALPDFComposerWriter::JavascriptAction::~JavascriptAction() = default;
 
 /************************************************************************/
 /*                         GDALPDFComposerWriter()                      */
@@ -626,7 +630,7 @@ bool GDALPDFComposerWriter::CreateOutline(const CPLXMLNode *psNode)
 bool GDALPDFComposerWriter::GenerateGeoreferencing(
     const CPLXMLNode *psGeoreferencing, double dfWidthInUserUnit,
     double dfHeightInUserUnit, GDALPDFObjectNum &nViewportId,
-    GDALPDFObjectNum &nLGIDictId, Georeferencing &georeferencing)
+    Georeferencing &georeferencing)
 {
     double bboxX1 = 0;
     double bboxY1 = 0;
@@ -684,8 +688,8 @@ bool GDALPDFComposerWriter::GenerateGeoreferencing(
     std::vector<xyPair> aBoundingPolygon;
     if (pszBoundingPolygon)
     {
-        OGRGeometry *poGeom = nullptr;
-        OGRGeometryFactory::createFromWkt(pszBoundingPolygon, nullptr, &poGeom);
+        auto [poGeom, _] =
+            OGRGeometryFactory::createFromWkt(pszBoundingPolygon);
         if (poGeom && poGeom->getGeometryType() == wkbPolygon)
         {
             auto poPoly = poGeom->toPolygon();
@@ -708,7 +712,6 @@ bool GDALPDFComposerWriter::GenerateGeoreferencing(
                 }
             }
         }
-        delete poGeom;
     }
 
     const auto pszSRS = CPLGetXMLValue(psGeoreferencing, "SRS", nullptr);
@@ -739,13 +742,10 @@ bool GDALPDFComposerWriter::GenerateGeoreferencing(
     if (CPLTestBool(
             CPLGetXMLValue(psGeoreferencing, "OGCBestPracticeFormat", "false")))
     {
-        nLGIDictId = GenerateOGC_BP_Georeferencing(
-            OGRSpatialReference::ToHandle(poSRS.get()), bboxX1, bboxY1, bboxX2,
-            bboxY2, aGCPs, aBoundingPolygon);
-        if (!nLGIDictId.toBool())
-        {
-            return false;
-        }
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "OGCBestPracticeFormat no longer supported. Use "
+                 "ISO32000ExtensionFormat");
+        return false;
     }
 
     const char *pszId = CPLGetXMLValue(psGeoreferencing, "id", nullptr);
@@ -753,27 +753,21 @@ bool GDALPDFComposerWriter::GenerateGeoreferencing(
     {
         if (!GDALGCPsToGeoTransform(static_cast<int>(aGCPs.size()),
                                     gdal::GCP::c_ptr(aGCPs),
-                                    georeferencing.m_adfGT, TRUE))
+                                    georeferencing.m_gt.data(), TRUE))
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Could not compute geotransform with approximate match.");
             return false;
         }
-        if (std::fabs(georeferencing.m_adfGT[2]) <
-                1e-5 * std::fabs(georeferencing.m_adfGT[1]) &&
-            std::fabs(georeferencing.m_adfGT[4]) <
-                1e-5 * std::fabs(georeferencing.m_adfGT[5]))
+        if (std::fabs(georeferencing.m_gt[2]) <
+                1e-5 * std::fabs(georeferencing.m_gt[1]) &&
+            std::fabs(georeferencing.m_gt[4]) <
+                1e-5 * std::fabs(georeferencing.m_gt[5]))
         {
-            georeferencing.m_adfGT[2] = 0;
-            georeferencing.m_adfGT[4] = 0;
+            georeferencing.m_gt[2] = 0;
+            georeferencing.m_gt[4] = 0;
         }
-        if (georeferencing.m_adfGT[2] != 0 || georeferencing.m_adfGT[4] != 0 ||
-            georeferencing.m_adfGT[5] < 0)
-        {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "Geotransform should define a north-up non rotated area.");
-            return false;
-        }
+
         georeferencing.m_osID = pszId;
         georeferencing.m_oSRS = *(poSRS.get());
         georeferencing.m_bboxX1 = bboxX1;
@@ -912,76 +906,6 @@ GDALPDFObjectNum GDALPDFComposerWriter::GenerateISO32000_Georeferencing(
 }
 
 /************************************************************************/
-/*                      GenerateOGC_BP_Georeferencing()                 */
-/************************************************************************/
-
-GDALPDFObjectNum GDALPDFComposerWriter::GenerateOGC_BP_Georeferencing(
-    OGRSpatialReferenceH hSRS, double bboxX1, double bboxY1, double bboxX2,
-    double bboxY2, const std::vector<gdal::GCP> &aGCPs,
-    const std::vector<xyPair> &aBoundingPolygon)
-{
-    const OGRSpatialReference *poSRS = OGRSpatialReference::FromHandle(hSRS);
-    GDALPDFDictionaryRW *poProjectionDict =
-        GDALPDFBuildOGC_BP_Projection(poSRS);
-    if (poProjectionDict == nullptr)
-    {
-        OSRDestroySpatialReference(hSRS);
-        return GDALPDFObjectNum();
-    }
-
-    GDALPDFArrayRW *poNeatLineArray = new GDALPDFArrayRW();
-    if (!aBoundingPolygon.empty())
-    {
-        for (const auto &xy : aBoundingPolygon)
-        {
-            poNeatLineArray->Add(xy.x).Add(xy.y);
-        }
-    }
-    else
-    {
-        poNeatLineArray->Add(bboxX1).Add(bboxY1).Add(bboxX2).Add(bboxY2);
-    }
-
-    GDALPDFArrayRW *poRegistration = new GDALPDFArrayRW();
-
-    for (const auto &gcp : aGCPs)
-    {
-        GDALPDFArrayRW *poGCP = new GDALPDFArrayRW();
-        poGCP->Add(gcp.Pixel(), TRUE)
-            .Add(gcp.Line(), TRUE)
-            .Add(gcp.X(), TRUE)
-            .Add(gcp.Y(), TRUE);
-        poRegistration->Add(poGCP);
-    }
-
-    auto nLGIDictId = AllocNewObject();
-    StartObj(nLGIDictId);
-    GDALPDFDictionaryRW oLGIDict;
-    oLGIDict.Add("Type", GDALPDFObjectRW::CreateName("LGIDict"))
-        .Add("Version", "2.1")
-        .Add("Neatline", poNeatLineArray);
-
-    oLGIDict.Add("Registration", poRegistration);
-
-    /* GDAL extension */
-    if (CPLTestBool(CPLGetConfigOption("GDAL_PDF_OGC_BP_WRITE_WKT", "TRUE")))
-    {
-        char *pszWKT = nullptr;
-        OSRExportToWkt(hSRS, &pszWKT);
-        if (pszWKT)
-            poProjectionDict->Add("WKT", pszWKT);
-        CPLFree(pszWKT);
-    }
-
-    oLGIDict.Add("Projection", poProjectionDict);
-
-    VSIFPrintfL(m_fp, "%s\n", oLGIDict.Serialize().c_str());
-    EndObj();
-
-    return nLGIDictId;
-}
-
-/************************************************************************/
 /*                         GeneratePage()                               */
 /************************************************************************/
 
@@ -1001,7 +925,6 @@ bool GDALPDFComposerWriter::GeneratePage(const CPLXMLNode *psPage)
         USER_UNIT_IN_INCH;
 
     std::vector<GDALPDFObjectNum> anViewportIds;
-    std::vector<GDALPDFObjectNum> anLGIDictIds;
 
     PageContext oPageContext;
     for (const auto *psIter = psPage->psChild; psIter; psIter = psIter->psNext)
@@ -1010,18 +933,15 @@ bool GDALPDFComposerWriter::GeneratePage(const CPLXMLNode *psPage)
             strcmp(psIter->pszValue, "Georeferencing") == 0)
         {
             GDALPDFObjectNum nViewportId;
-            GDALPDFObjectNum nLGIDictId;
             Georeferencing georeferencing;
             if (!GenerateGeoreferencing(psIter, dfWidthInUserUnit,
                                         dfHeightInUserUnit, nViewportId,
-                                        nLGIDictId, georeferencing))
+                                        georeferencing))
             {
                 return false;
             }
             if (nViewportId.toBool())
                 anViewportIds.emplace_back(nViewportId);
-            if (nLGIDictId.toBool())
-                anLGIDictIds.emplace_back(nLGIDictId);
             if (!georeferencing.m_osID.empty())
             {
                 oPageContext.m_oMapGeoreferencedId[georeferencing.m_osID] =
@@ -1128,18 +1048,6 @@ bool GDALPDFComposerWriter::GeneratePage(const CPLXMLNode *psPage)
         for (const auto &id : anViewportIds)
             poViewports->Add(id, 0);
         oDictPage.Add("VP", poViewports);
-    }
-
-    if (anLGIDictIds.size() == 1)
-    {
-        oDictPage.Add("LGIDict", anLGIDictIds[0], 0);
-    }
-    else if (!anLGIDictIds.empty())
-    {
-        auto poLGIDict = new GDALPDFArrayRW();
-        for (const auto &id : anLGIDictIds)
-            poLGIDict->Add(id, 0);
-        oDictPage.Add("LGIDict", poLGIDict);
     }
 
     if (nStructParentsIdx >= 0)
@@ -1380,8 +1288,8 @@ bool GDALPDFComposerWriter::WriteRaster(const CPLXMLNode *psNode,
     double dfClippingMaxX = 0;
     double dfClippingMaxY = 0;
     bool bClip = false;
-    double adfRasterGT[6] = {0, 1, 0, 0, 0, 1};
-    double adfInvGeoreferencingGT[6];  // from georeferenced to PDF coordinates
+    GDALGeoTransform rasterGT;
+    GDALGeoTransform invGT;  // from georeferenced to PDF coordinates
     if (pszGeoreferencingId)
     {
         auto iter =
@@ -1400,13 +1308,13 @@ bool GDALPDFComposerWriter::WriteRaster(const CPLXMLNode *psNode,
         dfY2 = georeferencing.m_bboxY2;
 
         bClip = true;
-        dfClippingMinX = APPLY_GT_X(georeferencing.m_adfGT, dfX1, dfY1);
-        dfClippingMinY = APPLY_GT_Y(georeferencing.m_adfGT, dfX1, dfY1);
-        dfClippingMaxX = APPLY_GT_X(georeferencing.m_adfGT, dfX2, dfY2);
-        dfClippingMaxY = APPLY_GT_Y(georeferencing.m_adfGT, dfX2, dfY2);
+        dfClippingMinX = APPLY_GT_X(georeferencing.m_gt, dfX1, dfY1);
+        dfClippingMinY = APPLY_GT_Y(georeferencing.m_gt, dfX1, dfY1);
+        dfClippingMaxX = APPLY_GT_X(georeferencing.m_gt, dfX2, dfY2);
+        dfClippingMaxY = APPLY_GT_Y(georeferencing.m_gt, dfX2, dfY2);
 
-        if (poDS->GetGeoTransform(adfRasterGT) != CE_None ||
-            adfRasterGT[2] != 0 || adfRasterGT[4] != 0 || adfRasterGT[5] > 0)
+        if (poDS->GetGeoTransform(rasterGT) != CE_None || rasterGT[2] != 0 ||
+            rasterGT[4] != 0 || rasterGT[5] > 0)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Raster has no geotransform or a rotated geotransform");
@@ -1422,11 +1330,10 @@ bool GDALPDFComposerWriter::WriteRaster(const CPLXMLNode *psNode,
             return false;
         }
 
-        CPL_IGNORE_RET_VAL(GDALInvGeoTransform(georeferencing.m_adfGT,
-                                               adfInvGeoreferencingGT));
+        CPL_IGNORE_RET_VAL(georeferencing.m_gt.GetInverse(invGT));
     }
-    const double dfRasterMinX = adfRasterGT[0];
-    const double dfRasterMaxY = adfRasterGT[3];
+    const double dfRasterMinX = rasterGT[0];
+    const double dfRasterMaxY = rasterGT[3];
 
     /* Does the source image has a color table ? */
     const auto nColorTableId = WriteColorTable(poDS.get());
@@ -1437,8 +1344,8 @@ bool GDALPDFComposerWriter::WriteRaster(const CPLXMLNode *psNode,
     CPLString osGroupStream;
     std::vector<GDALPDFObjectNum> anImageIds;
 
-    const int nXBlocks = (nWidth + nBlockXSize - 1) / nBlockXSize;
-    const int nYBlocks = (nHeight + nBlockYSize - 1) / nBlockYSize;
+    const int nXBlocks = DIV_ROUND_UP(nWidth, nBlockXSize);
+    const int nYBlocks = DIV_ROUND_UP(nHeight, nBlockYSize);
     int nBlockXOff, nBlockYOff;
     for (nBlockYOff = 0; nBlockYOff < nYBlocks; nBlockYOff++)
     {
@@ -1461,12 +1368,12 @@ bool GDALPDFComposerWriter::WriteRaster(const CPLXMLNode *psNode,
             if (bClip)
             {
                 /* Compute extent of block to write */
-                double dfBlockMinX = adfRasterGT[0] + nX * adfRasterGT[1];
+                double dfBlockMinX = rasterGT[0] + nX * rasterGT[1];
                 double dfBlockMaxX =
-                    adfRasterGT[0] + (nX + nReqWidth) * adfRasterGT[1];
+                    rasterGT[0] + (nX + nReqWidth) * rasterGT[1];
                 double dfBlockMinY =
-                    adfRasterGT[3] + (nY + nReqHeight) * adfRasterGT[5];
-                double dfBlockMaxY = adfRasterGT[3] + nY * adfRasterGT[5];
+                    rasterGT[3] + (nY + nReqHeight) * rasterGT[5];
+                double dfBlockMaxY = rasterGT[3] + nY * rasterGT[5];
 
                 // Clip the extent of the block with the extent of the main
                 // raster.
@@ -1486,40 +1393,39 @@ bool GDALPDFComposerWriter::WriteRaster(const CPLXMLNode *psNode,
                     /* Re-compute (x,y,width,height) subwindow of current raster
                      * from */
                     /* the extent of the clipped block */
-                    nX = static_cast<int>((dfIntersectMinX - dfRasterMinX) /
-                                              adfRasterGT[1] +
-                                          0.5);
+                    nX = static_cast<int>(
+                        (dfIntersectMinX - dfRasterMinX) / rasterGT[1] + 0.5);
                     nY = static_cast<int>((dfRasterMaxY - dfIntersectMaxY) /
-                                              (-adfRasterGT[5]) +
+                                              (-rasterGT[5]) +
                                           0.5);
                     nReqWidth =
                         static_cast<int>((dfIntersectMaxX - dfRasterMinX) /
-                                             adfRasterGT[1] +
+                                             rasterGT[1] +
                                          0.5) -
                         nX;
                     nReqHeight =
                         static_cast<int>((dfRasterMaxY - dfIntersectMinY) /
-                                             (-adfRasterGT[5]) +
+                                             (-rasterGT[5]) +
                                          0.5) -
                         nY;
 
                     if (nReqWidth > 0 && nReqHeight > 0)
                     {
-                        dfBlockMinX = adfRasterGT[0] + nX * adfRasterGT[1];
+                        dfBlockMinX = rasterGT[0] + nX * rasterGT[1];
                         dfBlockMaxX =
-                            adfRasterGT[0] + (nX + nReqWidth) * adfRasterGT[1];
+                            rasterGT[0] + (nX + nReqWidth) * rasterGT[1];
                         dfBlockMinY =
-                            adfRasterGT[3] + (nY + nReqHeight) * adfRasterGT[5];
-                        dfBlockMaxY = adfRasterGT[3] + nY * adfRasterGT[5];
+                            rasterGT[3] + (nY + nReqHeight) * rasterGT[5];
+                        dfBlockMaxY = rasterGT[3] + nY * rasterGT[5];
 
-                        double dfPDFX1 = APPLY_GT_X(adfInvGeoreferencingGT,
-                                                    dfBlockMinX, dfBlockMinY);
-                        double dfPDFY1 = APPLY_GT_Y(adfInvGeoreferencingGT,
-                                                    dfBlockMinX, dfBlockMinY);
-                        double dfPDFX2 = APPLY_GT_X(adfInvGeoreferencingGT,
-                                                    dfBlockMaxX, dfBlockMaxY);
-                        double dfPDFY2 = APPLY_GT_Y(adfInvGeoreferencingGT,
-                                                    dfBlockMaxX, dfBlockMaxY);
+                        double dfPDFX1 =
+                            APPLY_GT_X(invGT, dfBlockMinX, dfBlockMinY);
+                        double dfPDFY1 =
+                            APPLY_GT_Y(invGT, dfBlockMinX, dfBlockMinY);
+                        double dfPDFX2 =
+                            APPLY_GT_X(invGT, dfBlockMaxX, dfBlockMaxY);
+                        double dfPDFY2 =
+                            APPLY_GT_Y(invGT, dfBlockMaxX, dfBlockMaxY);
 
                         dfXPDFOff = dfPDFX1;
                         dfYPDFOff = dfPDFY1;
@@ -1640,10 +1546,10 @@ bool GDALPDFComposerWriter::SetupVectorGeoreferencing(
     const double dfX2 = georeferencing.m_bboxX2;
     const double dfY2 = georeferencing.m_bboxY2;
 
-    dfClippingMinX = APPLY_GT_X(georeferencing.m_adfGT, dfX1, dfY1);
-    dfClippingMinY = APPLY_GT_Y(georeferencing.m_adfGT, dfX1, dfY1);
-    dfClippingMaxX = APPLY_GT_X(georeferencing.m_adfGT, dfX2, dfY2);
-    dfClippingMaxY = APPLY_GT_Y(georeferencing.m_adfGT, dfX2, dfY2);
+    dfClippingMinX = APPLY_GT_X(georeferencing.m_gt, dfX1, dfY1);
+    dfClippingMinY = APPLY_GT_Y(georeferencing.m_gt, dfX1, dfY1);
+    dfClippingMaxX = APPLY_GT_X(georeferencing.m_gt, dfX2, dfY2);
+    dfClippingMaxY = APPLY_GT_Y(georeferencing.m_gt, dfX2, dfY2);
 
     auto poSRS = poLayer->GetSpatialRef();
     if (!poSRS)
@@ -1663,13 +1569,12 @@ bool GDALPDFComposerWriter::SetupVectorGeoreferencing(
                                       dfClippingMaxX, dfClippingMaxY);
     }
 
-    double adfInvGeoreferencingGT[6];  // from georeferenced to PDF coordinates
-    CPL_IGNORE_RET_VAL(GDALInvGeoTransform(
-        const_cast<double *>(georeferencing.m_adfGT), adfInvGeoreferencingGT));
-    adfMatrix[0] = adfInvGeoreferencingGT[0];
-    adfMatrix[1] = adfInvGeoreferencingGT[1];
-    adfMatrix[2] = adfInvGeoreferencingGT[3];
-    adfMatrix[3] = adfInvGeoreferencingGT[5];
+    GDALGeoTransform invGT;  // from georeferenced to PDF coordinates
+    CPL_IGNORE_RET_VAL(georeferencing.m_gt.GetInverse(invGT));
+    adfMatrix[0] = invGT[0];
+    adfMatrix[1] = invGT[1];
+    adfMatrix[2] = invGT[3];
+    adfMatrix[3] = invGT[5];
 
     return true;
 }
@@ -1702,7 +1607,7 @@ bool GDALPDFComposerWriter::WriteVector(const CPLXMLNode *psNode,
     OGRLayer *poLayer = poDS->GetLayerByName(pszLayer);
     if (!poLayer)
     {
-        CPLError(CE_Failure, CPLE_AppDefined, "Cannt find layer %s", pszLayer);
+        CPLError(CE_Failure, CPLE_AppDefined, "Cannot find layer %s", pszLayer);
         return false;
     }
     const bool bVisible =
@@ -1999,7 +1904,7 @@ bool GDALPDFComposerWriter::WriteVectorLabel(const CPLXMLNode *psNode,
     OGRLayer *poLayer = poDS->GetLayerByName(pszLayer);
     if (!poLayer)
     {
-        CPLError(CE_Failure, CPLE_AppDefined, "Cannt find layer %s", pszLayer);
+        CPLError(CE_Failure, CPLE_AppDefined, "Cannot find layer %s", pszLayer);
         return false;
     }
 

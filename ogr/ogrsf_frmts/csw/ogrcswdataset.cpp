@@ -17,8 +17,7 @@
 #include "ogr_swq.h"
 #include "ogrwfsfilter.h"
 #include "gmlutils.h"
-
-extern "C" void RegisterOGRCSW();
+#include "memdataset.h"
 
 /************************************************************************/
 /*                             OGRCSWLayer                              */
@@ -55,22 +54,18 @@ class OGRCSWLayer final : public OGRLayer
     virtual OGRFeature *GetNextFeature() override;
     virtual GIntBig GetFeatureCount(int bForce = FALSE) override;
 
-    virtual OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    virtual int TestCapability(const char *) override
+    int TestCapability(const char *) const override
     {
         return FALSE;
     }
 
-    virtual void SetSpatialFilter(OGRGeometry *) override;
-
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
-    {
-        OGRLayer::SetSpatialFilter(iGeomField, poGeom);
-    }
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
     virtual OGRErr SetAttributeFilter(const char *) override;
 };
@@ -98,12 +93,12 @@ class OGRCSWDataSource final : public GDALDataset
 
     int Open(const char *pszFilename, char **papszOpenOptions);
 
-    virtual int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return poLayer != nullptr;
     }
 
-    virtual OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
     static CPLHTTPResult *HTTPFetch(const char *pszURL, const char *pszPost);
 
@@ -541,9 +536,6 @@ GDALDataset *OGRCSWLayer::FetchGetRecords()
 
     if (!poDS->GetOutputSchema().empty())
     {
-        GDALDriver *poDrv = (GDALDriver *)GDALGetDriverByName("Memory");
-        if (poDrv == nullptr)
-            return nullptr;
         CPLXMLNode *psRoot = CPLParseXMLFile(osTmpFileName);
         if (psRoot == nullptr)
         {
@@ -569,7 +561,7 @@ GDALDataset *OGRCSWLayer::FetchGetRecords()
             return nullptr;
         }
 
-        l_poBaseDS = poDrv->Create("", 0, 0, 0, GDT_Unknown, nullptr);
+        l_poBaseDS = MEMDataset::Create("", 0, 0, 0, GDT_Unknown, nullptr);
         OGRLayer *poLyr = l_poBaseDS->CreateLayer("records");
         OGRFieldDefn oField("raw_xml", OFTString);
         poLyr->CreateField(&oField);
@@ -664,7 +656,7 @@ GDALDataset *OGRCSWLayer::FetchGetRecords()
     }
     else
     {
-        l_poBaseDS = (GDALDataset *)OGROpen(osTmpFileName, FALSE, nullptr);
+        l_poBaseDS = GDALDataset::Open(osTmpFileName, GDAL_OF_VECTOR);
         if (l_poBaseDS == nullptr)
         {
             if (strstr((const char *)pabyData, "<csw:GetRecordsResponse") ==
@@ -692,14 +684,18 @@ GDALDataset *OGRCSWLayer::FetchGetRecords()
 }
 
 /************************************************************************/
-/*                         SetSpatialFilter()                           */
+/*                         ISetSpatialFilter()                          */
 /************************************************************************/
 
-void OGRCSWLayer::SetSpatialFilter(OGRGeometry *poGeom)
+OGRErr OGRCSWLayer::ISetSpatialFilter(int iGeomField, const OGRGeometry *poGeom)
 {
-    OGRLayer::SetSpatialFilter(poGeom);
-    ResetReading();
-    BuildQuery();
+    const OGRErr eErr = OGRLayer::ISetSpatialFilter(iGeomField, poGeom);
+    if (eErr == OGRERR_NONE)
+    {
+        ResetReading();
+        BuildQuery();
+    }
+    return eErr;
 }
 
 /************************************************************************/
@@ -1018,7 +1014,7 @@ int OGRCSWDataSource::Open(const char *pszFilename, char **papszOpenOptionsIn)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRCSWDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRCSWDataSource::GetLayer(int iLayer) const
 
 {
     if (iLayer < 0 || iLayer >= ((poLayer != nullptr) ? 1 : 0))

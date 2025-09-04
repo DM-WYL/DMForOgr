@@ -33,6 +33,8 @@
 // Dictionary) similar to test case of https://github.com/OSGeo/gdal/issues/8372
 // like with "ogr2ogr poly.pdf poly.shp -dsco STREAM_COMPRESS=NONE -limit 1"
 
+GDALFakePDFDataset::~GDALFakePDFDataset() = default;
+
 /************************************************************************/
 /*                        GDALPDFBaseWriter()                           */
 /************************************************************************/
@@ -325,9 +327,6 @@ void GDALPDFUpdateWriter::UpdateProj(GDALDataset *poSrcDS, double dfDPI,
     if (EQUAL(pszGEO_ENCODING, "ISO32000") || EQUAL(pszGEO_ENCODING, "BOTH"))
         nViewportId = WriteSRS_ISO32000(poSrcDS, dfDPI * USER_UNIT_IN_INCH,
                                         nullptr, &sMargins, TRUE);
-    if (EQUAL(pszGEO_ENCODING, "OGC_BP") || EQUAL(pszGEO_ENCODING, "BOTH"))
-        nLGIDictId = WriteSRS_OGC_BP(poSrcDS, dfDPI * USER_UNIT_IN_INCH,
-                                     nullptr, &sMargins);
 
 #ifdef invalidate_xref_entry
     GDALPDFObject *poVP = poPageDict->Get("VP");
@@ -667,9 +666,9 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteSRS_ISO32000(GDALDataset *poSrcDS,
     int nWidth = poSrcDS->GetRasterXSize();
     int nHeight = poSrcDS->GetRasterYSize();
     const char *pszWKT = poSrcDS->GetProjectionRef();
-    double adfGeoTransform[6];
+    GDALGeoTransform gt;
 
-    int bHasGT = (poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None);
+    int bHasGT = (poSrcDS->GetGeoTransform(gt) == CE_None);
     const GDAL_GCP *pasGCPList =
         (poSrcDS->GetGCPCount() == 4) ? poSrcDS->GetGCPs() : nullptr;
     if (pasGCPList != nullptr)
@@ -693,15 +692,14 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteSRS_ISO32000(GDALDataset *poSrcDS,
         pszNEATLINE = poSrcDS->GetMetadataItem("NEATLINE");
     if (bHasGT && pszNEATLINE != nullptr && pszNEATLINE[0] != '\0')
     {
-        OGRGeometry *poGeom = nullptr;
-        OGRGeometryFactory::createFromWkt(pszNEATLINE, nullptr, &poGeom);
+        auto [poGeom, _] = OGRGeometryFactory::createFromWkt(pszNEATLINE);
         if (poGeom != nullptr &&
             wkbFlatten(poGeom->getGeometryType()) == wkbPolygon)
         {
             OGRLineString *poLS = poGeom->toPolygon()->getExteriorRing();
-            double adfGeoTransformInv[6];
+            GDALGeoTransform invGT;
             if (poLS != nullptr && poLS->getNumPoints() == 5 &&
-                GDALInvGeoTransform(adfGeoTransform, adfGeoTransformInv))
+                gt.GetInverse(invGT))
             {
                 for (int i = 0; i < 4; i++)
                 {
@@ -709,12 +707,8 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteSRS_ISO32000(GDALDataset *poSrcDS,
                     const double Y = poLS->getY(i);
                     asNeatLineGCPs[i].X() = X;
                     asNeatLineGCPs[i].Y() = Y;
-                    const double x = adfGeoTransformInv[0] +
-                                     X * adfGeoTransformInv[1] +
-                                     Y * adfGeoTransformInv[2];
-                    const double y = adfGeoTransformInv[3] +
-                                     X * adfGeoTransformInv[4] +
-                                     Y * adfGeoTransformInv[5];
+                    const double x = invGT[0] + X * invGT[1] + Y * invGT[2];
+                    const double y = invGT[3] + X * invGT[4] + Y * invGT[5];
                     asNeatLineGCPs[i].Pixel() = x;
                     asNeatLineGCPs[i].Line() = y;
                 }
@@ -751,7 +745,6 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteSRS_ISO32000(GDALDataset *poSrcDS,
                 }
             }
         }
-        delete poGeom;
     }
 
     if (pasGCPList)
@@ -798,20 +791,20 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteSRS_ISO32000(GDALDataset *poSrcDS,
     else
     {
         /* Upper-left */
-        adfGPTS[0] = APPLY_GT_X(adfGeoTransform, 0, 0);
-        adfGPTS[1] = APPLY_GT_Y(adfGeoTransform, 0, 0);
+        adfGPTS[0] = APPLY_GT_X(gt, 0, 0);
+        adfGPTS[1] = APPLY_GT_Y(gt, 0, 0);
 
         /* Lower-left */
-        adfGPTS[2] = APPLY_GT_X(adfGeoTransform, 0, nHeight);
-        adfGPTS[3] = APPLY_GT_Y(adfGeoTransform, 0, nHeight);
+        adfGPTS[2] = APPLY_GT_X(gt, 0, nHeight);
+        adfGPTS[3] = APPLY_GT_Y(gt, 0, nHeight);
 
         /* Lower-right */
-        adfGPTS[4] = APPLY_GT_X(adfGeoTransform, nWidth, nHeight);
-        adfGPTS[5] = APPLY_GT_Y(adfGeoTransform, nWidth, nHeight);
+        adfGPTS[4] = APPLY_GT_X(gt, nWidth, nHeight);
+        adfGPTS[5] = APPLY_GT_Y(gt, nWidth, nHeight);
 
         /* Upper-right */
-        adfGPTS[6] = APPLY_GT_X(adfGeoTransform, nWidth, 0);
-        adfGPTS[7] = APPLY_GT_Y(adfGeoTransform, nWidth, 0);
+        adfGPTS[6] = APPLY_GT_X(gt, nWidth, 0);
+        adfGPTS[7] = APPLY_GT_Y(gt, nWidth, 0);
     }
 
     OGRSpatialReferenceH hSRS = OSRNewSpatialReference(pszWKT);
@@ -948,630 +941,6 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteSRS_ISO32000(GDALDataset *poSrcDS,
     CPLFree(pszESRIWKT);
 
     return nViewportId.toBool() ? nViewportId : nMeasureId;
-}
-
-/************************************************************************/
-/*                     GDALPDFBuildOGC_BP_Datum()                       */
-/************************************************************************/
-
-static GDALPDFObject *GDALPDFBuildOGC_BP_Datum(const OGRSpatialReference *poSRS)
-{
-    const OGR_SRSNode *poDatumNode = poSRS->GetAttrNode("DATUM");
-    const char *pszDatumDescription = nullptr;
-    if (poDatumNode && poDatumNode->GetChildCount() > 0)
-        pszDatumDescription = poDatumNode->GetChild(0)->GetValue();
-
-    GDALPDFObjectRW *poPDFDatum = nullptr;
-
-    if (pszDatumDescription)
-    {
-        double dfSemiMajor = poSRS->GetSemiMajor();
-        double dfInvFlattening = poSRS->GetInvFlattening();
-        int nEPSGDatum = -1;
-        const char *pszAuthority = poSRS->GetAuthorityName("DATUM");
-        if (pszAuthority != nullptr && EQUAL(pszAuthority, "EPSG"))
-            nEPSGDatum = atoi(poSRS->GetAuthorityCode("DATUM"));
-
-        if (EQUAL(pszDatumDescription, SRS_DN_WGS84) || nEPSGDatum == 6326)
-            poPDFDatum = GDALPDFObjectRW::CreateString("WGE");
-        else if (EQUAL(pszDatumDescription, SRS_DN_NAD27) || nEPSGDatum == 6267)
-            poPDFDatum = GDALPDFObjectRW::CreateString("NAS");
-        else if (EQUAL(pszDatumDescription, SRS_DN_NAD83) || nEPSGDatum == 6269)
-            poPDFDatum = GDALPDFObjectRW::CreateString("NAR");
-        else if (nEPSGDatum == 6135)
-            poPDFDatum = GDALPDFObjectRW::CreateString("OHA-M");
-        else
-        {
-            CPLDebug("PDF",
-                     "Unhandled datum name (%s). Write datum parameters then.",
-                     pszDatumDescription);
-
-            GDALPDFDictionaryRW *poPDFDatumDict = new GDALPDFDictionaryRW();
-            poPDFDatum = GDALPDFObjectRW::CreateDictionary(poPDFDatumDict);
-
-            const OGR_SRSNode *poSpheroidNode = poSRS->GetAttrNode("SPHEROID");
-            if (poSpheroidNode && poSpheroidNode->GetChildCount() >= 3)
-            {
-                poPDFDatumDict->Add("Description", pszDatumDescription);
-
-#ifdef disabled_because_terrago_toolbar_does_not_like_it
-                const char *pszEllipsoidCode = NULL;
-                if (std::abs(dfSemiMajor - 6378249.145) < 0.01 &&
-                    std::abs(dfInvFlattening - 293.465) < 0.0001)
-                {
-                    pszEllipsoidCode = "CD"; /* Clark 1880 */
-                }
-                else if (std::abs(dfSemiMajor - 6378245.0) < 0.01 x &&
-                         std::abs(dfInvFlattening - 298.3) < 0.0001)
-                {
-                    pszEllipsoidCode = "KA"; /* Krassovsky */
-                }
-                else if (std::abs(dfSemiMajor - 6378388.0) < 0.01 &&
-                         std::abs(dfInvFlattening - 297.0) < 0.0001)
-                {
-                    pszEllipsoidCode = "IN"; /* International 1924 */
-                }
-                else if (std::abs(dfSemiMajor - 6378160.0) < 0.01 &&
-                         std::abs(dfInvFlattening - 298.25) < 0.0001)
-                {
-                    pszEllipsoidCode = "AN"; /* Australian */
-                }
-                else if (std::abs(dfSemiMajor - 6377397.155) < 0.01 &&
-                         std::abs(dfInvFlattening - 299.1528128) < 0.0001)
-                {
-                    pszEllipsoidCode = "BR"; /* Bessel 1841 */
-                }
-                else if (std::abs(dfSemiMajor - 6377483.865) < 0.01 &&
-                         std::abs(dfInvFlattening - 299.1528128) < 0.0001)
-                {
-                    pszEllipsoidCode =
-                        "BN"; /* Bessel 1841 (Namibia / Schwarzeck)*/
-                }
-#if 0
-                else if( std::abs(dfSemiMajor-6378160.0) < 0.01
-                         && std::abs(dfInvFlattening-298.247167427) < 0.0001 )
-                {
-                    pszEllipsoidCode = "GRS67";      /* GRS 1967 */
-                }
-#endif
-                else if (std::abs(dfSemiMajor - 6378137) < 0.01 &&
-                         std::abs(dfInvFlattening - 298.257222101) < 0.000001)
-                {
-                    pszEllipsoidCode = "RF"; /* GRS 1980 */
-                }
-                else if (std::abs(dfSemiMajor - 6378206.4) < 0.01 &&
-                         std::abs(dfInvFlattening - 294.9786982) < 0.0001)
-                {
-                    pszEllipsoidCode = "CC"; /* Clarke 1866 */
-                }
-                else if (std::abs(dfSemiMajor - 6377340.189) < 0.01 &&
-                         std::abs(dfInvFlattening - 299.3249646) < 0.0001)
-                {
-                    pszEllipsoidCode = "AM"; /* Modified Airy */
-                }
-                else if (std::abs(dfSemiMajor - 6377563.396) < 0.01 &&
-                         std::abs(dfInvFlattening - 299.3249646) < 0.0001)
-                {
-                    pszEllipsoidCode = "AA"; /* Airy */
-                }
-                else if (std::abs(dfSemiMajor - 6378200) < 0.01 &&
-                         std::abs(dfInvFlattening - 298.3) < 0.0001)
-                {
-                    pszEllipsoidCode = "HE"; /* Helmert 1906 */
-                }
-                else if (std::abs(dfSemiMajor - 6378155) < 0.01 &&
-                         std::abs(dfInvFlattening - 298.3) < 0.0001)
-                {
-                    pszEllipsoidCode = "FA"; /* Modified Fischer 1960 */
-                }
-#if 0
-                else if( std::abs(dfSemiMajor-6377298.556) < 0.01
-                         && std::abs(dfInvFlattening-300.8017) < 0.0001 )
-                {
-                    pszEllipsoidCode = "evrstSS";    /* Everest (Sabah & Sarawak) */
-                }
-                else if( std::abs(dfSemiMajor-6378165.0) < 0.01
-                         && std::abs(dfInvFlattening-298.3) < 0.0001 )
-                {
-                    pszEllipsoidCode = "WGS60";
-                }
-                else if( std::abs(dfSemiMajor-6378145.0) < 0.01
-                         && std::abs(dfInvFlattening-298.25) < 0.0001 )
-                {
-                    pszEllipsoidCode = "WGS66";
-                }
-#endif
-                else if (std::abs(dfSemiMajor - 6378135.0) < 0.01 &&
-                         std::abs(dfInvFlattening - 298.26) < 0.0001)
-                {
-                    pszEllipsoidCode = "WD";
-                }
-                else if (std::abs(dfSemiMajor - 6378137.0) < 0.01 &&
-                         std::abs(dfInvFlattening - 298.257223563) < 0.000001)
-                {
-                    pszEllipsoidCode = "WE";
-                }
-
-                if (pszEllipsoidCode != NULL)
-                {
-                    poPDFDatumDict->Add("Ellipsoid", pszEllipsoidCode);
-                }
-                else
-#endif /* disabled_because_terrago_toolbar_does_not_like_it */
-                {
-                    const char *pszEllipsoidDescription =
-                        poSpheroidNode->GetChild(0)->GetValue();
-
-                    CPLDebug("PDF",
-                             "Unhandled ellipsoid name (%s). Write ellipsoid "
-                             "parameters then.",
-                             pszEllipsoidDescription);
-
-                    poPDFDatumDict->Add(
-                        "Ellipsoid",
-                        &((new GDALPDFDictionaryRW())
-                              ->Add("Description", pszEllipsoidDescription)
-                              .Add("SemiMajorAxis", dfSemiMajor, TRUE)
-                              .Add("InvFlattening", dfInvFlattening, TRUE)));
-                }
-
-                const OGR_SRSNode *poTOWGS84 = poSRS->GetAttrNode("TOWGS84");
-                if (poTOWGS84 != nullptr && poTOWGS84->GetChildCount() >= 3 &&
-                    (poTOWGS84->GetChildCount() < 7 ||
-                     (EQUAL(poTOWGS84->GetChild(3)->GetValue(), "") &&
-                      EQUAL(poTOWGS84->GetChild(4)->GetValue(), "") &&
-                      EQUAL(poTOWGS84->GetChild(5)->GetValue(), "") &&
-                      EQUAL(poTOWGS84->GetChild(6)->GetValue(), ""))))
-                {
-                    poPDFDatumDict->Add(
-                        "ToWGS84",
-                        &((new GDALPDFDictionaryRW())
-                              ->Add("dx", poTOWGS84->GetChild(0)->GetValue())
-                              .Add("dy", poTOWGS84->GetChild(1)->GetValue())
-                              .Add("dz", poTOWGS84->GetChild(2)->GetValue())));
-                }
-                else if (poTOWGS84 != nullptr &&
-                         poTOWGS84->GetChildCount() >= 7)
-                {
-                    poPDFDatumDict->Add(
-                        "ToWGS84",
-                        &((new GDALPDFDictionaryRW())
-                              ->Add("dx", poTOWGS84->GetChild(0)->GetValue())
-                              .Add("dy", poTOWGS84->GetChild(1)->GetValue())
-                              .Add("dz", poTOWGS84->GetChild(2)->GetValue())
-                              .Add("rx", poTOWGS84->GetChild(3)->GetValue())
-                              .Add("ry", poTOWGS84->GetChild(4)->GetValue())
-                              .Add("rz", poTOWGS84->GetChild(5)->GetValue())
-                              .Add("sf", poTOWGS84->GetChild(6)->GetValue())));
-                }
-            }
-        }
-    }
-    else
-    {
-        CPLError(CE_Warning, CPLE_NotSupported,
-                 "No datum name. Defaulting to WGS84.");
-    }
-
-    if (poPDFDatum == nullptr)
-        poPDFDatum = GDALPDFObjectRW::CreateString("WGE");
-
-    return poPDFDatum;
-}
-
-/************************************************************************/
-/*                   GDALPDFBuildOGC_BP_Projection()                    */
-/************************************************************************/
-
-GDALPDFDictionaryRW *GDALPDFBaseWriter::GDALPDFBuildOGC_BP_Projection(
-    const OGRSpatialReference *poSRS)
-{
-
-    const char *pszProjectionOGCBP = "GEOGRAPHIC";
-    const char *pszProjection = poSRS->GetAttrValue("PROJECTION");
-
-    GDALPDFDictionaryRW *poProjectionDict = new GDALPDFDictionaryRW();
-    poProjectionDict->Add("Type", GDALPDFObjectRW::CreateName("Projection"));
-    poProjectionDict->Add("Datum", GDALPDFBuildOGC_BP_Datum(poSRS));
-
-    if (pszProjection == nullptr)
-    {
-        if (poSRS->IsGeographic())
-            pszProjectionOGCBP = "GEOGRAPHIC";
-        else if (poSRS->IsLocal())
-            pszProjectionOGCBP = "LOCAL CARTESIAN";
-        else
-        {
-            CPLError(CE_Warning, CPLE_NotSupported, "Unsupported SRS type");
-            delete poProjectionDict;
-            return nullptr;
-        }
-    }
-    else if (EQUAL(pszProjection, SRS_PT_TRANSVERSE_MERCATOR))
-    {
-        int bNorth;
-        int nZone = poSRS->GetUTMZone(&bNorth);
-
-        if (nZone != 0)
-        {
-            pszProjectionOGCBP = "UT";
-            poProjectionDict->Add("Hemisphere", (bNorth) ? "N" : "S");
-            poProjectionDict->Add("Zone", nZone);
-        }
-        else
-        {
-            double dfCenterLat =
-                poSRS->GetNormProjParm(SRS_PP_LATITUDE_OF_ORIGIN, 90.L);
-            double dfCenterLong =
-                poSRS->GetNormProjParm(SRS_PP_CENTRAL_MERIDIAN, 0.0);
-            double dfScale = poSRS->GetNormProjParm(SRS_PP_SCALE_FACTOR, 1.0);
-            double dfFalseEasting =
-                poSRS->GetNormProjParm(SRS_PP_FALSE_EASTING, 0.0);
-            double dfFalseNorthing =
-                poSRS->GetNormProjParm(SRS_PP_FALSE_NORTHING, 0.0);
-
-            /* OGC_BP supports representing numbers as strings for better
-             * precision */
-            /* so use it */
-
-            pszProjectionOGCBP = "TC";
-            poProjectionDict->Add("OriginLatitude", dfCenterLat, TRUE);
-            poProjectionDict->Add("CentralMeridian", dfCenterLong, TRUE);
-            poProjectionDict->Add("ScaleFactor", dfScale, TRUE);
-            poProjectionDict->Add("FalseEasting", dfFalseEasting, TRUE);
-            poProjectionDict->Add("FalseNorthing", dfFalseNorthing, TRUE);
-        }
-    }
-    else if (EQUAL(pszProjection, SRS_PT_POLAR_STEREOGRAPHIC))
-    {
-        double dfCenterLat =
-            poSRS->GetNormProjParm(SRS_PP_LATITUDE_OF_ORIGIN, 0.0);
-        double dfCenterLong =
-            poSRS->GetNormProjParm(SRS_PP_CENTRAL_MERIDIAN, 0.0);
-        double dfScale = poSRS->GetNormProjParm(SRS_PP_SCALE_FACTOR, 1.0);
-        double dfFalseEasting =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_EASTING, 0.0);
-        double dfFalseNorthing =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_NORTHING, 0.0);
-
-        if (fabs(dfCenterLat) == 90.0 && dfCenterLong == 0.0 &&
-            dfScale == 0.994 && dfFalseEasting == 200000.0 &&
-            dfFalseNorthing == 200000.0)
-        {
-            pszProjectionOGCBP = "UP";
-            poProjectionDict->Add("Hemisphere", (dfCenterLat > 0) ? "N" : "S");
-        }
-        else
-        {
-            pszProjectionOGCBP = "PG";
-            poProjectionDict->Add("LatitudeTrueScale", dfCenterLat, TRUE);
-            poProjectionDict->Add("LongitudeDownFromPole", dfCenterLong, TRUE);
-            poProjectionDict->Add("ScaleFactor", dfScale, TRUE);
-            poProjectionDict->Add("FalseEasting", dfFalseEasting, TRUE);
-            poProjectionDict->Add("FalseNorthing", dfFalseNorthing, TRUE);
-        }
-    }
-
-    else if (EQUAL(pszProjection, SRS_PT_LAMBERT_CONFORMAL_CONIC_2SP))
-    {
-        double dfStdP1 =
-            poSRS->GetNormProjParm(SRS_PP_STANDARD_PARALLEL_1, 0.0);
-        double dfStdP2 =
-            poSRS->GetNormProjParm(SRS_PP_STANDARD_PARALLEL_2, 0.0);
-        double dfCenterLat =
-            poSRS->GetNormProjParm(SRS_PP_LATITUDE_OF_ORIGIN, 0.0);
-        double dfCenterLong =
-            poSRS->GetNormProjParm(SRS_PP_CENTRAL_MERIDIAN, 0.0);
-        double dfFalseEasting =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_EASTING, 0.0);
-        double dfFalseNorthing =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_NORTHING, 0.0);
-
-        pszProjectionOGCBP = "LE";
-        poProjectionDict->Add("StandardParallelOne", dfStdP1, TRUE);
-        poProjectionDict->Add("StandardParallelTwo", dfStdP2, TRUE);
-        poProjectionDict->Add("OriginLatitude", dfCenterLat, TRUE);
-        poProjectionDict->Add("CentralMeridian", dfCenterLong, TRUE);
-        poProjectionDict->Add("FalseEasting", dfFalseEasting, TRUE);
-        poProjectionDict->Add("FalseNorthing", dfFalseNorthing, TRUE);
-    }
-
-    else if (EQUAL(pszProjection, SRS_PT_MERCATOR_1SP))
-    {
-        double dfCenterLong =
-            poSRS->GetNormProjParm(SRS_PP_CENTRAL_MERIDIAN, 0.0);
-        double dfCenterLat =
-            poSRS->GetNormProjParm(SRS_PP_LATITUDE_OF_ORIGIN, 0.0);
-        double dfScale = poSRS->GetNormProjParm(SRS_PP_SCALE_FACTOR, 1.0);
-        double dfFalseEasting =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_EASTING, 0.0);
-        double dfFalseNorthing =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_NORTHING, 0.0);
-
-        pszProjectionOGCBP = "MC";
-        poProjectionDict->Add("CentralMeridian", dfCenterLong, TRUE);
-        poProjectionDict->Add("OriginLatitude", dfCenterLat, TRUE);
-        poProjectionDict->Add("ScaleFactor", dfScale, TRUE);
-        poProjectionDict->Add("FalseEasting", dfFalseEasting, TRUE);
-        poProjectionDict->Add("FalseNorthing", dfFalseNorthing, TRUE);
-    }
-
-#ifdef not_supported
-    else if (EQUAL(pszProjection, SRS_PT_MERCATOR_2SP))
-    {
-        double dfStdP1 =
-            poSRS->GetNormProjParm(SRS_PP_STANDARD_PARALLEL_1, 0.0);
-        double dfCenterLong =
-            poSRS->GetNormProjParm(SRS_PP_CENTRAL_MERIDIAN, 0.0);
-        double dfFalseEasting =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_EASTING, 0.0);
-        double dfFalseNorthing =
-            poSRS->GetNormProjParm(SRS_PP_FALSE_NORTHING, 0.0);
-
-        pszProjectionOGCBP = "MC";
-        poProjectionDict->Add("StandardParallelOne", dfStdP1, TRUE);
-        poProjectionDict->Add("CentralMeridian", dfCenterLong, TRUE);
-        poProjectionDict->Add("FalseEasting", dfFalseEasting, TRUE);
-        poProjectionDict->Add("FalseNorthing", dfFalseNorthing, TRUE);
-    }
-#endif
-
-    else
-    {
-        CPLError(CE_Warning, CPLE_NotSupported,
-                 "Unhandled projection type (%s) for now", pszProjection);
-    }
-
-    poProjectionDict->Add("ProjectionType", pszProjectionOGCBP);
-
-    if (poSRS->IsProjected())
-    {
-        const char *pszUnitName = nullptr;
-        double dfLinearUnits = poSRS->GetLinearUnits(&pszUnitName);
-        if (dfLinearUnits == 1.0)
-            poProjectionDict->Add("Units", "M");
-        else if (dfLinearUnits == 0.3048)
-            poProjectionDict->Add("Units", "FT");
-    }
-
-    return poProjectionDict;
-}
-
-/************************************************************************/
-/*                           WriteSRS_OGC_BP()                          */
-/************************************************************************/
-
-GDALPDFObjectNum GDALPDFBaseWriter::WriteSRS_OGC_BP(GDALDataset *poSrcDS,
-                                                    double dfUserUnit,
-                                                    const char *pszNEATLINE,
-                                                    PDFMargins *psMargins)
-{
-    int nWidth = poSrcDS->GetRasterXSize();
-    int nHeight = poSrcDS->GetRasterYSize();
-    const char *pszWKT = poSrcDS->GetProjectionRef();
-    double adfGeoTransform[6];
-
-    int bHasGT = (poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None);
-    int nGCPCount = poSrcDS->GetGCPCount();
-    const GDAL_GCP *pasGCPList =
-        (nGCPCount >= 4) ? poSrcDS->GetGCPs() : nullptr;
-    if (pasGCPList != nullptr)
-        pszWKT = poSrcDS->GetGCPProjection();
-
-    if (!bHasGT && pasGCPList == nullptr)
-        return GDALPDFObjectNum();
-
-    if (pszWKT == nullptr || EQUAL(pszWKT, ""))
-        return GDALPDFObjectNum();
-
-    if (!bHasGT)
-    {
-        if (!GDALGCPsToGeoTransform(nGCPCount, pasGCPList, adfGeoTransform,
-                                    FALSE))
-        {
-            CPLDebug("PDF", "Could not compute GT with exact match. Writing "
-                            "Registration then");
-        }
-        else
-        {
-            bHasGT = TRUE;
-        }
-    }
-
-    OGRSpatialReferenceH hSRS = OSRNewSpatialReference(pszWKT);
-    if (hSRS == nullptr)
-        return GDALPDFObjectNum();
-    OSRSetAxisMappingStrategy(hSRS, OAMS_TRADITIONAL_GIS_ORDER);
-
-    const OGRSpatialReference *poSRS = OGRSpatialReference::FromHandle(hSRS);
-    GDALPDFDictionaryRW *poProjectionDict =
-        GDALPDFBuildOGC_BP_Projection(poSRS);
-    if (poProjectionDict == nullptr)
-    {
-        OSRDestroySpatialReference(hSRS);
-        return GDALPDFObjectNum();
-    }
-
-    GDALPDFArrayRW *poNeatLineArray = nullptr;
-
-    if (pszNEATLINE == nullptr)
-        pszNEATLINE = poSrcDS->GetMetadataItem("NEATLINE");
-    if (bHasGT && pszNEATLINE != nullptr && !EQUAL(pszNEATLINE, "NO") &&
-        pszNEATLINE[0] != '\0')
-    {
-        OGRGeometry *poGeom = nullptr;
-        OGRGeometryFactory::createFromWkt(pszNEATLINE, nullptr, &poGeom);
-        if (poGeom != nullptr &&
-            wkbFlatten(poGeom->getGeometryType()) == wkbPolygon)
-        {
-            OGRLineString *poLS = poGeom->toPolygon()->getExteriorRing();
-            double adfGeoTransformInv[6];
-            if (poLS != nullptr && poLS->getNumPoints() >= 5 &&
-                GDALInvGeoTransform(adfGeoTransform, adfGeoTransformInv))
-            {
-                poNeatLineArray = new GDALPDFArrayRW();
-
-                // FIXME : ensure that they are in clockwise order ?
-                for (int i = 0; i < poLS->getNumPoints() - 1; i++)
-                {
-                    double X = poLS->getX(i);
-                    double Y = poLS->getY(i);
-                    double x = adfGeoTransformInv[0] +
-                               X * adfGeoTransformInv[1] +
-                               Y * adfGeoTransformInv[2];
-                    double y = adfGeoTransformInv[3] +
-                               X * adfGeoTransformInv[4] +
-                               Y * adfGeoTransformInv[5];
-                    poNeatLineArray->Add(x / dfUserUnit + psMargins->nLeft,
-                                         TRUE);
-                    poNeatLineArray->Add(
-                        (nHeight - y) / dfUserUnit + psMargins->nBottom, TRUE);
-                }
-            }
-        }
-        delete poGeom;
-    }
-
-    if (pszNEATLINE != nullptr && EQUAL(pszNEATLINE, "NO"))
-    {
-        // Do nothing
-    }
-    else if (pasGCPList && poNeatLineArray == nullptr)
-    {
-        if (nGCPCount == 4)
-        {
-            int iUL = 0;
-            int iUR = 0;
-            int iLR = 0;
-            int iLL = 0;
-            GDALPDFFind4Corners(pasGCPList, iUL, iUR, iLR, iLL);
-
-            double adfNL[8];
-            adfNL[0] =
-                pasGCPList[iUL].dfGCPPixel / dfUserUnit + psMargins->nLeft;
-            adfNL[1] = (nHeight - pasGCPList[iUL].dfGCPLine) / dfUserUnit +
-                       psMargins->nBottom;
-            adfNL[2] =
-                pasGCPList[iLL].dfGCPPixel / dfUserUnit + psMargins->nLeft;
-            adfNL[3] = (nHeight - pasGCPList[iLL].dfGCPLine) / dfUserUnit +
-                       psMargins->nBottom;
-            adfNL[4] =
-                pasGCPList[iLR].dfGCPPixel / dfUserUnit + psMargins->nLeft;
-            adfNL[5] = (nHeight - pasGCPList[iLR].dfGCPLine) / dfUserUnit +
-                       psMargins->nBottom;
-            adfNL[6] =
-                pasGCPList[iUR].dfGCPPixel / dfUserUnit + psMargins->nLeft;
-            adfNL[7] = (nHeight - pasGCPList[iUR].dfGCPLine) / dfUserUnit +
-                       psMargins->nBottom;
-
-            poNeatLineArray = new GDALPDFArrayRW();
-            poNeatLineArray->Add(adfNL, 8, TRUE);
-        }
-        else
-        {
-            poNeatLineArray = new GDALPDFArrayRW();
-
-            // FIXME : ensure that they are in clockwise order ?
-            int i;
-            for (i = 0; i < nGCPCount; i++)
-            {
-                poNeatLineArray->Add(pasGCPList[i].dfGCPPixel / dfUserUnit +
-                                         psMargins->nLeft,
-                                     TRUE);
-                poNeatLineArray->Add((nHeight - pasGCPList[i].dfGCPLine) /
-                                             dfUserUnit +
-                                         psMargins->nBottom,
-                                     TRUE);
-            }
-        }
-    }
-    else if (poNeatLineArray == nullptr)
-    {
-        poNeatLineArray = new GDALPDFArrayRW();
-
-        poNeatLineArray->Add(0 / dfUserUnit + psMargins->nLeft, TRUE);
-        poNeatLineArray->Add((nHeight - 0) / dfUserUnit + psMargins->nBottom,
-                             TRUE);
-
-        poNeatLineArray->Add(0 / dfUserUnit + psMargins->nLeft, TRUE);
-        poNeatLineArray->Add(
-            (/*nHeight -nHeight*/ 0) / dfUserUnit + psMargins->nBottom, TRUE);
-
-        poNeatLineArray->Add(nWidth / dfUserUnit + psMargins->nLeft, TRUE);
-        poNeatLineArray->Add(
-            (/*nHeight -nHeight*/ 0) / dfUserUnit + psMargins->nBottom, TRUE);
-
-        poNeatLineArray->Add(nWidth / dfUserUnit + psMargins->nLeft, TRUE);
-        poNeatLineArray->Add((nHeight - 0) / dfUserUnit + psMargins->nBottom,
-                             TRUE);
-    }
-
-    auto nLGIDictId = AllocNewObject();
-    StartObj(nLGIDictId);
-    GDALPDFDictionaryRW oLGIDict;
-    oLGIDict.Add("Type", GDALPDFObjectRW::CreateName("LGIDict"))
-        .Add("Version", "2.1");
-    if (bHasGT)
-    {
-        double adfCTM[6];
-        double dfX1 = psMargins->nLeft;
-        double dfY2 = nHeight / dfUserUnit + psMargins->nBottom;
-
-        adfCTM[0] = adfGeoTransform[1] * dfUserUnit;
-        adfCTM[1] = adfGeoTransform[2] * dfUserUnit;
-        adfCTM[2] = -adfGeoTransform[4] * dfUserUnit;
-        adfCTM[3] = -adfGeoTransform[5] * dfUserUnit;
-        adfCTM[4] = adfGeoTransform[0] - (adfCTM[0] * dfX1 + adfCTM[2] * dfY2);
-        adfCTM[5] = adfGeoTransform[3] - (adfCTM[1] * dfX1 + adfCTM[3] * dfY2);
-
-        oLGIDict.Add("CTM", &((new GDALPDFArrayRW())->Add(adfCTM, 6, TRUE)));
-    }
-    else
-    {
-        GDALPDFArrayRW *poRegistrationArray = new GDALPDFArrayRW();
-        int i;
-        for (i = 0; i < nGCPCount; i++)
-        {
-            GDALPDFArrayRW *poPTArray = new GDALPDFArrayRW();
-            poPTArray->Add(
-                pasGCPList[i].dfGCPPixel / dfUserUnit + psMargins->nLeft, TRUE);
-            poPTArray->Add((nHeight - pasGCPList[i].dfGCPLine) / dfUserUnit +
-                               psMargins->nBottom,
-                           TRUE);
-            poPTArray->Add(pasGCPList[i].dfGCPX, TRUE);
-            poPTArray->Add(pasGCPList[i].dfGCPY, TRUE);
-            poRegistrationArray->Add(poPTArray);
-        }
-        oLGIDict.Add("Registration", poRegistrationArray);
-    }
-    if (poNeatLineArray)
-    {
-        oLGIDict.Add("Neatline", poNeatLineArray);
-    }
-
-    const OGR_SRSNode *poNode = poSRS->GetRoot();
-    if (poNode != nullptr)
-        poNode = poNode->GetChild(0);
-    const char *pszDescription = nullptr;
-    if (poNode != nullptr)
-        pszDescription = poNode->GetValue();
-    if (pszDescription)
-    {
-        oLGIDict.Add("Description", pszDescription);
-    }
-
-    oLGIDict.Add("Projection", poProjectionDict);
-
-    /* GDAL extension */
-    if (CPLTestBool(CPLGetConfigOption("GDAL_PDF_OGC_BP_WRITE_WKT", "TRUE")))
-        poProjectionDict->Add("WKT", pszWKT);
-
-    VSIFPrintfL(m_fp, "%s\n", oLGIDict.Serialize().c_str());
-    EndObj();
-
-    OSRDestroySpatialReference(hSRS);
-
-    return nLGIDictId;
 }
 
 /************************************************************************/
@@ -1714,7 +1083,7 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteOCG(const char *pszLayerName,
     oOCGDesc.nParentId = nParentId;
     oOCGDesc.osLayerName = pszLayerName;
 
-    m_asOCGs.push_back(oOCGDesc);
+    m_asOCGs.push_back(std::move(oOCGDesc));
 
     StartObj(nOCGId);
     {
@@ -1758,18 +1127,11 @@ bool GDALPDFWriter::StartPage(GDALDataset *poClippingDS, double dfDPI,
 
     const bool bISO32000 =
         EQUAL(pszGEO_ENCODING, "ISO32000") || EQUAL(pszGEO_ENCODING, "BOTH");
-    const bool bOGC_BP =
-        EQUAL(pszGEO_ENCODING, "OGC_BP") || EQUAL(pszGEO_ENCODING, "BOTH");
 
     GDALPDFObjectNum nViewportId;
     if (bISO32000)
         nViewportId = WriteSRS_ISO32000(poClippingDS, dfUserUnit, pszNEATLINE,
                                         psMargins, TRUE);
-
-    GDALPDFObjectNum nLGIDictId;
-    if (bOGC_BP)
-        nLGIDictId =
-            WriteSRS_OGC_BP(poClippingDS, dfUserUnit, pszNEATLINE, psMargins);
 
     StartObj(nPageId);
     GDALPDFDictionaryRW oDictPage;
@@ -1798,10 +1160,6 @@ bool GDALPDFWriter::StartPage(GDALDataset *poClippingDS, double dfDPI,
     if (nViewportId.toBool())
     {
         oDictPage.Add("VP", &((new GDALPDFArrayRW())->Add(nViewportId, 0)));
-    }
-    if (nLGIDictId.toBool())
-    {
-        oDictPage.Add("LGIDict", nLGIDictId, 0);
     }
 
 #ifndef HACK_TO_GENERATE_OCMD
@@ -1949,7 +1307,7 @@ bool GDALPDFWriter::WriteImagery(GDALDataset *poDS, const char *pszLayerName,
         }
     }
 
-    oPageContext.asRasterDesc.push_back(oRasterDesc);
+    oPageContext.asRasterDesc.push_back(std::move(oRasterDesc));
 
     return true;
 }
@@ -1969,17 +1327,15 @@ bool GDALPDFWriter::WriteClippedImagery(
     GDALPDFRasterDesc oRasterDesc;
 
     /* Get clipping dataset bounding-box */
-    double adfClippingGeoTransform[6];
+    GDALGeoTransform clippingGT;
     GDALDataset *poClippingDS = oPageContext.poClippingDS;
-    poClippingDS->GetGeoTransform(adfClippingGeoTransform);
+    poClippingDS->GetGeoTransform(clippingGT);
     int nClippingWidth = poClippingDS->GetRasterXSize();
     int nClippingHeight = poClippingDS->GetRasterYSize();
-    double dfClippingMinX = adfClippingGeoTransform[0];
-    double dfClippingMaxX =
-        dfClippingMinX + nClippingWidth * adfClippingGeoTransform[1];
-    double dfClippingMaxY = adfClippingGeoTransform[3];
-    double dfClippingMinY =
-        dfClippingMaxY + nClippingHeight * adfClippingGeoTransform[5];
+    double dfClippingMinX = clippingGT[0];
+    double dfClippingMaxX = dfClippingMinX + nClippingWidth * clippingGT[1];
+    double dfClippingMaxY = clippingGT[3];
+    double dfClippingMinY = dfClippingMaxY + nClippingHeight * clippingGT[5];
 
     if (dfClippingMaxY < dfClippingMinY)
     {
@@ -1987,14 +1343,14 @@ bool GDALPDFWriter::WriteClippedImagery(
     }
 
     /* Get current dataset dataset bounding-box */
-    double adfGeoTransform[6];
-    poDS->GetGeoTransform(adfGeoTransform);
+    GDALGeoTransform gt;
+    poDS->GetGeoTransform(gt);
     int nWidth = poDS->GetRasterXSize();
     int nHeight = poDS->GetRasterYSize();
-    double dfRasterMinX = adfGeoTransform[0];
-    // double dfRasterMaxX = dfRasterMinX + nWidth * adfGeoTransform[1];
-    double dfRasterMaxY = adfGeoTransform[3];
-    double dfRasterMinY = dfRasterMaxY + nHeight * adfGeoTransform[5];
+    double dfRasterMinX = gt[0];
+    // double dfRasterMaxX = dfRasterMinX + nWidth * gt[1];
+    double dfRasterMaxY = gt[3];
+    double dfRasterMinY = dfRasterMaxY + nHeight * gt[5];
 
     if (dfRasterMaxY < dfRasterMinY)
     {
@@ -2031,12 +1387,10 @@ bool GDALPDFWriter::WriteClippedImagery(
             int nY = nBlockYOff * nBlockYSize;
 
             /* Compute extent of block to write */
-            double dfBlockMinX = adfGeoTransform[0] + nX * adfGeoTransform[1];
-            double dfBlockMaxX =
-                adfGeoTransform[0] + (nX + nReqWidth) * adfGeoTransform[1];
-            double dfBlockMinY =
-                adfGeoTransform[3] + (nY + nReqHeight) * adfGeoTransform[5];
-            double dfBlockMaxY = adfGeoTransform[3] + nY * adfGeoTransform[5];
+            double dfBlockMinX = gt[0] + nX * gt[1];
+            double dfBlockMaxX = gt[0] + (nX + nReqWidth) * gt[1];
+            double dfBlockMinY = gt[3] + (nY + nReqHeight) * gt[5];
+            double dfBlockMaxY = gt[3] + nY * gt[5];
 
             if (dfBlockMaxY < dfBlockMinY)
             {
@@ -2059,32 +1413,27 @@ bool GDALPDFWriter::WriteClippedImagery(
                 /* Re-compute (x,y,width,height) subwindow of current raster
                  * from */
                 /* the extent of the clipped block */
-                nX = static_cast<int>((dfIntersectMinX - dfRasterMinX) /
-                                          adfGeoTransform[1] +
+                nX = static_cast<int>((dfIntersectMinX - dfRasterMinX) / gt[1] +
                                       0.5);
-                if (adfGeoTransform[5] < 0)
-                    nY = static_cast<int>((dfRasterMaxY - dfIntersectMaxY) /
-                                              (-adfGeoTransform[5]) +
-                                          0.5);
+                if (gt[5] < 0)
+                    nY = static_cast<int>(
+                        (dfRasterMaxY - dfIntersectMaxY) / (-gt[5]) + 0.5);
                 else
-                    nY = static_cast<int>((dfIntersectMinY - dfRasterMinY) /
-                                              adfGeoTransform[5] +
-                                          0.5);
-                nReqWidth = static_cast<int>((dfIntersectMaxX - dfRasterMinX) /
-                                                 adfGeoTransform[1] +
-                                             0.5) -
-                            nX;
-                if (adfGeoTransform[5] < 0)
+                    nY = static_cast<int>(
+                        (dfIntersectMinY - dfRasterMinY) / gt[5] + 0.5);
+                nReqWidth =
+                    static_cast<int>((dfIntersectMaxX - dfRasterMinX) / gt[1] +
+                                     0.5) -
+                    nX;
+                if (gt[5] < 0)
                     nReqHeight =
-                        static_cast<int>((dfRasterMaxY - dfIntersectMinY) /
-                                             (-adfGeoTransform[5]) +
-                                         0.5) -
+                        static_cast<int>(
+                            (dfRasterMaxY - dfIntersectMinY) / (-gt[5]) + 0.5) -
                         nY;
                 else
                     nReqHeight =
-                        static_cast<int>((dfIntersectMaxY - dfRasterMinY) /
-                                             adfGeoTransform[5] +
-                                         0.5) -
+                        static_cast<int>(
+                            (dfIntersectMaxY - dfRasterMinY) / gt[5] + 0.5) -
                         nY;
 
                 if (nReqWidth > 0 && nReqHeight > 0)
@@ -2106,29 +1455,26 @@ bool GDALPDFWriter::WriteClippedImagery(
                     double dfXInClippingUnits, dfYInClippingUnits,
                         dfReqWidthInClippingUnits, dfReqHeightInClippingUnits;
 
-                    dfXInClippingUnits = (dfIntersectMinX - dfClippingMinX) /
-                                         adfClippingGeoTransform[1];
-                    if (adfClippingGeoTransform[5] < 0)
+                    dfXInClippingUnits =
+                        (dfIntersectMinX - dfClippingMinX) / clippingGT[1];
+                    if (clippingGT[5] < 0)
                         dfYInClippingUnits =
                             (dfClippingMaxY - dfIntersectMaxY) /
-                            (-adfClippingGeoTransform[5]);
+                            (-clippingGT[5]);
                     else
                         dfYInClippingUnits =
-                            (dfIntersectMinY - dfClippingMinY) /
-                            adfClippingGeoTransform[5];
+                            (dfIntersectMinY - dfClippingMinY) / clippingGT[5];
                     dfReqWidthInClippingUnits =
-                        (dfIntersectMaxX - dfClippingMinX) /
-                            adfClippingGeoTransform[1] -
+                        (dfIntersectMaxX - dfClippingMinX) / clippingGT[1] -
                         dfXInClippingUnits;
-                    if (adfClippingGeoTransform[5] < 0)
+                    if (clippingGT[5] < 0)
                         dfReqHeightInClippingUnits =
                             (dfClippingMaxY - dfIntersectMinY) /
-                                (-adfClippingGeoTransform[5]) -
+                                (-clippingGT[5]) -
                             dfYInClippingUnits;
                     else
                         dfReqHeightInClippingUnits =
-                            (dfIntersectMaxY - dfClippingMinY) /
-                                adfClippingGeoTransform[5] -
+                            (dfIntersectMaxY - dfClippingMinY) / clippingGT[5] -
                             dfYInClippingUnits;
 
                     GDALPDFImageDesc oImageDesc;
@@ -2151,7 +1497,7 @@ bool GDALPDFWriter::WriteClippedImagery(
         }
     }
 
-    oPageContext.asRasterDesc.push_back(oRasterDesc);
+    oPageContext.asRasterDesc.push_back(std::move(oRasterDesc));
 
     return true;
 }
@@ -2270,8 +1616,8 @@ int GDALPDFWriter::WriteOGRLayer(GDALDatasetH hDS, int iLayer,
                                  int bWriteOGRAttributes, int &iObj)
 {
     GDALDataset *poClippingDS = oPageContext.poClippingDS;
-    double adfGeoTransform[6];
-    if (poClippingDS->GetGeoTransform(adfGeoTransform) != CE_None)
+    GDALGeoTransform gt;
+    if (poClippingDS->GetGeoTransform(gt) != CE_None)
         return FALSE;
 
     GDALPDFLayerDesc osVectorDesc =
@@ -2319,12 +1665,10 @@ int GDALPDFWriter::WriteOGRLayer(GDALDatasetH hDS, int iLayer,
 
     if (hCT == nullptr)
     {
-        double dfXMin = adfGeoTransform[0];
-        double dfYMin = adfGeoTransform[3] +
-                        poClippingDS->GetRasterYSize() * adfGeoTransform[5];
-        double dfXMax = adfGeoTransform[0] +
-                        poClippingDS->GetRasterXSize() * adfGeoTransform[1];
-        double dfYMax = adfGeoTransform[3];
+        double dfXMin = gt[0];
+        double dfYMin = gt[3] + poClippingDS->GetRasterYSize() * gt[5];
+        double dfXMax = gt[0] + poClippingDS->GetRasterXSize() * gt[1];
+        double dfYMax = gt[3];
         OGR_L_SetSpatialFilterRect(hLyr, dfXMin, dfYMin, dfXMax, dfYMax);
     }
 
@@ -3336,17 +2680,15 @@ int GDALPDFWriter::WriteOGRFeature(GDALPDFLayerDesc &osVectorDesc,
     GDALDataset *const poClippingDS = oPageContext.poClippingDS;
     const int nHeight = poClippingDS->GetRasterYSize();
     const double dfUserUnit = oPageContext.dfDPI * USER_UNIT_IN_INCH;
-    double adfGeoTransform[6];
-    poClippingDS->GetGeoTransform(adfGeoTransform);
+    GDALGeoTransform gt;
+    poClippingDS->GetGeoTransform(gt);
 
     double adfMatrix[4];
-    adfMatrix[0] = -adfGeoTransform[0] / (adfGeoTransform[1] * dfUserUnit) +
-                   oPageContext.sMargins.nLeft;
-    adfMatrix[1] = 1.0 / (adfGeoTransform[1] * dfUserUnit);
-    adfMatrix[2] = -(adfGeoTransform[3] + adfGeoTransform[5] * nHeight) /
-                       (-adfGeoTransform[5] * dfUserUnit) +
+    adfMatrix[0] = -gt[0] / (gt[1] * dfUserUnit) + oPageContext.sMargins.nLeft;
+    adfMatrix[1] = 1.0 / (gt[1] * dfUserUnit);
+    adfMatrix[2] = -(gt[3] + gt[5] * nHeight) / (-gt[5] * dfUserUnit) +
                    oPageContext.sMargins.nBottom;
-    adfMatrix[3] = 1.0 / (-adfGeoTransform[5] * dfUserUnit);
+    adfMatrix[3] = 1.0 / (-gt[5] * dfUserUnit);
 
     OGRGeometryH hGeom = OGR_F_GetGeometryRef(hFeat);
     if (hGeom == nullptr)
@@ -3365,14 +2707,10 @@ int GDALPDFWriter::WriteOGRFeature(GDALPDFLayerDesc &osVectorDesc,
         }
 
         OGREnvelope sRasterEnvelope;
-        sRasterEnvelope.MinX = adfGeoTransform[0];
-        sRasterEnvelope.MinY =
-            adfGeoTransform[3] +
-            poClippingDS->GetRasterYSize() * adfGeoTransform[5];
-        sRasterEnvelope.MaxX =
-            adfGeoTransform[0] +
-            poClippingDS->GetRasterXSize() * adfGeoTransform[1];
-        sRasterEnvelope.MaxY = adfGeoTransform[3];
+        sRasterEnvelope.MinX = gt[0];
+        sRasterEnvelope.MinY = gt[3] + poClippingDS->GetRasterYSize() * gt[5];
+        sRasterEnvelope.MaxX = gt[0] + poClippingDS->GetRasterXSize() * gt[1];
+        sRasterEnvelope.MaxY = gt[3];
 
         // Check that the reprojected geometry intersects the raster envelope.
         OGR_G_GetEnvelope(hGeom, &sEnvelope);
@@ -3521,7 +2859,7 @@ int GDALPDFWriter::WriteOGRFeature(GDALPDFLayerDesc &osVectorDesc,
     iObj++;
 
     osVectorDesc.aUserPropertiesIds.push_back(nFeatureUserProperties);
-    osVectorDesc.aFeatureNames.push_back(osFeatureName);
+    osVectorDesc.aFeatureNames.push_back(std::move(osFeatureName));
 
     return TRUE;
 }
@@ -4744,7 +4082,7 @@ static int GDALPDFGetJPEGQuality(char **papszOptions)
 class GDALPDFClippingDataset final : public GDALDataset
 {
     GDALDataset *poSrcDS = nullptr;
-    double adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
 
     CPL_DISALLOW_COPY_ASSIGN(GDALPDFClippingDataset)
 
@@ -4752,34 +4090,33 @@ class GDALPDFClippingDataset final : public GDALDataset
     GDALPDFClippingDataset(GDALDataset *poSrcDSIn, double adfClippingExtent[4])
         : poSrcDS(poSrcDSIn)
     {
-        double adfSrcGeoTransform[6];
-        poSrcDS->GetGeoTransform(adfSrcGeoTransform);
-        adfGeoTransform[0] = adfClippingExtent[0];
-        adfGeoTransform[1] = adfSrcGeoTransform[1];
-        adfGeoTransform[2] = 0.0;
-        adfGeoTransform[3] = adfSrcGeoTransform[5] < 0 ? adfClippingExtent[3]
-                                                       : adfClippingExtent[1];
-        adfGeoTransform[4] = 0.0;
-        adfGeoTransform[5] = adfSrcGeoTransform[5];
-        nRasterXSize =
-            static_cast<int>((adfClippingExtent[2] - adfClippingExtent[0]) /
-                             adfSrcGeoTransform[1]);
-        nRasterYSize =
-            static_cast<int>((adfClippingExtent[3] - adfClippingExtent[1]) /
-                             fabs(adfSrcGeoTransform[5]));
+        GDALGeoTransform srcGT;
+        poSrcDS->GetGeoTransform(srcGT);
+        m_gt[0] = adfClippingExtent[0];
+        m_gt[1] = srcGT[1];
+        m_gt[2] = 0.0;
+        m_gt[3] = srcGT[5] < 0 ? adfClippingExtent[3] : adfClippingExtent[1];
+        m_gt[4] = 0.0;
+        m_gt[5] = srcGT[5];
+        nRasterXSize = static_cast<int>(
+            (adfClippingExtent[2] - adfClippingExtent[0]) / srcGT[1]);
+        nRasterYSize = static_cast<int>(
+            (adfClippingExtent[3] - adfClippingExtent[1]) / fabs(srcGT[5]));
     }
 
-    virtual CPLErr GetGeoTransform(double *padfGeoTransform) override
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override
     {
-        memcpy(padfGeoTransform, adfGeoTransform, 6 * sizeof(double));
+        gt = m_gt;
         return CE_None;
     }
 
-    virtual const OGRSpatialReference *GetSpatialRef() const override
-    {
-        return poSrcDS->GetSpatialRef();
-    }
+    const OGRSpatialReference *GetSpatialRef() const override;
 };
+
+const OGRSpatialReference *GDALPDFClippingDataset::GetSpatialRef() const
+{
+    return poSrcDS->GetSpatialRef();
+}
 
 /************************************************************************/
 /*                          GDALPDFCreateCopy()                         */
@@ -4790,16 +4127,20 @@ GDALDataset *GDALPDFCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
                                GDALProgressFunc pfnProgress,
                                void *pProgressData)
 {
-    int nBands = poSrcDS->GetRasterCount();
-    int nWidth = poSrcDS->GetRasterXSize();
-    int nHeight = poSrcDS->GetRasterYSize();
-
-    if (!pfnProgress(0.0, nullptr, pProgressData))
-        return nullptr;
+    const int nBands = poSrcDS->GetRasterCount();
+    const int nWidth = poSrcDS->GetRasterXSize();
+    const int nHeight = poSrcDS->GetRasterYSize();
 
     /* -------------------------------------------------------------------- */
     /*      Some some rudimentary checks                                    */
     /* -------------------------------------------------------------------- */
+    if (nWidth == 0 || nHeight == 0)
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "nWidth == 0 || nHeight == 0 not supported");
+        return nullptr;
+    }
+
     if (nBands != 1 && nBands != 3 && nBands != 4)
     {
         CPLError(CE_Failure, CPLE_NotSupported,
@@ -4912,6 +4253,20 @@ GDALDataset *GDALPDFCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 
     const char *pszGEO_ENCODING =
         CSLFetchNameValueDef(papszOptions, "GEO_ENCODING", "ISO32000");
+    if (EQUAL(pszGEO_ENCODING, "OGC_BP"))
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "GEO_ENCODING=OGC_BP is no longer supported. Switch to using "
+                 "ISO32000");
+        return nullptr;
+    }
+    else if (EQUAL(pszGEO_ENCODING, "BOTH"))
+    {
+        CPLError(CE_Warning, CPLE_NotSupported,
+                 "GEO_ENCODING=BOTH is no longer strictly supported. This now "
+                 "fallbacks to ISO32000");
+        pszGEO_ENCODING = "ISO32000";
+    }
 
     const char *pszXMP = CSLFetchNameValue(papszOptions, "XMP");
 
@@ -5061,10 +4416,10 @@ GDALDataset *GDALPDFCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 
             if (bUseClippingExtent)
             {
-                double adfGeoTransform[6];
-                if (poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None)
+                GDALGeoTransform gt;
+                if (poSrcDS->GetGeoTransform(gt) == CE_None)
                 {
-                    if (adfGeoTransform[2] != 0.0 || adfGeoTransform[4] != 0.0)
+                    if (gt[2] != 0.0 || gt[4] != 0.0)
                     {
                         CPLError(CE_Warning, CPLE_AppDefined,
                                  "Cannot use CLIPPING_EXTENT because main "
@@ -5116,6 +4471,9 @@ GDALDataset *GDALPDFCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     const char *pszJavascript = CSLFetchNameValue(papszOptions, "JAVASCRIPT");
     const char *pszJavascriptFile =
         CSLFetchNameValue(papszOptions, "JAVASCRIPT_FILE");
+
+    if (!pfnProgress(0.0, nullptr, pProgressData))
+        return nullptr;
 
     /* -------------------------------------------------------------------- */
     /*      Create file.                                                    */
@@ -5170,10 +4528,10 @@ GDALDataset *GDALPDFCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     const char *pszClippingProjectionRef = poSrcDS->GetProjectionRef();
     if (CSLCount(papszExtraRasters) != 0)
     {
-        double adfGeoTransform[6];
-        if (poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None)
+        GDALGeoTransform gt;
+        if (poSrcDS->GetGeoTransform(gt) == CE_None)
         {
-            if (adfGeoTransform[2] != 0.0 || adfGeoTransform[4] != 0.0)
+            if (gt[2] != 0.0 || gt[4] != 0.0)
             {
                 CPLError(CE_Warning, CPLE_AppDefined,
                          "Cannot use EXTRA_RASTERS because main raster has a "
@@ -5206,11 +4564,11 @@ GDALDataset *GDALPDFCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
             nullptr, nullptr, nullptr));
         if (poDS != nullptr)
         {
-            double adfGeoTransform[6];
+            GDALGeoTransform gt;
             int bUseRaster = TRUE;
-            if (poDS->GetGeoTransform(adfGeoTransform) == CE_None)
+            if (poDS->GetGeoTransform(gt) == CE_None)
             {
-                if (adfGeoTransform[2] != 0.0 || adfGeoTransform[4] != 0.0)
+                if (gt[2] != 0.0 || gt[4] != 0.0)
                 {
                     CPLError(
                         CE_Warning, CPLE_AppDefined,
@@ -5311,10 +4669,10 @@ GDALDataset *GDALPDFCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         poDS->SetMetadata(papszMD);
         if (EQUAL(pszGEO_ENCODING, "NONE"))
         {
-            double adfGeoTransform[6];
-            if (poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None)
+            GDALGeoTransform gt;
+            if (poSrcDS->GetGeoTransform(gt) == CE_None)
             {
-                poDS->SetGeoTransform(adfGeoTransform);
+                poDS->SetGeoTransform(gt);
             }
             const char *pszProjectionRef = poSrcDS->GetProjectionRef();
             if (pszProjectionRef != nullptr && pszProjectionRef[0] != '\0')

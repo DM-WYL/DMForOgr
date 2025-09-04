@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test InterpolateAtPoint functionality
@@ -16,7 +15,7 @@
 import gdaltest
 import pytest
 
-from osgeo import gdal
+from osgeo import gdal, osr
 
 ###############################################################################
 # Test some cases of InterpolateAtPoint
@@ -45,6 +44,25 @@ def test_interpolateatpoint_outofrange():
     assert res is None
     res = ds.GetRasterBand(1).InterpolateAtPoint(10, 1200, gdal.GRIORA_Bilinear)
     assert res is None
+    res = ds.GetRasterBand(1).InterpolateAtPoint(-1, 0, gdal.GRIORA_NearestNeighbour)
+    assert res is None
+    res = ds.GetRasterBand(1).InterpolateAtPoint(0, -0.5, gdal.GRIORA_NearestNeighbour)
+    assert res is None
+
+
+def test_interpolateatpoint_right_at_border():
+
+    ds = gdal.Open("data/byte.tif")
+    res = ds.GetRasterBand(1).InterpolateAtPoint(20, 20, gdal.GRIORA_NearestNeighbour)
+    assert res == pytest.approx(107.0, 1e-5)
+    res = ds.GetRasterBand(1).InterpolateAtPoint(18, 20, gdal.GRIORA_NearestNeighbour)
+    assert res == pytest.approx(99.0, 1e-5)
+    res = ds.GetRasterBand(1).InterpolateAtPoint(20, 18, gdal.GRIORA_NearestNeighbour)
+    assert res == pytest.approx(123.0, 1e-5)
+    res = ds.GetRasterBand(1).InterpolateAtPoint(20, 20, gdal.GRIORA_Bilinear)
+    assert res == pytest.approx(107.0, 1e-5)
+    res = ds.GetRasterBand(1).InterpolateAtPoint(20.1, 20.1, gdal.GRIORA_Bilinear)
+    assert res is None
 
 
 @gdaltest.disable_exceptions()
@@ -69,10 +87,13 @@ def test_interpolateatpoint_throw():
 
 def test_interpolateatpoint_2_bands():
 
+    gdaltest.importorskip_gdal_array()
+    np = pytest.importorskip("numpy")
+
     mem_ds = gdal.GetDriverByName("MEM").Create(
         "", xsize=2, ysize=2, bands=2, eType=gdal.GDT_Float32
     )
-    np = pytest.importorskip("numpy")
+
     # First band with values values
     raster_array_1 = np.array(([10.5, 1.3], [2.4, 3.8]))
     mem_ds.GetRasterBand(1).WriteArray(raster_array_1)
@@ -95,10 +116,12 @@ def test_interpolateatpoint_2_bands():
 
 def test_interpolateatpoint_bilinear_several_points():
 
+    gdaltest.importorskip_gdal_array()
+    np = pytest.importorskip("numpy")
+
     mem_ds = gdal.GetDriverByName("MEM").Create(
         "", xsize=3, ysize=2, bands=1, eType=gdal.GDT_Float32
     )
-    np = pytest.importorskip("numpy")
     raster_array_1 = np.array(([10.5, 1.3, 0.5], [2.4, 3.8, -1.0]))
     mem_ds.GetRasterBand(1).WriteArray(raster_array_1)
 
@@ -132,10 +155,12 @@ def test_interpolateatpoint_bilinear_several_points():
 
 def test_interpolateatpoint_cubicspline_several_points():
 
+    gdaltest.importorskip_gdal_array()
+    np = pytest.importorskip("numpy")
+
     mem_ds = gdal.GetDriverByName("MEM").Create(
         "", xsize=4, ysize=4, bands=1, eType=gdal.GDT_Float32
     )
-    np = pytest.importorskip("numpy")
     raster_array_1 = np.array(
         (
             [1.0, 2.0, 1.5, -0.3],
@@ -161,10 +186,12 @@ def test_interpolateatpoint_cubicspline_several_points():
 
 def test_interpolateatpoint_cubic_several_points():
 
+    gdaltest.importorskip_gdal_array()
+    np = pytest.importorskip("numpy")
+
     mem_ds = gdal.GetDriverByName("MEM").Create(
         "", xsize=4, ysize=4, bands=1, eType=gdal.GDT_Float32
     )
-    np = pytest.importorskip("numpy")
     raster_array_1 = np.array(
         (
             [1.0, 2.0, 1.5, -0.3],
@@ -197,10 +224,12 @@ def test_interpolateatpoint_cubic_several_points():
 
 def test_interpolateatpoint_at_borders():
 
+    gdaltest.importorskip_gdal_array()
+    np = pytest.importorskip("numpy")
+
     mem_ds = gdal.GetDriverByName("MEM").Create(
         "", xsize=6, ysize=5, bands=1, eType=gdal.GDT_Float32
     )
-    np = pytest.importorskip("numpy")
     raster_array_1 = np.array(
         (
             [1, 2, 4, 4, 5, 6],
@@ -354,3 +383,103 @@ def test_interpolateatpoint_big_complex():
     assert res == pytest.approx((182 + 122j), 1e-6)
     res = ds.GetRasterBand(1).InterpolateAtPoint(255.5, 63.5, gdal.GRIORA_Cubic)
     assert res == pytest.approx((182 + 122j), 1e-6)
+
+
+###############################################################################
+# Test InterpolateAtGeolocation
+
+
+def test_interpolateatgeolocation_1():
+
+    ds = gdal.Open("data/byte.tif")
+
+    gt = ds.GetGeoTransform()
+    X = gt[0] + 10 * gt[1]
+    Y = gt[3] + 12 * gt[5]
+
+    got_nearest = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        X, Y, None, gdal.GRIORA_NearestNeighbour
+    )
+    assert got_nearest == pytest.approx(173, 1e-6)
+    got_bilinear = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        X, Y, None, gdal.GRIORA_Bilinear
+    )
+    assert got_bilinear == pytest.approx(139.75, 1e-6)
+    got_cubic = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        X, Y, None, gdal.GRIORA_CubicSpline
+    )
+    assert got_cubic == pytest.approx(138.02, 1e-2)
+    got_cubic = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        X, Y, None, gdal.GRIORA_Cubic
+    )
+    assert got_cubic == pytest.approx(145.57, 1e-2)
+
+    wgs84_srs_auth_compliant = osr.SpatialReference()
+    wgs84_srs_auth_compliant.SetFromUserInput("WGS84")
+    wgs84_srs_auth_compliant.SetAxisMappingStrategy(osr.OAMS_AUTHORITY_COMPLIANT)
+    ct = osr.CoordinateTransformation(ds.GetSpatialRef(), wgs84_srs_auth_compliant)
+    wgs84_lat, wgs84_lon, _ = ct.TransformPoint(X, Y, 0)
+
+    got_nearest = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        wgs84_lat, wgs84_lon, wgs84_srs_auth_compliant, gdal.GRIORA_NearestNeighbour
+    )
+    assert got_nearest == pytest.approx(173, 1e-6)
+
+    wgs84_trad_gis_order = osr.SpatialReference()
+    wgs84_trad_gis_order.SetFromUserInput("WGS84")
+    wgs84_trad_gis_order.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    got_nearest = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        wgs84_lon, wgs84_lat, wgs84_trad_gis_order, gdal.GRIORA_NearestNeighbour
+    )
+    assert got_nearest == pytest.approx(173, 1e-6)
+
+    wgs84_lon_lat_srs = osr.SpatialReference()
+    wgs84_lon_lat_srs.SetFromUserInput("WGS84")
+    wgs84_lon_lat_srs.SetDataAxisToSRSAxisMapping([2, 1])
+    got_nearest = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        wgs84_lon, wgs84_lat, wgs84_lon_lat_srs, gdal.GRIORA_NearestNeighbour
+    )
+    assert got_nearest == pytest.approx(173, 1e-6)
+
+    wgs84_lat_lon_srs = osr.SpatialReference()
+    wgs84_lat_lon_srs.SetFromUserInput("WGS84")
+    wgs84_lat_lon_srs.SetDataAxisToSRSAxisMapping([1, 2])
+    got_nearest = ds.GetRasterBand(1).InterpolateAtGeolocation(
+        wgs84_lat, wgs84_lon, wgs84_lat_lon_srs, gdal.GRIORA_NearestNeighbour
+    )
+    assert got_nearest == pytest.approx(173, 1e-6)
+
+    X = gt[0] + -1 * gt[1]
+    Y = gt[3] + -1 * gt[5]
+    assert (
+        ds.GetRasterBand(1).InterpolateAtGeolocation(
+            X, Y, None, gdal.GRIORA_NearestNeighbour
+        )
+        is None
+    )
+
+    ungeoreferenced_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
+    with pytest.raises(Exception, match="Unable to compute a transformation"):
+        assert ungeoreferenced_ds.GetRasterBand(1).InterpolateAtGeolocation(
+            0, 0, None, gdal.GRIORA_NearestNeighbour
+        )
+
+
+def test_interpolateatgeolocation_corners():
+
+    gdaltest.importorskip_gdal_array()
+
+    ds = gdal.Open("data/byte.tif")
+    band = ds.GetRasterBand(1)
+    data = band.ReadAsArray()
+
+    values = {}
+    for loc, coord in gdal.Info(ds, format="json")["cornerCoordinates"].items():
+        values[loc] = band.InterpolateAtGeolocation(
+            coord[0], coord[1], None, gdal.GRIORA_NearestNeighbour
+        )
+
+    assert values["upperLeft"] == data[0, 0]
+    assert values["upperRight"] == data[0, -1]
+    assert values["lowerLeft"] == data[-1, 0]
+    assert values["lowerRight"] == data[-1, -1]

@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Implements Open FileGDB OGR driver.
@@ -28,7 +27,7 @@
 
 using namespace OpenFileGDB;
 
-std::string OFGDBGenerateUUID();
+std::string OFGDBGenerateUUID(bool bInit = false);
 
 int OGROpenFileGDBIsComparisonOp(int op);
 
@@ -219,9 +218,9 @@ class OGROpenFileGDBLayer final : public OGRLayer
                                                          : 1;
     }
 
-    const OGRField *GetMinMaxValue(OGRFieldDefn *poFieldDefn, int bIsMin,
+    const OGRField *GetMinMaxValue(const OGRFieldDefn *poFieldDefn, int bIsMin,
                                    int &eOutType);
-    int GetMinMaxSumCount(OGRFieldDefn *poFieldDefn, double &dfMin,
+    int GetMinMaxSumCount(const OGRFieldDefn *poFieldDefn, double &dfMin,
                           double &dfMax, double &dfSum, int &nCount);
     bool HasIndexForField(const char *pszFieldName);
     FileGDBIterator *BuildIndex(const char *pszFieldName, int bAscending,
@@ -240,7 +239,7 @@ class OGROpenFileGDBLayer final : public OGRLayer
     void CreateSpatialIndex();
     void CreateIndex(const std::string &osIdxName,
                      const std::string &osExpression);
-    bool Repack();
+    bool Repack(GDALProgressFunc pfnProgress, void *pProgressData);
     void RecomputeExtent();
 
     bool CheckFreeListConsistency();
@@ -251,14 +250,14 @@ class OGROpenFileGDBLayer final : public OGRLayer
 
     GDALDataset *GetDataset() override;
 
-    virtual const char *GetName() override
+    const char *GetName() const override
     {
         return m_osName.c_str();
     }
 
-    virtual OGRwkbGeometryType GetGeomType() override;
+    OGRwkbGeometryType GetGeomType() const override;
 
-    virtual const char *GetFIDColumn() override;
+    const char *GetFIDColumn() const override;
 
     virtual void ResetReading() override;
     virtual OGRFeature *GetNextFeature() override;
@@ -266,29 +265,20 @@ class OGROpenFileGDBLayer final : public OGRLayer
     virtual OGRErr SetNextByIndex(GIntBig nIndex) override;
 
     virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce = TRUE) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
+    OGRErr IGetExtent3D(int iGeomField, OGREnvelope3D *psExtent,
+                        bool bForce) override;
 
-    OGRErr GetExtent3D(int iGeomField, OGREnvelope3D *psExtent,
-                       int bForce) override;
+    const OGRFeatureDefn *GetLayerDefn() const override;
 
-    virtual OGRFeatureDefn *GetLayerDefn() override;
-
-    virtual void SetSpatialFilter(OGRGeometry *) override;
-
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
-    {
-        OGRLayer::SetSpatialFilter(iGeomField, poGeom);
-    }
+    virtual OGRErr ISetSpatialFilter(int iGeomField,
+                                     const OGRGeometry *poGeom) override;
 
     virtual OGRErr SetAttributeFilter(const char *pszFilter) override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRErr Rename(const char *pszNewName) override;
 
@@ -327,9 +317,7 @@ class OGROpenFileGDBGeomFieldDefn : public OGRGeomFieldDefn
     {
     }
 
-    ~OGROpenFileGDBGeomFieldDefn()
-    {
-    }
+    ~OGROpenFileGDBGeomFieldDefn() override;
 
     void UnsetLayer()
     {
@@ -376,9 +364,7 @@ class OGROpenFileGDBFeatureDefn : public OGRFeatureDefn
     {
     }
 
-    ~OGROpenFileGDBFeatureDefn()
-    {
-    }
+    ~OGROpenFileGDBFeatureDefn() override;
 
     void UnsetLayer()
     {
@@ -439,7 +425,7 @@ class OGROpenFileGDBDataSource final : public GDALDataset
     std::string m_osRasterLayerName{};
     std::map<int, int> m_oMapGDALBandToGDBBandId{};
     bool m_bHasGeoTransform = false;
-    std::array<double, 6> m_adfGeoTransform = {{0.0, 1.0, 0, 0.0, 0.0, 1.0}};
+    GDALGeoTransform m_gt{};
     int m_nShiftBlockX =
         0;  // Offset to add to FileGDB col_nbr field to convert from GDAL block numbering to FileGDB one
     int m_nShiftBlockY =
@@ -529,12 +515,17 @@ class OGROpenFileGDBDataSource final : public GDALDataset
 
     virtual CPLErr FlushCache(bool bAtClosing = false) override;
 
-    virtual int GetLayerCount() override
+    std::vector<std::unique_ptr<OGROpenFileGDBLayer>> &GetLayers()
+    {
+        return m_apoLayers;
+    }
+
+    int GetLayerCount() const override
     {
         return static_cast<int>(m_apoLayers.size());
     }
 
-    virtual OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
     virtual OGROpenFileGDBLayer *GetLayerByName(const char *pszName) override;
     bool IsLayerPrivate(int) const override;
 
@@ -543,7 +534,7 @@ class OGROpenFileGDBDataSource final : public GDALDataset
                                  const char *pszDialect) override;
     virtual void ReleaseResultSet(OGRLayer *poResultsSet) override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     OGRLayer *ICreateLayer(const char *pszName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,
@@ -567,7 +558,7 @@ class OGROpenFileGDBDataSource final : public GDALDataset
         return m_aosSubdatasets;
     }
 
-    CPLErr GetGeoTransform(double *padfGeoTransform) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 
     char **GetMetadata(const char *pszDomain = "") override;
@@ -689,12 +680,12 @@ class OGROpenFileGDBSingleFeatureLayer final : public OGRLayer
 
     virtual OGRFeature *GetNextFeature() override;
 
-    virtual OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    virtual int TestCapability(const char *) override
+    int TestCapability(const char *) const override
     {
         return FALSE;
     }
@@ -727,19 +718,7 @@ class GDALOpenFileGDBRasterAttributeTable final
     {
     }
 
-    GDALRasterAttributeTable *Clone() const override
-    {
-        auto poDS = std::make_unique<OGROpenFileGDBDataSource>();
-        GDALOpenInfo oOpenInfo(m_poDS->m_osDirName.c_str(), GA_ReadOnly);
-        bool bRetryFileGDBUnused = false;
-        if (!poDS->Open(&oOpenInfo, bRetryFileGDBUnused))
-            return nullptr;
-        auto poVatLayer = poDS->BuildLayerFromName(m_osVATTableName.c_str());
-        if (!poVatLayer)
-            return nullptr;
-        return new GDALOpenFileGDBRasterAttributeTable(
-            std::move(poDS), m_osVATTableName, std::move(poVatLayer));
-    }
+    GDALRasterAttributeTable *Clone() const override;
 
     int GetColumnCount() const override
     {
@@ -819,19 +798,22 @@ class GDALOpenFileGDBRasterAttributeTable final
         return poFeat->GetFieldAsDouble(iField);
     }
 
-    void SetValue(int, int, const char *) override
+    CPLErr SetValue(int, int, const char *) override
     {
         CPLError(CE_Failure, CPLE_NotSupported, "SetValue() not supported");
+        return CE_Failure;
     }
 
-    void SetValue(int, int, int) override
+    CPLErr SetValue(int, int, int) override
     {
         CPLError(CE_Failure, CPLE_NotSupported, "SetValue() not supported");
+        return CE_Failure;
     }
 
-    void SetValue(int, int, double) override
+    CPLErr SetValue(int, int, double) override
     {
         CPLError(CE_Failure, CPLE_NotSupported, "SetValue() not supported");
+        return CE_Failure;
     }
 
     int ChangesAreWrittenToFile() override

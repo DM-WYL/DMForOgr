@@ -426,6 +426,7 @@ static const char *const apszGMLGeometryElements[] = {
     "BoundingBox", /* ows:BoundingBox */
     "CompositeCurve",
     "CompositeSurface",
+    "Shell", /* CityGML 3 */
     "Curve",
     "GeometryCollection", /* OGR < 1.8.0 bug... */
     "LineString",
@@ -1182,6 +1183,14 @@ OGRErr GMLHandler::startElementFeatureAttribute(const char *pszName,
                        "RouteSegment") == 0)
                 bReadGeometry = strcmp(pszName, "Curve") == 0;
 
+            // AIXM special case: we want to read both horizontalProjection_location and
+            // horizontalProjection_linearExtent
+            else if (eAppSchemaType == APPSCHEMA_AIXM &&
+                     STARTS_WITH(poState->m_poFeature->GetClass()->GetName(),
+                                 "horizontalProjection_") == 0)
+                bReadGeometry =
+                    STARTS_WITH(pszName, "horizontalProjection_") == 0;
+
             /* For Inspire objects : the "main" geometry is in a <geometry>
              * element */
             else if (m_bAlreadyFoundGeometry)
@@ -1202,7 +1211,6 @@ OGRErr GMLHandler::startElementFeatureAttribute(const char *pszName,
                         poClass->GetGeometryPropertyCount();
                 }
             }
-
             else
             {
                 if (!poClass->IsSchemaLocked() &&
@@ -1239,13 +1247,16 @@ OGRErr GMLHandler::startElementFeatureAttribute(const char *pszName,
             return startElementGeometry(pszName, nLenName, attr);
         }
     }
-    else if (nLenName == 9 && strcmp(pszName, "boundedBy") == 0 &&
-             // We ignore the UseBBOX() flag for CityGML, since CityGML
-             // has elements like bldg:boundedBy, which are not a simple
-             // rectangular bbox. This is needed to read properly
-             // autotest/ogr/data/gml/citygml_lod2_713_5322.xml
-             // (this is a workaround of not being namespace aware)
-             (eAppSchemaType == APPSCHEMA_CITYGML || m_poReader->UseBBOX()))
+    else if (
+        (nLenName == 9 || nLenName == 8) &&
+        (strcmp(pszName, "boundedBy") == 0 ||
+         strcmp(pszName, "boundary") == 0) &&
+        // We ignore the UseBBOX() flag for CityGML, since CityGML
+        // has elements like bldg:boundedBy or 'boundary', which are not a simple
+        // rectangular bbox. This is needed to read properly
+        // autotest/ogr/data/gml/citygml_lod2_713_5322.xml
+        // (this is a workaround of not being namespace aware)
+        (eAppSchemaType == APPSCHEMA_CITYGML || m_poReader->UseBBOX()))
     {
         m_inBoundedByDepth = m_nDepth;
 
@@ -1546,13 +1557,12 @@ OGRErr GMLHandler::endElementBoundedByInFeature()
 }
 
 /************************************************************************/
-/*                       ParseAIXMElevationPoint()                      */
+/*                      ParseAIXMElevationProperties()                  */
 /************************************************************************/
 
-CPLXMLNode *GMLHandler::ParseAIXMElevationPoint(CPLXMLNode *psGML)
+void GMLHandler::ParseAIXMElevationProperties(const CPLXMLNode *psGML)
 {
-    const char *pszElevation = CPLGetXMLValue(psGML, "elevation", nullptr);
-    if (pszElevation)
+    if (const char *pszElevation = CPLGetXMLValue(psGML, "elevation", nullptr))
     {
         m_poReader->SetFeaturePropertyDirectly("elevation",
                                                CPLStrdup(pszElevation), -1);
@@ -1565,9 +1575,8 @@ CPLXMLNode *GMLHandler::ParseAIXMElevationPoint(CPLXMLNode *psGML)
         }
     }
 
-    const char *pszGeoidUndulation =
-        CPLGetXMLValue(psGML, "geoidUndulation", nullptr);
-    if (pszGeoidUndulation)
+    if (const char *pszGeoidUndulation =
+            CPLGetXMLValue(psGML, "geoidUndulation", nullptr))
     {
         m_poReader->SetFeaturePropertyDirectly(
             "geoidUndulation", CPLStrdup(pszGeoidUndulation), -1);
@@ -1579,6 +1588,36 @@ CPLXMLNode *GMLHandler::ParseAIXMElevationPoint(CPLXMLNode *psGML)
                 "geoidUndulation_uom", CPLStrdup(pszGeoidUndulationUnit), -1);
         }
     }
+
+    if (const char *pszVerticalDatum =
+            CPLGetXMLValue(psGML, "verticalDatum", nullptr))
+    {
+        m_poReader->SetFeaturePropertyDirectly("verticalDatum",
+                                               CPLStrdup(pszVerticalDatum), -1);
+    }
+
+    if (const char *pszVerticalAccuracy =
+            CPLGetXMLValue(psGML, "verticalAccuracy", nullptr))
+    {
+        m_poReader->SetFeaturePropertyDirectly(
+            "verticalAccuracy", CPLStrdup(pszVerticalAccuracy), -1);
+        const char *pszVerticalAccuracyUnit =
+            CPLGetXMLValue(psGML, "verticalAccuracy.uom", nullptr);
+        if (pszVerticalAccuracyUnit)
+        {
+            m_poReader->SetFeaturePropertyDirectly(
+                "verticalAccuracy_uom", CPLStrdup(pszVerticalAccuracyUnit), -1);
+        }
+    }
+}
+
+/************************************************************************/
+/*                       ParseAIXMElevationPoint()                      */
+/************************************************************************/
+
+CPLXMLNode *GMLHandler::ParseAIXMElevationPoint(CPLXMLNode *psGML)
+{
+    ParseAIXMElevationProperties(psGML);
 
     const char *pszPos = CPLGetXMLValue(psGML, "pos", nullptr);
     const char *pszCoordinates = CPLGetXMLValue(psGML, "coordinates", nullptr);
@@ -1690,6 +1729,13 @@ OGRErr GMLHandler::endElementGeometry()
             strcmp(psInterestNode->pszValue, "ElevatedPoint") == 0)
         {
             psInterestNode = ParseAIXMElevationPoint(psInterestNode);
+        }
+        else if (eAppSchemaType == APPSCHEMA_AIXM &&
+                 psInterestNode != nullptr &&
+                 (strcmp(psInterestNode->pszValue, "ElevatedCurve") == 0 ||
+                  strcmp(psInterestNode->pszValue, "ElevateSurface") == 0))
+        {
+            ParseAIXMElevationProperties(psInterestNode);
         }
         else if (eAppSchemaType == APPSCHEMA_MTKGML &&
                  psInterestNode != nullptr)
@@ -2085,6 +2131,7 @@ bool GMLHandler::IsGeometryElement(const char *pszElement)
 
     if (eAppSchemaType == APPSCHEMA_AIXM &&
         (strcmp(pszElement, "ElevatedPoint") == 0 ||
+         strcmp(pszElement, "ElevatedCurve") == 0 ||
          strcmp(pszElement, "ElevatedSurface") == 0))
     {
         return true;

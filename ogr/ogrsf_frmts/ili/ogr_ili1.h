@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  Interlis 1 Translator
  * Purpose:   Definition of classes for OGR Interlis 1 driver.
@@ -57,10 +56,11 @@ class OGRILI1Layer final : public OGRLayer
 
     GIntBig GetFeatureCount(int bForce = TRUE) override;
 
-    OGRErr ICreateFeature(OGRFeature *poFeature) override;
     int GeometryAppend(OGRGeometry *poGeometry);
 
-    OGRFeatureDefn *GetLayerDefn() override
+    using OGRLayer::GetLayerDefn;
+
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
@@ -70,10 +70,7 @@ class OGRILI1Layer final : public OGRLayer
         return oGeomFieldInfos;
     }
 
-    OGRErr CreateField(const OGRFieldDefn *poField,
-                       int bApproxOK = TRUE) override;
-
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     GDALDataset *GetDataset() override;
 
@@ -96,8 +93,6 @@ class OGRILI1DataSource final : public GDALDataset
   private:
     ImdReader *poImdReader;
     IILI1Reader *poReader;
-    VSILFILE *fpTransfer;
-    char *pszTopic;
     int nLayers;
     OGRILI1Layer **papoLayers;
 
@@ -108,26 +103,17 @@ class OGRILI1DataSource final : public GDALDataset
     virtual ~OGRILI1DataSource();
 
     int Open(const char *, char **papszOpenOptions, int bTestOpen);
-    int Create(const char *pszFile, char **papszOptions);
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return poReader ? poReader->GetLayerCount() : 0;
     }
 
-    OGRLayer *GetLayer(int) override;
+    using GDALDataset::GetLayer;
+    const OGRLayer *GetLayer(int) const override;
     OGRILI1Layer *GetLayerByName(const char *) override;
 
-    VSILFILE *GetTransferFile()
-    {
-        return fpTransfer;
-    }
-
-    OGRLayer *ICreateLayer(const char *pszName,
-                           const OGRGeomFieldDefn *poGeomFieldDefn,
-                           CSLConstList papszOptions) override;
-
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 };
 
 #endif /* OGR_ILI1_H_INCLUDED */

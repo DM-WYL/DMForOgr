@@ -1,5 +1,4 @@
 /**********************************************************************
- * $Id$
  *
  * Name:     cpl_string.h
  * Project:  CPL - Common Portability Library
@@ -265,10 +264,24 @@ char CPL_DLL *CPLForceToASCII(const char *pabyData, int nLen,
                               char chReplacementChar) CPL_WARN_UNUSED_RESULT;
 char CPL_DLL *CPLUTF8ForceToASCII(const char *pszStr, char chReplacementChar)
     CPL_WARN_UNUSED_RESULT;
-int CPL_DLL CPLStrlenUTF8(const char *pszUTF8Str);
+int CPL_DLL CPLStrlenUTF8(const char *pszUTF8Str)
+    /*! @cond Doxygen_Suppress */
+    CPL_WARN_DEPRECATED("Use CPLStrlenUTF8Ex() instead")
+    /*! @endcond */
+    ;
+size_t CPL_DLL CPLStrlenUTF8Ex(const char *pszUTF8Str);
 int CPL_DLL CPLCanRecode(const char *pszTestStr, const char *pszSrcEncoding,
                          const char *pszDstEncoding) CPL_WARN_UNUSED_RESULT;
 CPL_C_END
+
+#if defined(__cplusplus) && !defined(CPL_SUPRESS_CPLUSPLUS)
+
+extern "C++"
+{
+    std::string CPL_DLL CPLRemoveSQLComments(const std::string &osInput);
+}
+
+#endif
 
 /************************************************************************/
 /*                              CPLString                               */
@@ -409,6 +422,9 @@ extern "C++"
         CPLSTRING_METHOD_DLL CPLString &tolower(void);
 
         CPLSTRING_METHOD_DLL bool endsWith(const std::string &osStr) const;
+
+      private:
+        operator void *(void) = delete;
     };
 
 #undef CPLSTRING_CLASS_DLL
@@ -479,7 +495,20 @@ extern "C++"
         }
 
         CPLStringList &AddString(const char *pszNewString);
+        CPLStringList &AddString(const std::string &newString);
         CPLStringList &AddStringDirectly(char *pszNewString);
+
+        /** Add a string to the list */
+        void push_back(const char *pszNewString)
+        {
+            AddString(pszNewString);
+        }
+
+        /** Add a string to the list */
+        void push_back(const std::string &osStr)
+        {
+            AddString(osStr.c_str());
+        }
 
         CPLStringList &InsertString(int nInsertAtLineNo, const char *pszNewLine)
         {
@@ -618,12 +647,16 @@ extern "C++"
         {
             return std::vector<std::string>{begin(), end()};
         }
+
+      private:
+        operator void *(void) = delete;
     };
 
 #ifdef GDAL_COMPILATION
 
 #include <iterator>  // For std::input_iterator_tag
 #include <memory>
+#include <string_view>
 #include <utility>  // For std::pair
 
     /*! @cond Doxygen_Suppress */
@@ -648,6 +681,60 @@ extern "C++"
     {
 
     /*! @cond Doxygen_Suppress */
+
+    /** Equivalent of C++20 std::string::starts_with(const char*) */
+    template <class StringType>
+    inline bool starts_with(const StringType &str, const char *prefix)
+    {
+        const size_t prefixLen = strlen(prefix);
+        return str.size() >= prefixLen &&
+               str.compare(0, prefixLen, prefix, prefixLen) == 0;
+    }
+
+    /** Equivalent of C++20 std::string::starts_with(const std::string &) */
+    template <class StringType>
+    inline bool starts_with(const StringType &str, const std::string &prefix)
+    {
+        return str.size() >= prefix.size() &&
+               str.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    /** Equivalent of C++20 std::string::starts_with(std::string_view) */
+    template <class StringType>
+    inline bool starts_with(const StringType &str, std::string_view prefix)
+    {
+        return str.size() >= prefix.size() &&
+               str.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    /** Equivalent of C++20 std::string::ends_with(const char*) */
+    template <class StringType>
+    inline bool ends_with(const StringType &str, const char *suffix)
+    {
+        const size_t suffixLen = strlen(suffix);
+        return str.size() >= suffixLen &&
+               str.compare(str.size() - suffixLen, suffixLen, suffix,
+                           suffixLen) == 0;
+    }
+
+    /** Equivalent of C++20 std::string::ends_with(const std::string &) */
+    template <class StringType>
+    inline bool ends_with(const StringType &str, const std::string &suffix)
+    {
+        return str.size() >= suffix.size() &&
+               str.compare(str.size() - suffix.size(), suffix.size(), suffix) ==
+                   0;
+    }
+
+    /** Equivalent of C++20 std::string::ends_with(std::string_view) */
+    template <class StringType>
+    inline bool ends_with(const StringType &str, std::string_view suffix)
+    {
+        return str.size() >= suffix.size() &&
+               str.compare(str.size() - suffix.size(), suffix.size(), suffix) ==
+                   0;
+    }
+
     /** Iterator for a CSLConstList */
     struct CPL_DLL CSLIterator
     {

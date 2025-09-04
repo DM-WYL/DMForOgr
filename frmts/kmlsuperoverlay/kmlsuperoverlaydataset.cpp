@@ -27,6 +27,7 @@
 #include "cpl_string.h"
 #include "cpl_vsi.h"
 #include "gdal_frmts.h"
+#include "memdataset.h"
 #include "ogr_spatialref.h"
 #include "../vrt/gdal_vrt.h"
 #include "../vrt/vrtdataset.h"
@@ -38,8 +39,7 @@ static void GenerateTiles(const std::string &filename, CPL_UNUSED int zoom,
                           int rxsize, int rysize, CPL_UNUSED int ix,
                           CPL_UNUSED int iy, int rx, int ry, int dxsize,
                           int dysize, int bands, GDALDataset *poSrcDs,
-                          GDALDriver *poOutputTileDriver,
-                          GDALDriver *poMemDriver, bool isJpegDriver)
+                          GDALDriver *poOutputTileDriver, bool isJpegDriver)
 {
     GDALRasterBand *alphaBand = nullptr;
 
@@ -50,7 +50,7 @@ static void GenerateTiles(const std::string &filename, CPL_UNUSED int zoom,
         bands = 3;
 
     auto poTmpDataset = std::unique_ptr<GDALDataset>(
-        poMemDriver->Create("", dxsize, dysize, bands, GDT_Byte, nullptr));
+        MEMDataset::Create("", dxsize, dysize, bands, GDT_Byte, nullptr));
 
     if (!isJpegDriver)  // Jpeg dataset only has one or three bands
     {
@@ -168,15 +168,15 @@ static int GenerateRootKml(const char *filename, const char *kmlfilename,
     }
     int minlodpixels = tilesize / 2;
 
-    const char *tmpfilename = CPLGetBasename(kmlfilename);
-    if (pszOverlayName == nullptr)
-        pszOverlayName = tmpfilename;
+    const std::string osOverlayName = pszOverlayName
+                                          ? std::string(pszOverlayName)
+                                          : CPLGetBasenameSafe(kmlfilename);
 
     // If we have not written any features yet, output the layer's schema.
     VSIFPrintfL(fp, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     VSIFPrintfL(fp, "<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n");
     VSIFPrintfL(fp, "\t<Document>\n");
-    char *pszEncoded = CPLEscapeString(pszOverlayName, -1, CPLES_XML);
+    char *pszEncoded = CPLEscapeString(osOverlayName.c_str(), -1, CPLES_XML);
     VSIFPrintfL(fp, "\t\t<name>%s</name>\n", pszEncoded);
     CPLFree(pszEncoded);
     if (pszOverlayDescription == nullptr)
@@ -544,7 +544,10 @@ class KmlSuperOverlayDummyDataset final : public GDALDataset
 {
   public:
     KmlSuperOverlayDummyDataset() = default;
+    ~KmlSuperOverlayDummyDataset() override;
 };
+
+KmlSuperOverlayDummyDataset::~KmlSuperOverlayDummyDataset() = default;
 
 static GDALDataset *
 KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
@@ -562,14 +565,17 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 
     // correct the file and get the directory
     char *output_dir = nullptr;
+    std::string osFilename;
     if (pszFilename == nullptr)
     {
         output_dir = CPLGetCurrentDir();
-        pszFilename = CPLFormFilename(output_dir, "doc", "kml");
+        osFilename = CPLFormFilenameSafe(output_dir, "doc", "kml");
     }
     else
     {
-        const char *extension = CPLGetExtension(pszFilename);
+        osFilename = pszFilename;
+        const std::string osExtension = CPLGetExtensionSafe(pszFilename);
+        const char *extension = osExtension.c_str();
         if (!EQUAL(extension, "kml") && !EQUAL(extension, "kmz"))
         {
             CPLError(CE_Failure, CPLE_None,
@@ -581,13 +587,15 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
             isKmz = true;
         }
 
-        output_dir = CPLStrdup(CPLGetPath(pszFilename));
+        output_dir = CPLStrdup(CPLGetPathSafe(pszFilename).c_str());
         if (strcmp(output_dir, "") == 0)
         {
             CPLFree(output_dir);
             output_dir = CPLGetCurrentDir();
         }
     }
+    pszFilename = osFilename.c_str();
+
     CPLString outDir = output_dir ? output_dir : "";
     CPLFree(output_dir);
     output_dir = nullptr;
@@ -630,10 +638,7 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         }
     }
 
-    GDALDriver *poMemDriver = GetGDALDriverManager()->GetDriverByName("MEM");
-
-    if (poMemDriver == nullptr ||
-        (!isAutoDriver && poOutputTileDriver == nullptr) ||
+    if ((!isAutoDriver && poOutputTileDriver == nullptr) ||
         (isAutoDriver && (poJpegOutputTileDriver == nullptr ||
                           poPngOutputTileDriver == nullptr)))
     {
@@ -654,14 +659,14 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     double east = 0.0;
     double west = 0.0;
 
-    double adfGeoTransform[6];
+    GDALGeoTransform gt;
 
-    if (poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None)
+    if (poSrcDS->GetGeoTransform(gt) == CE_None)
     {
-        north = adfGeoTransform[3];
-        south = adfGeoTransform[3] + adfGeoTransform[5] * ysize;
-        east = adfGeoTransform[0] + adfGeoTransform[1] * xsize;
-        west = adfGeoTransform[0];
+        north = gt[3];
+        south = gt[3] + gt[5] * ysize;
+        east = gt[0] + gt[1] * xsize;
+        west = gt[0];
     }
 
     std::unique_ptr<OGRCoordinateTransformation> poTransform;
@@ -721,14 +726,12 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     std::vector<double> zoomypixels;
     for (int zoom = 0; zoom < maxzoom + 1; zoom++)
     {
-        zoomxpixels.push_back(adfGeoTransform[1] * pow(2.0, (maxzoom - zoom)));
-        // zoomypixels.push_back(abs(adfGeoTransform[5]) * pow(2.0, (maxzoom -
+        zoomxpixels.push_back(gt[1] * pow(2.0, (maxzoom - zoom)));
+        // zoomypixels.push_back(abs(gt[5]) * pow(2.0, (maxzoom -
         // zoom)));
-        zoomypixels.push_back(fabs(adfGeoTransform[5]) *
-                              pow(2.0, (maxzoom - zoom)));
+        zoomypixels.push_back(fabs(gt[5]) * pow(2.0, (maxzoom - zoom)));
     }
 
-    std::string tmpFileName;
     std::vector<std::string> fileVector;
     int nRet;
 
@@ -738,11 +741,12 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 
     if (isKmz)
     {
-        tmpFileName = CPLFormFilename(outDir, "doc.kml", nullptr);
+        std::string tmpFileName =
+            CPLFormFilenameSafe(outDir, "doc.kml", nullptr);
         nRet = GenerateRootKml(tmpFileName.c_str(), pszFilename, north, south,
                                east, west, static_cast<int>(tilexsize),
                                pszOverlayName, pszOverlayDescription);
-        fileVector.push_back(tmpFileName);
+        fileVector.push_back(std::move(tmpFileName));
     }
     else
     {
@@ -820,6 +824,9 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         currentTiles;
     std::pair<int, int> childXYKey;
     std::pair<int, int> parentXYKey;
+
+    const char *pszPathSep = VSIGetDirectorySeparator(outDir.c_str());
+
     for (zoom = maxzoom; zoom >= 0; --zoom)
     {
         const int rmaxxsize = tilexsize * (1 << (maxzoom - zoom));
@@ -832,7 +839,8 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         zoomStr << zoom;
 
         std::string zoomDir = outDir;
-        zoomDir += "/" + zoomStr.str();
+        zoomDir += pszPathSep;
+        zoomDir += zoomStr.str();
         VSIMkdir(zoomDir.c_str(), 0775);
 
         for (int ix = 0; ix < xloop; ix++)
@@ -845,8 +853,10 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
             ixStr << ix;
 
             zoomDir = outDir;
-            zoomDir += "/" + zoomStr.str();
-            zoomDir += "/" + ixStr.str();
+            zoomDir += pszPathSep;
+            zoomDir += zoomStr.str();
+            zoomDir += pszPathSep;
+            zoomDir += ixStr.str();
             VSIMkdir(zoomDir.c_str(), 0775);
 
             for (int iy = 0; iy < yloop; iy++)
@@ -891,7 +901,10 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
                 {
                     fileExt = ".png";
                 }
-                std::string filename = zoomDir + "/" + iyStr.str() + fileExt;
+                std::string filename = zoomDir;
+                filename += pszPathSep;
+                filename += iyStr.str();
+                filename += fileExt;
                 if (isKmz)
                 {
                     fileVector.push_back(filename);
@@ -899,15 +912,17 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 
                 GenerateTiles(filename, zoom, rxsize, rysize, ix, iy, rx, ry,
                               dxsize, dysize, bands, poSrcDS,
-                              poOutputTileDriver, poMemDriver, isJpegDriver);
-                std::string childKmlfile = zoomDir + "/" + iyStr.str() + ".kml";
+                              poOutputTileDriver, isJpegDriver);
+                std::string childKmlfile = zoomDir;
+                childKmlfile += pszPathSep;
+                childKmlfile += iyStr.str();
+                childKmlfile += ".kml";
                 if (isKmz)
                 {
                     fileVector.push_back(childKmlfile);
                 }
 
-                double tmpSouth =
-                    adfGeoTransform[3] + adfGeoTransform[5] * ysize;
+                double tmpSouth = gt[3] + gt[5] * ysize;
                 double zoomxpix = zoomxpixels[zoom];
                 double zoomypix = zoomypixels[zoom];
                 if (zoomxpix == 0)
@@ -933,10 +948,10 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
                 currentTiles[parentXYKey].push_back(
                     std::make_pair(std::make_pair(ix, iy), hasChildKML));
                 GenerateChildKml(childKmlfile, zoom, ix, iy, zoomxpix, zoomypix,
-                                 dxsize, dysize, tmpSouth, adfGeoTransform[0],
-                                 xsize, ysize, maxzoom, poTransform.get(),
-                                 fileExt, fixAntiMeridian, pszAltitude,
-                                 pszAltitudeMode, childTiles[childXYKey]);
+                                 dxsize, dysize, tmpSouth, gt[0], xsize, ysize,
+                                 maxzoom, poTransform.get(), fileExt,
+                                 fixAntiMeridian, pszAltitude, pszAltitudeMode,
+                                 childTiles[childXYKey]);
 
                 nTileCount++;
                 pfnProgress(1.0 * nTileCount / nTotalTiles, "", pProgressData);
@@ -964,25 +979,23 @@ KmlSuperOverlayCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 /************************************************************************/
 
 /* replace "a/b/../c" pattern by "a/c" */
-static CPLString KMLRemoveSlash(const char *pszPathIn)
+static std::string KMLRemoveSlash(const char *pszPathIn)
 {
-    char *pszPath = CPLStrdup(pszPathIn);
+    std::string osRet(pszPathIn);
 
     while (true)
     {
-        char *pszSlashDotDot = strstr(pszPath, "/../");
-        if (pszSlashDotDot == nullptr || pszSlashDotDot == pszPath)
+        size_t nSlashDotDot = osRet.find("/../");
+        if (nSlashDotDot == std::string::npos || nSlashDotDot == 0)
             break;
-        char *pszSlashBefore = pszSlashDotDot - 1;
-        while (pszSlashBefore > pszPath && *pszSlashBefore != '/')
-            pszSlashBefore--;
-        if (pszSlashBefore == pszPath)
+        size_t nPos = nSlashDotDot - 1;
+        while (nPos > 0 && osRet[nPos] != '/')
+            --nPos;
+        if (nPos == 0)
             break;
-        memmove(pszSlashBefore + 1, pszSlashDotDot + 4,
-                strlen(pszSlashDotDot + 4) + 1);
+        osRet = osRet.substr(0, nPos + 1) +
+                osRet.substr(nSlashDotDot + strlen("/../"));
     }
-    CPLString osRet = pszPath;
-    CPLFree(pszPath);
     return osRet;
 }
 
@@ -994,12 +1007,6 @@ KmlSuperOverlayReadDataset::KmlSuperOverlayReadDataset()
 {
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     m_oSRS.importFromWkt(SRS_WKT_WGS84_LAT_LONG);
-    adfGeoTransform[0] = 0.0;
-    adfGeoTransform[1] = 1.0;
-    adfGeoTransform[2] = 0.0;
-    adfGeoTransform[3] = 0.0;
-    adfGeoTransform[4] = 0.0;
-    adfGeoTransform[5] = 1.0;
 }
 
 /************************************************************************/
@@ -1069,9 +1076,9 @@ const OGRSpatialReference *KmlSuperOverlayReadDataset::GetSpatialRef() const
 /*                          GetGeoTransform()                           */
 /************************************************************************/
 
-CPLErr KmlSuperOverlayReadDataset::GetGeoTransform(double *padfGeoTransform)
+CPLErr KmlSuperOverlayReadDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    memcpy(padfGeoTransform, adfGeoTransform.data(), 6 * sizeof(double));
+    gt = m_gt;
     return CE_None;
 }
 
@@ -1276,19 +1283,15 @@ CPLErr KmlSuperOverlayReadDataset::IRasterIO(
 
     if (nBufXSize > dfXSize || nBufYSize > dfYSize)
     {
-        const double dfRequestXMin =
-            adfGeoTransform[0] + nXOff * adfGeoTransform[1];
-        const double dfRequestXMax =
-            adfGeoTransform[0] + (nXOff + nXSize) * adfGeoTransform[1];
-        const double dfRequestYMin =
-            adfGeoTransform[3] + (nYOff + nYSize) * adfGeoTransform[5];
-        const double dfRequestYMax =
-            adfGeoTransform[3] + nYOff * adfGeoTransform[5];
+        const double dfRequestXMin = m_gt[0] + nXOff * m_gt[1];
+        const double dfRequestXMax = m_gt[0] + (nXOff + nXSize) * m_gt[1];
+        const double dfRequestYMin = m_gt[3] + (nYOff + nYSize) * m_gt[5];
+        const double dfRequestYMax = m_gt[3] + nYOff * m_gt[5];
 
         const CPLXMLNode *psIter = psDocument->psChild;
         std::vector<SubImageDesc> aoImages;
-        const double dfXRes = adfGeoTransform[1] * nFactor;
-        const double dfYRes = -adfGeoTransform[5] * nFactor;
+        const double dfXRes = m_gt[1] * nFactor;
+        const double dfYRes = -m_gt[5] * nFactor;
         double dfNewXRes = dfXRes;
         double dfNewYRes = dfYRes;
 
@@ -1317,24 +1320,38 @@ CPLErr KmlSuperOverlayReadDataset::IRasterIO(
                     else
                     {
                         const char *pszBaseFilename = osFilename.c_str();
-                        if (EQUAL(CPLGetExtension(pszBaseFilename), "kmz") &&
+                        if (EQUAL(CPLGetExtensionSafe(pszBaseFilename).c_str(),
+                                  "kmz") &&
                             !STARTS_WITH(pszBaseFilename, "/vsizip/"))
                         {
                             osSubFilename = "/vsizip/";
-                            osSubFilename += CPLGetPath(pszBaseFilename);
+                            osSubFilename += CPLGetPathSafe(pszBaseFilename);
                             osSubFilename += "/";
                             osSubFilename += pszHref;
                         }
                         else
                         {
-                            osSubFilename = CPLFormFilename(
-                                CPLGetPath(pszBaseFilename), pszHref, nullptr);
+                            if ((STARTS_WITH(pszHref, "../../") &&
+                                 CPLHasPathTraversal(pszHref +
+                                                     strlen("../../"))) ||
+                                (!STARTS_WITH(pszHref, "../../") &&
+                                 CPLHasPathTraversal(pszHref)))
+                            {
+                                CPLError(CE_Failure, CPLE_AppDefined,
+                                         "Path traversal detected in %s",
+                                         pszHref);
+                                return CE_Failure;
+                            }
+                            osSubFilename = CPLFormFilenameSafe(
+                                CPLGetPathSafe(pszBaseFilename).c_str(),
+                                pszHref, nullptr);
                         }
                         osSubFilename = KMLRemoveSlash(osSubFilename);
                     }
 
                     KmlSuperOverlayReadDataset *poSubImageDS = nullptr;
-                    if (EQUAL(CPLGetExtension(osSubFilename), "kml"))
+                    if (EQUAL(CPLGetExtensionSafe(osSubFilename).c_str(),
+                              "kml"))
                     {
                         KmlSuperOverlayReadDataset *poRoot =
                             poParent ? poParent : this;
@@ -1414,14 +1431,12 @@ CPLErr KmlSuperOverlayReadDataset::IRasterIO(
                     {
                         int nSubImageXSize = poSubImageDS->GetRasterXSize();
                         int nSubImageYSize = poSubImageDS->GetRasterYSize();
-                        adfExtents[0] = poSubImageDS->adfGeoTransform[0];
-                        adfExtents[1] =
-                            poSubImageDS->adfGeoTransform[3] +
-                            nSubImageYSize * poSubImageDS->adfGeoTransform[5];
-                        adfExtents[2] =
-                            poSubImageDS->adfGeoTransform[0] +
-                            nSubImageXSize * poSubImageDS->adfGeoTransform[1];
-                        adfExtents[3] = poSubImageDS->adfGeoTransform[3];
+                        adfExtents[0] = poSubImageDS->m_gt[0];
+                        adfExtents[1] = poSubImageDS->m_gt[3] +
+                                        nSubImageYSize * poSubImageDS->m_gt[5];
+                        adfExtents[2] = poSubImageDS->m_gt[0] +
+                                        nSubImageXSize * poSubImageDS->m_gt[1];
+                        adfExtents[3] = poSubImageDS->m_gt[3];
 
                         double dfSubXRes =
                             (adfExtents[2] - adfExtents[0]) / nSubImageXSize;
@@ -1481,11 +1496,9 @@ CPLErr KmlSuperOverlayReadDataset::IRasterIO(
             for (const auto &oImage : aoImages)
             {
                 const int nDstXOff = static_cast<int>(
-                    (oImage.adfExtents[0] - adfGeoTransform[0]) / dfNewXRes +
-                    0.5);
+                    (oImage.adfExtents[0] - m_gt[0]) / dfNewXRes + 0.5);
                 const int nDstYOff = static_cast<int>(
-                    (adfGeoTransform[3] - oImage.adfExtents[3]) / dfNewYRes +
-                    0.5);
+                    (m_gt[3] - oImage.adfExtents[3]) / dfNewYRes + 0.5);
                 const int nDstXSize = static_cast<int>(
                     (oImage.adfExtents[2] - oImage.adfExtents[0]) / dfNewXRes +
                     0.5);
@@ -1681,7 +1694,7 @@ static int KmlSuperOverlayFindRegionStart(CPLXMLNode *psNode,
 int KmlSuperOverlayReadDataset::Identify(GDALOpenInfo *poOpenInfo)
 
 {
-    const char *pszExt = CPLGetExtension(poOpenInfo->pszFilename);
+    const char *pszExt = poOpenInfo->osExtension.c_str();
     if (EQUAL(pszExt, "kmz"))
         return -1;
     if (poOpenInfo->nHeaderBytes == 0)
@@ -1746,7 +1759,8 @@ GDALDataset *KmlSuperOverlayReadDataset::Open(GDALOpenInfo *poOpenInfo)
 static std::unique_ptr<GDALDataset>
 KmlSuperOverlayLoadIcon(const char *pszBaseFilename, const char *pszIcon)
 {
-    const char *pszExt = CPLGetExtension(pszIcon);
+    const std::string osExt = CPLGetExtensionSafe(pszIcon);
+    const char *pszExt = osExt.c_str();
     if (!EQUAL(pszExt, "png") && !EQUAL(pszExt, "jpg") &&
         !EQUAL(pszExt, "jpeg"))
     {
@@ -1758,8 +1772,14 @@ KmlSuperOverlayLoadIcon(const char *pszBaseFilename, const char *pszIcon)
         osSubFilename = CPLSPrintf("/vsicurl_streaming/%s", pszIcon);
     else
     {
-        osSubFilename =
-            CPLFormFilename(CPLGetPath(pszBaseFilename), pszIcon, nullptr);
+        if (CPLHasPathTraversal(pszIcon))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Path traversal detected in %s", pszIcon);
+            return nullptr;
+        }
+        osSubFilename = CPLFormFilenameSafe(
+            CPLGetPathSafe(pszBaseFilename).c_str(), pszIcon, nullptr);
         osSubFilename = KMLRemoveSlash(osSubFilename);
     }
 
@@ -1812,8 +1832,7 @@ static bool KmlSuperOverlayComputeDepth(const std::string &osFilename,
             CPLGetXMLNode(psIter, "Region") != nullptr &&
             (pszHref = CPLGetXMLValue(psIter, "Link.href", nullptr)) != nullptr)
         {
-            const char *pszExt = CPLGetExtension(pszHref);
-            if (EQUAL(pszExt, "kml"))
+            if (EQUAL(CPLGetExtensionSafe(pszHref).c_str(), "kml"))
             {
                 CPLString osSubFilename;
                 if (STARTS_WITH(pszHref, "http"))
@@ -1821,8 +1840,19 @@ static bool KmlSuperOverlayComputeDepth(const std::string &osFilename,
                         CPLSPrintf("/vsicurl_streaming/%s", pszHref);
                 else
                 {
-                    osSubFilename = CPLFormFilename(
-                        CPLGetPath(osFilename.c_str()), pszHref, nullptr);
+                    if ((STARTS_WITH(pszHref, "../../") &&
+                         CPLHasPathTraversal(pszHref + strlen("../../"))) ||
+                        (!STARTS_WITH(pszHref, "../../") &&
+                         CPLHasPathTraversal(pszHref)))
+                    {
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "Path traversal detected in %s", pszHref);
+                        return false;
+                    }
+
+                    osSubFilename = CPLFormFilenameSafe(
+                        CPLGetPathSafe(osFilename.c_str()).c_str(), pszHref,
+                        nullptr);
                     osSubFilename = KMLRemoveSlash(osSubFilename);
                 }
 
@@ -1903,7 +1933,7 @@ class KmlSingleDocRasterDataset final : public GDALDataset
     CPLString osNominalExt{};
     std::unique_ptr<GDALDataset> poCurTileDS{};
     std::array<double, 4> adfGlobalExtents = {0, 0, 0, 0};
-    std::array<double, 6> adfGeoTransform = {0, 0, 0, 0, 0, 0};
+    GDALGeoTransform m_gt{};
     std::vector<std::unique_ptr<KmlSingleDocRasterDataset>> m_apoOverviews{};
     std::vector<KmlSingleDocRasterTilesDesc> aosDescs{};
     int nLevel = 0;
@@ -1918,9 +1948,9 @@ class KmlSingleDocRasterDataset final : public GDALDataset
     KmlSingleDocRasterDataset();
     virtual ~KmlSingleDocRasterDataset();
 
-    virtual CPLErr GetGeoTransform(double *padfGeoTransform) override
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override
     {
-        memcpy(padfGeoTransform, adfGeoTransform.data(), 6 * sizeof(double));
+        gt = m_gt;
         return CE_None;
     }
 
@@ -2001,12 +2031,12 @@ static bool KmlSingleDocGetDimensions(const CPLString &osDirname,
                                       int nLevel, int nTileSize, int &nXSize,
                                       int &nYSize, int &nBands, int &bHasCT)
 {
-    const char *pszImageFilename = CPLFormFilename(
+    std::string osImageFilename = CPLFormFilenameSafe(
         osDirname,
         CPLSPrintf("kml_image_L%d_%d_%d", nLevel, oDesc.nMaxJ_j, oDesc.nMaxJ_i),
         oDesc.szExtJ);
     auto poImageDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(
-        pszImageFilename, GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
+        osImageFilename.c_str(), GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
     if (!poImageDS)
     {
         return false;
@@ -2022,13 +2052,13 @@ static bool KmlSingleDocGetDimensions(const CPLString &osDirname,
     }
     else
     {
-        pszImageFilename =
-            CPLFormFilename(osDirname,
-                            CPLSPrintf("kml_image_L%d_%d_%d", nLevel,
-                                       oDesc.nMaxI_j, oDesc.nMaxI_i),
-                            oDesc.szExtI);
+        osImageFilename =
+            CPLFormFilenameSafe(osDirname,
+                                CPLSPrintf("kml_image_L%d_%d_%d", nLevel,
+                                           oDesc.nMaxI_j, oDesc.nMaxI_i),
+                                oDesc.szExtI);
         poImageDS.reset(GDALDataset::Open(
-            pszImageFilename, GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
+            osImageFilename.c_str(), GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
         if (!poImageDS)
         {
             return false;
@@ -2073,15 +2103,14 @@ void KmlSingleDocRasterDataset::BuildOverviews()
         poOvrDS->nTileSize = nTileSize;
         poOvrDS->osDirname = osDirname;
         poOvrDS->osNominalExt = oDesc.szExtI;
-        poOvrDS->adfGeoTransform[0] = adfGlobalExtents[0];
-        poOvrDS->adfGeoTransform[1] =
+        poOvrDS->m_gt[0] = adfGlobalExtents[0];
+        poOvrDS->m_gt[1] =
             (adfGlobalExtents[2] - adfGlobalExtents[0]) / poOvrDS->nRasterXSize;
-        poOvrDS->adfGeoTransform[2] = 0.0;
-        poOvrDS->adfGeoTransform[3] = adfGlobalExtents[3];
-        poOvrDS->adfGeoTransform[4] = 0.0;
-        poOvrDS->adfGeoTransform[5] =
-            -(adfGlobalExtents[3] - adfGlobalExtents[1]) /
-            poOvrDS->nRasterXSize;
+        poOvrDS->m_gt[2] = 0.0;
+        poOvrDS->m_gt[3] = adfGlobalExtents[3];
+        poOvrDS->m_gt[4] = 0.0;
+        poOvrDS->m_gt[5] = -(adfGlobalExtents[3] - adfGlobalExtents[1]) /
+                           poOvrDS->nRasterXSize;
         for (int iBand = 1; iBand <= nBands; iBand++)
             poOvrDS->SetBand(iBand,
                              std::make_unique<KmlSingleDocRasterRasterBand>(
@@ -2115,18 +2144,18 @@ CPLErr KmlSingleDocRasterRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
 {
     KmlSingleDocRasterDataset *poGDS =
         cpl::down_cast<KmlSingleDocRasterDataset *>(poDS);
-    const char *pszImageFilename =
-        CPLFormFilename(poGDS->osDirname,
-                        CPLSPrintf("kml_image_L%d_%d_%d", poGDS->nLevel,
-                                   nBlockYOff, nBlockXOff),
-                        poGDS->osNominalExt);
+    const std::string osImageFilename =
+        CPLFormFilenameSafe(poGDS->osDirname,
+                            CPLSPrintf("kml_image_L%d_%d_%d", poGDS->nLevel,
+                                       nBlockYOff, nBlockXOff),
+                            poGDS->osNominalExt);
     if (poGDS->poCurTileDS == nullptr ||
         strcmp(CPLGetFilename(poGDS->poCurTileDS->GetDescription()),
-               CPLGetFilename(pszImageFilename)) != 0)
+               CPLGetFilename(osImageFilename.c_str())) != 0)
     {
         CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
         poGDS->poCurTileDS.reset(
-            GDALDataset::Open(pszImageFilename, GDAL_OF_RASTER));
+            GDALDataset::Open(osImageFilename.c_str(), GDAL_OF_RASTER));
     }
     GDALDataset *poImageDS = poGDS->poCurTileDS.get();
     if (poImageDS == nullptr)
@@ -2147,7 +2176,7 @@ CPLErr KmlSingleDocRasterRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
     if (nXSize != nReqXSize || nYSize != nReqYSize)
     {
         CPLDebug("KMLSUPEROVERLAY", "Tile %s, dimensions %dx%d, expected %dx%d",
-                 pszImageFilename, nXSize, nYSize, nReqXSize, nReqYSize);
+                 osImageFilename.c_str(), nXSize, nYSize, nReqXSize, nReqYSize);
         return CE_Failure;
     }
 
@@ -2291,7 +2320,7 @@ KmlSingleDocCollectTiles(CPLXMLNode *psNode,
         const char *pszHref = CPLGetXMLValue(psNode, "", "");
         if (STARTS_WITH(pszHref, "http"))
         {
-            osURLBase = CPLGetPath(pszHref);
+            osURLBase = CPLGetPathSafe(pszHref);
         }
         if (sscanf(CPLGetFilename(pszHref), "kml_image_L%d_%d_%d.%3s", &level,
                    &j, &i, szExt) == 4)
@@ -2382,7 +2411,7 @@ GDALDataset *KmlSingleDocRasterDataset::Open(const char *pszFilename,
         return nullptr;
 
     std::vector<KmlSingleDocRasterTilesDesc> aosDescs;
-    CPLString osDirname = CPLGetPath(osFilename);
+    CPLString osDirname = CPLGetPathSafe(osFilename);
     KmlSingleDocCollectTiles(psRootFolder, aosDescs, osDirname);
     if (aosDescs.empty())
         return nullptr;
@@ -2392,13 +2421,13 @@ GDALDataset *KmlSingleDocRasterDataset::Open(const char *pszFilename,
             return nullptr;
     }
 
-    const char *pszImageFilename =
-        CPLFormFilename(osDirname,
-                        CPLSPrintf("kml_image_L%d_%d_%d",
-                                   static_cast<int>(aosDescs.size()), 0, 0),
-                        aosDescs.back().szExtI);
+    const std::string osImageFilename =
+        CPLFormFilenameSafe(osDirname,
+                            CPLSPrintf("kml_image_L%d_%d_%d",
+                                       static_cast<int>(aosDescs.size()), 0, 0),
+                            aosDescs.back().szExtI);
     auto poImageDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(
-        pszImageFilename, GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
+        osImageFilename.c_str(), GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
     if (poImageDS == nullptr)
     {
         return nullptr;
@@ -2429,13 +2458,13 @@ GDALDataset *KmlSingleDocRasterDataset::Open(const char *pszFilename,
     poDS->osDirname = std::move(osDirname);
     poDS->osNominalExt = oDesc.szExtI;
     poDS->adfGlobalExtents = adfGlobalExtents;
-    poDS->adfGeoTransform[0] = adfGlobalExtents[0];
-    poDS->adfGeoTransform[1] =
+    poDS->m_gt[0] = adfGlobalExtents[0];
+    poDS->m_gt[1] =
         (adfGlobalExtents[2] - adfGlobalExtents[0]) / poDS->nRasterXSize;
-    poDS->adfGeoTransform[2] = 0.0;
-    poDS->adfGeoTransform[3] = adfGlobalExtents[3];
-    poDS->adfGeoTransform[4] = 0.0;
-    poDS->adfGeoTransform[5] =
+    poDS->m_gt[2] = 0.0;
+    poDS->m_gt[3] = adfGlobalExtents[3];
+    poDS->m_gt[4] = 0.0;
+    poDS->m_gt[5] =
         -(adfGlobalExtents[3] - adfGlobalExtents[1]) / poDS->nRasterYSize;
     if (nBands == 1 && bHasCT)
         nBands = 4;
@@ -2461,9 +2490,13 @@ class KmlSingleOverlayRasterDataset final : public VRTDataset
     {
     }
 
+    ~KmlSingleOverlayRasterDataset() override;
+
     static GDALDataset *Open(const char *pszFilename,
                              const CPLString &osFilename, CPLXMLNode *psRoot);
 };
+
+KmlSingleOverlayRasterDataset::~KmlSingleOverlayRasterDataset() = default;
 
 /************************************************************************/
 /*                                Open()                                */
@@ -2524,10 +2557,18 @@ GDALDataset *KmlSingleOverlayRasterDataset::Open(const char *pszFilename,
     std::array<double, 4> adfExtents = {0, 0, 0, 0};
     if (!KmlSuperOverlayGetBoundingBox(psGO, adfExtents))
         return nullptr;
-    const char *pszImageFilename =
-        CPLFormFilename(CPLGetPath(osFilename), pszHref, nullptr);
-    GDALDataset *poImageDS =
-        GDALDataset::FromHandle(GDALOpenShared(pszImageFilename, GA_ReadOnly));
+    if ((STARTS_WITH(pszHref, "../") &&
+         CPLHasPathTraversal(pszHref + strlen("../"))) ||
+        (!STARTS_WITH(pszHref, "../") && CPLHasPathTraversal(pszHref)))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Path traversal detected in %s",
+                 pszHref);
+        return nullptr;
+    }
+    const std::string osImageFilename = CPLFormFilenameSafe(
+        CPLGetPathSafe(osFilename).c_str(), pszHref, nullptr);
+    GDALDataset *poImageDS = GDALDataset::FromHandle(
+        GDALOpenShared(osImageFilename.c_str(), GA_ReadOnly));
     if (poImageDS == nullptr)
         return nullptr;
 
@@ -2553,14 +2594,14 @@ GDALDataset *KmlSingleOverlayRasterDataset::Open(const char *pszFilename,
             poVRTBand->SetColorTable(poCT);
     }
     poImageDS->Dereference();
-    double adfGeoTransform[6] = {
+    GDALGeoTransform gt{
         adfExtents[0],
         (adfExtents[2] - adfExtents[0]) / poImageDS->GetRasterXSize(),
         0,
         adfExtents[3],
         0,
         -(adfExtents[3] - adfExtents[1]) / poImageDS->GetRasterYSize()};
-    poDS->SetGeoTransform(adfGeoTransform);
+    poDS->SetGeoTransform(gt);
     poDS->SetProjection(SRS_WKT_WGS84_LAT_LONG);
     poDS->SetWritable(false);
     poDS->SetDescription(pszFilename);
@@ -2580,8 +2621,7 @@ KmlSuperOverlayReadDataset::Open(const char *pszFilename,
     if (nRec == 2)
         return nullptr;
     CPLString osFilename(pszFilename);
-    const char *pszExt = CPLGetExtension(pszFilename);
-    if (EQUAL(pszExt, "kmz"))
+    if (EQUAL(CPLGetExtensionSafe(pszFilename).c_str(), "kmz"))
     {
         if (!STARTS_WITH(pszFilename, "/vsizip/"))
             osFilename = CPLSPrintf("/vsizip/%s", pszFilename);
@@ -2591,10 +2631,10 @@ KmlSuperOverlayReadDataset::Open(const char *pszFilename,
         char **papszIter = papszFiles;
         for (; *papszIter != nullptr; papszIter++)
         {
-            pszExt = CPLGetExtension(*papszIter);
-            if (EQUAL(pszExt, "kml"))
+            if (EQUAL(CPLGetExtensionSafe(*papszIter).c_str(), "kml"))
             {
-                osFilename = CPLFormFilename(osFilename, *papszIter, nullptr);
+                osFilename =
+                    CPLFormFilenameSafe(osFilename, *papszIter, nullptr);
                 osFilename = KMLRemoveSlash(osFilename);
                 break;
             }
@@ -2652,7 +2692,8 @@ KmlSuperOverlayReadDataset::Open(const char *pszFilename,
     if (psLink != nullptr)
     {
         const char *pszHref = CPLGetXMLValue(psLink, "href", nullptr);
-        if (pszHref == nullptr || !EQUAL(CPLGetExtension(pszHref), "kml"))
+        if (pszHref == nullptr ||
+            !EQUAL(CPLGetExtensionSafe(pszHref).c_str(), "kml"))
         {
             CPLDestroyXMLNode(psNode);
             return nullptr;
@@ -2663,8 +2704,15 @@ KmlSuperOverlayReadDataset::Open(const char *pszFilename,
             osSubFilename = CPLSPrintf("/vsicurl_streaming/%s", pszHref);
         else
         {
-            osSubFilename =
-                CPLFormFilename(CPLGetPath(osFilename), pszHref, nullptr);
+            if (CPLHasPathTraversal(pszHref))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Path traversal detected in %s", pszHref);
+                CPLDestroyXMLNode(psNode);
+                return nullptr;
+            }
+            osSubFilename = CPLFormFilenameSafe(
+                CPLGetPathSafe(osFilename).c_str(), pszHref, nullptr);
             osSubFilename = KMLRemoveSlash(osSubFilename);
         }
 
@@ -2675,7 +2723,8 @@ KmlSuperOverlayReadDataset::Open(const char *pszFilename,
             const char *pszOverlayName =
                 CPLGetXMLValue(psDocument, "name", nullptr);
             if (pszOverlayName != nullptr &&
-                strcmp(pszOverlayName, CPLGetBasename(pszFilename)) != 0)
+                strcmp(pszOverlayName,
+                       CPLGetBasenameSafe(pszFilename).c_str()) != 0)
             {
                 osOverlayName = pszOverlayName;
             }
@@ -2754,12 +2803,10 @@ KmlSuperOverlayReadDataset::Open(const char *pszFilename,
     poDS->nFactor = nFactor;
     poDS->nRasterXSize = nFactor * poDSIcon->GetRasterXSize();
     poDS->nRasterYSize = nFactor * poDSIcon->GetRasterYSize();
-    poDS->adfGeoTransform[0] = adfExtents[0];
-    poDS->adfGeoTransform[1] =
-        (adfExtents[2] - adfExtents[0]) / poDS->nRasterXSize;
-    poDS->adfGeoTransform[3] = adfExtents[3];
-    poDS->adfGeoTransform[5] =
-        -(adfExtents[3] - adfExtents[1]) / poDS->nRasterYSize;
+    poDS->m_gt[0] = adfExtents[0];
+    poDS->m_gt[1] = (adfExtents[2] - adfExtents[0]) / poDS->nRasterXSize;
+    poDS->m_gt[3] = adfExtents[3];
+    poDS->m_gt[5] = -(adfExtents[3] - adfExtents[1]) / poDS->nRasterYSize;
     poDS->nBands = 4;
     for (int i = 0; i < 4; i++)
         poDS->SetBand(i + 1, std::make_unique<KmlSuperOverlayRasterBand>(
@@ -2781,11 +2828,11 @@ KmlSuperOverlayReadDataset::Open(const char *pszFilename,
         poOvrDS->nFactor = nFactor;
         poOvrDS->nRasterXSize = nFactor * poDSIcon->GetRasterXSize();
         poOvrDS->nRasterYSize = nFactor * poDSIcon->GetRasterYSize();
-        poOvrDS->adfGeoTransform[0] = adfExtents[0];
-        poOvrDS->adfGeoTransform[1] =
+        poOvrDS->m_gt[0] = adfExtents[0];
+        poOvrDS->m_gt[1] =
             (adfExtents[2] - adfExtents[0]) / poOvrDS->nRasterXSize;
-        poOvrDS->adfGeoTransform[3] = adfExtents[3];
-        poOvrDS->adfGeoTransform[5] =
+        poOvrDS->m_gt[3] = adfExtents[3];
+        poOvrDS->m_gt[5] =
             -(adfExtents[3] - adfExtents[1]) / poOvrDS->nRasterYSize;
         poOvrDS->nBands = 4;
         for (int i = 0; i < 4; i++)

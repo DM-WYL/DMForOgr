@@ -49,7 +49,7 @@ int VFKDataBlockSQLite::LoadGeometryPoint()
     osSQL.Printf("SELECT SOURADNICE_Y,SOURADNICE_X,%s,rowid FROM %s",
                  FID_COLUMN, m_pszName);
 
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
     sqlite3_stmt *hStmt = poReader->PrepareStatement(osSQL.c_str());
 
     if (poReader->IsSpatial())
@@ -113,7 +113,7 @@ bool VFKDataBlockSQLite::SetGeometryLineString(VFKFeatureSQLite *poLine,
                                                std::vector<int> &rowIdFeat,
                                                int &nGeometries)
 {
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     oOGRLine->setCoordinateDimension(2); /* force 2D */
 
@@ -218,7 +218,7 @@ int VFKDataBlockSQLite::LoadGeometryLineStringSBP()
     int nInvalid = 0;
 
     VFKDataBlockSQLite *poDataBlockPoints =
-        (VFKDataBlockSQLite *)m_poReader->GetDataBlock("SOBR");
+        cpl::down_cast<VFKDataBlockSQLite *>(m_poReader->GetDataBlock("SOBR"));
     if (nullptr == poDataBlockPoints)
     {
         CPLError(CE_Failure, CPLE_FileIO, "Data block %s not found.\n",
@@ -227,7 +227,7 @@ int VFKDataBlockSQLite::LoadGeometryLineStringSBP()
     }
 
     int nGeometries = 0;
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     poDataBlockPoints->LoadGeometry();
 
@@ -284,7 +284,7 @@ int VFKDataBlockSQLite::LoadGeometryLineStringSBP()
             if (ipcb == 1)
             {
                 VFKFeatureSQLite *poFeature =
-                    (VFKFeatureSQLite *)GetFeatureByIndex(iIdx);
+                    cpl::down_cast<VFKFeatureSQLite *>(GetFeatureByIndex(iIdx));
                 if (poFeature == nullptr)
                 {
                     CPLError(CE_Failure, CPLE_AppDefined,
@@ -308,8 +308,8 @@ int VFKDataBlockSQLite::LoadGeometryLineStringSBP()
                 iIdx++;
             }
 
-            VFKFeatureSQLite *poPoint =
-                (VFKFeatureSQLite *)poDataBlockPoints->GetFeature("ID", id);
+            VFKFeatureSQLite *poPoint = cpl::down_cast<VFKFeatureSQLite *>(
+                poDataBlockPoints->GetFeature("ID", id));
             if (poPoint)
             {
                 const OGRGeometry *pt = poPoint->GetGeometry();
@@ -365,10 +365,10 @@ int VFKDataBlockSQLite::LoadGeometryLineStringSBP()
 int VFKDataBlockSQLite::LoadGeometryLineStringHP()
 {
     int nInvalid = 0;
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     VFKDataBlockSQLite *poDataBlockLines =
-        (VFKDataBlockSQLite *)m_poReader->GetDataBlock("SBP");
+        cpl::down_cast<VFKDataBlockSQLite *>(m_poReader->GetDataBlock("SBP"));
     if (nullptr == poDataBlockLines)
     {
         CPLError(CE_Failure, CPLE_FileIO, "Data block %s not found.",
@@ -407,7 +407,7 @@ int VFKDataBlockSQLite::LoadGeometryLineStringHP()
         const int rowId = sqlite3_column_int(hStmt, 2);
 
         VFKFeatureSQLite *poFeature =
-            (VFKFeatureSQLite *)GetFeatureByIndex(rowId - 1);
+            cpl::down_cast<VFKFeatureSQLite *>(GetFeatureByIndex(rowId - 1));
         if (poFeature == nullptr || poFeature->GetFID() != iFID)
         {
             continue;
@@ -452,24 +452,33 @@ int VFKDataBlockSQLite::LoadGeometryLineStringHP()
 */
 int VFKDataBlockSQLite::LoadGeometryPolygon()
 {
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+#ifndef HAVE_GEOS
+
+    CPLError(CE_Warning, CPLE_NotSupported,
+             "GEOS support not enabled. Unable to build geometry for %s.",
+             m_pszName);
+    return -1;
+
+#else
+
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     VFKDataBlockSQLite *poDataBlockLines1 = nullptr;
     VFKDataBlockSQLite *poDataBlockLines2 = nullptr;
     bool bIsPar = false;
     if (EQUAL(m_pszName, "PAR"))
     {
-        poDataBlockLines1 =
-            (VFKDataBlockSQLite *)m_poReader->GetDataBlock("HP");
+        poDataBlockLines1 = cpl::down_cast<VFKDataBlockSQLite *>(
+            m_poReader->GetDataBlock("HP"));
         poDataBlockLines2 = poDataBlockLines1;
         bIsPar = true;
     }
     else
     {
-        poDataBlockLines1 =
-            (VFKDataBlockSQLite *)m_poReader->GetDataBlock("OB");
-        poDataBlockLines2 =
-            (VFKDataBlockSQLite *)m_poReader->GetDataBlock("SBP");
+        poDataBlockLines1 = cpl::down_cast<VFKDataBlockSQLite *>(
+            m_poReader->GetDataBlock("OB"));
+        poDataBlockLines2 = cpl::down_cast<VFKDataBlockSQLite *>(
+            m_poReader->GetDataBlock("SBP"));
         bIsPar = false;
     }
     if (nullptr == poDataBlockLines1)
@@ -514,11 +523,6 @@ int VFKDataBlockSQLite::LoadGeometryPolygon()
     if (poReader->IsSpatial())
         poReader->ExecuteSQL("BEGIN");
 
-    VFKFeatureSQLiteList poLineList;
-    /* first is to be considered as exterior */
-    PointListArray poRingList;
-    std::vector<OGRLinearRing *> poLinearRingList;
-    OGRPolygon ogrPolygon;
     int nInvalidNoLines = 0;
     int nInvalidNoRings = 0;
     int nGeometries = 0;
@@ -531,12 +535,14 @@ int VFKDataBlockSQLite::LoadGeometryPolygon()
         const int rowId = sqlite3_column_int(hStmt, 2);
 
         VFKFeatureSQLite *poFeature =
-            (VFKFeatureSQLite *)GetFeatureByIndex(rowId - 1);
+            cpl::down_cast<VFKFeatureSQLite *>(GetFeatureByIndex(rowId - 1));
         if (poFeature == nullptr || poFeature->GetFID() != iFID)
         {
             continue;
         }
 
+        /* collect boundary lines */
+        VFKFeatureSQLiteList poLineList;
         if (bIsPar)
         {
             vrValue[0] = vrValue[1] = id;
@@ -544,8 +550,6 @@ int VFKDataBlockSQLite::LoadGeometryPolygon()
         }
         else
         {
-            // std::vector<VFKFeatureSQLite *> poLineListOb;
-
             osSQL.Printf("SELECT ID FROM %s WHERE BUD_ID = " CPL_FRMT_GUIB,
                          poDataBlockLines1->GetName(), id);
             if (poReader->IsSpatial())
@@ -567,236 +571,40 @@ int VFKDataBlockSQLite::LoadGeometryPolygon()
                     poLineList.push_back(poLineSbp);
             }
         }
-        size_t nLines = poLineList.size();
-        if (nLines < 1)
+        if (poLineList.empty())
         {
-            CPLDebug(
-                "OGR-VFK",
-                "%s: unable to collect rings for polygon fid = %ld (no lines)",
-                m_pszName, iFID);
+            CPLDebug("OGR-VFK", "%s: no lines to polygonize (fid = %ld)",
+                     m_pszName, iFID);
             nInvalidNoLines++;
             continue;
         }
 
-        /* clear */
-        ogrPolygon.empty();
-
-        /* free ring list */
-        for (PointListArray::iterator iRing = poRingList.begin(),
-                                      eRing = poRingList.end();
-             iRing != eRing; ++iRing)
+        OGRMultiLineString oMultiLine;
+        for (VFKFeatureSQLite *poLineFeature : poLineList)
         {
-            delete (*iRing);
-            *iRing = nullptr;
-        }
-        poRingList.clear();
-
-        /* collect rings from lines */
-#if 1
-        // Fast version using a map to identify quickly a ring from its end
-        // point.
-        std::map<std::pair<double, double>, PointList *> oMapEndRing;
-        while (!poLineList.empty())
-        {
-            auto pGeom = poLineList.front()->GetGeometry();
-            if (pGeom)
+            const OGRGeometry *poLineGeom = poLineFeature->GetGeometry();
+            if (poLineGeom)
             {
-                auto poLine = pGeom->toLineString();
-                if (poLine == nullptr || poLine->getNumPoints() < 2)
-                    continue;
-                poLineList.erase(poLineList.begin());
-                PointList *poList = new PointList();
-                FillPointList(poList, poLine);
-                poRingList.emplace_back(poList);
-                OGRPoint oFirst, oLast;
-                poLine->StartPoint(&oFirst);
-                poLine->EndPoint(&oLast);
-                oMapEndRing[std::pair<double, double>(oLast.getX(),
-                                                      oLast.getY())] = poList;
-
-                bool bWorkDone = true;
-                while (bWorkDone && (*poList).front() != (*poList).back())
-                {
-                    bWorkDone = false;
-                    for (auto oIter = poLineList.begin();
-                         oIter != poLineList.end(); ++oIter)
-                    {
-                        const auto &oCandidate = *oIter;
-                        auto poCandidateGeom = oCandidate->GetGeometry();
-                        if (poCandidateGeom == nullptr)
-                            continue;
-                        poLine = poCandidateGeom->toLineString();
-                        if (poLine == nullptr || poLine->getNumPoints() < 2)
-                            continue;
-                        poLine->StartPoint(&oFirst);
-                        poLine->EndPoint(&oLast);
-                        // MER = MapEndRing
-                        auto oIterMER =
-                            oMapEndRing.find(std::pair<double, double>(
-                                oFirst.getX(), oFirst.getY()));
-                        if (oIterMER != oMapEndRing.end())
-                        {
-                            auto ring = oIterMER->second;
-                            PointList oList;
-                            FillPointList(&oList, poLine);
-                            /* forward, skip first point */
-                            ring->insert(ring->end(), oList.begin() + 1,
-                                         oList.end());
-                            poLineList.erase(oIter);
-                            oMapEndRing.erase(oIterMER);
-                            oMapEndRing[std::pair<double, double>(
-                                oLast.getX(), oLast.getY())] = poList;
-                            bWorkDone = true;
-                            break;
-                        }
-                        oIterMER = oMapEndRing.find(std::pair<double, double>(
-                            oLast.getX(), oLast.getY()));
-                        if (oIterMER != oMapEndRing.end())
-                        {
-                            auto ring = oIterMER->second;
-                            PointList oList;
-                            FillPointList(&oList, poLine);
-                            /* backward, skip first point */
-                            ring->insert(ring->end(), oList.rbegin() + 1,
-                                         oList.rend());
-                            poLineList.erase(oIter);
-                            oMapEndRing.erase(oIterMER);
-                            oMapEndRing[std::pair<double, double>(
-                                oFirst.getX(), oFirst.getY())] = ring;
-                            bWorkDone = true;
-                            break;
-                        }
-                    }
-                }
+                oMultiLine.addGeometry(poLineGeom);
             }
         }
-#else
-        bool bFound = false;
-        int nCount = 0;
-        const int nCountMax = static_cast<int>(nLines) * 2;
-        while (!poLineList.empty() && nCount < nCountMax)
-        {
-            bool bNewRing = !bFound;
-            bFound = false;
-            int i = 1;
-            for (VFKFeatureSQLiteList::iterator iHp = poLineList.begin(),
-                                                eHp = poLineList.end();
-                 iHp != eHp; ++iHp, ++i)
-            {
-                auto pGeom = (*iHp)->GetGeometry();
-                if (pGeom && AppendLineToRing(&poRingList,
-                                              pGeom->toLineString(), bNewRing))
-                {
-                    bFound = true;
-                    poLineList.erase(iHp);
-                    break;
-                }
-            }
-            nCount++;
-        }
-#endif
-        CPLDebug("OGR-VFK", "%s: fid = %ld nlines = %d -> nrings = %d",
-                 m_pszName, iFID, (int)nLines, (int)poRingList.size());
 
-        if (!poLineList.empty())
+        /* polygonize using GEOSBuildArea() */
+        auto poPolygonGeom =
+            std::unique_ptr<OGRGeometry>(oMultiLine.BuildArea());
+        /* only Polygons are allowed in VFK, in particular, no MultiPolygons */
+        if (!poPolygonGeom || poPolygonGeom->IsEmpty() ||
+            wkbFlatten(poPolygonGeom->getGeometryType()) != wkbPolygon)
         {
-            CPLDebug("OGR-VFK",
-                     "%s: unable to collect rings for polygon fid = %ld",
+            CPLDebug("OGR-VFK", "%s: unable to polygonize (fid = %ld)",
                      m_pszName, iFID);
             nInvalidNoRings++;
             continue;
         }
 
-        /* build rings */
-        poLinearRingList.clear();
-        OGRLinearRing *poOgrRing = nullptr;
-        for (PointListArray::const_iterator iRing = poRingList.begin(),
-                                            eRing = poRingList.end();
-             iRing != eRing; ++iRing)
-        {
-            PointList *poList = *iRing;
-
-            poLinearRingList.push_back(new OGRLinearRing());
-            poOgrRing = poLinearRingList.back();
-            CPLAssert(nullptr != poOgrRing);
-
-            for (PointList::iterator iPoint = poList->begin(),
-                                     ePoint = poList->end();
-                 iPoint != ePoint; ++iPoint)
-            {
-                OGRPoint *poPoint = &(*iPoint);
-                poOgrRing->addPoint(poPoint);
-            }
-        }
-
-        /* find exterior ring */
-        if (poLinearRingList.size() > 1)
-        {
-            std::vector<OGRLinearRing *>::iterator exteriorRing;
-
-            exteriorRing = poLinearRingList.begin();
-            double dMaxArea = -1.0;
-            for (std::vector<OGRLinearRing *>::iterator
-                     iRing = poLinearRingList.begin(),
-                     eRing = poLinearRingList.end();
-                 iRing != eRing; ++iRing)
-            {
-                poOgrRing = *iRing;
-                if (!IsRingClosed(poOgrRing))
-                    continue; /* skip unclosed rings */
-
-                const double dArea = poOgrRing->get_Area();
-                if (dArea > dMaxArea)
-                {
-                    dMaxArea = dArea;
-                    exteriorRing = iRing;
-                }
-            }
-            if (exteriorRing != poLinearRingList.begin())
-            {
-                std::swap(*poLinearRingList.begin(), *exteriorRing);
-            }
-        }
-
-        /* build polygon from rings */
-        int nBridges = 0;
-        for (std::vector<OGRLinearRing *>::iterator
-                 iRing = poLinearRingList.begin(),
-                 eRing = poLinearRingList.end();
-             iRing != eRing; ++iRing)
-        {
-            poOgrRing = *iRing;
-
-            /* check if ring is closed */
-            if (IsRingClosed(poOgrRing))
-            {
-                ogrPolygon.addRing(poOgrRing);
-            }
-            else
-            {
-                if (poOgrRing->getNumPoints() == 2)
-                {
-                    CPLDebug("OGR-VFK",
-                             "%s: Polygon (fid = %ld) bridge removed",
-                             m_pszName, iFID);
-                    nBridges++;
-                }
-                else
-                {
-                    CPLDebug("OGR-VFK",
-                             "%s: Polygon (fid = %ld) unclosed ring skipped",
-                             m_pszName, iFID);
-                }
-            }
-            delete poOgrRing;
-            *iRing = nullptr;
-        }
-
         /* set polygon */
-        ogrPolygon.setCoordinateDimension(2); /* force 2D */
-        if (ogrPolygon.getNumInteriorRings() + nBridges !=
-                (int)poLinearRingList.size() - 1 ||
-            !poFeature->SetGeometry(&ogrPolygon))
+        poPolygonGeom->setCoordinateDimension(2); /* force 2D */
+        if (!poFeature->SetGeometry(poPolygonGeom.get()))
         {
             nInvalidNoRings++;
             continue;
@@ -804,17 +612,8 @@ int VFKDataBlockSQLite::LoadGeometryPolygon()
 
         /* store also geometry in DB */
         if (poReader->IsSpatial() &&
-            SaveGeometryToDB(&ogrPolygon, rowId) != OGRERR_FAILURE)
+            SaveGeometryToDB(poPolygonGeom.get(), rowId) != OGRERR_FAILURE)
             nGeometries++;
-    }
-
-    /* free ring list */
-    for (PointListArray::iterator iRing = poRingList.begin(),
-                                  eRing = poRingList.end();
-         iRing != eRing; ++iRing)
-    {
-        delete (*iRing);
-        *iRing = nullptr;
     }
 
     CPLDebug("OGR-VFK", "%s: nolines = %d norings = %d", m_pszName,
@@ -827,6 +626,7 @@ int VFKDataBlockSQLite::LoadGeometryPolygon()
         poReader->ExecuteSQL("COMMIT");
 
     return nInvalidNoLines + nInvalidNoRings;
+#endif  // HAVE_GEOS
 }
 
 /*!
@@ -853,7 +653,7 @@ IVFKFeature *VFKDataBlockSQLite::GetFeature(GIntBig nFID)
         LoadGeometry();
     }
 
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     CPLString osSQL;
     osSQL.Printf("SELECT rowid FROM %s WHERE %s = " CPL_FRMT_GIB, m_pszName,
@@ -886,7 +686,7 @@ IVFKFeature *VFKDataBlockSQLite::GetFeature(GIntBig nFID)
 VFKFeatureSQLite *VFKDataBlockSQLite::GetFeature(const char *column,
                                                  GUIntBig value, bool bGeom)
 {
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     CPLString osSQL;
     osSQL.Printf("SELECT %s from %s WHERE %s = " CPL_FRMT_GUIB, FID_COLUMN,
@@ -909,7 +709,7 @@ VFKFeatureSQLite *VFKDataBlockSQLite::GetFeature(const char *column,
     if (idx < 0 || idx >= m_nFeatureCount)  // ? assert
         return nullptr;
 
-    return (VFKFeatureSQLite *)GetFeatureByIndex(idx);
+    return cpl::down_cast<VFKFeatureSQLite *>(GetFeatureByIndex(idx));
 }
 
 /*!
@@ -926,7 +726,7 @@ VFKFeatureSQLite *VFKDataBlockSQLite::GetFeature(const char **column,
                                                  GUIntBig *value, int num,
                                                  bool bGeom)
 {
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     CPLString osSQL;
     osSQL.Printf("SELECT %s FROM %s WHERE ", FID_COLUMN, m_pszName);
@@ -956,7 +756,7 @@ VFKFeatureSQLite *VFKDataBlockSQLite::GetFeature(const char **column,
     if (idx < 0 || idx >= m_nFeatureCount)  // ? assert
         return nullptr;
 
-    return (VFKFeatureSQLite *)GetFeatureByIndex(idx);
+    return cpl::down_cast<VFKFeatureSQLite *>(GetFeatureByIndex(idx));
 }
 
 /*!
@@ -971,7 +771,7 @@ VFKFeatureSQLite *VFKDataBlockSQLite::GetFeature(const char **column,
 VFKFeatureSQLiteList VFKDataBlockSQLite::GetFeatures(const char **column,
                                                      GUIntBig *value, int num)
 {
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     CPLString osItem;
     CPLString osSQL;
@@ -1024,7 +824,7 @@ OGRErr VFKDataBlockSQLite::SaveGeometryToDB(const OGRGeometry *poGeom,
 
     sqlite3_stmt *hStmt = nullptr;
 
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     /* check if geometry column exists (see SUPPRESS_GEOMETRY open
        option) */
@@ -1076,7 +876,7 @@ OGRErr VFKDataBlockSQLite::SaveGeometryToDB(const OGRGeometry *poGeom,
 */
 bool VFKDataBlockSQLite::LoadGeometryFromDB()
 {
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     if (!poReader->IsSpatial()) /* check if DB is spatial */
         return false;
@@ -1170,7 +970,7 @@ void VFKDataBlockSQLite::UpdateVfkBlocks(int nGeometries)
 {
     CPLString osSQL;
 
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     /* update number of features in VFK_DB_TABLE table */
     const int nFeatCount = (int)GetFeatureCount();
@@ -1205,7 +1005,7 @@ void VFKDataBlockSQLite::UpdateVfkBlocks(int nGeometries)
 void VFKDataBlockSQLite::UpdateFID(GIntBig iFID, const std::vector<int> &rowId)
 {
     CPLString osSQL, osValue;
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     /* update number of geometries in VFK_DB_TABLE table */
     osSQL.Printf("UPDATE %s SET %s = " CPL_FRMT_GIB " WHERE rowid IN (",
@@ -1287,7 +1087,7 @@ OGRErr VFKDataBlockSQLite::AddGeometryColumn() const
 {
     CPLString osSQL;
 
-    VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;
+    VFKReaderSQLite *poReader = cpl::down_cast<VFKReaderSQLite *>(m_poReader);
 
     osSQL.Printf("SELECT %s FROM %s LIMIT 0", GEOM_COLUMN, m_pszName);
     if (poReader->ExecuteSQL(osSQL.c_str(), CE_None) == OGRERR_FAILURE)
@@ -1320,7 +1120,8 @@ OGRErr VFKDataBlockSQLite::LoadProperties()
     if (EQUAL(m_pszName, "SBP") || EQUAL(m_pszName, "SBPG"))
         osSQL += " WHERE PORADOVE_CISLO_BODU = 1";
 
-    m_hStmt = ((VFKReaderSQLite *)m_poReader)->PrepareStatement(osSQL.c_str());
+    m_hStmt = cpl::down_cast<VFKReaderSQLite *>(m_poReader)
+                  ->PrepareStatement(osSQL.c_str());
 
     if (m_hStmt == nullptr)
         return OGRERR_FAILURE;

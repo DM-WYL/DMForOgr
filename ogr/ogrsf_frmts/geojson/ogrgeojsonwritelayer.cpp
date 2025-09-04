@@ -467,7 +467,7 @@ OGRErr OGRGeoJSONWriteLayer::CreateField(const OGRFieldDefn *poField,
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRGeoJSONWriteLayer::TestCapability(const char *pszCap)
+int OGRGeoJSONWriteLayer::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, OLCCreateField))
         return TRUE;
@@ -479,10 +479,11 @@ int OGRGeoJSONWriteLayer::TestCapability(const char *pszCap)
 }
 
 /************************************************************************/
-/*                            GetExtent()                               */
+/*                           IGetExtent()                               */
 /************************************************************************/
 
-OGRErr OGRGeoJSONWriteLayer::GetExtent(OGREnvelope *psExtent, int)
+OGRErr OGRGeoJSONWriteLayer::IGetExtent(int /*iGeomField*/,
+                                        OGREnvelope *psExtent, bool)
 {
     if (sEnvelopeLayer.IsInit())
     {

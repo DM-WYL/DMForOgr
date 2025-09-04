@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  gdaladdo testing
@@ -456,3 +455,67 @@ def test_gdaladdo_partial_refresh_from_source_timestamp_gti(gdaladdo_path, tmp_p
             ovr_data_refreshed[idx] = ovr_data_ori[idx]
     assert ovr_data_refreshed == ovr_data_ori
     ds = None
+
+
+###############################################################################
+#
+
+
+def test_gdaladdo_illegal_factor(gdaladdo_path, tmp_path):
+
+    shutil.copyfile("../gcore/data/byte.tif", f"{tmp_path}/byte.tif")
+
+    _, err = gdaltest.runexternal_out_and_err(
+        f"{gdaladdo_path} -r average {tmp_path}/byte.tif invalid"
+    )
+    assert "Value 'invalid' is not a positive integer subsampling factor" in err
+    with gdal.Open(f"{tmp_path}/byte.tif") as ds:
+        assert ds.GetRasterBand(1).GetOverviewCount() == 0
+
+    _, err = gdaltest.runexternal_out_and_err(
+        f"{gdaladdo_path} -r average {tmp_path}/byte.tif 0"
+    )
+    assert "Value '0' is not a positive integer subsampling factor" in err
+    with gdal.Open(f"{tmp_path}/byte.tif") as ds:
+        assert ds.GetRasterBand(1).GetOverviewCount() == 0
+
+    _, err = gdaltest.runexternal_out_and_err(
+        f"{gdaladdo_path} -r average {tmp_path}/byte.tif -1"
+    )
+    assert "Value '-1' is not a positive integer subsampling factor" in err
+    with gdal.Open(f"{tmp_path}/byte.tif") as ds:
+        assert ds.GetRasterBand(1).GetOverviewCount() == 0
+
+
+###############################################################################
+#
+
+
+@pytest.mark.require_driver("COG")
+def test_gdaladdo_cog(gdaladdo_path, tmp_path):
+
+    src_ds = gdal.GetDriverByName("MEM").Create("", 1024, 1024)
+    filename = tmp_path / "my_cog.tif"
+    gdal.GetDriverByName("COG").CreateCopy(filename, src_ds)
+
+    with gdal.Open(filename) as ds:
+        assert ds.GetRasterBand(1).GetOverviewCount() > 0
+
+    _, err = gdaltest.runexternal_out_and_err(f"{gdaladdo_path} -clean {filename}")
+    assert err == ""
+
+    with gdal.Open(filename) as ds:
+        assert ds.GetRasterBand(1).GetOverviewCount() == 0
+
+    _, err = gdaltest.runexternal_out_and_err(f"{gdaladdo_path} {filename}")
+    assert "has C(loud) O(ptimized) G(eoTIFF) layout" in err
+
+    _, err = gdaltest.runexternal_out_and_err(
+        f"{gdaladdo_path} {filename} -oo IGNORE_COG_LAYOUT_BREAK=YES"
+    )
+    assert (
+        "Adding new overviews invalidates the LAYOUT=IFDS_BEFORE_DATA property" in err
+    )
+
+    with gdal.Open(filename) as ds:
+        assert ds.GetRasterBand(1).GetOverviewCount() > 0

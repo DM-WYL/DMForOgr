@@ -79,6 +79,7 @@ class GIFDataset final : public GIFAbstractDataset
 
   public:
     GIFDataset();
+    ~GIFDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
 
@@ -88,6 +89,8 @@ class GIFDataset final : public GIFAbstractDataset
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
+
+GIFDataset::~GIFDataset() = default;
 
 /************************************************************************/
 /* ==================================================================== */
@@ -161,9 +164,7 @@ GDALDataset *GIFDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The GIF driver does not support update access to existing"
-                 " files.");
+        ReportUpdateNotSupportedByDriver("GIF");
         return nullptr;
     }
 
@@ -612,10 +613,9 @@ GDALDataset *GIFDataset::CreateCopy(const char *pszFilename,
     /* -------------------------------------------------------------------- */
     if (CPLFetchBool(papszOptions, "WORLDFILE", false))
     {
-        double adfGeoTransform[6] = {};
-
-        if (poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None)
-            GDALWriteWorldFile(pszFilename, "wld", adfGeoTransform);
+        GDALGeoTransform gt;
+        if (poSrcDS->GetGeoTransform(gt) == CE_None)
+            GDALWriteWorldFile(pszFilename, "wld", gt.data());
     }
 
     /* -------------------------------------------------------------------- */

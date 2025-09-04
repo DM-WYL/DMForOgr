@@ -301,7 +301,7 @@ OGRSelafinDataSource::~OGRSelafinDataSource()
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRSelafinDataSource::TestCapability(const char *pszCap)
+int OGRSelafinDataSource::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
         return TRUE;
@@ -317,7 +317,7 @@ int OGRSelafinDataSource::TestCapability(const char *pszCap)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRSelafinDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRSelafinDataSource::GetLayer(int iLayer) const
 {
     if (iLayer < 0 || iLayer >= nLayers)
         return nullptr;
@@ -373,7 +373,7 @@ int OGRSelafinDataSource::Open(const char *pszFilename, int bUpdateIn,
             CSLDestroy(papszFiles);
             return FALSE;
         }
-        osFilename = CPLFormFilename(osFilename, papszFiles[0], nullptr);
+        osFilename = CPLFormFilenameSafe(osFilename, papszFiles[0], nullptr);
         CSLDestroy(papszFiles);
         return OpenTable(osFilename);
     }
@@ -388,8 +388,8 @@ int OGRSelafinDataSource::Open(const char *pszFilename, int bUpdateIn,
     char **papszNames = VSIReadDir(osFilename);
     for (i = 0; papszNames != NULL && papszNames[i] != NULL; i++)
     {
-        CPLString oSubFilename =
-            CPLFormFilename(osFilename, papszNames[i], NULL);
+        const CPLString oSubFilename =
+            CPLFormFilenameSafe(osFilename, papszNames[i], NULL);
         if (EQUAL(papszNames[i], ".") || EQUAL(papszNames[i], ".."))
             continue;
         if (VSIStatL(oSubFilename, &sStatBuf) != 0 ||
@@ -443,7 +443,7 @@ int OGRSelafinDataSource::OpenTable(const char *pszFilename)
     }
     if (!bUpdate && strstr(pszFilename, "/vsigzip/") == nullptr &&
         strstr(pszFilename, "/vsizip/") == nullptr)
-        fp = (VSILFILE *)VSICreateBufferedReaderHandle((VSIVirtualHandle *)fp);
+        fp = VSICreateBufferedReaderHandle(fp);
 
     // Quickly check if the file is in Selafin format, before actually starting
     // to read to make it faster
@@ -469,7 +469,7 @@ int OGRSelafinDataSource::OpenTable(const char *pszFilename)
     } */
 
     // Get layer base name
-    CPLString osBaseLayerName = CPLGetBasename(pszFilename);
+    CPLString osBaseLayerName = CPLGetBasenameSafe(pszFilename);
 
     // Read header of file to get common information for all layers
     // poHeader now owns fp

@@ -10,6 +10,17 @@ OSM - OpenStreetMap XML and PBF
 This driver reads OpenStreetMap files, in .osm (XML based) and .pbf
 (optimized binary) formats.
 
+The driver reconstructs point, line and polygon geometries from the OpenStreetMap
+base objects, which are nodes, ways and relations. Such operation can be very
+slow for large files. Consequently, except for small extracts of the
+OSM database (that is .pbf files of a few megabytes at most), using this driver
+for interactive reading is not appropriate. It is better used to import an OSM file
+into a proper GIS format such as GeoPackage.
+Even if the driver can theoretically deal with arbitrarily large OSM files,
+it is not recommended to use it to import the whole planet.
+A tool such as `osm2pgsql <https://osm2pgsql.org>`__ which imports into a PostgreSQL
+database is much better suited for such operation.
+
 The driver is available if GDAL is built with SQLite support and, for
 .osm XML files, with Expat support.
 
@@ -204,7 +215,7 @@ You can convert a .osm or .pbf file without downloading it :
 
 ::
 
-   wget -O - http://www.example.com/some.pbf | 
+   wget -O - http://www.example.com/some.pbf |
    ogr2ogr -f SQLite my.sqlite /vsistdin/
 
    or
@@ -216,7 +227,7 @@ And to combine the above steps :
 
 ::
 
-   wget -O - http://www.example.com/some.osm.bz2 | 
+   wget -O - http://www.example.com/some.osm.bz2 |
    bzcat | ogr2ogr -f SQLite my.sqlite /vsistdin/
 
 Open options
@@ -264,6 +275,57 @@ The following open options are supported:
 
       Format for all_tags/other_tags fields.
 
+Examples
+--------
+
+List the contents of a local PBF file, with the original downloaded from https://download.geofabrik.de/europe/bosnia-herzegovina-latest.osm.pbf.
+
+.. tabs::
+
+   .. code-tab:: bash ogr2ogr
+
+        ogrinfo bosnia-herzegovina-latest.osm.pbf
+
+   .. code-tab:: bash gdal vector info
+
+        gdal vector info bosnia-herzegovina-latest.osm.pbf
+
+Export all points tagged as trees (``"natural"=>"tree"``) to a GeoJSON file:
+
+.. tabs::
+
+   .. code-tab:: bash
+
+        ogr2ogr trees.geojson bosnia-herzegovina-latest.osm.pbf \
+          -sql "SELECT * FROM points WHERE other_tags LIKE '%\"natural\"=>\"tree\"%'" \
+          -dialect sqlite
+
+   .. code-tab:: ps1
+
+        ogr2ogr trees.geojson bosnia-herzegovina-latest.osm.pbf `
+          -sql "SELECT * FROM points WHERE other_tags LIKE '%\""natural\""=>\""tree\""%'" `
+          -dialect sqlite
+
+As above, but using a :ref:`gdal_vector_pipeline` and with an additional bounding box filter for the Mostar region:
+
+.. tabs::
+
+   .. code-tab:: bash
+
+      gdal vector pipeline \
+        ! read --input bosnia-herzegovina-latest.osm.pbf \
+        ! filter --bbox 17.7789,43.3111,17.8379,43.3677 \
+        ! sql "SELECT * FROM points WHERE other_tags LIKE '%\"natural\"=>\"tree\"%'" --dialect sqlite \
+        ! write trees-filtered.geojson
+
+   .. code-tab:: ps1
+
+        gdal vector pipeline `
+          ! read --input bosnia-herzegovina-latest.osm.pbf `
+          ! filter --bbox 17.7789,43.3111,17.8379,43.3677 `
+          ! sql "SELECT * FROM points WHERE other_tags LIKE '%\""natural\""=>\""tree\""%'" --dialect sqlite `
+          ! write trees-filtered.geojson
+
 See Also
 --------
 
@@ -272,3 +334,7 @@ See Also
    description <http://wiki.openstreetmap.org/wiki/OSM_XML>`__
 -  `OSM PBF Format
    description <http://wiki.openstreetmap.org/wiki/PBF_Format>`__
+
+
+.. spelling:word-list::
+    Mostar

@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  MSG Native Reader
  * Purpose:  Base class for reading in the headers of MSG native images
@@ -52,9 +51,7 @@ class Msg_reader_core
     explicit Msg_reader_core(const char *fname);
     explicit Msg_reader_core(VSILFILE *fp);
 
-    virtual ~Msg_reader_core()
-    {
-    }
+    virtual ~Msg_reader_core();
 
     bool get_open_success() const
     {

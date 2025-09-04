@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  VFK Reader
  * Purpose:  Private Declarations for OGR free VFK Reader code.
@@ -81,7 +80,7 @@ class VFKReader : public IVFKReader
 
     bool IsValid() const override
     {
-        return true;
+        return m_poFD != nullptr;
     }
 
     bool HasFileField() const override
@@ -144,7 +143,7 @@ class VFKReaderSQLite : public VFKReader
 
     bool IsValid() const override
     {
-        return m_poDB != nullptr;
+        return VFKReader::IsValid() && m_poDB != nullptr;
     }
 
     int ReadDataBlocks(bool = false) override;

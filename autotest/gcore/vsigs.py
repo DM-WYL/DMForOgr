@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test /vsigs
@@ -185,7 +184,36 @@ def test_vsigs_no_sign_request(gs_test_config):
             if gdaltest.gdalurlopen(expected_url) is None:
                 pytest.skip("cannot open URL")
             pytest.fail()
+            assert len(gdal.VSIFReadL(1, 1, f)) == 1
+
         gdal.VSIFCloseL(f)
+
+
+###############################################################################
+# Test GS_NO_SIGN_REQUEST=YES with a fake Google Cloud Storage server
+
+
+def test_vsigs_no_sign_request_fake_server(webserver_port):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "GET",
+        "/gs_fake_bucket_http_header_file/resource",
+        206,
+        {"Content-type": "text/plain"},
+        "Y",
+        expected_headers={"Range": "bytes=0-16383"},
+    )
+    with webserver.install_http_handler(handler):
+
+        with gdaltest.config_options({"GS_NO_SIGN_REQUEST": "YES"}, thread_local=False):
+            f = open_for_read("/vsigs/gs_fake_bucket_http_header_file/resource")
+            assert f is not None
+            data = gdal.VSIFReadL(1, 1, f)
+            gdal.VSIFCloseL(f)
+            assert len(data) == 1
 
 
 ###############################################################################
@@ -368,6 +396,69 @@ def test_vsigs_GDAL_HTTP_HEADERS(gs_test_config, webserver_port):
             data = gdal.VSIFReadL(1, 1, f)
             gdal.VSIFCloseL(f)
             assert len(data) == 1
+
+
+###############################################################################
+# Test re-opening after changing configuration option (#11964)
+
+
+def test_vsigs_open_after_config_option_change(gs_test_config, webserver_port):
+    gdal.VSICurlClearCache()
+
+    with gdaltest.config_options(
+        {
+            "GS_SECRET_ACCESS_KEY": "GS_SECRET_ACCESS_KEY",
+            "GS_ACCESS_KEY_ID": "GS_ACCESS_KEY_ID",
+        },
+        thread_local=False,
+    ):
+        handler = webserver.SequentialHandler()
+        handler.add(
+            "GET", "/test_vsigs_open_after_config_option_change/?delimiter=%2F", 403
+        )
+        handler.add("GET", "/test_vsigs_open_after_config_option_change/test.bin", 403)
+        with webserver.install_http_handler(handler):
+            with gdal.quiet_errors():
+                f = open_for_read(
+                    "/vsigs/test_vsigs_open_after_config_option_change/test.bin"
+                )
+            assert f is None
+
+    # Does not attempt any network access since we didn't change significant
+    # parameters
+    f = open_for_read("/vsigs/test_vsigs_open_after_config_option_change/test.bin")
+    assert f is None
+
+    with gdaltest.config_options(
+        {
+            "GS_SECRET_ACCESS_KEY": "GS_SECRET_ACCESS_KEY",
+            "GS_ACCESS_KEY_ID": "another_key_id",
+        },
+        thread_local=False,
+    ):
+        handler = webserver.SequentialHandler()
+        handler.add(
+            "GET",
+            "/test_vsigs_open_after_config_option_change/?delimiter=%2F",
+            200,
+            {"Content-type": "application/xml"},
+            """<?xml version="1.0" encoding="UTF-8"?>
+                        <ListBucketResult>
+                            <Prefix></Prefix>
+                            <Contents>
+                                <Key>test.bin</Key>
+                                <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                                <Size>123456</Size>
+                            </Contents>
+                        </ListBucketResult>
+                    """,
+        )
+        with webserver.install_http_handler(handler):
+            f = open_for_read(
+                "/vsigs/test_vsigs_open_after_config_option_change/test.bin"
+            )
+            assert f is not None
+            gdal.VSIFCloseL(f)
 
 
 ###############################################################################
@@ -690,6 +781,136 @@ def test_vsigs_headers(gs_test_config, webserver_port):
             assert gdal.SetFileMetadata(
                 "/vsigs/test_metadata/foo.txt", {"x-goog-meta-foo": "bar"}, "HEADERS"
             )
+
+
+###############################################################################
+# Test GetFileMetadata() on root of bucket with OAuth2
+
+
+@gdaltest.enable_exceptions()
+def test_vsigs_GetFileMetadatabucket_root_oauth2(
+    gs_test_config, webserver_port, tmp_vsimem
+):
+
+    gdal.VSICurlClearCache()
+
+    service_account_filename = str(tmp_vsimem / "service_account.json")
+    gdal.FileFromMemBuffer(
+        service_account_filename,
+        """{
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIICeAIBADANBgkqhkiG9w0BAQEFAASCAmIwggJeAgEAAoGBAOlwJQLLDG1HeLrk\nVNcFR5Qptto/rJE5emRuy0YmkVINT4uHb1be7OOo44C2Ev8QPVtNHHS2XwCY5gTm\ni2RfIBLv+VDMoVQPqqE0LHb0WeqGmM5V1tHbmVnIkCcKMn3HpK30grccuBc472LQ\nDVkkGqIiGu0qLAQ89JP/r0LWWySRAgMBAAECgYAWjsS00WRBByAOh1P/dz4kfidy\nTabiXbiLDf3MqJtwX2Lpa8wBjAc+NKrPXEjXpv0W3ou6Z4kkqKHJpXGg4GRb4N5I\n2FA+7T1lA0FCXa7dT2jvgJLgpBepJu5b//tqFqORb4A4gMZw0CiPN3sUsWsSw5Hd\nDrRXwp6sarzG77kvZQJBAPgysAmmXIIp9j1hrFSkctk4GPkOzZ3bxKt2Nl4GFrb+\nbpKSon6OIhP1edrxTz1SMD1k5FiAAVUrMDKSarbh5osCQQDwxq4Tvf/HiYz79JBg\nWz5D51ySkbg01dOVgFW3eaYAdB6ta/o4vpHhnbrfl6VO9oUb3QR4hcrruwnDHsw3\n4mDTAkEA9FPZjbZSTOSH/cbgAXbdhE4/7zWOXj7Q7UVyob52r+/p46osAk9i5qj5\nKvnv2lrFGDrwutpP9YqNaMtP9/aLnwJBALLWf9n+GAv3qRZD0zEe1KLPKD1dqvrj\nj+LNjd1Xp+tSVK7vMs4PDoAMDg+hrZF3HetSQM3cYpqxNFEPgRRJOy0CQQDQlZHI\nyzpSgEiyx8O3EK1iTidvnLXbtWabvjZFfIE/0OhfBmN225MtKG3YLV2HoUvpajLq\ngwE6fxOLyJDxuWRf\n-----END PRIVATE KEY-----\n",
+  "client_email": "CLIENT_EMAIL",
+  "type": "service_account"
+                           }""",
+    )
+
+    gdal.SetPathSpecificOption(
+        "/vsigs/gs_fake_bucket",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        service_account_filename,
+    )
+
+    try:
+        with gdaltest.config_options(
+            {
+                "GO2A_AUD": "http://localhost:%d/oauth2/v4/token" % webserver_port,
+                "GOA2_NOW": "123456",
+            },
+            thread_local=False,
+        ):
+
+            gdal.VSICurlClearCache()
+
+            handler = webserver.SequentialHandler()
+
+            def method(request):
+                request.send_response(200)
+                request.send_header("Content-type", "text/plain")
+                content = """{
+                        "access_token" : "ACCESS_TOKEN",
+                        "token_type" : "Bearer",
+                        "expires_in" : 3600,
+                        }"""
+                request.send_header("Content-Length", len(content))
+                request.end_headers()
+                request.wfile.write(content.encode("ascii"))
+
+            handler.add("POST", "/oauth2/v4/token", custom_method=method)
+
+            handler.add(
+                "GET",
+                "/storage/v1/b/gs_fake_bucket",
+                200,
+                {"Content-type": "application/json"},
+                '{"foo":"bar"}',
+            )
+            try:
+                with webserver.install_http_handler(handler):
+                    md = gdal.GetFileMetadata("/vsigs/gs_fake_bucket/", None)
+
+            except Exception:
+                if (
+                    gdal.GetLastErrorMsg().find("CPLRSASHA256Sign() not implemented")
+                    >= 0
+                ):
+                    pytest.skip("CPLRSASHA256Sign() not implemented")
+
+            assert md == {"foo": "bar"}
+    finally:
+        gdal.SetPathSpecificOption(
+            "/vsigs/gs_fake_bucket", "GOOGLE_APPLICATION_CREDENTIALS", None
+        )
+
+
+###############################################################################
+# Test GetFileMetadata() on root of bucket with manual OAuth2
+
+
+def test_vsigs_GetFileMetadatabucket_root_manual_oauth2(gs_test_config, webserver_port):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "GET",
+        "/storage/v1/b/gs_fake_bucket",
+        200,
+        {"Content-type": "application/json"},
+        '{"foo":"bar"}',
+        expected_headers={"Authorization": "Bearer MY_BEARER"},
+    )
+    with webserver.install_http_handler(handler):
+
+        with gdaltest.config_options(
+            {
+                "GDAL_HTTP_HEADERS": "Authorization: Bearer MY_BEARER",
+            },
+            thread_local=False,
+        ):
+            md = gdal.GetFileMetadata("/vsigs/gs_fake_bucket/", None)
+            assert md == {"foo": "bar"}
+
+
+###############################################################################
+# Test GetFileMetadata() on root of bucket with non-OAuth2 (does not work)
+
+
+def test_vsigs_GetFileMetadatabucket_root_not_oauth2(gs_test_config, webserver_port):
+
+    gdal.VSICurlClearCache()
+
+    with gdaltest.config_options(
+        {
+            "GS_SECRET_ACCESS_KEY": "GS_SECRET_ACCESS_KEY",
+            "GS_ACCESS_KEY_ID": "GS_ACCESS_KEY_ID",
+        },
+        thread_local=False,
+    ):
+
+        handler = webserver.SequentialHandler()
+        with webserver.install_http_handler(handler):
+            md = gdal.GetFileMetadata("/vsigs/gs_fake_bucket/", None)
+        assert md == {}
 
 
 ###############################################################################
@@ -1394,6 +1615,51 @@ Content-Length: 0
         assert ret
 
     gdal.Unlink("/vsimem/.boto")
+
+
+###############################################################################
+# Test UnlinkBatch() with manual OAuth2
+
+
+def test_vsigs_unlinkbatch_manual_oauth2(gs_test_config, webserver_port):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "POST",
+        "/batch/storage/v1",
+        200,
+        {
+            "content-type": "multipart/mixed; boundary=batch_phVs0DE8tHbyfvlYTZEeI5_snlh9XJR5"
+        },
+        """--batch_phVs0DE8tHbyfvlYTZEeI5_snlh9XJR5
+Content-Type: application/http
+Content-ID: <response-1>
+
+HTTP/1.1 204 No Content
+Content-Length: 0
+
+
+--batch_phVs0DE8tHbyfvlYTZEeI5_snlh9XJR5--
+""",
+        expected_body=b"--===============7330845974216740156==\r\nContent-Type: application/http\r\nContent-ID: <1>\r\n\r\n\r\nDELETE /storage/v1/b/unlink_batch/o/foo HTTP/1.1\r\n\r\n\r\n--===============7330845974216740156==--\r\n",
+        expected_headers={"Authorization": "Bearer MY_BEARER"},
+    )
+    with webserver.install_http_handler(handler):
+
+        with gdaltest.config_options(
+            {
+                "GDAL_HTTP_HEADERS": "Authorization: Bearer MY_BEARER",
+            },
+            thread_local=False,
+        ):
+            ret = gdal.UnlinkBatch(
+                [
+                    "/vsigs/unlink_batch/foo",
+                ]
+            )
+            assert ret
 
 
 ###############################################################################

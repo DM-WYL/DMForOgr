@@ -12,6 +12,7 @@ import sys
 from glob import glob
 from pathlib import Path
 
+import setuptools
 from setuptools.command.build_ext import build_ext
 from setuptools import setup
 from setuptools import find_packages
@@ -157,7 +158,7 @@ def has_flag(compiler, flagname):
 # since they may be directly used by users. So we do a monkey patching of
 # easy_install.install_wrapper_scripts to install a modified
 # easy_install.delete_blockers method that does NOT remove .py files
-if sys.platform == 'win32':
+if sys.platform == 'win32' and int(setuptools.__version__.split('.')[0]) < 80:
     from setuptools.command.easy_install import easy_install
 
     original_install_wrapper_scripts = easy_install.install_wrapper_scripts
@@ -186,20 +187,32 @@ if sys.platform == 'win32':
 
 numpy_include_dir = '.'
 numpy_error_msg = ""
-try:
-    numpy_include_dir = get_numpy_include()
-    HAVE_NUMPY = numpy_include_dir != '.'
-    if not HAVE_NUMPY:
-        numpy_error_msg = "numpy found, but numpy headers were not found!"
-except ImportError:
-    HAVE_NUMPY = False
-    numpy_error_msg = "numpy not available!"
 
-if not HAVE_NUMPY:
-   if "GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY" in os.environ:
-      print("WARNING: " + numpy_error_msg + " Array support will not be enabled.")
-   else:
-      raise Exception(numpy_error_msg + " This error may happen if you build/install using setup.py directly, but should normally not happen if you install using pip install. If you still want to build the bindings without numpy support, define the GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY environment variable")
+do_numpy_detection = True
+if "GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY" in os.environ:
+    v = os.environ["GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY"].upper()
+    if v in ('YES', '1', 'ON', 'TRUE'):
+        do_numpy_detection = False
+    elif v not in ('NO', '0', 'OFF', 'FALSE'):
+        raise Exception("Unrecognized value for GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY")
+
+if do_numpy_detection:
+    try:
+        numpy_include_dir = get_numpy_include()
+        HAVE_NUMPY = numpy_include_dir != '.'
+        if not HAVE_NUMPY:
+            numpy_error_msg = "numpy found, but numpy headers were not found!"
+    except ImportError:
+        HAVE_NUMPY = False
+        numpy_error_msg = "numpy not available!"
+
+    if not HAVE_NUMPY:
+        if "GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY" in os.environ:
+            print("WARNING: " + numpy_error_msg + " Array support will not be enabled.")
+        else:
+            raise Exception(numpy_error_msg + " This error may happen if you build/install using setup.py directly, but should normally not happen if you install using pip install. If you still want to build the bindings without numpy support, define the GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY environment variable")
+else:
+    HAVE_NUMPY = False
 
 class gdal_ext(build_ext):
 
@@ -273,7 +286,11 @@ class gdal_ext(build_ext):
         global include_dirs, library_dirs
 
         try:
-            library_version = self.get_gdal_config("version").replace("dev", "")
+            library_version = self.get_gdal_config("version")
+            for suffix in ("dev", "beta", "RC"):
+                pos = library_version.find(suffix)
+                if pos > 0:
+                    library_version = library_version[0:pos]
             library_version_num = [int(x) for x in library_version.split('.')]
             gdal_python_version = [int(x) for x in version.split('.')]
             if library_version_num < gdal_python_version:
@@ -328,6 +345,12 @@ class gdal_ext(build_ext):
             ext.extra_compile_args.append("/DSWIG_PYTHON_SILENT_MEMLEAK")
         else:
             ext.extra_compile_args.append("-DSWIG_PYTHON_SILENT_MEMLEAK")
+
+        # Add -isysroot on osx if used in cmake
+        if '@CMAKE_OSX_SYSROOT@':
+            ext.extra_compile_args.extend(['-isysroot', '@CMAKE_OSX_SYSROOT@'])
+            ext.extra_link_args.extend(['-isysroot', '@CMAKE_OSX_SYSROOT@'])
+
 
         return build_ext.build_extension(self, ext)
 

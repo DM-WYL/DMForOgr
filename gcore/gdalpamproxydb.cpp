@@ -21,9 +21,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#if HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
 
 #include <memory>
 #include <string>
@@ -89,8 +86,9 @@ void GDALPamProxyDB::LoadDB()
     /*      Open the database relating original names to proxy .aux.xml     */
     /*      file names.                                                     */
     /* -------------------------------------------------------------------- */
-    CPLString osDBName = CPLFormFilename(osProxyDBDir, "gdal_pam_proxy", "dat");
-    VSILFILE *fpDB = VSIFOpenL(osDBName, "r");
+    const std::string osDBName =
+        CPLFormFilenameSafe(osProxyDBDir, "gdal_pam_proxy", "dat");
+    VSILFILE *fpDB = VSIFOpenL(osDBName.c_str(), "r");
 
     nUpdateCounter = 0;
     if (fpDB == nullptr)
@@ -167,8 +165,8 @@ void GDALPamProxyDB::LoadDB()
         }
         iNext++;
 
-        aosOriginalFiles.push_back(osOriginal);
-        aosProxyFiles.push_back(osProxy);
+        aosOriginalFiles.push_back(std::move(osOriginal));
+        aosProxyFiles.push_back(std::move(osProxy));
     }
 
     CPLFree(pszDBData);
@@ -185,9 +183,10 @@ void GDALPamProxyDB::SaveDB()
     /*      Open the database relating original names to proxy .aux.xml     */
     /*      file names.                                                     */
     /* -------------------------------------------------------------------- */
-    CPLString osDBName = CPLFormFilename(osProxyDBDir, "gdal_pam_proxy", "dat");
+    const std::string osDBName =
+        CPLFormFilenameSafe(osProxyDBDir, "gdal_pam_proxy", "dat");
 
-    void *hLock = CPLLockFile(osDBName, 1.0);
+    void *hLock = CPLLockFile(osDBName.c_str(), 1.0);
 
     // proceed even if lock fails - we need CPLBreakLockFile()!
     if (hLock == nullptr)
@@ -198,7 +197,7 @@ void GDALPamProxyDB::SaveDB()
                  osDBName.c_str());
     }
 
-    VSILFILE *fpDB = VSIFOpenL(osDBName, "w");
+    VSILFILE *fpDB = VSIFOpenL(osDBName.c_str(), "w");
     if (fpDB == nullptr)
     {
         if (hLock)
@@ -226,7 +225,7 @@ void GDALPamProxyDB::SaveDB()
                  "Failed to write complete %s Pam Proxy DB.\n%s",
                  osDBName.c_str(), VSIStrerror(errno));
         CPL_IGNORE_RET_VAL(VSIFCloseL(fpDB));
-        VSIUnlink(osDBName);
+        VSIUnlink(osDBName.c_str());
         if (hLock)
             CPLUnlockFile(hLock);
         return;
@@ -250,7 +249,7 @@ void GDALPamProxyDB::SaveDB()
                      "Failed to write complete %s Pam Proxy DB.\n%s",
                      osDBName.c_str(), VSIStrerror(errno));
             CPL_IGNORE_RET_VAL(VSIFCloseL(fpDB));
-            VSIUnlink(osDBName);
+            VSIUnlink(osDBName.c_str());
             if (hLock)
                 CPLUnlockFile(hLock);
             return;
@@ -412,8 +411,8 @@ const char *PamAllocateProxy(const char *pszOriginal)
     /*      Add the proxy and the original to the proxy list and resave     */
     /*      the database.                                                   */
     /* -------------------------------------------------------------------- */
-    poProxyDB->aosOriginalFiles.push_back(osOriginal);
-    poProxyDB->aosProxyFiles.push_back(osProxy);
+    poProxyDB->aosOriginalFiles.push_back(std::move(osOriginal));
+    poProxyDB->aosProxyFiles.push_back(std::move(osProxy));
 
     poProxyDB->SaveDB();
 

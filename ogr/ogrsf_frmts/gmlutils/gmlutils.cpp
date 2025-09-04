@@ -82,12 +82,6 @@ bool GML_IsSRSLatLongOrder(const char *pszSRSName)
         // Shortcut.
         return true;
     }
-    /* fguuid:jgd20??.bl (Japanese FGD GML v4) */
-    else if (EQUALN(pszSRSName, "fguuid:jgd2011.bl", 17) ||
-             EQUALN(pszSRSName, "fguuid:jgd2001.bl", 17))
-    {
-        return true;
-    }
     else if (!EQUALN(pszSRSName, "EPSG:", 5))
     {
         OGRSpatialReference oSRS;
@@ -209,8 +203,20 @@ OGRGeometry *GML_BuildOGRGeometryFromList(
 {
     OGRGeometry *poGeom = nullptr;
     OGRGeometryCollection *poCollection = nullptr;
+#ifndef WITHOUT_CPLDEBUG
+    static const bool bDebugGML =
+        EQUAL(CPLGetConfigOption("CPL_DEBUG", ""), "GML");
+#endif
     for (int i = 0; papsGeometry[i] != nullptr; i++)
     {
+#ifndef WITHOUT_CPLDEBUG
+        if (bDebugGML)
+        {
+            char *pszXML = CPLSerializeXMLTree(papsGeometry[i]);
+            CPLDebug("GML", "Parsing: %s", pszXML);
+            CPLFree(pszXML);
+        }
+#endif
         OGRGeometry *poSubGeom = GML2OGRGeometry_XMLNode(
             papsGeometry[i], nPseudoBoolGetSecondaryGeometryOption, 0, 0, false,
             true, bFaceHoleNegative);
@@ -304,6 +310,10 @@ OGRGeometry *GML_BuildOGRGeometryFromList(
         {
             poGeom->swapXY();
         }
+    }
+    else if (eSwapCoordinates == GML_SWAP_YES)
+    {
+        poGeom->swapXY();
     }
 
     return poGeom;

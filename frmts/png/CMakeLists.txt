@@ -2,7 +2,8 @@ add_gdal_driver(TARGET gdal_PNG
                 SOURCES pngdataset.cpp pngdataset.h
                 CORE_SOURCES pngdrivercore.cpp
                 PLUGIN_CAPABLE_IF "NOT GDAL_USE_PNG_INTERNAL\\\;NOT GDAL_USE_ZLIB_INTERNAL"
-                NO_SHARED_SYMBOL_WITH_CORE)
+                NO_SHARED_SYMBOL_WITH_CORE
+)
 
 if(NOT TARGET gdal_PNG)
     return()
@@ -21,3 +22,7 @@ if (GDAL_USE_ZLIB_INTERNAL)
 else ()
   gdal_target_link_libraries(gdal_PNG PRIVATE ZLIB::ZLIB)
 endif ()
+
+if (GDAL_ENABLE_ARM_NEON_OPTIMIZATIONS)
+  target_compile_definitions(gdal_PNG PRIVATE -DUSE_NEON_OPTIMIZATIONS)
+endif()

@@ -15,6 +15,7 @@
 
 #include "gdal_priv.h"
 #include "cpl_error.h"
+#include "cpl_float.h"
 
 #include <algorithm>
 #include <array>
@@ -349,6 +350,11 @@ template <> struct GDALCachedPixelAccessorGetDataType<GUInt64>
 template <> struct GDALCachedPixelAccessorGetDataType<GInt64>
 {
     static constexpr GDALDataType DataType = GDT_Int64;
+};
+
+template <> struct GDALCachedPixelAccessorGetDataType<GFloat16>
+{
+    static constexpr GDALDataType DataType = GDT_Float16;
 };
 
 template <> struct GDALCachedPixelAccessorGetDataType<float>

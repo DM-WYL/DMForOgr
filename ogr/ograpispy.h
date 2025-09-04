@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  OGR C API "Spy"
@@ -39,13 +38,13 @@
  * reproducible way. The path for snapshots is the current working directory by
  * default, and can be changed by setting the OGR_API_SPY_SNAPSHOT_PATH
  * configuration option. If it is set to NO, the snapshot feature will be
- * disabled. The reliability of snapshoting relies on if the dataset correctly
+ * disabled. The reliability of snapshotting relies on if the dataset correctly
  * implements GetFileList() (for multi-file datasources)
  *
  * @since GDAL 2.0
  */
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(GDAL_DEBUG)
 #define OGRAPISPY_ENABLED
 #endif
 

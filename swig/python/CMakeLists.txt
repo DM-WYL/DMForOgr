@@ -5,15 +5,6 @@ if (CMAKE_CXX_FLAGS)
   string(REPLACE "/WX " " " CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ")
 endif ()
 
-set(GDAL_DATA_FILES
-    LICENSE.TXT
-    ${CMAKE_CURRENT_SOURCE_DIR}/data/template_tiles.mapml
-)
-set_property(
-  TARGET ${GDAL_LIB_TARGET_NAME}
-  APPEND
-  PROPERTY RESOURCE "${GDAL_DATA_FILES}")
-
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/osgeo/")
 set(GDAL_PYTHON_CSOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/extensions/")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/extensions/")
@@ -32,10 +23,13 @@ set(GDAL_PYTHON_CSOURCES
        ${PROJECT_SOURCE_DIR}/swig/include/python/python_strings.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/typemaps_python.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_docs.i
+       ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_algorithm_docs.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_band_docs.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_dataset_docs.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_driver_docs.i
+       ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_mdm_docs.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_operations_docs.i
+       ${PROJECT_SOURCE_DIR}/swig/include/python/docs/gdal_rat_docs.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/ogr_docs.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/ogr_featuredef_docs.i
        ${PROJECT_SOURCE_DIR}/swig/include/python/docs/ogr_feature_docs.i
@@ -188,7 +182,16 @@ if (Python_Interpreter_FOUND)
   endif ()
 
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/README.rst ${CMAKE_CURRENT_BINARY_DIR}/README.rst @ONLY)
-  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml ${CMAKE_CURRENT_BINARY_DIR}/pyproject.toml @ONLY)
+
+  execute_process(
+    COMMAND ${Python_EXECUTABLE} -c "import setuptools; print(setuptools.__version__)"
+    OUTPUT_VARIABLE SETUPTOOLS_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if (SETUPTOOLS_VERSION VERSION_GREATER_EQUAL 77.0.3)
+      configure_file(${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml.setuptools_gte_77 ${CMAKE_CURRENT_BINARY_DIR}/pyproject.toml @ONLY)
+  else()
+      configure_file(${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml ${CMAKE_CURRENT_BINARY_DIR}/pyproject.toml @ONLY)
+  endif()
 
   file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/get_suffix.py
        "from importlib.machinery import EXTENSION_SUFFIXES; print(EXTENSION_SUFFIXES[0])\n")
@@ -462,7 +465,22 @@ if __name__ == '__main__':
     set(INSTALL_ARGS "${INSTALL_ARGS} --install-layout=${GDAL_PYTHON_INSTALL_LAYOUT}")
     set(SETUPTOOLS_USE_DISTUTILS stdlib)
   elseif ("${SITE_PACKAGE_DIR}" MATCHES "dist-packages")
-    set(INSTALL_ARGS "${INSTALL_ARGS} --install-layout=deb")
+
+    # We are running on Debian, but test if our setuptools version supports
+    # Debian --install-layout
+    # This might not be the case if using a regular (non-Debian patched) Python
+    # installation or setuptools (cf https://github.com/OSGeo/gdal/issues/11636)
+    execute_process(
+        COMMAND env GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY=yes ${Python_EXECUTABLE_CMAKE} setup.py install --help
+        OUTPUT_VARIABLE SETUP_INSTALL_HELP
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    # If so, uses it.
+    if ("${SETUP_INSTALL_HELP}" MATCHES "install-layout")
+        set(INSTALL_ARGS "${INSTALL_ARGS} --install-layout=deb")
+    endif()
+
     if (NOT DEFINED GDAL_PYTHON_INSTALL_LIB AND "${PREFIX_FOR_TRIMMEDSYSCONFIG}" STREQUAL "/usr/local")
         # Scenario of https://github.com/OSGeo/gdal/issues/10242
         # For some reason patched setuptools of Debian fails to install by default

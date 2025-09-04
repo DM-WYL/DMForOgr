@@ -16,6 +16,7 @@
 #include "ogrsf_frmts.h"
 #include "../../ogr/ogrsf_frmts/osm/gpb.h"
 #include "ogr_recordbatch.h"
+#include "ogrlayerarrow.h"
 
 #include <string>
 #include <algorithm>
@@ -70,6 +71,9 @@ void testSpatialReferenceLeakOnCopy(OGRSpatialReference *poSRS)
         nLastCount = nCurCount;
 
         value3 = value;
+        // avoid Coverity Scan warning about above assignment being better
+        // replaced with a move.
+        EXPECT_NE(value.getSpatialReference(), nullptr);
         ASSERT_EQ(nLastCount, poSRS->GetReferenceCount());
     }
     ASSERT_EQ(1, poSRS->GetReferenceCount());
@@ -328,6 +332,8 @@ TEST_F(test_ogr, OGRGeometryCollection_copy_constructor_illegal_use)
     {
         CPLErrorHandlerPusher oPusher(CPLQuietErrorHandler);
         *mp_as_gc = gc;
+        // avoid Coverity Scan warning
+        EXPECT_EQ(gc.getSpatialReference(), nullptr);
     }
     EXPECT_STREQ(CPLGetLastErrorMsg(),
                  "Illegal use of OGRGeometryCollection::operator=(): trying to "
@@ -361,11 +367,67 @@ TEST_F(test_ogr, OGRCurvePolygon_copy_constructor_illegal_use)
     {
         CPLErrorHandlerPusher oPusher(CPLQuietErrorHandler);
         *poly_as_cp = cp;
+        // avoid Coverity Scan warning
+        EXPECT_EQ(cp.getSpatialReference(), nullptr);
     }
     EXPECT_STREQ(CPLGetLastErrorMsg(),
                  "Illegal use of OGRCurvePolygon::operator=(): trying to "
                  "assign an incompatible sub-geometry");
     EXPECT_TRUE(poly.IsEmpty());
+}
+
+template <class T> void testMove()
+{
+    auto poSRS = new OGRSpatialReference();
+    {
+        auto poOrigin = std::unique_ptr<T>(make<T>());
+        ASSERT_TRUE(nullptr != poOrigin);
+        poOrigin->assignSpatialReference(poSRS);
+
+        T valueCopy(*poOrigin);
+        const int refCountBefore = poSRS->GetReferenceCount();
+        T fromMoved(std::move(*poOrigin));
+        EXPECT_EQ(poSRS->GetReferenceCount(), refCountBefore);
+
+        ASSERT_TRUE(CPL_TO_BOOL(fromMoved.Equals(&valueCopy)))
+            << valueCopy.getGeometryName()
+            << ": move constructor changed a value";
+        EXPECT_EQ(fromMoved.getSpatialReference(), poSRS);
+
+        T valueCopy2(valueCopy);
+        EXPECT_EQ(valueCopy.getSpatialReference(), poSRS);
+        T value3;
+        const int refCountBefore2 = poSRS->GetReferenceCount();
+        value3 = std::move(valueCopy);
+        EXPECT_EQ(poSRS->GetReferenceCount(), refCountBefore2);
+
+        ASSERT_TRUE(CPL_TO_BOOL(value3.Equals(&valueCopy2)))
+            << valueCopy2.getGeometryName()
+            << ": move assignment operator changed a value";
+        EXPECT_EQ(value3.getSpatialReference(), poSRS);
+    }
+    EXPECT_EQ(poSRS->GetReferenceCount(), 1);
+    poSRS->Release();
+}
+
+TEST_F(test_ogr, geometry_move)
+{
+    testMove<OGRPoint>();
+    testMove<OGRLineString>();
+    testMove<OGRLinearRing>();
+    testMove<OGRCircularString>();
+    testMove<OGRCompoundCurve>();
+    testMove<OGRCurvePolygon>();
+    testMove<OGRPolygon>();
+    testMove<OGRGeometryCollection>();
+    testMove<OGRMultiSurface>();
+    testMove<OGRMultiPolygon>();
+    testMove<OGRMultiPoint>();
+    testMove<OGRMultiCurve>();
+    testMove<OGRMultiLineString>();
+    testMove<OGRTriangle>();
+    testMove<OGRPolyhedralSurface>();
+    testMove<OGRTriangulatedSurface>();
 }
 
 TEST_F(test_ogr, geometry_get_point)
@@ -488,8 +550,16 @@ TEST_F(test_ogr, style_manager)
 
 TEST_F(test_ogr, OGRParseDate)
 {
+    const auto OGRParseDateWrapper =
+        [](const char *str, OGRField *psField, int nFlags)
+    {
+        // Putting inside a std::string helps Valgrind and other checkers to
+        // detect out-of-bounds access
+        return OGRParseDate(std::string(str).c_str(), psField, nFlags);
+    };
+
     OGRField sField;
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:56", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:56", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 11);
     EXPECT_EQ(sField.Date.Day, 31);
@@ -498,32 +568,35 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 56.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:56+00", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:56+00", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.TZFlag, 100);
 
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:56+12:00", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:56+12:00", &sField, 0),
+              TRUE);
     EXPECT_EQ(sField.Date.TZFlag, 100 + 12 * 4);
 
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:56+1200", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:56+1200", &sField, 0),
+              TRUE);
     EXPECT_EQ(sField.Date.TZFlag, 100 + 12 * 4);
 
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:56+815", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:56+815", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.TZFlag, 100 + 8 * 4 + 1);
 
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:56-12:00", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:56-12:00", &sField, 0),
+              TRUE);
     EXPECT_EQ(sField.Date.TZFlag, 100 - 12 * 4);
 
-    EXPECT_EQ(OGRParseDate(" 2017/11/31 12:34:56", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper(" 2017/11/31 12:34:56", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
 
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:56.789", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:56.789", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Second, 56.789f);
 
     // Leap second
-    EXPECT_EQ(OGRParseDate("2017/11/31 12:34:60", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017/11/31 12:34:60", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Second, 60.0f);
 
-    EXPECT_EQ(OGRParseDate("2017-11-31T12:34:56", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017-11-31T12:34:56", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 11);
     EXPECT_EQ(sField.Date.Day, 31);
@@ -532,15 +605,22 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 56.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("2017-11-31T12:34:56Z", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017-11-31T12:34:56Z", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Second, 56.0f);
     EXPECT_EQ(sField.Date.TZFlag, 100);
 
-    EXPECT_EQ(OGRParseDate("2017-11-31T12:34:56.789Z", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017-11-31T12:34:56.789Z", &sField, 0),
+              TRUE);
     EXPECT_EQ(sField.Date.Second, 56.789f);
     EXPECT_EQ(sField.Date.TZFlag, 100);
 
-    EXPECT_EQ(OGRParseDate("2017-11-31", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017-11-31T23:59:59.999999Z", &sField, 0),
+              TRUE);
+    EXPECT_EQ(sField.Date.Hour, 23);
+    EXPECT_EQ(sField.Date.Minute, 59);
+    EXPECT_EQ(sField.Date.Second, 59.999f);
+
+    EXPECT_EQ(OGRParseDateWrapper("2017-11-31", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 11);
     EXPECT_EQ(sField.Date.Day, 31);
@@ -549,7 +629,7 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 0.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("2017-11-31Z", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017-11-31Z", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 11);
     EXPECT_EQ(sField.Date.Day, 31);
@@ -558,7 +638,7 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 0.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("12:34", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("12:34", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 0);
     EXPECT_EQ(sField.Date.Month, 0);
     EXPECT_EQ(sField.Date.Day, 0);
@@ -567,10 +647,10 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 0.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("12:34:56", &sField, 0), TRUE);
-    EXPECT_EQ(OGRParseDate("12:34:56.789", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("12:34:56", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("12:34:56.789", &sField, 0), TRUE);
 
-    EXPECT_EQ(OGRParseDate("T12:34:56", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("T12:34:56", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 0);
     EXPECT_EQ(sField.Date.Month, 0);
     EXPECT_EQ(sField.Date.Day, 0);
@@ -579,7 +659,7 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 56.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("T123456", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("T123456", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 0);
     EXPECT_EQ(sField.Date.Month, 0);
     EXPECT_EQ(sField.Date.Day, 0);
@@ -588,7 +668,7 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 56.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("T123456.789", &sField, 0), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("T123456.789", &sField, 0), TRUE);
     EXPECT_EQ(sField.Date.Year, 0);
     EXPECT_EQ(sField.Date.Month, 0);
     EXPECT_EQ(sField.Date.Day, 0);
@@ -598,46 +678,49 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
     CPLPushErrorHandler(CPLQuietErrorHandler);
-    EXPECT_TRUE(!OGRParseDate("123456-01-01", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("123456-01-01", &sField, 0));
     CPLPopErrorHandler();
-    EXPECT_TRUE(!OGRParseDate("2017", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017x-01-01", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-1-01", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-1", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01x", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("12:", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("12:3", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("1:23", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("12:34:5", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("1a:34", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-a-31T12:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-00-31T12:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-13-31T12:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-00T12:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-aT12:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-32T12:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("a:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01Ta:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01T25:34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01T00:a:00", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01T00: 34:56", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01T00:61:00", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01T00:00:61", &sField, 0));
-    EXPECT_TRUE(!OGRParseDate("2017-01-01T00:00:a", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017x-01-01", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-1-01", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-1", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01x", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("12:", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("12:3", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("1:23", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("12:34:5", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("1a:34", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-a-31T12:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-00-31T12:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-13-31T12:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-00T12:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-aT12:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-32T12:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("a:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01Ta:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01T25:34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01T00:a:00", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01T00: 34:56", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01T00:61:00", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01T00:00:61", &sField, 0));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-01-01T00:00:a", &sField, 0));
 
     // Test OGRPARSEDATE_OPTION_LAX
-    EXPECT_EQ(OGRParseDate("2017-1-9", &sField, OGRPARSEDATE_OPTION_LAX), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("2017-1-9", &sField, OGRPARSEDATE_OPTION_LAX),
+              TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 1);
     EXPECT_EQ(sField.Date.Day, 9);
 
-    EXPECT_EQ(OGRParseDate("2017-1-31", &sField, OGRPARSEDATE_OPTION_LAX),
-              TRUE);
+    EXPECT_EQ(
+        OGRParseDateWrapper("2017-1-31", &sField, OGRPARSEDATE_OPTION_LAX),
+        TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 1);
     EXPECT_EQ(sField.Date.Day, 31);
 
-    EXPECT_EQ(OGRParseDate("2017-1-31T1:2:3", &sField, OGRPARSEDATE_OPTION_LAX),
+    EXPECT_EQ(OGRParseDateWrapper("2017-1-31T1:2:3", &sField,
+                                  OGRPARSEDATE_OPTION_LAX),
               TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 1);
@@ -647,8 +730,9 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 3.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("2017-1-31T1:3", &sField, OGRPARSEDATE_OPTION_LAX),
-              TRUE);
+    EXPECT_EQ(
+        OGRParseDateWrapper("2017-1-31T1:3", &sField, OGRPARSEDATE_OPTION_LAX),
+        TRUE);
     EXPECT_EQ(sField.Date.Year, 2017);
     EXPECT_EQ(sField.Date.Month, 1);
     EXPECT_EQ(sField.Date.Day, 31);
@@ -657,7 +741,8 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 0.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_EQ(OGRParseDate("1:3", &sField, OGRPARSEDATE_OPTION_LAX), TRUE);
+    EXPECT_EQ(OGRParseDateWrapper("1:3", &sField, OGRPARSEDATE_OPTION_LAX),
+              TRUE);
     EXPECT_EQ(sField.Date.Year, 0);
     EXPECT_EQ(sField.Date.Month, 0);
     EXPECT_EQ(sField.Date.Day, 0);
@@ -666,22 +751,31 @@ TEST_F(test_ogr, OGRParseDate)
     EXPECT_EQ(sField.Date.Second, 0.0f);
     EXPECT_EQ(sField.Date.TZFlag, 0);
 
-    EXPECT_TRUE(!OGRParseDate("2017-a-01", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-0-01", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-1", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-1-", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-1-a", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-1-0", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-1-32", &sField, OGRPARSEDATE_OPTION_LAX));
     EXPECT_TRUE(
-        !OGRParseDate("2017-1-1Ta:00:00", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-1-1T1", &sField, OGRPARSEDATE_OPTION_LAX));
+        !OGRParseDateWrapper("2017-a-01", &sField, OGRPARSEDATE_OPTION_LAX));
     EXPECT_TRUE(
-        !OGRParseDate("2017-1-1T00:a:00", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("2017-1-1T1:", &sField, OGRPARSEDATE_OPTION_LAX));
+        !OGRParseDateWrapper("2017-0-01", &sField, OGRPARSEDATE_OPTION_LAX));
     EXPECT_TRUE(
-        !OGRParseDate("2017-1-1T00:00:a", &sField, OGRPARSEDATE_OPTION_LAX));
-    EXPECT_TRUE(!OGRParseDate("1a:3", &sField, OGRPARSEDATE_OPTION_LAX));
+        !OGRParseDateWrapper("2017-1", &sField, OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(
+        !OGRParseDateWrapper("2017-1-", &sField, OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(
+        !OGRParseDateWrapper("2017-1-a", &sField, OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(
+        !OGRParseDateWrapper("2017-1-0", &sField, OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(
+        !OGRParseDateWrapper("2017-1-32", &sField, OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-1-1Ta:00:00", &sField,
+                                     OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(
+        !OGRParseDateWrapper("2017-1-1T1", &sField, OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-1-1T00:a:00", &sField,
+                                     OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(
+        !OGRParseDateWrapper("2017-1-1T1:", &sField, OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(!OGRParseDateWrapper("2017-1-1T00:00:a", &sField,
+                                     OGRPARSEDATE_OPTION_LAX));
+    EXPECT_TRUE(!OGRParseDateWrapper("1a:3", &sField, OGRPARSEDATE_OPTION_LAX));
 }
 
 // Test OGRPolygon::IsPointOnSurface()
@@ -1433,7 +1527,7 @@ TEST_F(test_ogr, DatasetFeature_and_LayerFeature_iterators)
         ASSERT_TRUE(oIter != poLayer->end());
     }
 
-    poDS.reset(GetGDALDriverManager()->GetDriverByName("Memory")->Create(
+    poDS.reset(GetGDALDriverManager()->GetDriverByName("MEM")->Create(
         "", 0, 0, 0, GDT_Unknown, nullptr));
     int nCountLayers = 0;
     for (auto poLayer : poDS->GetLayers())
@@ -1461,32 +1555,34 @@ TEST_F(test_ogr, DatasetFeature_and_LayerFeature_iterators)
     }
     ASSERT_EQ(nCountLayers, 2);
 
-    // std::copy requires a InputIterator
-    std::vector<OGRLayer *> oTarget;
-    oTarget.resize(2);
     auto layers = poDS->GetLayers();
-    std::copy(layers.begin(), layers.end(), oTarget.begin());
-    ASSERT_EQ(oTarget[0], layers[0]);
-    ASSERT_EQ(oTarget[1], layers[1]);
-
-    // but in practice not necessarily uses the postincrement iterator.
-    oTarget.clear();
-    oTarget.resize(2);
-    auto input_iterator = layers.begin();
-    auto output_iterator = oTarget.begin();
-    while (input_iterator != layers.end())
     {
-        *output_iterator++ = *input_iterator++;
+        // std::copy requires a InputIterator
+        std::vector<OGRLayer *> oTarget;
+        oTarget.resize(2);
+        std::copy(layers.begin(), layers.end(), oTarget.begin());
+        ASSERT_EQ(oTarget[0], layers[0]);
+        ASSERT_EQ(oTarget[1], layers[1]);
+
+        // but in practice not necessarily uses the postincrement iterator.
+        oTarget.clear();
+        oTarget.resize(2);
+        auto input_iterator = layers.begin();
+        auto output_iterator = oTarget.begin();
+        while (input_iterator != layers.end())
+        {
+            *output_iterator++ = *input_iterator++;
+        }
+        ASSERT_EQ(oTarget[0], layers[0]);
+        ASSERT_EQ(oTarget[1], layers[1]);
     }
-    ASSERT_EQ(oTarget[0], layers[0]);
-    ASSERT_EQ(oTarget[1], layers[1]);
 
     // Test copy constructor
     {
         GDALDataset::Layers::Iterator srcIter(poDS->GetLayers().begin());
         ++srcIter;
-        // coverity[copy_constructor_call]
         GDALDataset::Layers::Iterator newIter(srcIter);
+        srcIter = layers.begin();  // avoid Coverity Scan warning
         ASSERT_EQ(*newIter, layers[1]);
     }
 
@@ -1495,8 +1591,8 @@ TEST_F(test_ogr, DatasetFeature_and_LayerFeature_iterators)
         GDALDataset::Layers::Iterator srcIter(poDS->GetLayers().begin());
         ++srcIter;
         GDALDataset::Layers::Iterator newIter;
-        // coverity[copy_assignent_call]
         newIter = srcIter;
+        srcIter = layers.begin();  // avoid Coverity Scan warning
         ASSERT_EQ(*newIter, layers[1]);
     }
 
@@ -1515,6 +1611,87 @@ TEST_F(test_ogr, DatasetFeature_and_LayerFeature_iterators)
         GDALDataset::Layers::Iterator newIter;
         newIter = std::move(srcIter);
         ASSERT_EQ(*newIter, layers[1]);
+    }
+
+    const GDALDataset *poConstDS = poDS.get();
+    ASSERT_EQ(poConstDS->GetLayers().size(), 2U);
+    ASSERT_EQ(poConstDS->GetLayers()[0], poConstDS->GetLayer(0));
+    ASSERT_EQ(poConstDS->GetLayers()[static_cast<size_t>(0)],
+              poConstDS->GetLayer(0));
+    ASSERT_EQ(poConstDS->GetLayers()["foo"], poConstDS->GetLayer(0));
+    nCountLayers = 0;
+    for (auto &&poLayer : poDS->GetLayers())
+    {
+        if (nCountLayers == 0)
+        {
+            EXPECT_STREQ(poLayer->GetName(), "foo")
+                << "layer " << poLayer->GetName();
+        }
+        else if (nCountLayers == 1)
+        {
+            EXPECT_STREQ(poLayer->GetName(), "bar")
+                << "layer " << poLayer->GetName();
+        }
+        nCountLayers++;
+    }
+    ASSERT_EQ(nCountLayers, 2);
+
+    auto constLayers = poConstDS->GetLayers();
+    {
+        // std::copy requires a InputIterator
+        std::vector<const OGRLayer *> oTarget;
+        oTarget.resize(2);
+        std::copy(constLayers.begin(), constLayers.end(), oTarget.begin());
+        ASSERT_EQ(oTarget[0], constLayers[0]);
+        ASSERT_EQ(oTarget[1], constLayers[1]);
+
+        // but in practice not necessarily uses the postincrement iterator.
+        oTarget.clear();
+        oTarget.resize(2);
+        auto input_iterator = constLayers.begin();
+        auto output_iterator = oTarget.begin();
+        while (input_iterator != constLayers.end())
+        {
+            *output_iterator++ = *input_iterator++;
+        }
+        ASSERT_EQ(oTarget[0], constLayers[0]);
+        ASSERT_EQ(oTarget[1], constLayers[1]);
+    }
+
+    // Test copy constructor
+    {
+        auto srcIter(poConstDS->GetLayers().begin());
+        ++srcIter;
+        auto newIter(srcIter);
+        srcIter = constLayers.begin();  // avoid Coverity Scan warning
+        ASSERT_EQ(*newIter, constLayers[1]);
+    }
+
+    // Test assignment operator
+    {
+        auto srcIter(poConstDS->GetLayers().begin());
+        ++srcIter;
+        GDALDataset::ConstLayers::Iterator newIter;
+        newIter = srcIter;
+        srcIter = constLayers.begin();  // avoid Coverity Scan warning
+        ASSERT_EQ(*newIter, constLayers[1]);
+    }
+
+    // Test move constructor
+    {
+        auto srcIter(poConstDS->GetLayers().begin());
+        ++srcIter;
+        auto newIter(std::move(srcIter));
+        ASSERT_EQ(*newIter, constLayers[1]);
+    }
+
+    // Test move assignment operator
+    {
+        auto srcIter(poConstDS->GetLayers().begin());
+        ++srcIter;
+        GDALDataset::ConstLayers::Iterator newIter;
+        newIter = std::move(srcIter);
+        ASSERT_EQ(*newIter, constLayers[1]);
     }
 }
 
@@ -2054,7 +2231,7 @@ TEST_F(test_ogr, InitStyleString_with_style_name)
 TEST_F(test_ogr, OGR_L_GetArrowStream)
 {
     auto poDS = std::unique_ptr<GDALDataset>(
-        GetGDALDriverManager()->GetDriverByName("Memory")->Create(
+        GetGDALDriverManager()->GetDriverByName("MEM")->Create(
             "", 0, 0, 0, GDT_Unknown, nullptr));
     auto poLayer = poDS->CreateLayer("test");
     {
@@ -2425,6 +2602,36 @@ TEST_F(test_ogr, feature_defn_geomfields_iterator)
     EXPECT_EQ(i, oFDefn.GetGeomFieldCount());
 }
 
+// Test OGRGeomFieldDefn copy constructor
+TEST_F(test_ogr, geom_field_defn_copy_constructor)
+{
+    {
+        OGRGeomFieldDefn oGeomFieldDefn("field1", wkbPoint);
+        oGeomFieldDefn.SetNullable(false);
+        OGRGeomFieldDefn oGeomFieldDefn2("field2", wkbLineString);
+        oGeomFieldDefn2 = oGeomFieldDefn;
+        EXPECT_TRUE(oGeomFieldDefn2.IsSame(&oGeomFieldDefn));
+    }
+
+    {
+        OGRSpatialReference oSRS;
+        oSRS.SetFromUserInput("WGS84");
+        EXPECT_EQ(oSRS.GetReferenceCount(), 1);
+        OGRGeomFieldDefn oGeomFieldDefn("field1", wkbPoint);
+        oGeomFieldDefn.SetSpatialRef(&oSRS);
+        EXPECT_EQ(oSRS.GetReferenceCount(), 2);
+        OGRGeomFieldDefn oGeomFieldDefn2("field2", wkbLineString);
+        oGeomFieldDefn2 = oGeomFieldDefn;
+        EXPECT_EQ(oSRS.GetReferenceCount(), 3);
+        EXPECT_TRUE(oGeomFieldDefn2.IsSame(&oGeomFieldDefn));
+
+        // oGeomFieldDefn2 already points to oSRS
+        oGeomFieldDefn2 = oGeomFieldDefn;
+        EXPECT_EQ(oSRS.GetReferenceCount(), 3);
+        EXPECT_TRUE(oGeomFieldDefn2.IsSame(&oGeomFieldDefn));
+    }
+}
+
 // Test GDALDataset QueryLoggerFunc callback
 TEST_F(test_ogr, GDALDatasetSetQueryLoggerFunc)
 {
@@ -2479,7 +2686,7 @@ TEST_F(test_ogr, GDALDatasetSetQueryLoggerFunc)
             {
                 entryLocal.error = pszError;
             }
-            queryLogLocal->push_back(entryLocal);
+            queryLogLocal->push_back(std::move(entryLocal));
         },
         &queryLog);
 
@@ -2536,9 +2743,7 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMZ)
     {
         char szInput[] = "2023-07-11T17:27Z";
         OGRField sField;
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, strlen(szInput), &sField),
-            true);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, &sField), true);
         EXPECT_EQ(sField.Date.Year, 2023);
         EXPECT_EQ(sField.Date.Month, 7);
         EXPECT_EQ(sField.Date.Day, 11);
@@ -2550,9 +2755,7 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMZ)
     {
         char szInput[] = "2023-07-11T17:27";
         OGRField sField;
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, strlen(szInput), &sField),
-            true);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, &sField), true);
         EXPECT_EQ(sField.Date.Year, 2023);
         EXPECT_EQ(sField.Date.Month, 7);
         EXPECT_EQ(sField.Date.Day, 11);
@@ -2565,18 +2768,13 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMZ)
         // Invalid
         char szInput[] = "2023-07-11T17:2";
         OGRField sField;
-        // coverity[overrun-buffer-val]
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, strlen(szInput), &sField),
-            false);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, &sField), false);
     }
     {
         // Invalid
         char szInput[] = "2023-07-11T17:99";
         OGRField sField;
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, strlen(szInput), &sField),
-            false);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMZ(szInput, &sField), false);
     }
 }
 
@@ -2585,9 +2783,7 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMSSZ)
     {
         char szInput[] = "2023-07-11T17:27:34Z";
         OGRField sField;
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, strlen(szInput), &sField),
-            true);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, &sField), true);
         EXPECT_EQ(sField.Date.Year, 2023);
         EXPECT_EQ(sField.Date.Month, 7);
         EXPECT_EQ(sField.Date.Day, 11);
@@ -2599,9 +2795,7 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMSSZ)
     {
         char szInput[] = "2023-07-11T17:27:34";
         OGRField sField;
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, strlen(szInput), &sField),
-            true);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, &sField), true);
         EXPECT_EQ(sField.Date.Year, 2023);
         EXPECT_EQ(sField.Date.Month, 7);
         EXPECT_EQ(sField.Date.Day, 11);
@@ -2614,18 +2808,13 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMSSZ)
         // Invalid
         char szInput[] = "2023-07-11T17:27:3";
         OGRField sField;
-        // coverity[overrun-buffer-val]
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, strlen(szInput), &sField),
-            false);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, &sField), false);
     }
     {
         // Invalid
         char szInput[] = "2023-07-11T17:27:99";
         OGRField sField;
-        EXPECT_EQ(
-            OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, strlen(szInput), &sField),
-            false);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSZ(szInput, &sField), false);
     }
 }
 
@@ -2634,9 +2823,7 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMSSsssZ)
     {
         char szInput[] = "2023-07-11T17:27:34.123Z";
         OGRField sField;
-        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, strlen(szInput),
-                                                      &sField),
-                  true);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, &sField), true);
         EXPECT_EQ(sField.Date.Year, 2023);
         EXPECT_EQ(sField.Date.Month, 7);
         EXPECT_EQ(sField.Date.Day, 11);
@@ -2648,9 +2835,7 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMSSsssZ)
     {
         char szInput[] = "2023-07-11T17:27:34.123";
         OGRField sField;
-        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, strlen(szInput),
-                                                      &sField),
-                  true);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, &sField), true);
         EXPECT_EQ(sField.Date.Year, 2023);
         EXPECT_EQ(sField.Date.Month, 7);
         EXPECT_EQ(sField.Date.Day, 11);
@@ -2663,18 +2848,13 @@ TEST_F(test_ogr, OGRParseDateTimeYYYYMMDDTHHMMSSsssZ)
         // Invalid
         char szInput[] = "2023-07-11T17:27:34.12";
         OGRField sField;
-        // coverity[overrun-buffer-val]
-        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, strlen(szInput),
-                                                      &sField),
-                  false);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, &sField), false);
     }
     {
         // Invalid
         char szInput[] = "2023-07-11T17:27:99.123";
         OGRField sField;
-        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, strlen(szInput),
-                                                      &sField),
-                  false);
+        EXPECT_EQ(OGRParseDateTimeYYYYMMDDTHHMMSSsssZ(szInput, &sField), false);
     }
 }
 
@@ -4241,9 +4421,8 @@ TEST_F(test_ogr, OGRCurve_reversePoints)
 TEST_F(test_ogr, transformWithOptions)
 {
     // Projected CRS to national geographic CRS (not including poles or antimeridian)
-    OGRGeometry *poGeom = nullptr;
-    OGRGeometryFactory::createFromWkt(
-        "LINESTRING(700000 6600000, 700001 6600001)", nullptr, &poGeom);
+    auto [poGeom, err] = OGRGeometryFactory::createFromWkt(
+        "LINESTRING(700000 6600000, 700001 6600001)");
     ASSERT_NE(poGeom, nullptr);
 
     OGRSpatialReference oEPSG_2154;
@@ -4254,12 +4433,12 @@ TEST_F(test_ogr, transformWithOptions)
     auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
         OGRCreateCoordinateTransformation(&oEPSG_2154, &oEPSG_4171));
     OGRGeometryFactory::TransformWithOptionsCache oCache;
-    poGeom = OGRGeometryFactory::transformWithOptions(poGeom, poCT.get(),
-                                                      nullptr, oCache);
-    EXPECT_NEAR(poGeom->toLineString()->getX(0), 3, 1e-8);
-    EXPECT_NEAR(poGeom->toLineString()->getY(0), 46.5, 1e-8);
-
-    delete poGeom;
+    auto poNewGeom =
+        std::unique_ptr<OGRGeometry>(OGRGeometryFactory::transformWithOptions(
+            poGeom.get(), poCT.get(), nullptr, oCache));
+    ASSERT_NE(poNewGeom, nullptr);
+    EXPECT_NEAR(poNewGeom->toLineString()->getX(0), 3, 1e-8);
+    EXPECT_NEAR(poNewGeom->toLineString()->getY(0), 46.5, 1e-8);
 }
 
 #ifdef HAVE_GEOS
@@ -4268,10 +4447,8 @@ TEST_F(test_ogr, transformWithOptions)
 TEST_F(test_ogr, transformWithOptions_GEOS)
 {
     // Projected CRS to national geographic CRS including antimeridian
-    OGRGeometry *poGeom = nullptr;
-    OGRGeometryFactory::createFromWkt(
-        "LINESTRING(657630.64 4984896.17,815261.43 4990738.26)", nullptr,
-        &poGeom);
+    auto [poGeom, err] = OGRGeometryFactory::createFromWkt(
+        "LINESTRING(657630.64 4984896.17,815261.43 4990738.26)");
     ASSERT_NE(poGeom, nullptr);
 
     OGRSpatialReference oEPSG_6329;
@@ -4282,12 +4459,14 @@ TEST_F(test_ogr, transformWithOptions_GEOS)
     auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
         OGRCreateCoordinateTransformation(&oEPSG_6329, &oEPSG_6318));
     OGRGeometryFactory::TransformWithOptionsCache oCache;
-    poGeom = OGRGeometryFactory::transformWithOptions(poGeom, poCT.get(),
-                                                      nullptr, oCache);
-    EXPECT_EQ(poGeom->getGeometryType(), wkbMultiLineString);
-    if (poGeom->getGeometryType() == wkbMultiLineString)
+    auto poNewGeom =
+        std::unique_ptr<OGRGeometry>(OGRGeometryFactory::transformWithOptions(
+            poGeom.get(), poCT.get(), nullptr, oCache));
+    ASSERT_NE(poNewGeom, nullptr);
+    EXPECT_EQ(poNewGeom->getGeometryType(), wkbMultiLineString);
+    if (poNewGeom->getGeometryType() == wkbMultiLineString)
     {
-        const auto poMLS = poGeom->toMultiLineString();
+        const auto poMLS = poNewGeom->toMultiLineString();
         EXPECT_EQ(poMLS->getNumGeometries(), 2);
         if (poMLS->getNumGeometries() == 2)
         {
@@ -4302,8 +4481,6 @@ TEST_F(test_ogr, transformWithOptions_GEOS)
             }
         }
     }
-
-    delete poGeom;
 }
 #endif
 
@@ -4400,21 +4577,16 @@ TEST_F(test_ogr, OGRFeature_SetGeometry)
     poFeatureDefn->Reference();
 
     OGRFeature oFeat(poFeatureDefn);
-    std::unique_ptr<OGRGeometry> poGeom;
-    OGRGeometry *poTmpGeom;
-    ASSERT_EQ(
-        OGRGeometryFactory::createFromWkt("POINT (3 7)", nullptr, &poTmpGeom),
-        OGRERR_NONE);
-    poGeom.reset(poTmpGeom);
+    auto [poGeom, err] = OGRGeometryFactory::createFromWkt("POINT (3 7)");
+    ASSERT_EQ(err, OGRERR_NONE);
+
     ASSERT_EQ(oFeat.SetGeometry(std::move(poGeom)), OGRERR_NONE);
     EXPECT_EQ(oFeat.GetGeometryRef()->toPoint()->getX(), 3);
     EXPECT_EQ(oFeat.GetGeometryRef()->toPoint()->getY(), 7);
 
     // set it again to make sure previous feature geometry is freed
-    ASSERT_EQ(
-        OGRGeometryFactory::createFromWkt("POINT (2 8)", nullptr, &poTmpGeom),
-        OGRERR_NONE);
-    poGeom.reset(poTmpGeom);
+    std::tie(poGeom, err) = OGRGeometryFactory::createFromWkt("POINT (2 8)");
+    ASSERT_EQ(err, OGRERR_NONE);
     ASSERT_EQ(oFeat.SetGeometry(std::move(poGeom)), OGRERR_NONE);
     EXPECT_EQ(oFeat.GetGeometryRef()->toPoint()->getX(), 2);
     EXPECT_EQ(oFeat.GetGeometryRef()->toPoint()->getY(), 8);
@@ -4434,27 +4606,127 @@ TEST_F(test_ogr, OGRFeature_SetGeomField)
 
     // failure
     {
-        std::unique_ptr<OGRGeometry> poGeom;
-        OGRGeometry *poTmpGeom;
-        ASSERT_EQ(OGRGeometryFactory::createFromWkt("POINT (3 7)", nullptr,
-                                                    &poTmpGeom),
-                  OGRERR_NONE);
-        poGeom.reset(poTmpGeom);
+        auto [poGeom, err] = OGRGeometryFactory::createFromWkt("POINT (3 7)");
+        ASSERT_EQ(err, OGRERR_NONE);
         EXPECT_EQ(oFeat.SetGeomField(13, std::move(poGeom)), OGRERR_FAILURE);
     }
 
     // success
     {
-        std::unique_ptr<OGRGeometry> poGeom;
-        OGRGeometry *poTmpGeom;
-        ASSERT_EQ(OGRGeometryFactory::createFromWkt("POINT (3 7)", nullptr,
-                                                    &poTmpGeom),
-                  OGRERR_NONE);
-        poGeom.reset(poTmpGeom);
+        auto [poGeom, err] = OGRGeometryFactory::createFromWkt("POINT (3 7)");
+        ASSERT_EQ(err, OGRERR_NONE);
         EXPECT_EQ(oFeat.SetGeomField(1, std::move(poGeom)), OGRERR_NONE);
     }
 
     poFeatureDefn->Release();
+}
+
+TEST_F(test_ogr, GetArrowStream_DateTime_As_String)
+{
+    auto poDS = std::unique_ptr<GDALDataset>(
+        GetGDALDriverManager()->GetDriverByName("MEM")->Create(
+            "", 0, 0, 0, GDT_Unknown, nullptr));
+    auto poLayer = poDS->CreateLayer("test", nullptr, wkbNone);
+    OGRFieldDefn oFieldDefn("dt", OFTDateTime);
+    poLayer->CreateField(&oFieldDefn);
+    struct ArrowArrayStream stream;
+    CPLStringList aosOptions;
+    aosOptions.SetNameValue("INCLUDE_FID", "NO");
+    aosOptions.SetNameValue("DATETIME_AS_STRING", "YES");
+    ASSERT_TRUE(poLayer->GetArrowStream(&stream, aosOptions.List()));
+    struct ArrowSchema schema;
+    memset(&schema, 0, sizeof(schema));
+    EXPECT_EQ(stream.get_schema(&stream, &schema), 0);
+    EXPECT_TRUE(schema.n_children == 1 &&
+                strcmp(schema.children[0]->format, "u") == 0)
+        << schema.n_children;
+    if (schema.n_children == 1 && strcmp(schema.children[0]->format, "u") == 0)
+    {
+        EXPECT_TRUE(schema.children[0]->metadata != nullptr);
+        if (schema.children[0]->metadata)
+        {
+            auto oMapKeyValue =
+                OGRParseArrowMetadata(schema.children[0]->metadata);
+            EXPECT_EQ(oMapKeyValue.size(), 1);
+            if (oMapKeyValue.size() == 1)
+            {
+                EXPECT_STREQ(oMapKeyValue.begin()->first.c_str(),
+                             "GDAL:OGR:type");
+                EXPECT_STREQ(oMapKeyValue.begin()->second.c_str(), "DateTime");
+            }
+        }
+    }
+    schema.release(&schema);
+    stream.release(&stream);
+}
+
+// Test OGRFeatureDefn::GetFieldSubTypeByName()
+TEST_F(test_ogr, OGRFieldDefnGetFieldSubTypeByName)
+{
+    for (int i = 0; i < OFSTMaxSubType; i++)
+    {
+        const char *pszName =
+            OGRFieldDefn::GetFieldSubTypeName(static_cast<OGRFieldSubType>(i));
+        if (pszName != nullptr)
+        {
+            EXPECT_EQ(OGRFieldDefn::GetFieldSubTypeByName(pszName), i);
+        }
+    }
+}
+
+// Test OGRFeatureDefn::GetFieldTypeByName()
+TEST_F(test_ogr, OGRFieldDefnGetFieldTypeByName)
+{
+    for (int i = 0; i < OFTMaxType; i++)
+    {
+        // deprecated types
+        if (i == OFTWideString || i == OFTWideStringList)
+        {
+            continue;
+        }
+        const char *pszName =
+            OGRFieldDefn::GetFieldTypeName(static_cast<OGRFieldType>(i));
+        if (pszName != nullptr)
+        {
+            EXPECT_EQ(OGRFieldDefn::GetFieldTypeByName(pszName), i);
+        }
+    }
+}
+
+// Test OGRGeometryFactory::GetDefaultArcStepSize()
+TEST_F(test_ogr, GetDefaultArcStepSize)
+{
+    if (CPLGetConfigOption("OGR_ARC_STEPSIZE", nullptr) == nullptr)
+    {
+        EXPECT_EQ(OGRGeometryFactory::GetDefaultArcStepSize(), 4.0);
+    }
+    {
+        CPLConfigOptionSetter oSetter("OGR_ARC_STEPSIZE", "0.00001",
+                                      /* bSetOnlyIfUndefined = */ false);
+        CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
+        EXPECT_EQ(OGRGeometryFactory::GetDefaultArcStepSize(), 1e-2);
+        EXPECT_TRUE(
+            strstr(CPLGetLastErrorMsg(),
+                   "Too small value for OGR_ARC_STEPSIZE. Clamping it to"));
+    }
+    {
+        CPLConfigOptionSetter oSetter("OGR_ARC_STEPSIZE", "190",
+                                      /* bSetOnlyIfUndefined = */ false);
+        CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
+        EXPECT_EQ(OGRGeometryFactory::GetDefaultArcStepSize(), 180);
+        EXPECT_TRUE(
+            strstr(CPLGetLastErrorMsg(),
+                   "Too large value for OGR_ARC_STEPSIZE. Clamping it to"));
+    }
+}
+
+TEST_F(test_ogr, OGRPolygon_two_vertex_constructor)
+{
+    OGRPolygon p(1, 2, 3, 4);
+    char *outWKT = nullptr;
+    p.exportToWkt(&outWKT, wkbVariantIso);
+    EXPECT_STREQ(outWKT, "POLYGON ((1 2,1 4,3 4,3 2,1 2))");
+    CPLFree(outWKT);
 }
 
 }  // namespace

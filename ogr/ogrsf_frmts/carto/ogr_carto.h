@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  CARTO Translator
  * Purpose:  Definition of classes for OGR Carto driver.
@@ -27,7 +26,7 @@ CPLString OGRCARTOEscapeLiteral(const char *pszStr);
 CPLString OGRCARTOEscapeLiteralCopy(const char *pszStr);
 
 /************************************************************************/
-/*                      OGRCartoGeomFieldDefn                         */
+/*                      OGRCartoGeomFieldDefn                           */
 /************************************************************************/
 
 class OGRCartoGeomFieldDefn final : public OGRGeomFieldDefn
@@ -39,6 +38,8 @@ class OGRCartoGeomFieldDefn final : public OGRGeomFieldDefn
         : OGRGeomFieldDefn(pszNameIn, eType), nSRID(0)
     {
     }
+
+    ~OGRCartoGeomFieldDefn() override;
 };
 
 /************************************************************************/
@@ -76,16 +77,16 @@ class OGRCARTOLayer CPL_NON_FINAL : public OGRLayer
     virtual void ResetReading() override;
     virtual OGRFeature *GetNextFeature() override;
 
-    virtual OGRFeatureDefn *GetLayerDefn() override;
+    const OGRFeatureDefn *GetLayerDefn() const override;
     virtual OGRFeatureDefn *GetLayerDefnInternal(json_object *poObjIn) = 0;
     virtual json_object *FetchNewFeatures();
 
-    virtual const char *GetFIDColumn() override
+    const char *GetFIDColumn() const override
     {
         return osFIDColName.c_str();
     }
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     GDALDataset *GetDataset() override;
 
@@ -138,7 +139,7 @@ class OGRCARTOTableLayer final : public OGRCARTOLayer
     OGRCARTOTableLayer(OGRCARTODataSource *poDS, const char *pszName);
     virtual ~OGRCARTOTableLayer();
 
-    virtual const char *GetName() override
+    const char *GetName() const override
     {
         return osName.c_str();
     }
@@ -149,7 +150,7 @@ class OGRCARTOTableLayer final : public OGRCARTOLayer
     virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
     virtual OGRFeature *GetFeature(GIntBig nFeatureId) override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRErr CreateGeomField(const OGRGeomFieldDefn *poGeomFieldIn,
                                    int bApproxOK = TRUE) override;
@@ -165,21 +166,13 @@ class OGRCARTOTableLayer final : public OGRCARTOLayer
     virtual OGRErr ISetFeature(OGRFeature *poFeature) override;
     virtual OGRErr DeleteFeature(GIntBig nFID) override;
 
-    virtual void SetSpatialFilter(OGRGeometry *poGeom) override
-    {
-        SetSpatialFilter(0, poGeom);
-    }
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override;
     virtual OGRErr SetAttributeFilter(const char *) override;
 
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override
-    {
-        return GetExtent(0, psExtent, bForce);
-    }
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
     void SetLaunderFlag(bool bFlag)
     {
@@ -280,14 +273,14 @@ class OGRCARTODataSource final : public GDALDataset
 
     int Open(const char *pszFilename, char **papszOpenOptions, int bUpdate);
 
-    virtual int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return nLayers;
     }
 
-    virtual OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     OGRLayer *ICreateLayer(const char *pszName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,

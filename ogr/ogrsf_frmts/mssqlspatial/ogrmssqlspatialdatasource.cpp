@@ -152,7 +152,7 @@ void OGRMSSQLSpatialDataSource::OGRMSSQLDecodeVersionString(MSSQLVer *psVersion,
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRMSSQLSpatialDataSource::TestCapability(const char *pszCap)
+int OGRMSSQLSpatialDataSource::TestCapability(const char *pszCap) const
 
 {
 #if (ODBCVER >= 0x0300)
@@ -179,7 +179,7 @@ int OGRMSSQLSpatialDataSource::TestCapability(const char *pszCap)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRMSSQLSpatialDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRMSSQLSpatialDataSource::GetLayer(int iLayer) const
 
 {
     if (iLayer < 0 || iLayer >= nLayers)
@@ -204,8 +204,8 @@ OGRLayer *OGRMSSQLSpatialDataSource::GetLayerByName(const char *pszLayerName)
     const char *pszDotPos = strstr(pszLayerName, ".");
     if (pszDotPos != nullptr)
     {
-        int length = static_cast<int>(pszDotPos - pszLayerName);
-        pszSchemaName = (char *)CPLMalloc(length + 1);
+        const size_t length = static_cast<size_t>(pszDotPos - pszLayerName);
+        pszSchemaName = static_cast<char *>(CPLMalloc(length + 1));
         strncpy(pszSchemaName, pszLayerName, length);
         pszSchemaName[length] = '\0';
         pszTableName = CPLStrdup(pszDotPos + 1);  // skip "."
@@ -335,7 +335,7 @@ OGRMSSQLSpatialDataSource::ICreateLayer(const char *pszLayerName,
     if (pszDotPos != nullptr && bExtractSchemaFromLayerName)
     {
         int length = static_cast<int>(pszDotPos - pszLayerName);
-        pszSchemaName = (char *)CPLMalloc(length + 1);
+        pszSchemaName = static_cast<char *>(CPLMalloc(length + 1));
         CPLAssert(pszSchemaName !=
                   nullptr); /* to make Coverity happy and not believe a
                                REVERSE_INULL is possible */
@@ -599,8 +599,8 @@ OGRMSSQLSpatialDataSource::ICreateLayer(const char *pszLayerName,
     /* -------------------------------------------------------------------- */
     /*      Add layer to data source layer list.                            */
     /* -------------------------------------------------------------------- */
-    papoLayers = (OGRMSSQLSpatialTableLayer **)CPLRealloc(
-        papoLayers, sizeof(OGRMSSQLSpatialTableLayer *) * (nLayers + 1));
+    papoLayers = static_cast<OGRMSSQLSpatialTableLayer **>(CPLRealloc(
+        papoLayers, sizeof(OGRMSSQLSpatialTableLayer *) * (nLayers + 1)));
 
     papoLayers[nLayers++] = poLayer;
 
@@ -637,8 +637,8 @@ int OGRMSSQLSpatialDataSource::OpenTable(const char *pszSchemaName,
     /* -------------------------------------------------------------------- */
     /*      Add layer to data source layer list.                            */
     /* -------------------------------------------------------------------- */
-    papoLayers = (OGRMSSQLSpatialTableLayer **)CPLRealloc(
-        papoLayers, sizeof(OGRMSSQLSpatialTableLayer *) * (nLayers + 1));
+    papoLayers = static_cast<OGRMSSQLSpatialTableLayer **>(CPLRealloc(
+        papoLayers, sizeof(OGRMSSQLSpatialTableLayer *) * (nLayers + 1)));
     papoLayers[nLayers++] = poLayer;
 
     return TRUE;
@@ -648,7 +648,7 @@ int OGRMSSQLSpatialDataSource::OpenTable(const char *pszSchemaName,
 /*                       GetLayerCount()                                */
 /************************************************************************/
 
-int OGRMSSQLSpatialDataSource::GetLayerCount()
+int OGRMSSQLSpatialDataSource::GetLayerCount() const
 {
     return nLayers;
 }
@@ -665,8 +665,8 @@ int OGRMSSQLSpatialDataSource::ParseValue(char **pszValue, char *pszSource,
     if ((*pszValue) == nullptr && nStart + nLen < nNext &&
         EQUALN(pszSource + nStart, pszKey, nLen))
     {
-        *pszValue =
-            (char *)CPLMalloc(sizeof(char) * (nNext - nStart - nLen + 1));
+        *pszValue = static_cast<char *>(
+            CPLMalloc(sizeof(char) * (nNext - nStart - nLen + 1)));
         strncpy(*pszValue, pszSource + nStart + nLen, nNext - nStart - nLen);
         (*pszValue)[nNext - nStart - nLen] = 0;
 
@@ -1336,8 +1336,8 @@ char *OGRMSSQLSpatialDataSource::LaunderName(const char *pszSrcName)
 
     for (i = 0; pszSafeName[i] != '\0'; i++)
     {
-        pszSafeName[i] =
-            (char)CPLTolower(static_cast<unsigned char>(pszSafeName[i]));
+        pszSafeName[i] = static_cast<char>(
+            CPLTolower(static_cast<unsigned char>(pszSafeName[i])));
         if (pszSafeName[i] == '-' || pszSafeName[i] == '#')
             pszSafeName[i] = '_';
     }
@@ -1360,9 +1360,7 @@ OGRErr OGRMSSQLSpatialDataSource::InitializeMetadataTables()
         CPLODBCStatement oStmt(&oSession);
 
         oStmt.Append(
-            "IF NOT EXISTS (SELECT * FROM sys.objects WHERE "
-            "object_id = OBJECT_ID(N'[dbo].[geometry_columns]') AND type in "
-            "(N'U')) "
+            "IF OBJECT_ID(N'[geometry_columns]', N'U') IS NULL "
             "CREATE TABLE geometry_columns (f_table_catalog varchar(128) not "
             "null, "
             "f_table_schema varchar(128) not null, f_table_name varchar(256) "
@@ -1373,9 +1371,7 @@ OGRErr OGRMSSQLSpatialDataSource::InitializeMetadataTables()
             "CONSTRAINT geometry_columns_pk PRIMARY KEY (f_table_catalog, "
             "f_table_schema, f_table_name, f_geometry_column));\n");
 
-        oStmt.Append("IF NOT EXISTS (SELECT * FROM sys.objects "
-                     "WHERE object_id = OBJECT_ID(N'[dbo].[spatial_ref_sys]') "
-                     "AND type in (N'U')) "
+        oStmt.Append("IF OBJECT_ID(N'[spatial_ref_sys]', N'U') IS NULL "
                      "CREATE TABLE spatial_ref_sys (srid integer not null "
                      "PRIMARY KEY, auth_name varchar(256), auth_srid integer, "
                      "srtext varchar(2048), proj4text varchar(2048))");
@@ -1581,8 +1577,11 @@ int OGRMSSQLSpatialDataSource::FetchSRSId(const OGRSpatialReference *poSRS)
             {
                 std::unique_ptr<OGRSpatialReference,
                                 OGRSpatialReferenceReleaser>
-                    poCachedSRS(new OGRSpatialReference(oSRS));
-                poCachedSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+                    poCachedSRS;
+                poCachedSRS.reset(oSRS.Clone());
+                if (poCachedSRS)
+                    poCachedSRS->SetAxisMappingStrategy(
+                        OAMS_TRADITIONAL_GIS_ORDER);
                 AddSRIDToCache(nSRSId, std::move(poCachedSRS));
             }
             return nSRSId;

@@ -15,6 +15,7 @@
 #include "gdal_alg_priv.h"
 #include "ogrsqlitevfs.h"
 #include "cpl_error.h"
+#include "cpl_float.h"
 
 #include <algorithm>
 #include <cmath>
@@ -216,8 +217,8 @@ GDALColorTable *GDALGPKGMBTilesLikeRasterBand::GetColorTable()
                         nRasterYSize / 2 / nBlockYSize));
             }
             sqlite3_stmt *hStmt = nullptr;
-            int rc = sqlite3_prepare_v2(m_poTPD->IGetDB(), pszSQL, -1, &hStmt,
-                                        nullptr);
+            int rc = SQLPrepareWithError(m_poTPD->IGetDB(), pszSQL, -1, &hStmt,
+                                         nullptr);
             if (rc == SQLITE_OK)
             {
                 rc = sqlite3_step(hStmt);
@@ -821,7 +822,7 @@ void GDALGPKGMBTilesLikePseudoDataset::GetTileOffsetAndScale(
             "tpudt_name = '%q' AND tpudt_id = ?",
             m_osRasterTable.c_str());
         sqlite3_stmt *hStmt = nullptr;
-        int rc = sqlite3_prepare_v2(IGetDB(), pszSQL, -1, &hStmt, nullptr);
+        int rc = SQLPrepareWithError(IGetDB(), pszSQL, -1, &hStmt, nullptr);
         if (rc == SQLITE_OK)
         {
             sqlite3_bind_int64(hStmt, 1, nTileId);
@@ -881,15 +882,12 @@ GByte *GDALGPKGMBTilesLikePseudoDataset::ReadTile(int nRow, int nCol,
 #endif
 
     sqlite3_stmt *hStmt = nullptr;
-    int rc = sqlite3_prepare_v2(IGetDB(), pszSQL, -1, &hStmt, nullptr);
+    int rc = SQLPrepareWithError(IGetDB(), pszSQL, -1, &hStmt, nullptr);
+    sqlite3_free(pszSQL);
     if (rc != SQLITE_OK)
     {
-        CPLError(CE_Failure, CPLE_AppDefined, "failed to prepare SQL %s: %s",
-                 pszSQL, sqlite3_errmsg(IGetDB()));
-        sqlite3_free(pszSQL);
         return nullptr;
     }
-    sqlite3_free(pszSQL);
     rc = sqlite3_step(hStmt);
 
     if (rc == SQLITE_ROW && sqlite3_column_type(hStmt, 0) == SQLITE_BLOB)
@@ -939,13 +937,10 @@ GByte *GDALGPKGMBTilesLikePseudoDataset::ReadTile(int nRow, int nCol,
             CPLDebug("GPKG", "%s", pszSQLNew);
 #endif
 
-            rc = sqlite3_prepare_v2(m_hTempDB, pszSQLNew, -1, &hStmt, nullptr);
+            rc = SQLPrepareWithError(m_hTempDB, pszSQLNew, -1, &hStmt, nullptr);
             if (rc != SQLITE_OK)
             {
                 FillEmptyTile(pabyData);
-                CPLError(CE_Failure, CPLE_AppDefined,
-                         "sqlite3_prepare_v2(%s) failed: %s", pszSQLNew,
-                         sqlite3_errmsg(m_hTempDB));
                 return pabyData;
             }
 
@@ -1244,7 +1239,7 @@ int GDALGPKGMBTilesLikeRasterBand::IGetDataCoverageStatus(int nXOff, int nYOff,
         std::swap(iDBRowMin, iDBRowMax);
 
     char *pszSQL = sqlite3_mprintf(
-        "SELECT tile_row, tile_column FROM \"%w\" "
+        "SELECT tile_column, tile_row FROM \"%w\" "
         "WHERE zoom_level = %d AND "
         "(tile_row BETWEEN %d AND %d) AND "
         "(tile_column BETWEEN %d AND %d)"
@@ -1260,23 +1255,23 @@ int GDALGPKGMBTilesLikeRasterBand::IGetDataCoverageStatus(int nXOff, int nYOff,
 #endif
 
     sqlite3_stmt *hStmt = nullptr;
-    int rc = sqlite3_prepare_v2(m_poTPD->IGetDB(), pszSQL, -1, &hStmt, nullptr);
+    int rc =
+        SQLPrepareWithError(m_poTPD->IGetDB(), pszSQL, -1, &hStmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        CPLError(CE_Failure, CPLE_AppDefined, "failed to prepare SQL %s: %s",
-                 pszSQL, sqlite3_errmsg(m_poTPD->IGetDB()));
         sqlite3_free(pszSQL);
         return GDAL_DATA_COVERAGE_STATUS_UNIMPLEMENTED |
                GDAL_DATA_COVERAGE_STATUS_DATA;
     }
     sqlite3_free(pszSQL);
     rc = sqlite3_step(hStmt);
-    std::set<std::pair<int, int>> oSetTiles;  // (row, col)
+    std::set<std::pair<int, int>> oSetTiles;  // (col, row)
     while (rc == SQLITE_ROW)
     {
-        oSetTiles.insert(std::pair(
-            m_poTPD->GetRowFromIntoTopConvention(sqlite3_column_int(hStmt, 0)),
-            sqlite3_column_int(hStmt, 1)));
+        const int iCol = sqlite3_column_int(hStmt, 0);
+        const int iRow =
+            m_poTPD->GetRowFromIntoTopConvention(sqlite3_column_int(hStmt, 1));
+        oSetTiles.insert(std::pair(iCol, iRow));
         rc = sqlite3_step(hStmt);
     }
     sqlite3_finalize(hStmt);
@@ -1309,8 +1304,7 @@ int GDALGPKGMBTilesLikeRasterBand::IGetDataCoverageStatus(int nXOff, int nYOff,
         {
             for (int iX = iColMin; iX <= iColMax; ++iX)
             {
-                // coverity[swapped_arguments]
-                if (oSetTiles.find(std::pair(iY, iX)) == oSetTiles.end())
+                if (oSetTiles.find(std::pair(iX, iY)) == oSetTiles.end())
                 {
                     nStatus |= GDAL_DATA_COVERAGE_STATUS_EMPTY;
                 }
@@ -1442,7 +1436,7 @@ bool GDALGPKGMBTilesLikePseudoDataset::DeleteFromGriddedTileAncillary(
                         "tpudt_name = '%q' AND tpudt_id = ?",
                         m_osRasterTable.c_str());
     sqlite3_stmt *hStmt = nullptr;
-    int rc = sqlite3_prepare_v2(IGetDB(), pszSQL, -1, &hStmt, nullptr);
+    int rc = SQLPrepareWithError(IGetDB(), pszSQL, -1, &hStmt, nullptr);
     if (rc == SQLITE_OK)
     {
         sqlite3_bind_int64(hStmt, 1, nTileId);
@@ -1834,6 +1828,7 @@ CPLErr GDALGPKGMBTilesLikePseudoDataset::WriteTileInternal()
     const CPLString osMemFileName(
         VSIMemGenerateHiddenFilename("gpkg_write_tile"));
     const char *pszDriverName = "PNG";
+    CPL_IGNORE_RET_VAL(pszDriverName);  // Make CSA happy
     bool bTileDriverSupports1Band = false;
     bool bTileDriverSupports2Bands = false;
     bool bTileDriverSupports4Bands = false;
@@ -2416,12 +2411,9 @@ CPLErr GDALGPKGMBTilesLikePseudoDataset::WriteTileInternal()
             CPLDebug("GPKG", "%s", pszSQL);
 #endif
             sqlite3_stmt *hStmt = nullptr;
-            int rc = sqlite3_prepare_v2(IGetDB(), pszSQL, -1, &hStmt, nullptr);
+            int rc = SQLPrepareWithError(IGetDB(), pszSQL, -1, &hStmt, nullptr);
             if (rc != SQLITE_OK)
             {
-                CPLError(CE_Failure, CPLE_AppDefined,
-                         "failed to prepare SQL %s: %s", pszSQL,
-                         sqlite3_errmsg(IGetDB()));
                 CPLFree(pabyBlob);
             }
             else
@@ -2462,14 +2454,11 @@ CPLErr GDALGPKGMBTilesLikePseudoDataset::WriteTileInternal()
                     CPLDebug("GPKG", "%s", pszSQL);
 #endif
                     hStmt = nullptr;
-                    rc = sqlite3_prepare_v2(IGetDB(), pszSQL, -1, &hStmt,
-                                            nullptr);
+                    rc = SQLPrepareWithError(IGetDB(), pszSQL, -1, &hStmt,
+                                             nullptr);
                     if (rc != SQLITE_OK)
                     {
                         eErr = CE_Failure;
-                        CPLError(CE_Failure, CPLE_AppDefined,
-                                 "failed to prepare SQL %s: %s", pszSQL,
-                                 sqlite3_errmsg(IGetDB()));
                     }
                     else
                     {
@@ -2542,8 +2531,8 @@ GDALGPKGMBTilesLikePseudoDataset::FlushRemainingShiftedTiles(bool bPartialFlush)
         osSQL.Printf("SELECT COUNT(*) FROM partial_tiles WHERE zoom_level = %d "
                      "AND partial_flag != 0",
                      m_nZoomLevel);
-        if (sqlite3_prepare_v2(m_hTempDB, osSQL.c_str(), -1, &hStmt, nullptr) ==
-            SQLITE_OK)
+        if (SQLPrepareWithError(m_hTempDB, osSQL.c_str(), -1, &hStmt,
+                                nullptr) == SQLITE_OK)
         {
             if (sqlite3_step(hStmt) == SQLITE_ROW)
             {
@@ -2573,12 +2562,9 @@ GDALGPKGMBTilesLikePseudoDataset::FlushRemainingShiftedTiles(bool bPartialFlush)
     CPLDebug("GPKG", "%s", pszSQL);
 #endif
     sqlite3_stmt *hStmt = nullptr;
-    int rc = sqlite3_prepare_v2(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
+    int rc = SQLPrepareWithError(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "sqlite3_prepare_v2(%s) failed: %s", pszSQL,
-                 sqlite3_errmsg(m_hTempDB));
         return CE_Failure;
     }
 
@@ -2695,8 +2681,8 @@ GDALGPKGMBTilesLikePseudoDataset::FlushRemainingShiftedTiles(bool bPartialFlush)
                 CPLDebug("GPKG", "%s", pszNewSQL);
 #endif
                 sqlite3_stmt *hNewStmt = nullptr;
-                rc = sqlite3_prepare_v2(IGetDB(), pszNewSQL, -1, &hNewStmt,
-                                        nullptr);
+                rc = SQLPrepareWithError(IGetDB(), pszNewSQL, -1, &hNewStmt,
+                                         nullptr);
                 if (rc == SQLITE_OK)
                 {
                     rc = sqlite3_step(hNewStmt);
@@ -2814,12 +2800,6 @@ GDALGPKGMBTilesLikePseudoDataset::FlushRemainingShiftedTiles(bool bPartialFlush)
                     }
                     sqlite3_finalize(hNewStmt);
                 }
-                else
-                {
-                    CPLError(CE_Failure, CPLE_AppDefined,
-                             "sqlite3_prepare_v2(%s) failed: %s", pszNewSQL,
-                             sqlite3_errmsg(m_hTempDB));
-                }
                 sqlite3_free(pszNewSQL);
             }
 
@@ -2875,7 +2855,7 @@ GDALGPKGMBTilesLikePseudoDataset::FlushRemainingShiftedTiles(bool bPartialFlush)
                             "AND p1.tile_row = p2.tile_row AND p1.tile_column "
                             "= p2.tile_column AND p2.partial_flag != 0",
                             -1 - m_nZoomLevel, m_nZoomLevel);
-        rc = sqlite3_prepare_v2(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
+        rc = SQLPrepareWithError(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
         CPLAssert(rc == SQLITE_OK);
         while ((rc = sqlite3_step(hStmt)) == SQLITE_ROW)
         {
@@ -2917,7 +2897,7 @@ GDALGPKGMBTilesLikePseudoDataset::DoPartialFlushOfPartialTilesIfNecessary()
     {
         m_nLastSpaceCheckTimestamp = nCurTimeStamp;
         GIntBig nFreeSpace =
-            VSIGetDiskFreeSpace(CPLGetDirname(m_osTempDBFilename));
+            VSIGetDiskFreeSpace(CPLGetDirnameSafe(m_osTempDBFilename).c_str());
         bool bTryFreeing = false;
         if (nFreeSpace >= 0 && nFreeSpace < 1024 * 1024 * 1024)
         {
@@ -2988,7 +2968,7 @@ CPLErr GDALGPKGMBTilesLikePseudoDataset::WriteShiftedTile(
         const char *pszBaseFilename =
             m_poParentDS ? m_poParentDS->IGetFilename() : IGetFilename();
         m_osTempDBFilename =
-            CPLResetExtension(pszBaseFilename, "partial_tiles.db");
+            CPLResetExtensionSafe(pszBaseFilename, "partial_tiles.db");
         CPLPushErrorHandler(CPLQuietErrorHandler);
         VSIUnlink(m_osTempDBFilename);
         CPLPopErrorHandler();
@@ -3081,12 +3061,9 @@ CPLErr GDALGPKGMBTilesLikePseudoDataset::WriteShiftedTile(
     CPLDebug("GPKG", "%s", pszSQL);
 #endif
     sqlite3_stmt *hStmt = nullptr;
-    int rc = sqlite3_prepare_v2(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
+    int rc = SQLPrepareWithError(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "sqlite3_prepare_v2(%s) failed: %s", pszSQL,
-                 sqlite3_errmsg(m_hTempDB));
         return CE_Failure;
     }
 
@@ -3171,12 +3148,10 @@ CPLErr GDALGPKGMBTilesLikePseudoDataset::WriteShiftedTile(
                 CPLDebug("GPKG", "%s", pszSQL);
 #endif
                 hStmt = nullptr;
-                rc = sqlite3_prepare_v2(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
+                rc =
+                    SQLPrepareWithError(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
                 if (rc != SQLITE_OK)
                 {
-                    CPLError(CE_Failure, CPLE_AppDefined,
-                             "sqlite3_prepare_v2(%s) failed: %s", pszSQL,
-                             sqlite3_errmsg(m_hTempDB));
                     return CE_Failure;
                 }
 
@@ -3273,11 +3248,9 @@ CPLErr GDALGPKGMBTilesLikePseudoDataset::WriteShiftedTile(
 #endif
 
     hStmt = nullptr;
-    rc = sqlite3_prepare_v2(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
+    rc = SQLPrepareWithError(m_hTempDB, pszSQL, -1, &hStmt, nullptr);
     if (rc != SQLITE_OK)
     {
-        CPLError(CE_Failure, CPLE_AppDefined, "failed to prepare SQL %s: %s",
-                 pszSQL, sqlite3_errmsg(m_hTempDB));
         return CE_Failure;
     }
 
@@ -3667,7 +3640,7 @@ int GDALGeoPackageRasterBand::GetOverviewCount()
 {
     GDALGeoPackageDataset *poGDS =
         cpl::down_cast<GDALGeoPackageDataset *>(poDS);
-    return poGDS->m_nOverviewCount;
+    return static_cast<int>(poGDS->m_apoOverviewDS.size());
 }
 
 /************************************************************************/
@@ -3677,10 +3650,10 @@ int GDALGeoPackageRasterBand::GetOverviewCount()
 GDALRasterBand *GDALGeoPackageRasterBand::GetOverview(int nIdx)
 {
     GDALGeoPackageDataset *poGDS =
-        reinterpret_cast<GDALGeoPackageDataset *>(poDS);
-    if (nIdx < 0 || nIdx >= poGDS->m_nOverviewCount)
+        cpl::down_cast<GDALGeoPackageDataset *>(poDS);
+    if (nIdx < 0 || nIdx >= static_cast<int>(poGDS->m_apoOverviewDS.size()))
         return nullptr;
-    return poGDS->m_papoOverviewDS[nIdx]->GetRasterBand(nBand);
+    return poGDS->m_apoOverviewDS[nIdx]->GetRasterBand(nBand);
 }
 
 /************************************************************************/
@@ -3739,7 +3712,7 @@ CPLErr GDALGeoPackageRasterBand::SetNoDataValue(double dfNoDataValue)
         "WHERE tile_matrix_set_name = '%q'",
         poGDS->m_osRasterTable.c_str());
     sqlite3_stmt *hStmt = nullptr;
-    int rc = sqlite3_prepare_v2(poGDS->IGetDB(), pszSQL, -1, &hStmt, nullptr);
+    int rc = SQLPrepareWithError(poGDS->IGetDB(), pszSQL, -1, &hStmt, nullptr);
     if (rc == SQLITE_OK)
     {
         if (poGDS->m_eTF == GPKG_TF_PNG_16BIT)
@@ -3859,7 +3832,7 @@ void GDALGeoPackageRasterBand::LoadBandMetadata()
 char **GDALGeoPackageRasterBand::GetMetadata(const char *pszDomain)
 {
     GDALGeoPackageDataset *poGDS =
-        reinterpret_cast<GDALGeoPackageDataset *>(poDS);
+        cpl::down_cast<GDALGeoPackageDataset *>(poDS);
     LoadBandMetadata(); /* force loading from storage if needed */
 
     if (poGDS->eAccess == GA_ReadOnly && eDataType != GDT_Byte &&

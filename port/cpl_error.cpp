@@ -590,11 +590,18 @@ static void CPLvDebug(const char *pszCategory,
     /* -------------------------------------------------------------------- */
     /*      Does this message pass our current criteria?                    */
     /* -------------------------------------------------------------------- */
-    if (pszDebug == nullptr)
-        return;
-
-    if (!EQUAL(pszDebug, "ON") && !EQUAL(pszDebug, ""))
+    if (pszDebug == nullptr || EQUAL(pszDebug, "NO") ||
+        EQUAL(pszDebug, "OFF") || EQUAL(pszDebug, "FALSE") ||
+        EQUAL(pszDebug, "0"))
     {
+        return;
+    }
+
+    if (!EQUAL(pszDebug, "ON") && !EQUAL(pszDebug, "YES") &&
+        !EQUAL(pszDebug, "TRUE") && !EQUAL(pszDebug, "1") &&
+        !EQUAL(pszDebug, ""))
+    {
+        // check if value of CPL_DEBUG contains the category
         const size_t nLen = strlen(pszCategory);
 
         size_t i = 0;
@@ -623,7 +630,7 @@ static void CPLvDebug(const char *pszCategory,
 
     pszMessage[0] = '\0';
 #ifdef TIMESTAMP_DEBUG
-    if (CPLGetConfigOption("CPL_TIMESTAMP", nullptr) != nullptr)
+    if (CPLTestBool(CPLGetConfigOption("CPL_TIMESTAMP", "NO")))
     {
         static struct CPLTimeVal tvStart;
         static const auto unused = CPLGettimeofday(&tvStart, nullptr);
@@ -825,8 +832,8 @@ void CPL_STDCALL CPLErrorReset()
  *                       CPLErrorSetState()
  **********************************************************************/
 
-static void CPLErrorSetState(CPLErr eErrClass, CPLErrorNum err_no,
-                             const char *pszMsg, GUInt32 *pnErrorCounter)
+void CPLErrorSetState(CPLErr eErrClass, CPLErrorNum err_no, const char *pszMsg,
+                      const GUInt32 *pnErrorCounter)
 {
     CPLErrorContext *psCtx = CPLGetErrorContext();
     if (psCtx == nullptr)
@@ -1105,6 +1112,20 @@ void CPL_STDCALL CPLQuietErrorHandler(CPLErr eErrClass, CPLErrorNum nError,
 }
 
 /************************************************************************/
+/*                    CPLQuietWarningsErrorHandler()                    */
+/************************************************************************/
+
+/** Error handler that ignores CE_Warning messages. */
+void CPL_STDCALL CPLQuietWarningsErrorHandler(CPLErr eErrClass,
+                                              CPLErrorNum nError,
+                                              const char *pszErrorMsg)
+
+{
+    if (eErrClass != CE_Warning)
+        CPLDefaultErrorHandler(eErrClass, nError, pszErrorMsg);
+}
+
+/************************************************************************/
 /*                       CPLLoggingErrorHandler()                       */
 /************************************************************************/
 
@@ -1256,9 +1277,9 @@ CPLSetErrorHandlerEx(CPLErrorHandler pfnErrorHandlerNew, void *pUserData)
  * Allow the library's user to specify an error handler function.
  * A valid error handler is a C function with the following prototype:
  *
- * <pre>
+ * \code{.cpp}
  *     void MyErrorHandler(CPLErr eErrClass, int err_no, const char *msg)
- * </pre>
+ * \endcode
  *
  * Pass NULL to come back to the default behavior.  The default behavior
  * (CPLDefaultErrorHandler()) is to write the message to stderr.
@@ -1529,30 +1550,6 @@ bool CPLIsDefaultErrorHandlerAndCatchDebug()
 }
 
 /************************************************************************/
-/*                       CPLErrorHandlerAccumulator()                   */
-/************************************************************************/
-
-static void CPL_STDCALL CPLErrorHandlerAccumulator(CPLErr eErr, CPLErrorNum no,
-                                                   const char *msg)
-{
-    std::vector<CPLErrorHandlerAccumulatorStruct> *paoErrors =
-        static_cast<std::vector<CPLErrorHandlerAccumulatorStruct> *>(
-            CPLGetErrorHandlerUserData());
-    paoErrors->push_back(CPLErrorHandlerAccumulatorStruct(eErr, no, msg));
-}
-
-void CPLInstallErrorHandlerAccumulator(
-    std::vector<CPLErrorHandlerAccumulatorStruct> &aoErrors)
-{
-    CPLPushErrorHandlerEx(CPLErrorHandlerAccumulator, &aoErrors);
-}
-
-void CPLUninstallErrorHandlerAccumulator()
-{
-    CPLPopErrorHandler();
-}
-
-/************************************************************************/
 /*               CPLErrorStateBackuper::CPLErrorStateBackuper()         */
 /************************************************************************/
 
@@ -1576,3 +1573,57 @@ CPLErrorStateBackuper::~CPLErrorStateBackuper()
     CPLErrorSetState(m_nLastErrorType, m_nLastErrorNum,
                      m_osLastErrorMsg.c_str(), &m_nLastErrorCounter);
 }
+
+/*! @cond Doxygen_Suppress */
+
+/************************************************************************/
+/*                CPLErrorAccumulator::Context::~Context()              */
+/************************************************************************/
+
+CPLErrorAccumulator::Context::~Context()
+{
+    CPLPopErrorHandler();
+}
+
+/************************************************************************/
+/*             CPLErrorAccumulator::InstallForCurrentScope()            */
+/************************************************************************/
+
+CPLErrorAccumulator::Context CPLErrorAccumulator::InstallForCurrentScope()
+{
+    CPLPushErrorHandlerEx(CPLErrorAccumulator::Accumulator, this);
+    return CPLErrorAccumulator::Context();
+}
+
+/************************************************************************/
+/*                    CPLErrorAccumulator::ReplayErrors()               */
+/************************************************************************/
+
+void CPLErrorAccumulator::ReplayErrors()
+{
+    std::lock_guard oLock(mutex);
+    for (const auto &err : errors)
+    {
+        CPLError(err.type, err.no, "%s", err.msg.c_str());
+    }
+}
+
+/************************************************************************/
+/*                 CPLErrorAccumulator::Accumulator()                   */
+/************************************************************************/
+
+/* static */ void CPL_STDCALL CPLErrorAccumulator::Accumulator(CPLErr eErr,
+                                                               CPLErrorNum no,
+                                                               const char *msg)
+{
+    if (eErr != CE_Debug)
+    {
+        CPLErrorAccumulator *pThis =
+            static_cast<CPLErrorAccumulator *>(CPLGetErrorHandlerUserData());
+        std::lock_guard oLock(pThis->mutex);
+        pThis->errors.push_back(
+            CPLErrorHandlerAccumulatorStruct(eErr, no, msg));
+    }
+}
+
+/*! @endcond */

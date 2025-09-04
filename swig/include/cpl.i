@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Name:     cpl.i
  * Project:  GDAL Python Interface
@@ -128,6 +127,8 @@ void CPL_STDCALL PyCPLErrorHandler(CPLErr eErrClass, CPLErrorNum err_no, const c
     CPLErrorHandler pfnHandler = NULL;
     if( pszCallbackName == NULL || EQUAL(pszCallbackName,"CPLQuietErrorHandler") )
       pfnHandler = CPLQuietErrorHandler;
+    else if( EQUAL(pszCallbackName,"CPLQuietWarningsErrorHandler") )
+      pfnHandler = CPLQuietWarningsErrorHandler;
     else if( EQUAL(pszCallbackName,"CPLDefaultErrorHandler") )
       pfnHandler = CPLDefaultErrorHandler;
     else if( EQUAL(pszCallbackName,"CPLLoggingErrorHandler") )
@@ -176,6 +177,7 @@ void CPL_STDCALL PyCPLErrorHandler(CPLErr eErrClass, CPLErrorNum err_no, const c
 %rename (RmdirRecursive) VSIRmdirRecursive;
 %rename (AbortPendingUploads) VSIAbortPendingUploads;
 %rename (Rename) VSIRename;
+%rename (Move) wrapper_VSIMove;
 %rename (GetActualURL) VSIGetActualURL;
 %rename (GetSignedURL) wrapper_VSIGetSignedURL;
 %rename (GetFileSystemsPrefixes) VSIGetFileSystemsPrefixes;
@@ -242,14 +244,10 @@ retStringAndCPLFree* EscapeString(const char* str, int scheme) {
 %clear (int len, unsigned char *bin_string);
 #elif defined(SWIGCSHARP)
 %inline %{
-retStringAndCPLFree* EscapeString(int len, char *bin_string , int scheme) {
-    return CPLEscapeString((const char*)bin_string, len, scheme);
-}
-%}
-
 retStringAndCPLFree* EscapeString(int len, char *bin_string , int scheme=CPLES_SQL) {
     return CPLEscapeString(bin_string, len, scheme);
 }
+%}
 #elif defined(SWIGPYTHON)
 
 %feature( "kwargs" ) wrapper_EscapeString;
@@ -491,7 +489,7 @@ const char *wrapper_CPLGetThreadLocalConfigOption( const char * pszKey, const ch
 
 
 %rename(GetConfigOptions) wrapper_GetConfigOptions;
-#if defined(SWIGPYTHON) || defined(SWIGJAVA)
+#if defined(SWIGPYTHON) || defined(SWIGJAVA) || defined(SWIGCSHARP)
 %apply (char **dictAndCSLDestroy) { char ** };
 #else
 %apply (char **) { char ** };
@@ -658,6 +656,9 @@ int wrapper_HasThreadSupport()
 }
 }
 
+%rename (GetCurrentThreadCount) CPLGetCurrentThreadCount();
+int CPLGetCurrentThreadCount();
+
 /* Added for GDAL 1.8 */
 VSI_RETVAL VSIMkdir(const char *utf8_path, int mode );
 VSI_RETVAL VSIRmdir(const char *utf8_path );
@@ -666,11 +667,22 @@ VSI_RETVAL VSIRmdir(const char *utf8_path );
 VSI_RETVAL VSIMkdirRecursive(const char *utf8_path, int mode );
 VSI_RETVAL VSIRmdirRecursive(const char *utf8_path );
 
-%apply (const char* utf8_path) {(const char* pszOld)};
-%apply (const char* utf8_path) {(const char* pszNew)};
-VSI_RETVAL VSIRename(const char * pszOld, const char *pszNew );
-%clear (const char* pszOld);
-%clear (const char* pszNew);
+%apply (const char* utf8_path) {(const char* old_path)};
+%apply (const char* utf8_path) {(const char* new_path)};
+VSI_RETVAL VSIRename(const char * old_path, const char *new_path );
+#if !defined(SWIGJAVA)
+%feature( "kwargs" ) wrapper_VSIMove;
+#endif
+%inline {
+VSI_RETVAL wrapper_VSIMove(const char * old_path, const char *new_path, char** options = NULL,
+                           GDALProgressFunc callback=NULL,
+                           void* callback_data=NULL)
+{
+    return VSIMove(old_path, new_path, options, callback, callback_data);
+}
+}
+%clear (const char* old_path);
+%clear (const char* new_path);
 
 #if defined(SWIGPYTHON)
 %rename (Sync) wrapper_VSISync;
@@ -851,7 +863,7 @@ int wrapper_VSIStatL( const char * utf8_path, StatBuf *psStatBufOut, int nFlags 
 #endif
 
 %rename (GetFileMetadata) VSIGetFileMetadata;
-#if defined(SWIGPYTHON)
+#if defined(SWIGPYTHON) || defined(SWIGCSHARP)
 %apply (char **dictAndCSLDestroy) { char ** };
 #else
 %apply (char **) { char ** };

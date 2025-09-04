@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test GeoPackage driver functionality.
@@ -310,14 +309,14 @@ def test_ogr_gpkg_1(gpkg_ds, tmp_path):
 
 def test_ogr_gpkg_2(gpkg_ds):
 
-    # Should default to GPKG 1.2
+    # Should default to GPKG 1.4
     with gpkg_ds.ExecuteSQL("PRAGMA application_id") as sql_lyr:
         f = sql_lyr.GetNextFeature()
         assert f["application_id"] == 1196444487
 
     with gpkg_ds.ExecuteSQL("PRAGMA user_version") as sql_lyr:
         f = sql_lyr.GetNextFeature()
-        assert f["user_version"] == 10200
+        assert f["user_version"] == 10400
 
 
 ###############################################################################
@@ -345,6 +344,8 @@ def test_ogr_gpkg_3(gpkg_ds, tmp_path):
         options=["GEOMETRY_NAME=gpkg_geometry", "SPATIAL_INDEX=NO"],
     )
     assert lyr is not None
+
+    assert gpkg_ds.GetSpatialRef().GetAuthorityCode(None) == "4326"
 
     lyr = gpkg_ds.CreateLayer("a_layer", options=["SPATIAL_INDEX=NO"])
 
@@ -623,12 +624,26 @@ def test_ogr_gpkg_6(gpkg_ds, tmp_path):
 
 
 def test_ogr_gpkg_7(gpkg_ds):
+    def get_feature_count_from_gpkg_contents():
+        with gpkg_ds.ExecuteSQL(
+            "SELECT feature_count FROM gpkg_ogr_contents WHERE table_name = 'field_test_layer'",
+            dialect="DEBUG",
+        ) as sql_lyr:
+            f = sql_lyr.GetNextFeature()
+            ret = f.GetField(0)
+        return ret
 
     lyr = gpkg_ds.CreateLayer("field_test_layer", geom_type=ogr.wkbPoint)
     field_defn = ogr.FieldDefn("dummy", ogr.OFTString)
     lyr.CreateField(field_defn)
 
+    gpkg_ds.SyncToDisk()
+
+    assert get_feature_count_from_gpkg_contents() == 0
+
     gpkg_ds = gdaltest.reopen(gpkg_ds, update=1)
+
+    assert get_feature_count_from_gpkg_contents() == 0
 
     lyr = gpkg_ds.GetLayerByName("field_test_layer")
     geom = ogr.CreateGeometryFromWkt("POINT(10 10)")
@@ -641,6 +656,9 @@ def test_ogr_gpkg_7(gpkg_ds):
     ), "lyr.TestCapability(ogr.OLCSequentialWrite) != 1"
 
     assert lyr.CreateFeature(feat) == 0, "cannot create feature"
+
+    # None is expected here since CreateFeature() has temporarily disabled triggers
+    assert get_feature_count_from_gpkg_contents() is None
 
     # Read back what we just inserted
     lyr.ResetReading()
@@ -690,23 +708,9 @@ def test_ogr_gpkg_7(gpkg_ds):
 
     assert lyr.GetFeatureCount() == 2
 
-    def get_feature_count_from_gpkg_contents():
-        with gpkg_ds.ExecuteSQL(
-            'SELECT feature_count FROM gpkg_ogr_contents WHERE table_name = "field_test_layer"',
-            dialect="DEBUG",
-        ) as sql_lyr:
-            f = sql_lyr.GetNextFeature()
-            ret = f.GetField(0)
-        return ret
-
-    assert get_feature_count_from_gpkg_contents() == 2
-
     assert lyr.CreateFeature(ogr.Feature(lyr.GetLayerDefn())) == ogr.OGRERR_NONE
 
     assert lyr.GetFeatureCount() == 3
-
-    # 2 is expected here since CreateFeature() has temporarily disable triggers
-    assert get_feature_count_from_gpkg_contents() == 2
 
     # Test upserting an existing feature
     feat.SetField("dummy", "updated")
@@ -714,9 +718,6 @@ def test_ogr_gpkg_7(gpkg_ds):
     assert lyr.UpsertFeature(feat) == ogr.OGRERR_NONE, "cannot upsert existing feature"
 
     assert feat.GetFID() == fid
-
-    # UpsertFeature() has serialized value 3 and re-enables triggers
-    assert get_feature_count_from_gpkg_contents() == 3
 
     upserted_feat = lyr.GetFeature(feat.GetFID())
     assert (
@@ -4759,6 +4760,30 @@ def test_ogr_gpkg_47c(tmp_vsimem):
     assert gdal.GetLastErrorMsg() == ""
 
 
+def test_ogr_gpkg_47c2(tmp_vsimem):
+
+    dbname = tmp_vsimem / "ogr_gpkg_47.gpkg"
+
+    # Set GPKG 1.4.0
+    gdaltest.gpkg_dr.CreateDataSource(dbname, options={"VERSION": "1.4"})
+    # Check user_version
+    fp = gdal.VSIFOpenL(dbname, "rb")
+    gdal.VSIFSeekL(fp, 60, 0)
+    assert struct.unpack(">I", gdal.VSIFReadL(4, 1, fp))[0] == 10400
+    gdal.VSIFCloseL(fp)
+
+    gdal.ErrorReset()
+    ds = ogr.Open(dbname, update=1)
+    assert ds is not None
+    assert gdal.GetLastErrorMsg() == ""
+    ds = None
+
+    gdal.ErrorReset()
+    with gdal.config_option("GPKG_WARN_UNRECOGNIZED_APPLICATION_ID", "NO"):
+        ogr.Open(dbname)
+    assert gdal.GetLastErrorMsg() == ""
+
+
 def test_ogr_gpkg_47d(tmp_vsimem):
 
     dbname = tmp_vsimem / "ogr_gpkg_47.gpkg"
@@ -5160,6 +5185,11 @@ def test_ogr_gpkg_creation_fid(tmp_vsimem):
     assert lyr.SetFeature(f) == ogr.OGRERR_NONE
     f = None
 
+    f = ogr.Feature(lyr.GetLayerDefn())
+    f.SetFID(14)
+    assert lyr.CreateFeature(f) == ogr.OGRERR_NONE
+    assert f.GetFID() == 14
+
     lyr = ds.CreateLayer("fid_integer64")
     assert lyr.CreateField(ogr.FieldDefn("fid", ogr.OFTInteger64)) == ogr.OGRERR_NONE
 
@@ -5526,7 +5556,7 @@ def test_ogr_gpkg_test_ogrsf(gpkg_ds):
     dbname = gpkg_ds.GetDescription()
 
     # Do integrity check first
-    gpkg_ds = ogr.Open(dbname)
+    gpkg_ds = gdaltest.reopen(gpkg_ds)
     with gpkg_ds.ExecuteSQL("PRAGMA integrity_check") as sql_lyr:
         feat = sql_lyr.GetNextFeature()
         assert feat.GetField(0) == "ok", "integrity check failed"
@@ -5866,13 +5896,36 @@ def test_ogr_gpkg_prelude_statements(tmp_vsimem):
 
 
 ###############################################################################
+# Test PRELUDE_STATEMENTS open option
+
+
+def test_ogr_gpkg_prelude_statements_after_spatialite_loading(tmp_vsimem):
+
+    gdal.VectorTranslate(tmp_vsimem / "test.gpkg", "data/poly.shp", format="GPKG")
+
+    with ogr.Open(tmp_vsimem / "test.gpkg") as ds:
+        if not _has_spatialite_4_3_or_later(ds):
+            pytest.skip("spatialite missing")
+
+    with gdal.OpenEx(
+        tmp_vsimem / "test.gpkg",
+        open_options=["PRELUDE_STATEMENTS=SELECT setdecimalprecision(1)"],
+    ) as ds:
+        with ds.ExecuteSQL("SELECT ST_AsText(geom) FROM poly LIMIT 1") as sql_lyr:
+            f = sql_lyr.GetNextFeature()
+            assert f[0].startswith("POLYGON((479819.8 4765180.5,")
+
+
+###############################################################################
 # Test DATETIME_FORMAT
 
 
 def test_ogr_gpkg_datetime_timezones(tmp_vsimem):
 
     filename = tmp_vsimem / "test_ogr_gpkg_datetime_timezones.gpkg"
-    ds = gdaltest.gpkg_dr.CreateDataSource(filename, options=["DATETIME_FORMAT=UTC"])
+    ds = gdaltest.gpkg_dr.CreateDataSource(
+        filename, options=["DATETIME_FORMAT=UTC", "VERSION=1.2"]
+    )
     lyr = ds.CreateLayer("test")
     lyr.CreateField(ogr.FieldDefn("dt", ogr.OFTDateTime))
     for val in [
@@ -5898,6 +5951,44 @@ def test_ogr_gpkg_datetime_timezones(tmp_vsimem):
         f = sql_lyr.GetNextFeature()
         # check that milliseconds are written to be strictly compliant with the GPKG spec
         assert f.GetField(0) == "2020-01-01T01:34:56.000Z"
+    ds = None
+
+
+###############################################################################
+# Test DATETIME_FORMAT
+
+
+def test_ogr_gpkg_datetime_timezones_gpkg_1_4(tmp_vsimem):
+
+    filename = tmp_vsimem / "test_ogr_gpkg_datetime_timezones.gpkg"
+    ds = gdaltest.gpkg_dr.CreateDataSource(
+        filename, options=["DATETIME_FORMAT=UTC", "VERSION=1.4"]
+    )
+    lyr = ds.CreateLayer("test")
+    lyr.CreateField(ogr.FieldDefn("dt", ogr.OFTDateTime))
+    for val in [
+        "2020/01/01 01:34:56",
+        "2020/01/01 01:34:56+00",
+        "2020/01/01 01:34:56.789+02",
+    ]:
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetField("dt", val)
+        lyr.CreateFeature(f)
+    ds = None
+
+    ds = ogr.Open(filename)
+    lyr = ds.GetLayer(0)
+    f = lyr.GetNextFeature()
+    assert f.GetField("dt") == "2020/01/01 01:34:56+00"
+    f = lyr.GetNextFeature()
+    assert f.GetField("dt") == "2020/01/01 01:34:56+00"
+    f = lyr.GetNextFeature()
+    assert f.GetField("dt") == "2019/12/31 23:34:56.789+00"
+
+    with ds.ExecuteSQL("SELECT dt || '' FROM test") as sql_lyr:
+        f = sql_lyr.GetNextFeature()
+        # check that milliseconds are not written, since it is not required since GPKG 1.4
+        assert f.GetField(0) == "2020-01-01T01:34:56Z"
     ds = None
 
 
@@ -8064,7 +8155,7 @@ def test_ogr_gpkg_arrow_stream_pyarrow_timezone(tmp_vsimem):
 
 
 def test_ogr_gpkg_arrow_stream_numpy(tmp_vsimem):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     numpy = pytest.importorskip("numpy")
 
     filename = tmp_vsimem / "test.gpkg"
@@ -8358,7 +8449,7 @@ def test_ogr_gpkg_arrow_stream_numpy(tmp_vsimem):
 def test_ogr_gpkg_arrow_stream_numpy_multi_threading(
     tmp_vsimem, num_features, batch_size, num_threads
 ):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     pytest.importorskip("numpy")
 
     filename = tmp_vsimem / "test.gpkg"
@@ -8406,7 +8497,7 @@ def test_ogr_gpkg_arrow_stream_numpy_multi_threading(
 
 
 def test_ogr_gpkg_arrow_stream_numpy_bool_field(tmp_vsimem):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     pytest.importorskip("numpy")
 
     filename = tmp_vsimem / "test.gpkg"
@@ -8446,7 +8537,7 @@ def test_ogr_gpkg_arrow_stream_numpy_bool_field(tmp_vsimem):
 
 @pytest.mark.parametrize("with_filter", [False, True])
 def test_ogr_gpkg_arrow_stream_numpy_more_than_125_columns(tmp_vsimem, with_filter):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     pytest.importorskip("numpy")
 
     filename = tmp_vsimem / "test.gpkg"
@@ -8482,7 +8573,7 @@ def test_ogr_gpkg_arrow_stream_numpy_more_than_125_columns(tmp_vsimem, with_filt
 
 @pytest.mark.parametrize("layer_type", ["direct", "sql"])
 def test_ogr_gpkg_arrow_stream_numpy_detailed_spatial_filter(tmp_vsimem, layer_type):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     pytest.importorskip("numpy")
 
     filename = str(
@@ -9174,8 +9265,10 @@ def test_ogr_gpkg_read_generated_column(tmp_vsimem):
     lyr = ds.GetLayer(0)
     assert lyr.GetLayerDefn().GetFieldCount() == 4
     assert lyr.GetLayerDefn().GetFieldDefn(2).GetName() == "strfield_generated"
+    assert lyr.GetLayerDefn().GetFieldDefn(2).IsGenerated()
     assert lyr.GetLayerDefn().GetFieldDefn(2).GetType() == ogr.OFTString
     assert lyr.GetLayerDefn().GetFieldDefn(3).GetName() == "intfield_generated_stored"
+    assert lyr.GetLayerDefn().GetFieldDefn(3).IsGenerated()
     assert lyr.GetLayerDefn().GetFieldDefn(3).GetType() == ogr.OFTInteger64
 
     f = ogr.Feature(lyr.GetLayerDefn())
@@ -9187,6 +9280,8 @@ def test_ogr_gpkg_read_generated_column(tmp_vsimem):
     assert f["strfield"] == "foo"
     assert f["strfield_generated"] == "foo_generated"
     assert f["intfield_generated_stored"] == 5
+    assert f.GetFieldDefnRef(2).IsGenerated()
+    assert f.GetFieldDefnRef(3).IsGenerated()
 
     assert lyr.SetFeature(f) == ogr.OGRERR_NONE
     lyr.ResetReading()
@@ -9955,7 +10050,7 @@ def test_ogr_gpkg_write_flushcache(tmp_vsimem):
 @gdaltest.enable_exceptions()
 def test_ogr_gpkg_write_arrow_fallback_types(tmp_vsimem):
 
-    src_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+    src_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
     src_lyr = src_ds.CreateLayer("test")
     src_lyr.CreateField(ogr.FieldDefn("string", ogr.OFTString))
     src_lyr.CreateField(ogr.FieldDefn("int", ogr.OFTInteger))
@@ -10086,7 +10181,7 @@ def test_ogr_gpkg_sql_exact_spatial_filter_for_feature_count(tmp_vsimem):
 
 @pytest.mark.parametrize("too_big_field", ["huge_string", "huge_binary", "geometry"])
 def test_ogr_gpkg_arrow_stream_huge_array(tmp_vsimem, too_big_field):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     pytest.importorskip("numpy")
 
     filename = tmp_vsimem / "test_ogr_gpkg_arrow_stream_huge_array.gpkg"
@@ -10132,7 +10227,15 @@ def test_ogr_gpkg_arrow_stream_huge_array(tmp_vsimem, too_big_field):
                 batch_count += 1
                 for fid in batch[lyr.GetFIDColumn()]:
                     got_fids.append(fid)
-            assert got_fids == [i + 1 for i in range(50)]
+            # This test fails randomly on CI when too_big_field = "huge_string"
+            # with values of got_fids starting at 25 being corrupted.
+            # Cf https://github.com/OSGeo/gdal/actions/runs/11917921824/job/33214164831?pr=11301
+            expected_fids = [i + 1 for i in range(50)]
+            if "CI" in os.environ and got_fids != expected_fids:
+                pytest.xfail(
+                    f"Random failure on CI occurred in test_ogr_gpkg_arrow_stream_huge_array[{too_big_field}]. Expected {expected_fids}, got {got_fids}"
+                )
+            assert got_fids == expected_fids
             assert batch_count == (25 if too_big_field == "geometry" else 21), lyr_name
             del stream
 
@@ -10401,7 +10504,7 @@ def test_ogr_gpkg_geom_coord_precision(
 
     # Test Arrow interface
     lyr.ResetReading()
-    mem_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+    mem_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
     mem_lyr = mem_ds.CreateLayer("test", geom_type=ogr.wkbNone)
     mem_lyr.CreateGeomField(ogr.GeomFieldDefn("my_geom"))
     mem_lyr.WriteArrow(lyr)
@@ -10618,6 +10721,21 @@ def test_ogr_gpkg_ST_Length_on_ellipsoid(tmp_vsimem):
 
 
 ###############################################################################
+# Test that CreateCopy() works on a vector dataset
+# Test fix for https://github.com/OSGeo/gdal/issues/11282
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.usefixtures("tpoly")
+def test_ogr_gpkg_CreateCopy(gpkg_ds, tmp_vsimem):
+
+    tmpfilename = tmp_vsimem / "test_ogr_gpkg_CreateCopy.gpkg"
+
+    out_ds = gdal.GetDriverByName("GPKG").CreateCopy(tmpfilename, gpkg_ds)
+    assert out_ds.GetLayerCount() == 1
+
+
+###############################################################################
 # Test LAUNDER=YES layer creation option
 
 
@@ -10766,3 +10884,272 @@ def test_gpkg_secure_delete(tmp_vsimem):
             with ds.ExecuteSQL("PRAGMA secure_delete") as sql_lyr:
                 f = sql_lyr.GetNextFeature()
                 assert f.GetField(0) == 0
+
+
+###############################################################################
+# Verify that we can generate an output that is byte-identical to the expected golden file.
+
+
+@pytest.mark.parametrize(
+    "src_filename,options",
+    [
+        # Generated with: ogr2ogr autotest/ogr/data/gpkg/poly_golden.gpkg autotest/ogr/data/poly.shp --config OGR_CURRENT_DATE="2000-01-01T:00:00:00.000Z" -nomd -dsco VERSION=1.2
+        ("data/gpkg/poly_golden.gpkg", ["VERSION=1.2"]),
+        # Generated with: ogr2ogr autotest/ogr/data/gpkg/poly_golden_gpkg_1_4.gpkg autotest/ogr/data/poly.shp --config OGR_CURRENT_DATE="2000-01-01T:00:00:00.000Z" -nomd -dsco VERSION=1.4
+        ("data/gpkg/poly_golden_gpkg_1_4.gpkg", ["VERSION=1.4"]),
+    ],
+)
+def test_ogr_gpkg_write_check_golden_file(tmp_path, src_filename, options):
+
+    out_filename = str(tmp_path / "test.gpkg")
+    with gdal.config_option("OGR_CURRENT_DATE", "2000-01-01T:00:00:00.000Z"):
+        gdal.VectorTranslate(out_filename, src_filename, datasetCreationOptions=options)
+
+    # Compare first sqlite3 dump if sqlite3 binary available
+    import subprocess
+
+    try:
+        golden_dump = subprocess.check_output(
+            ["sqlite3", src_filename, ".dump"]
+        ).decode("utf-8")
+        got_dump = subprocess.check_output(["sqlite3", out_filename, ".dump"]).decode(
+            "utf-8"
+        )
+        assert got_dump == golden_dump
+        # print("Identical sqlite3 dump")
+    except Exception:
+        pass
+
+    if get_sqlite_version() >= (3, 46, 0):
+        assert os.stat(src_filename).st_size == os.stat(out_filename).st_size
+        golden_data = bytearray(open(src_filename, "rb").read())
+        got_data = bytearray(open(out_filename, "rb").read())
+        # Zero out the SQLite version number at bytes 96-99. Cf https://www.sqlite.org/fileformat.html
+        golden_data[96] = golden_data[97] = golden_data[98] = golden_data[99] = 0
+        got_data[96] = got_data[97] = got_data[98] = got_data[99] = 0
+        assert got_data == golden_data
+
+
+###############################################################################
+# Test DATETIME_AS_STRING=YES GetArrowStream() option
+
+
+def test_ogr_gpkg_arrow_stream_numpy_datetime_as_string(tmp_vsimem):
+    gdaltest.importorskip_gdal_array()
+    pytest.importorskip("numpy")
+
+    filename = str(tmp_vsimem / "datetime_as_string.gpkg")
+    ds = ogr.GetDriverByName("GPKG").CreateDataSource(filename)
+    lyr = ds.CreateLayer("test")
+
+    field = ogr.FieldDefn("datetime", ogr.OFTDateTime)
+    lyr.CreateField(field)
+
+    f = ogr.Feature(lyr.GetLayerDefn())
+    lyr.CreateFeature(f)
+
+    f = ogr.Feature(lyr.GetLayerDefn())
+    f.SetField("datetime", "2022-05-31T12:34:56.789Z")
+    lyr.CreateFeature(f)
+
+    f = ogr.Feature(lyr.GetLayerDefn())
+    f.SetField("datetime", "2022-05-31T12:34:56.000")
+    lyr.CreateFeature(f)
+
+    f = ogr.Feature(lyr.GetLayerDefn())
+    f.SetField("datetime", "2022-05-31T12:34:56.000+12:30")
+    lyr.CreateFeature(f)
+
+    # Test DATETIME_AS_STRING=YES
+    stream = lyr.GetArrowStreamAsNumPy(
+        options=["USE_MASKED_ARRAYS=NO", "DATETIME_AS_STRING=YES"]
+    )
+    batches = [batch for batch in stream]
+    assert len(batches) == 1
+    batch = batches[0]
+    assert len(batch["datetime"]) == 4
+    assert batch["datetime"][0] == b""
+    assert batch["datetime"][1] == b"2022-05-31T12:34:56.789Z"
+    assert batch["datetime"][2] == b"2022-05-31T12:34:56"
+    assert batch["datetime"][3] == b"2022-05-31T12:34:56+12:30"
+
+    # Setting a filer tests the use of the less optimized
+    # OGRGeoPackageTableLayer::GetNextArray() implementation
+    lyr.SetAttributeFilter("1 = 1")
+    stream = lyr.GetArrowStreamAsNumPy(
+        options=["USE_MASKED_ARRAYS=NO", "DATETIME_AS_STRING=YES"]
+    )
+    lyr.SetAttributeFilter(None)
+    batches = [batch for batch in stream]
+    assert len(batches) == 1
+    batch = batches[0]
+    assert len(batch["datetime"]) == 4
+    assert batch["datetime"][0] == b""
+    assert batch["datetime"][1] == b"2022-05-31T12:34:56.789Z"
+    assert batch["datetime"][2] == b"2022-05-31T12:34:56"
+    assert batch["datetime"][3] == b"2022-05-31T12:34:56+12:30"
+
+    with ds.ExecuteSQL("SELECT * FROM test") as sql_lyr:
+        stream = sql_lyr.GetArrowStreamAsNumPy(
+            options=["USE_MASKED_ARRAYS=NO", "DATETIME_AS_STRING=YES"]
+        )
+        batches = [batch for batch in stream]
+        assert len(batches) == 1
+        batch = batches[0]
+        assert len(batch["datetime"]) == 4
+        assert batch["datetime"][0] == b""
+        assert batch["datetime"][1] == b"2022-05-31T12:34:56.789Z"
+        assert batch["datetime"][2] == b"2022-05-31T12:34:56"
+        assert batch["datetime"][3] == b"2022-05-31T12:34:56+12:30"
+
+
+###############################################################################
+# Test field operations rolling back changes.
+
+
+@pytest.mark.parametrize("start_transaction", [False, True])
+def test_ogr_gpkg_field_operations_rollback(tmp_vsimem, start_transaction):
+
+    filename = str(tmp_vsimem / "test.gpkg")
+    with ogr.GetDriverByName("GPKG").CreateDataSource(filename) as ds:
+        ogrtest.check_transaction_rollback(ds, start_transaction, test_geometry=False)
+
+
+@pytest.mark.parametrize("start_transaction", [False, True])
+def test_ogr_gpkg_field_operations_savepoint_rollback(tmp_vsimem, start_transaction):
+
+    filename = str(tmp_vsimem / "test_savepoint.gpkg")
+    with ogr.GetDriverByName("GPKG").CreateDataSource(filename) as ds:
+        ogrtest.check_transaction_rollback_with_savepoint(
+            ds, start_transaction, test_geometry=False
+        )
+
+
+@pytest.mark.parametrize("auto_begin_transaction", [False, True])
+@pytest.mark.parametrize("start_transaction", [False, True])
+@pytest.mark.parametrize(
+    "release_to,rollback_to,expected",
+    (
+        ([1], [], ["fld3"]),
+        ([2], [], ["fld3"]),
+        ([3], [], ["fld3"]),
+        ([4], [], ["fld3"]),
+        ([], [1], ["fld1", "fld2", "fld3", "fld4", "fld5"]),
+        ([], [2], ["fld1", "fld3", "fld4", "fld5"]),
+        ([], [3], ["fld1", "fld3", "fld5"]),
+        ([], [4], ["fld3", "fld5"]),
+    ),
+)
+def test_ogr_gpkg_field_operations_savepoint_release(
+    tmp_vsimem,
+    auto_begin_transaction,
+    start_transaction,
+    release_to,
+    rollback_to,
+    expected,
+):
+
+    filename = str(tmp_vsimem / "test_savepoint_release.gpkg")
+    ogrtest.check_transaction_savepoint_release(
+        filename,
+        "GPKG",
+        auto_begin_transaction,
+        start_transaction,
+        release_to,
+        rollback_to,
+        expected,
+        test_geometry=False,
+    )
+
+
+###############################################################################
+
+
+def test_ogr_gpkg_set_next_by_index(tmp_vsimem):
+
+    filename = tmp_vsimem / "test_ogr_gpkg_set_next_by_index.gpkg"
+    with ogr.GetDriverByName("GPKG").CreateDataSource(filename) as ds:
+        lyr = ds.CreateLayer("test")
+        lyr.CreateField(ogr.FieldDefn("foo"))
+        lyr.SetNextByIndex(0)
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f["foo"] = "bar"
+        lyr.CreateFeature(f)
+
+    with ogr.Open(filename) as ds:
+        lyr = ds.GetLayer(0)
+        lyr.SetNextByIndex(0)
+        f = lyr.GetNextFeature()
+        assert f["foo"] == "bar"
+
+
+###############################################################################
+# Test 'gdal driver gpkg repack'
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_gpkg_gdal_driver_gpkg_repack(tmp_path):
+
+    alg = gdal.GetGlobalAlgorithmRegistry()["driver"]
+    assert alg.GetName() == "driver"
+
+    alg = gdal.GetGlobalAlgorithmRegistry()["driver"]["gpkg"]
+    assert alg.GetName() == "gpkg"
+
+    alg = gdal.GetGlobalAlgorithmRegistry()["driver"]["gpkg"]["repack"]
+    assert alg.GetName() == "repack"
+    alg["dataset"] = "data/poly.shp"
+    with pytest.raises(Exception, match="is not a GeoPackage"):
+        alg.Run()
+
+    ds = gdal.VectorTranslate(tmp_path / "test.gpkg", "data/poly.shp")
+    ds.ExecuteSQL("DELETE FROM poly")
+    ds.Close()
+
+    size_before = os.stat(tmp_path / "test.gpkg").st_size
+
+    alg = gdal.GetGlobalAlgorithmRegistry()["driver"]["gpkg"]["repack"]
+    assert alg.GetName() == "repack"
+    alg["dataset"] = tmp_path / "test.gpkg"
+    assert alg.Run()
+
+    size_after = os.stat(tmp_path / "test.gpkg").st_size
+    assert size_after < size_before
+
+
+###############################################################################
+# Test appending to a layer with a (wrong) feature_count = INT64_MAX
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_gpkg_append_to_layer_feature_count_int64_max(tmp_vsimem):
+
+    with gdal.GetDriverByName("GPKG").CreateVector(tmp_vsimem / "tmp.gpkg") as ds:
+        ds.CreateLayer("test")
+
+    with gdal.OpenEx(tmp_vsimem / "tmp.gpkg", gdal.OF_VECTOR | gdal.OF_UPDATE) as ds:
+        ds.ExecuteSQL("UPDATE gpkg_ogr_contents SET feature_count = -2")
+
+    with gdal.OpenEx(tmp_vsimem / "tmp.gpkg", gdal.OF_VECTOR | gdal.OF_UPDATE) as ds:
+        lyr = ds.GetLayer(0)
+        assert lyr.GetFeatureCount() == 0
+
+    with gdal.OpenEx(tmp_vsimem / "tmp.gpkg", gdal.OF_VECTOR | gdal.OF_UPDATE) as ds:
+        ds.ExecuteSQL(
+            "UPDATE gpkg_ogr_contents SET feature_count = 9223372036854775807"
+        )
+
+    with gdal.OpenEx(tmp_vsimem / "tmp.gpkg", gdal.OF_VECTOR | gdal.OF_UPDATE) as ds:
+        lyr = ds.GetLayer(0)
+        assert lyr.GetFeatureCount() == 9223372036854775807
+        f = ogr.Feature(lyr.GetLayerDefn())
+        lyr.CreateFeature(f)
+        f = ogr.Feature(lyr.GetLayerDefn())
+        lyr.CreateFeature(f)
+
+    with gdal.OpenEx(tmp_vsimem / "tmp.gpkg", gdal.OF_VECTOR | gdal.OF_UPDATE) as ds:
+        with ds.ExecuteSQL("SELECT feature_count FROM gpkg_ogr_contents") as sql_lyr:
+            f = sql_lyr.GetNextFeature()
+            assert not f.IsFieldSetAndNotNull("feature_count")
+        lyr = ds.GetLayer(0)
+        assert lyr.GetFeatureCount() == 2

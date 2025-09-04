@@ -58,17 +58,12 @@ class OGRESRIFeatureServiceLayer final : public OGRLayer
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;
     GIntBig GetFeatureCount(int bForce = TRUE) override;
-    OGRErr GetExtent(OGREnvelope *psExtent, int bForce = TRUE) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce = true) override;
 
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
+    int TestCapability(const char *pszCap) const override;
 
-    int TestCapability(const char *pszCap) override;
-
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
@@ -95,15 +90,12 @@ class OGRESRIFeatureServiceDataset final : public GDALDataset
         std::unique_ptr<OGRGeoJSONDataSource> &&poFirst,
         GeoJSONSourceType nSrcType);
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return 1;
     }
 
-    OGRLayer *GetLayer(int nLayer) override
-    {
-        return (nLayer == 0) ? m_poLayer.get() : nullptr;
-    }
+    const OGRLayer *GetLayer(int nLayer) const override;
 
     OGRLayer *GetUnderlyingLayer()
     {
@@ -118,6 +110,11 @@ class OGRESRIFeatureServiceDataset final : public GDALDataset
         return m_osURL;
     }
 };
+
+const OGRLayer *OGRESRIFeatureServiceDataset::GetLayer(int nLayer) const
+{
+    return (nLayer == 0) ? m_poLayer.get() : nullptr;
+}
 
 /************************************************************************/
 /*                       OGRESRIFeatureServiceLayer()                   */
@@ -236,7 +233,7 @@ OGRFeature *OGRESRIFeatureServiceLayer::GetNextFeature()
 /*                          TestCapability()                            */
 /************************************************************************/
 
-int OGRESRIFeatureServiceLayer::TestCapability(const char *pszCap)
+int OGRESRIFeatureServiceLayer::TestCapability(const char *pszCap) const
 {
     if (EQUAL(pszCap, OLCFastFeatureCount))
         return m_poAttrQuery == nullptr && m_poFilterGeom == nullptr;
@@ -290,10 +287,12 @@ GIntBig OGRESRIFeatureServiceLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                               GetExtent()                            */
+/*                              IGetExtent()                            */
 /************************************************************************/
 
-OGRErr OGRESRIFeatureServiceLayer::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr OGRESRIFeatureServiceLayer::IGetExtent(int iGeomField,
+                                              OGREnvelope *psExtent,
+                                              bool bForce)
 {
     OGRErr eErr = OGRERR_FAILURE;
     CPLString osNewURL =
@@ -328,7 +327,7 @@ OGRErr OGRESRIFeatureServiceLayer::GetExtent(OGREnvelope *psExtent, int bForce)
     }
     CPLHTTPDestroyResult(pResult);
     if (eErr == OGRERR_FAILURE)
-        eErr = OGRLayer::GetExtent(psExtent, bForce);
+        eErr = OGRLayer::IGetExtent(iGeomField, psExtent, bForce);
     return eErr;
 }
 
@@ -709,6 +708,19 @@ void RegisterOGRGeoJSON()
         "  <Option name='DATE_AS_STRING' type='boolean' description='Whether "
         "to expose date/time/date-time content using dedicated OGR "
         "date/time/date-time types or as a OGR String' default='NO'/>"
+        "  <Option name='FOREIGN_MEMBERS' type='string-select' "
+        "description='Whether and how foreign members at the feature level "
+        "should be processed as OGR fields' default='AUTO'>"
+        "    <Value>AUTO</Value>"
+        "    <Value>ALL</Value>"
+        "    <Value>NONE</Value>"
+        "    <Value>STAC</Value>"
+        "  </Option>"
+        "  <Option name='OGR_SCHEMA' type='string' description='"
+        "Partially or totally overrides the auto-detected schema to use for "
+        "creating the layer. "
+        "The overrides are defined as a JSON list of field definitions. "
+        "This can be a filename or a JSON string or a URL.'/>"
         "</OpenOptionList>");
 
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONOPTIONLIST,
@@ -772,9 +784,12 @@ void RegisterOGRGeoJSON()
         "Integer64List RealList StringList Date DateTime");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATASUBTYPES, "Boolean");
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS, "OGRSQL SQLITE");
-    poDriver->SetMetadataItem(GDAL_DCAP_MEASURED_GEOMETRIES, "YES");
+
     poDriver->SetMetadataItem(GDAL_DCAP_FLUSHCACHE_CONSISTENT_STATE, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_HONOR_GEOM_COORDINATE_PRECISION, "YES");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS, "Features");
 
     poDriver->pfnOpen = OGRGeoJSONDriverOpen;
     poDriver->pfnIdentify = OGRGeoJSONDriverIdentify;

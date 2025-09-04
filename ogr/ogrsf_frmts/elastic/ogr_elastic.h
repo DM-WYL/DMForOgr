@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  Elasticsearch Translator
  * Purpose:
@@ -177,33 +176,25 @@ class OGRElasticLayer final : public OGRLayer
     virtual OGRErr CreateGeomField(const OGRGeomFieldDefn *poField,
                                    int bApproxOK) override;
 
-    virtual const char *GetName() override
+    const char *GetName() const override
     {
         return m_poFeatureDefn->GetName();
     }
 
-    virtual OGRFeatureDefn *GetLayerDefn() override;
-    virtual const char *GetFIDColumn() override;
+    const OGRFeatureDefn *GetLayerDefn() const override;
+    const char *GetFIDColumn() const override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual GIntBig GetFeatureCount(int bForce) override;
 
-    virtual void SetSpatialFilter(OGRGeometry *poGeom) override
-    {
-        SetSpatialFilter(0, poGeom);
-    }
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override;
     virtual OGRErr SetAttributeFilter(const char *pszFilter) override;
 
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce = TRUE) override
-    {
-        return GetExtent(0, psExtent, bForce);
-    }
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce = TRUE) override;
+    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                              bool bForce) override;
 
     virtual OGRErr SyncToDisk() override;
 
@@ -289,15 +280,17 @@ class OGRElasticAggregationLayer final
     CPLJSONObject m_oAggregatedFieldsRequest{};
     std::vector<std::unique_ptr<OGRFeature>> m_apoCachedFeatures{};
 
-    explicit OGRElasticAggregationLayer(OGRElasticDataSource *poDS);
     std::string BuildRequest();
     void IssueAggregationRequest();
     OGRFeature *GetNextRawFeature();
 
   public:
+    // Do not use directly. Use Build() static method instead
+    explicit OGRElasticAggregationLayer(OGRElasticDataSource *poDS);
+
     ~OGRElasticAggregationLayer() override;
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
@@ -305,10 +298,10 @@ class OGRElasticAggregationLayer final
     void ResetReading() override;
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRElasticAggregationLayer)
     GIntBig GetFeatureCount(int bForce) override;
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
-    using OGRLayer::SetSpatialFilter;
-    void SetSpatialFilter(OGRGeometry *poGeom) override;
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
     GDALDataset *GetDataset() override;
 
@@ -330,7 +323,7 @@ class OGRElasticDataSource final : public GDALDataset
     std::set<CPLString> m_oSetLayers;
     std::vector<std::unique_ptr<OGRElasticLayer>> m_apoLayers;
     std::unique_ptr<OGRElasticAggregationLayer> m_poAggregationLayer{};
-    bool m_bAllLayersListed = false;
+    mutable bool m_bAllLayersListed = false;
     std::map<OGRLayer *, OGRLayer *> m_oMapResultSet;
     std::map<std::string, std::string> m_oMapHeadersFromEnv{};
 
@@ -367,13 +360,13 @@ class OGRElasticDataSource final : public GDALDataset
         return m_osURL.c_str();
     }
 
-    virtual const char *GetName()
+    const char *GetName()
     {
         return m_pszName;
     }
 
-    virtual int GetLayerCount() override;
-    virtual OGRLayer *GetLayer(int) override;
+    int GetLayerCount() const override;
+    const OGRLayer *GetLayer(int) const override;
     virtual OGRLayer *GetLayerByName(const char *pszName) override;
 
     OGRLayer *ICreateLayer(const char *pszName,
@@ -386,7 +379,7 @@ class OGRElasticDataSource final : public GDALDataset
                                  const char *pszDialect) override;
     virtual void ReleaseResultSet(OGRLayer *poLayer) override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     bool UploadFile(const CPLString &url, const CPLString &data,
                     const CPLString &osVerb = CPLString());

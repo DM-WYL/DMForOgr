@@ -79,7 +79,7 @@ class TSXDataset final : public GDALPamDataset
     OGRSpatialReference m_oGCPSRS{};
 
     OGRSpatialReference m_oSRS{};
-    double adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
     bool bHaveGeoTransform;
 
     eProductType nProduct;
@@ -92,14 +92,14 @@ class TSXDataset final : public GDALPamDataset
     const OGRSpatialReference *GetGCPSpatialRef() const override;
     virtual const GDAL_GCP *GetGCPs() override;
 
-    CPLErr GetGeoTransform(double *padfTransform) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
     static int Identify(GDALOpenInfo *poOpenInfo);
 
   private:
-    bool getGCPsFromGEOREF_XML(char *pszGeorefFilename);
+    bool getGCPsFromGEOREF_XML(const char *pszGeorefFilename);
 };
 
 /************************************************************************/
@@ -219,12 +219,6 @@ TSXDataset::TSXDataset()
 {
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     m_oGCPSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-    adfGeoTransform[0] = 0.0;
-    adfGeoTransform[1] = 1.0;
-    adfGeoTransform[2] = 0.0;
-    adfGeoTransform[3] = 0.0;
-    adfGeoTransform[4] = 0.0;
-    adfGeoTransform[5] = 1.0;
 }
 
 /************************************************************************/
@@ -252,15 +246,18 @@ int TSXDataset::Identify(GDALOpenInfo *poOpenInfo)
     {
         if (poOpenInfo->bIsDirectory)
         {
-            const CPLString osFilename = CPLFormCIFilename(
+            const CPLString osFilename = CPLFormCIFilenameSafe(
                 poOpenInfo->pszFilename,
                 CPLGetFilename(poOpenInfo->pszFilename), "xml");
 
             /* Check if the filename contains TSX1_SAR (TerraSAR-X) or TDX1_SAR
              * (TanDEM-X) or PAZ1_SAR (PAZ) */
-            if (!(STARTS_WITH_CI(CPLGetBasename(osFilename), "TSX1_SAR") ||
-                  STARTS_WITH_CI(CPLGetBasename(osFilename), "TDX1_SAR") ||
-                  STARTS_WITH_CI(CPLGetBasename(osFilename), "PAZ1_SAR")))
+            if (!(STARTS_WITH_CI(CPLGetBasenameSafe(osFilename).c_str(),
+                                 "TSX1_SAR") ||
+                  STARTS_WITH_CI(CPLGetBasenameSafe(osFilename).c_str(),
+                                 "TDX1_SAR") ||
+                  STARTS_WITH_CI(CPLGetBasenameSafe(osFilename).c_str(),
+                                 "PAZ1_SAR")))
                 return 0;
 
             VSIStatBufL sStat;
@@ -273,9 +270,12 @@ int TSXDataset::Identify(GDALOpenInfo *poOpenInfo)
 
     /* Check if the filename contains TSX1_SAR (TerraSAR-X) or TDX1_SAR
      * (TanDEM-X) or PAZ1_SAR (PAZ) */
-    if (!(STARTS_WITH_CI(CPLGetBasename(poOpenInfo->pszFilename), "TSX1_SAR") ||
-          STARTS_WITH_CI(CPLGetBasename(poOpenInfo->pszFilename), "TDX1_SAR") ||
-          STARTS_WITH_CI(CPLGetBasename(poOpenInfo->pszFilename), "PAZ1_SAR")))
+    if (!(STARTS_WITH_CI(CPLGetBasenameSafe(poOpenInfo->pszFilename).c_str(),
+                         "TSX1_SAR") ||
+          STARTS_WITH_CI(CPLGetBasenameSafe(poOpenInfo->pszFilename).c_str(),
+                         "TDX1_SAR") ||
+          STARTS_WITH_CI(CPLGetBasenameSafe(poOpenInfo->pszFilename).c_str(),
+                         "PAZ1_SAR")))
         return 0;
 
     /* finally look for the <level1Product tag */
@@ -293,7 +293,7 @@ int TSXDataset::Identify(GDALOpenInfo *poOpenInfo)
 /*string.                                                                */
 /*Returns true on success.                                                */
 /************************************************************************/
-bool TSXDataset::getGCPsFromGEOREF_XML(char *pszGeorefFilename)
+bool TSXDataset::getGCPsFromGEOREF_XML(const char *pszGeorefFilename)
 {
     // open GEOREF.xml
     CPLXMLNode *psGeorefData = CPLParseXMLFile(pszGeorefFilename);
@@ -364,7 +364,7 @@ bool TSXDataset::getGCPsFromGEOREF_XML(char *pszGeorefFilename)
         nGCPCount = MAX_GCPS;
     // allocate memory for the gcps
     pasGCPList =
-        reinterpret_cast<GDAL_GCP *>(CPLCalloc(sizeof(GDAL_GCP), nGCPCount));
+        static_cast<GDAL_GCP *>(CPLCalloc(sizeof(GDAL_GCP), nGCPCount));
 
     // loop through all gcps and set info
 
@@ -449,9 +449,7 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The TSX driver does not support update access to existing"
-                 " datasets.\n");
+        ReportUpdateNotSupportedByDriver("TSX");
         return nullptr;
     }
 
@@ -459,37 +457,35 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (poOpenInfo->bIsDirectory)
     {
-        osFilename =
-            CPLFormCIFilename(poOpenInfo->pszFilename,
-                              CPLGetFilename(poOpenInfo->pszFilename), "xml");
+        osFilename = CPLFormCIFilenameSafe(
+            poOpenInfo->pszFilename, CPLGetFilename(poOpenInfo->pszFilename),
+            "xml");
     }
     else
         osFilename = poOpenInfo->pszFilename;
 
     /* Ingest the XML */
-    CPLXMLNode *psData = CPLParseXMLFile(osFilename);
+    CPLXMLTreeCloser psData(CPLParseXMLFile(osFilename));
     if (psData == nullptr)
         return nullptr;
 
     /* find the product components */
-    CPLXMLNode *psComponents =
-        CPLGetXMLNode(psData, "=level1Product.productComponents");
+    const CPLXMLNode *psComponents =
+        CPLGetXMLNode(psData.get(), "=level1Product.productComponents");
     if (psComponents == nullptr)
     {
         CPLError(CE_Failure, CPLE_OpenFailed,
                  "Unable to find <productComponents> tag in file.\n");
-        CPLDestroyXMLNode(psData);
         return nullptr;
     }
 
     /* find the product info tag */
-    CPLXMLNode *psProductInfo =
-        CPLGetXMLNode(psData, "=level1Product.productInfo");
+    const CPLXMLNode *psProductInfo =
+        CPLGetXMLNode(psData.get(), "=level1Product.productInfo");
     if (psProductInfo == nullptr)
     {
         CPLError(CE_Failure, CPLE_OpenFailed,
                  "Unable to find <productInfo> tag in file.\n");
-        CPLDestroyXMLNode(psData);
         return nullptr;
     }
 
@@ -497,7 +493,7 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      Create the dataset.                                             */
     /* -------------------------------------------------------------------- */
 
-    TSXDataset *poDS = new TSXDataset();
+    auto poDS = std::make_unique<TSXDataset>();
 
     /* -------------------------------------------------------------------- */
     /*      Read in product info.                                           */
@@ -528,9 +524,9 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
                           CPLGetXMLValue(psProductInfo,
                                          "productVariantInfo.productVariant",
                                          "unknown"));
-    char *pszDataType = CPLStrdup(CPLGetXMLValue(
-        psProductInfo, "imageDataInfo.imageDataType", "unknown"));
-    poDS->SetMetadataItem("IMAGE_TYPE", pszDataType);
+    std::string osDataType =
+        CPLGetXMLValue(psProductInfo, "imageDataInfo.imageDataType", "unknown");
+    poDS->SetMetadataItem("IMAGE_TYPE", osDataType.c_str());
 
     /* Get raster information */
     int nRows = atoi(CPLGetXMLValue(
@@ -583,15 +579,21 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
         poDS->nProduct = eUnknown;
 
     /* Start reading in the product components */
-    char *pszGeorefFile = nullptr;
+    std::string osGeorefFile;
     CPLErr geoTransformErr = CE_Failure;
     for (CPLXMLNode *psComponent = psComponents->psChild;
          psComponent != nullptr; psComponent = psComponent->psNext)
     {
         const char *pszType = nullptr;
-        const char *pszPath =
-            CPLFormFilename(CPLGetDirname(osFilename),
-                            GetFilePath(psComponent, &pszType).c_str(), "");
+        const std::string osFilePath = GetFilePath(psComponent, &pszType);
+        if (CPLHasPathTraversal(osFilePath.c_str()))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Path traversal detected in %s", osFilePath.c_str());
+            return nullptr;
+        }
+        std::string osPath = CPLFormFilenameSafe(
+            CPLGetDirnameSafe(osFilename).c_str(), osFilePath.c_str(), "");
         const char *pszPolLayer = CPLGetXMLValue(psComponent, "polLayer", " ");
 
         if (!STARTS_WITH_CI(pszType, " "))
@@ -599,13 +601,12 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
             if (STARTS_WITH_CI(pszType, "MAPPING_GRID"))
             {
                 /* the mapping grid... save as a metadata item this path */
-                poDS->SetMetadataItem("MAPPING_GRID", pszPath);
+                poDS->SetMetadataItem("MAPPING_GRID", osPath.c_str());
             }
             else if (STARTS_WITH_CI(pszType, "GEOREF"))
             {
                 /* save the path to the georef data for later use */
-                CPLFree(pszGeorefFile);
-                pszGeorefFile = CPLStrdup(pszPath);
+                osGeorefFile = std::move(osPath);
             }
         }
         else if (!STARTS_WITH_CI(pszPolLayer, " ") &&
@@ -630,17 +631,17 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
                 ePol = VV;
             }
 
-            GDALDataType eDataType = STARTS_WITH_CI(pszDataType, "COMPLEX")
-                                         ? GDT_CInt16
-                                         : GDT_UInt16;
+            GDALDataType eDataType =
+                STARTS_WITH_CI(osDataType.c_str(), "COMPLEX") ? GDT_CInt16
+                                                              : GDT_UInt16;
 
             /* try opening the file that represents that band */
             GDALDataset *poBandData =
-                GDALDataset::FromHandle(GDALOpen(pszPath, GA_ReadOnly));
+                GDALDataset::FromHandle(GDALOpen(osPath.c_str(), GA_ReadOnly));
             if (poBandData != nullptr)
             {
                 TSXRasterBand *poBand =
-                    new TSXRasterBand(poDS, eDataType, ePol, poBandData);
+                    new TSXRasterBand(poDS.get(), eDataType, ePol, poBandData);
                 poDS->SetBand(poDS->GetRasterCount() + 1, poBand);
 
                 // copy georeferencing info from the band
@@ -650,8 +651,7 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
                 if (poSrcSRS)
                     poDS->m_oSRS = *poSrcSRS;
 
-                geoTransformErr =
-                    poBandData->GetGeoTransform(poDS->adfGeoTransform);
+                geoTransformErr = poBandData->GetGeoTransform(poDS->m_gt);
             }
         }
     }
@@ -665,15 +665,8 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
     {
         poDS->bHaveGeoTransform = FALSE;
         poDS->m_oSRS.Clear();
-        poDS->adfGeoTransform[0] = 0.0;
-        poDS->adfGeoTransform[1] = 1.0;
-        poDS->adfGeoTransform[2] = 0.0;
-        poDS->adfGeoTransform[3] = 0.0;
-        poDS->adfGeoTransform[4] = 0.0;
-        poDS->adfGeoTransform[5] = 1.0;
+        poDS->m_gt = GDALGeoTransform();
     }
-
-    CPLFree(pszDataType);
 
     /* -------------------------------------------------------------------- */
     /*      Check and set matrix representation.                            */
@@ -688,14 +681,14 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      Read the four corners and centre GCPs in                        */
     /* -------------------------------------------------------------------- */
 
-    CPLXMLNode *psSceneInfo =
-        CPLGetXMLNode(psData, "=level1Product.productInfo.sceneInfo");
+    const CPLXMLNode *psSceneInfo =
+        CPLGetXMLNode(psData.get(), "=level1Product.productInfo.sceneInfo");
     if (psSceneInfo != nullptr)
     {
         /* extract the GCPs from the provided file */
         bool success = false;
-        if (pszGeorefFile != nullptr)
-            success = poDS->getGCPsFromGEOREF_XML(pszGeorefFile);
+        if (!osGeorefFile.empty())
+            success = poDS->getGCPsFromGEOREF_XML(osGeorefFile.c_str());
 
         // if the gcp's cannot be extracted from the georef file, try to get the
         // corner coordinates for now just SSC because the others don't have
@@ -709,7 +702,7 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
             // count and allocate gcps - there should be five - 4 corners and a
             // centre
             poDS->nGCPCount = 0;
-            CPLXMLNode *psNode = psSceneInfo->psChild;
+            const CPLXMLNode *psNode = psSceneInfo->psChild;
             for (; psNode != nullptr; psNode = psNode->psNext)
             {
                 if (!EQUAL(psNode->pszValue, "sceneCenterCoord") &&
@@ -759,12 +752,7 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
         {
             poDS->bHaveGeoTransform = FALSE;
             poDS->m_oSRS.Clear();
-            poDS->adfGeoTransform[0] = 0.0;
-            poDS->adfGeoTransform[1] = 1.0;
-            poDS->adfGeoTransform[2] = 0.0;
-            poDS->adfGeoTransform[3] = 0.0;
-            poDS->adfGeoTransform[4] = 0.0;
-            poDS->adfGeoTransform[5] = 1.0;
+            poDS->m_gt = GDALGeoTransform();
         }
     }
     else
@@ -773,8 +761,6 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
                  "Unable to find sceneInfo tag in XML document. "
                  "Proceeding with caution.");
     }
-
-    CPLFree(pszGeorefFile);
 
     /* -------------------------------------------------------------------- */
     /*      Initialize any PAM information.                                 */
@@ -785,11 +771,9 @@ GDALDataset *TSXDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Check for overviews.                                            */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename);
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename);
 
-    CPLDestroyXMLNode(psData);
-
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/
@@ -832,9 +816,9 @@ const OGRSpatialReference *TSXDataset::GetSpatialRef() const
 /************************************************************************/
 /*                               GetGeotransform()                      */
 /************************************************************************/
-CPLErr TSXDataset::GetGeoTransform(double *padfTransform)
+CPLErr TSXDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
-    memcpy(padfTransform, adfGeoTransform, sizeof(double) * 6);
+    gt = m_gt;
 
     if (bHaveGeoTransform)
         return CE_None;

@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Component: ODS formula Engine
  * Purpose: Implementation of the ods_formula_node class used to represent a
@@ -191,9 +190,7 @@ class IODSCellEvaluator
     virtual int EvaluateRange(int nRow1, int nCol1, int nRow2, int nCol2,
                               std::vector<ods_formula_node> &aoOutValues) = 0;
 
-    virtual ~IODSCellEvaluator()
-    {
-    }
+    virtual ~IODSCellEvaluator();
 
     int m_nDepth = 0;
 };

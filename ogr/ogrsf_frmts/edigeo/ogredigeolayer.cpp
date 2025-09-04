@@ -94,7 +94,7 @@ OGRFeature *OGREDIGEOLayer::GetFeature(GIntBig nFID)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGREDIGEOLayer::TestCapability(const char *pszCap)
+int OGREDIGEOLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCFastFeatureCount))
@@ -107,24 +107,6 @@ int OGREDIGEOLayer::TestCapability(const char *pszCap)
         return poDS->HasUTF8ContentOnly();
 
     return FALSE;
-}
-
-/************************************************************************/
-/*                              GetExtent()                             */
-/************************************************************************/
-
-OGRErr OGREDIGEOLayer::GetExtent(OGREnvelope *psExtent, int bForce)
-{
-    /*if (poDS->bExtentValid)
-    {
-        psExtent->MinX = poDS->dfMinX;
-        psExtent->MinY = poDS->dfMinY;
-        psExtent->MaxX = poDS->dfMaxX;
-        psExtent->MaxY = poDS->dfMaxY;
-        return OGRERR_NONE;
-    }*/
-
-    return OGRLayer::GetExtent(psExtent, bForce);
 }
 
 /************************************************************************/

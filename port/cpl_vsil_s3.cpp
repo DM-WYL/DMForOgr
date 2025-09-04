@@ -35,6 +35,11 @@
 
 #include "cpl_aws.h"
 
+// To avoid aliasing to GetDiskFreeSpace to GetDiskFreeSpaceA on Windows
+#ifdef GetDiskFreeSpace
+#undef GetDiskFreeSpace
+#endif
+
 #ifndef HAVE_CURL
 
 void VSIInstallS3FileHandler(void)
@@ -62,60 +67,47 @@ namespace cpl
 /*                             VSIDIRS3                                 */
 /************************************************************************/
 
-struct VSIDIRS3 : public VSIDIRWithMissingDirSynthesis
+struct VSIDIRS3 : public VSIDIRS3Like
 {
-    int nRecurseDepth = 0;
+    bool m_bRegularListingDone = false;
+    bool m_bDirectoryBucketListingDone = false;
+    bool m_bListBucket = false;
 
-    std::string osNextMarker{};
-    int nPos = 0;
-
-    std::string osBucket{};
-    std::string osObjectKey{};
-    VSICurlFilesystemHandlerBase *poFS = nullptr;
-    IVSIS3LikeFSHandler *poS3FS = nullptr;
-    IVSIS3LikeHandleHelper *poS3HandleHelper = nullptr;
-    int nMaxFiles = 0;
-    bool bCacheEntries = true;
-    bool m_bSynthetizeMissingDirectories = false;
-    std::string m_osFilterPrefix{};
-
-    explicit VSIDIRS3(IVSIS3LikeFSHandler *poFSIn)
-        : poFS(poFSIn), poS3FS(poFSIn)
+    VSIDIRS3(const std::string &osDirName, IVSIS3LikeFSHandler *poFSIn)
+        : VSIDIRS3Like(osDirName, poFSIn)
     {
     }
 
-    explicit VSIDIRS3(VSICurlFilesystemHandlerBase *poFSIn) : poFS(poFSIn)
+    VSIDIRS3(const std::string &osDirName, VSICurlFilesystemHandlerBase *poFSIn)
+        : VSIDIRS3Like(osDirName, poFSIn)
     {
     }
-
-    ~VSIDIRS3()
-    {
-        delete poS3HandleHelper;
-    }
-
-    VSIDIRS3(const VSIDIRS3 &) = delete;
-    VSIDIRS3 &operator=(const VSIDIRS3 &) = delete;
 
     const VSIDIREntry *NextDirEntry() override;
 
-    bool IssueListDir();
+    bool IssueListDir() override;
     bool
     AnalyseS3FileList(const std::string &osBaseURL, const char *pszXML,
                       const std::set<std::string> &oSetIgnoredStorageClasses,
                       bool &bIsTruncated);
-    void clear();
 };
 
 /************************************************************************/
 /*                                clear()                               */
 /************************************************************************/
 
-void VSIDIRS3::clear()
+void VSIDIRS3Like::clear()
 {
     osNextMarker.clear();
     nPos = 0;
     aoEntries.clear();
 }
+
+/************************************************************************/
+/*                     ~VSIDIRWithMissingDirSynthesis()                 */
+/************************************************************************/
+
+VSIDIRWithMissingDirSynthesis::~VSIDIRWithMissingDirSynthesis() = default;
 
 /************************************************************************/
 /*                      SynthetizeMissingDirectories()                  */
@@ -196,6 +188,9 @@ bool VSIDIRS3::AnalyseS3FileList(
         (psListBucketResult != nullptr)
             ? nullptr
             : CPLGetXMLNode(psTree, "=ListAllMyBucketsResult.Buckets");
+    if (!psListBucketResult && !psListAllMyBucketsResultBuckets)
+        psListAllMyBucketsResultBuckets =
+            CPLGetXMLNode(psTree, "=ListAllMyDirectoryBucketsResult.Buckets");
 
     bool ret = true;
 
@@ -430,6 +425,13 @@ bool VSIDIRS3::AnalyseS3FileList(
         {
             osNextMarker = CPLGetXMLValue(psListBucketResult, "NextMarker", "");
         }
+
+        // ListObjectsV2 uses NextContinuationToken instead of NextMarker
+        if (const char *pszNextContinuationToken = CPLGetXMLValue(
+                psListBucketResult, "NextContinuationToken", nullptr))
+        {
+            osNextMarker = pszNextContinuationToken;
+        }
     }
     else if (psListAllMyBucketsResultBuckets != nullptr)
     {
@@ -496,41 +498,66 @@ bool VSIDIRS3::IssueListDir()
     const std::string l_osNextMarker(osNextMarker);
     clear();
 
+    IVSIS3LikeHandleHelper *l_poHandlerHelper = poHandleHelper.get();
+
+    bool bUseV2 = false;
+    auto poS3HandleHelper =
+        dynamic_cast<VSIS3HandleHelper *>(poHandleHelper.get());
+    if (poS3HandleHelper)
+        bUseV2 = poS3HandleHelper->IsDirectoryBucket();
+
+    std::unique_ptr<VSIS3HandleHelper> poTmpHandleHelper;
+    if (m_bRegularListingDone && m_bListBucket)
+    {
+        const char *const apszOptions[] = {"LIST_DIRECTORY_BUCKETS=YES",
+                                           nullptr};
+        poTmpHandleHelper.reset(VSIS3HandleHelper::BuildFromURI(
+            nullptr, poS3FS->GetFSPrefix().c_str(), true, apszOptions));
+        l_poHandlerHelper = poTmpHandleHelper.get();
+    }
+
+    const CPLStringList aosHTTPOptions(
+        CPLHTTPGetOptionsFromEnv(m_osDirName.c_str()));
+
     while (true)
     {
-        poS3HandleHelper->ResetQueryParameters();
-        const std::string osBaseURL(poS3HandleHelper->GetURL());
+        l_poHandlerHelper->ResetQueryParameters();
+        const std::string osBaseURL(l_poHandlerHelper->GetURL());
+        if (bUseV2)
+            l_poHandlerHelper->AddQueryParameter("list-type", "2");
 
         CURL *hCurlHandle = curl_easy_init();
 
         if (!osBucket.empty())
         {
             if (nRecurseDepth == 0)
-                poS3HandleHelper->AddQueryParameter("delimiter", "/");
+                l_poHandlerHelper->AddQueryParameter("delimiter", "/");
             if (!l_osNextMarker.empty())
-                poS3HandleHelper->AddQueryParameter("marker", l_osNextMarker);
+                l_poHandlerHelper->AddQueryParameter(
+                    bUseV2 ? "continuation-token" : "marker", l_osNextMarker);
             if (!osMaxKeys.empty())
-                poS3HandleHelper->AddQueryParameter("max-keys", osMaxKeys);
+                l_poHandlerHelper->AddQueryParameter("max-keys", osMaxKeys);
             if (!osObjectKey.empty())
-                poS3HandleHelper->AddQueryParameter(
+                l_poHandlerHelper->AddQueryParameter(
                     "prefix", osObjectKey + "/" + m_osFilterPrefix);
             else if (!m_osFilterPrefix.empty())
-                poS3HandleHelper->AddQueryParameter("prefix", m_osFilterPrefix);
+                l_poHandlerHelper->AddQueryParameter("prefix",
+                                                     m_osFilterPrefix);
         }
 
-        struct curl_slist *headers = VSICurlSetOptions(
-            hCurlHandle, poS3HandleHelper->GetURL().c_str(), nullptr);
+        struct curl_slist *headers =
+            VSICurlSetOptions(hCurlHandle, poHandleHelper->GetURL().c_str(),
+                              aosHTTPOptions.List());
 
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("GET", headers));
+        headers = l_poHandlerHelper->GetCurlHeaders("GET", headers);
         // Disable automatic redirection
         unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_FOLLOWLOCATION, 0);
 
         unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_RANGE, nullptr);
 
         CurlRequestHelper requestHelper;
-        const long response_code =
-            requestHelper.perform(hCurlHandle, headers, poFS, poS3HandleHelper);
+        const long response_code = requestHelper.perform(
+            hCurlHandle, headers, poFS, l_poHandlerHelper);
 
         NetworkStatisticsLogger::LogGET(requestHelper.sWriteFuncData.nSize);
 
@@ -538,18 +565,29 @@ bool VSIDIRS3::IssueListDir()
             requestHelper.sWriteFuncData.pBuffer == nullptr)
         {
             if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
-                poS3HandleHelper->CanRestartOnError(
+                l_poHandlerHelper->CanRestartOnError(
                     requestHelper.sWriteFuncData.pBuffer,
-                    requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                    requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 // nothing to do
             }
             else
             {
-                CPLDebug(poS3FS->GetDebugKey(), "%s",
-                         requestHelper.sWriteFuncData.pBuffer
-                             ? requestHelper.sWriteFuncData.pBuffer
-                             : "(null)");
+                if (m_bRegularListingDone && m_bListBucket)
+                {
+                    CPLDebug(poS3FS->GetDebugKey(),
+                             "ListDirectoryBuckets failed: %s",
+                             requestHelper.sWriteFuncData.pBuffer
+                                 ? requestHelper.sWriteFuncData.pBuffer
+                                 : "(null)");
+                }
+                else
+                {
+                    CPLDebug(poS3FS->GetDebugKey(), "%s",
+                             requestHelper.sWriteFuncData.pBuffer
+                                 ? requestHelper.sWriteFuncData.pBuffer
+                                 : "(null)");
+                }
                 curl_easy_cleanup(hCurlHandle);
                 return false;
             }
@@ -576,11 +614,72 @@ bool VSIDIRS3::IssueListDir()
 
 const VSIDIREntry *VSIDIRS3::NextDirEntry()
 {
-    while (true)
+    if (!m_bRegularListingDone)
+    {
+        const auto psRet = VSIDIRS3Like::NextDirEntry();
+        if (psRet)
+            return psRet;
+        m_bRegularListingDone = true;
+        if (!m_bListBucket)
+            return nullptr;
+        clear();
+        m_subdir.reset();
+
+        if (!IssueListDir())
+        {
+            return nullptr;
+        }
+    }
+    if (!m_bDirectoryBucketListingDone)
+    {
+        const auto psRet = VSIDIRS3Like::NextDirEntry();
+        if (psRet)
+            return psRet;
+        m_bDirectoryBucketListingDone = true;
+    }
+    return nullptr;
+}
+
+/************************************************************************/
+/*                           NextDirEntry()                             */
+/************************************************************************/
+
+const VSIDIREntry *VSIDIRS3Like::NextDirEntry()
+{
+    constexpr int ARBITRARY_LIMIT = 10;
+    for (int i = 0; i < ARBITRARY_LIMIT; ++i)
     {
         if (nPos < static_cast<int>(aoEntries.size()))
         {
             auto &entry = aoEntries[nPos];
+            if (osBucket.empty())
+            {
+                if (m_subdir)
+                {
+                    if (auto subentry = m_subdir->NextDirEntry())
+                    {
+                        const std::string name = std::string(entry->pszName)
+                                                     .append("/")
+                                                     .append(subentry->pszName);
+                        CPLFree(const_cast<VSIDIREntry *>(subentry)->pszName);
+                        const_cast<VSIDIREntry *>(subentry)->pszName =
+                            CPLStrdup(name.c_str());
+                        return subentry;
+                    }
+                    m_subdir.reset();
+                    nPos++;
+                    continue;
+                }
+                else if (nRecurseDepth != 0)
+                {
+                    m_subdir.reset(VSIOpenDir(std::string(poFS->GetFSPrefix())
+                                                  .append(entry->pszName)
+                                                  .c_str(),
+                                              nRecurseDepth - 1, nullptr));
+                    if (m_subdir)
+                        return entry.get();
+                }
+            }
             nPos++;
             return entry.get();
         }
@@ -593,6 +692,11 @@ const VSIDIREntry *VSIDIRS3::NextDirEntry()
             return nullptr;
         }
     }
+    CPLError(CE_Failure, CPLE_AppDefined,
+             "More than %d consecutive List Blob "
+             "requests returning no blobs",
+             ARBITRARY_LIMIT);
+    return nullptr;
 }
 
 /************************************************************************/
@@ -604,7 +708,7 @@ bool VSICurlFilesystemHandlerBase::AnalyseS3FileList(
     int nMaxFiles, const std::set<std::string> &oSetIgnoredStorageClasses,
     bool &bIsTruncated)
 {
-    VSIDIRS3 oDir(this);
+    VSIDIRS3 oDir(std::string(), this);
     oDir.nMaxFiles = nMaxFiles;
     bool ret = oDir.AnalyseS3FileList(osBaseURL, pszXML,
                                       oSetIgnoredStorageClasses, bIsTruncated);
@@ -696,11 +800,19 @@ class VSIS3FSHandler final : public IVSIS3LikeFSHandlerWithMultipartUpload
     {
         return true;
     }
+
+    GIntBig GetDiskFreeSpace(const char * /* pszDirname */) override
+    {
+        // There is no limit per bucket, but a 5 TiB limit per object.
+        return static_cast<GIntBig>(5) * 1024 * 1024 * 1024 * 1024;
+    }
 };
 
 /************************************************************************/
 /*                            VSIS3Handle                               */
 /************************************************************************/
+
+IVSIS3LikeHandle::~IVSIS3LikeHandle() = default;
 
 class VSIS3Handle final : public IVSIS3LikeHandle
 {
@@ -709,9 +821,8 @@ class VSIS3Handle final : public IVSIS3LikeHandle
     VSIS3HandleHelper *m_poS3HandleHelper = nullptr;
 
   protected:
-    struct curl_slist *
-    GetCurlHeaders(const std::string &osVerb,
-                   const struct curl_slist *psExistingHeaders) override;
+    struct curl_slist *GetCurlHeaders(const std::string &osVerb,
+                                      struct curl_slist *psHeaders) override;
     bool CanRestartOnError(const char *, const char *, bool) override;
 
     bool AllowAutomaticRedirection() override
@@ -766,8 +877,6 @@ VSIMultipartWriteHandle::VSIMultipartWriteHandle(
 size_t IVSIS3LikeFSHandlerWithMultipartUpload::GetUploadChunkSizeInBytes(
     const char *pszFilename, const char *pszSpecifiedValInBytes)
 {
-    size_t nChunkSize = 0;
-
     const char *pszChunkSizeBytes =
         pszSpecifiedValInBytes ? pszSpecifiedValInBytes :
                                // For testing only !
@@ -782,8 +891,8 @@ size_t IVSIS3LikeFSHandlerWithMultipartUpload::GetUploadChunkSizeInBytes(
         const auto nChunkSizeInt = CPLAtoGIntBig(pszChunkSizeBytes);
         if (nChunkSizeInt <= 0)
         {
-            nChunkSize =
-                static_cast<size_t>(GetDefaultPartSizeInMiB()) * MIB_CONSTANT;
+            return static_cast<size_t>(GetDefaultPartSizeInMiB()) *
+                   MIB_CONSTANT;
         }
         else if (nChunkSizeInt >
                  static_cast<int64_t>(GetMaximumPartSizeInMiB()) * MIB_CONSTANT)
@@ -791,11 +900,11 @@ size_t IVSIS3LikeFSHandlerWithMultipartUpload::GetUploadChunkSizeInBytes(
             CPLError(CE_Warning, CPLE_AppDefined,
                      "Specified chunk size too large. Clamping to %d MiB",
                      GetMaximumPartSizeInMiB());
-            nChunkSize =
-                static_cast<size_t>(GetMaximumPartSizeInMiB()) * MIB_CONSTANT;
+            return static_cast<size_t>(GetMaximumPartSizeInMiB()) *
+                   MIB_CONSTANT;
         }
         else
-            nChunkSize = static_cast<size_t>(nChunkSizeInt);
+            return static_cast<size_t>(nChunkSizeInt);
     }
     else
     {
@@ -807,20 +916,19 @@ size_t IVSIS3LikeFSHandlerWithMultipartUpload::GetUploadChunkSizeInBytes(
                 .c_str(),
             CPLSPrintf("%d", GetDefaultPartSizeInMiB())));
         if (nChunkSizeMiB <= 0)
-            nChunkSize = 0;
+            return static_cast<size_t>(GetDefaultPartSizeInMiB()) *
+                   MIB_CONSTANT;
         else if (nChunkSizeMiB > GetMaximumPartSizeInMiB())
         {
             CPLError(CE_Warning, CPLE_AppDefined,
                      "Specified chunk size too large. Clamping to %d MiB",
                      GetMaximumPartSizeInMiB());
-            nChunkSize =
-                static_cast<size_t>(GetMaximumPartSizeInMiB()) * MIB_CONSTANT;
+            return static_cast<size_t>(GetMaximumPartSizeInMiB()) *
+                   MIB_CONSTANT;
         }
         else
-            nChunkSize = static_cast<size_t>(nChunkSizeMiB) * MIB_CONSTANT;
+            return static_cast<size_t>(nChunkSizeMiB) * MIB_CONSTANT;
     }
-
-    return nChunkSize;
 }
 
 /************************************************************************/
@@ -907,8 +1015,7 @@ std::string IVSIS3LikeFSHandlerWithMultipartUpload::InitiateMultipartUpload(
                               aosHTTPOptions.List()));
         headers = VSICurlSetCreationHeadersFromOptions(headers, papszOptions,
                                                        osFilename.c_str());
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("POST", headers));
+        headers = poS3HandleHelper->GetCurlHeaders("POST", headers);
         headers = curl_slist_append(
             headers, "Content-Length: 0");  // Required by GCS in HTTP 1.1
 
@@ -939,7 +1046,7 @@ std::string IVSIS3LikeFSHandlerWithMultipartUpload::InitiateMultipartUpload(
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -957,7 +1064,7 @@ std::string IVSIS3LikeFSHandlerWithMultipartUpload::InitiateMultipartUpload(
         else
         {
             InvalidateCachedData(poS3HandleHelper->GetURL().c_str());
-            InvalidateDirContent(CPLGetDirname(osFilename.c_str()));
+            InvalidateDirContent(CPLGetDirnameSafe(osFilename.c_str()));
 
             CPLXMLNode *psNode =
                 CPLParseXMLString(requestHelper.sWriteFuncData.pBuffer);
@@ -1055,9 +1162,8 @@ std::string IVSIS3LikeFSHandlerWithMultipartUpload::UploadPart(
         struct curl_slist *headers = static_cast<struct curl_slist *>(
             CPLHTTPSetOptions(hCurlHandle, poS3HandleHelper->GetURL().c_str(),
                               aosHTTPOptions));
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("PUT", headers,
-                                                      pabyBuffer, nBufferSize));
+        headers = poS3HandleHelper->GetCurlHeaders("PUT", headers, pabyBuffer,
+                                                   nBufferSize);
 
         CurlRequestHelper requestHelper;
         const long response_code =
@@ -1086,7 +1192,7 @@ std::string IVSIS3LikeFSHandlerWithMultipartUpload::UploadPart(
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -1188,7 +1294,8 @@ void VSIMultipartWriteHandle::InvalidateParentDirectory()
     std::string osFilenameWithoutSlash(m_osFilename);
     if (!osFilenameWithoutSlash.empty() && osFilenameWithoutSlash.back() == '/')
         osFilenameWithoutSlash.pop_back();
-    m_poFS->InvalidateDirContent(CPLGetDirname(osFilenameWithoutSlash.c_str()));
+    m_poFS->InvalidateDirContent(
+        CPLGetDirnameSafe(osFilenameWithoutSlash.c_str()));
 }
 
 /************************************************************************/
@@ -1227,9 +1334,8 @@ bool VSIMultipartWriteHandle::DoSinglePartPUT()
                               m_aosHTTPOptions.List()));
         headers = VSICurlSetCreationHeadersFromOptions(
             headers, m_aosOptions.List(), m_osFilename.c_str());
-        headers = VSICurlMergeHeaders(
-            headers, m_poS3HandleHelper->GetCurlHeaders(
-                         "PUT", headers, m_pabyBuffer, m_nBufferOff));
+        headers = m_poS3HandleHelper->GetCurlHeaders(
+            "PUT", headers, m_pabyBuffer, m_nBufferOff);
         headers = curl_slist_append(headers, "Expect: 100-continue");
 
         CurlRequestHelper requestHelper;
@@ -1258,7 +1364,7 @@ bool VSIMultipartWriteHandle::DoSinglePartPUT()
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      m_poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -1364,9 +1470,8 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::CompleteMultipart(
         struct curl_slist *headers = static_cast<struct curl_slist *>(
             CPLHTTPSetOptions(hCurlHandle, poS3HandleHelper->GetURL().c_str(),
                               aosHTTPOptions.List()));
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders(
-                         "POST", headers, osXML.c_str(), osXML.size()));
+        headers = poS3HandleHelper->GetCurlHeaders("POST", headers,
+                                                   osXML.c_str(), osXML.size());
 
         CurlRequestHelper requestHelper;
         const long response_code =
@@ -1395,7 +1500,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::CompleteMultipart(
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -1449,8 +1554,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortMultipart(
         struct curl_slist *headers = static_cast<struct curl_slist *>(
             CPLHTTPSetOptions(hCurlHandle, poS3HandleHelper->GetURL().c_str(),
                               aosHTTPOptions.List()));
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("DELETE", headers));
+        headers = poS3HandleHelper->GetCurlHeaders("DELETE", headers);
 
         CurlRequestHelper requestHelper;
         const long response_code =
@@ -1478,7 +1582,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortMultipart(
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -1577,8 +1681,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortPendingUploads(
             struct curl_slist *headers = static_cast<struct curl_slist *>(
                 CPLHTTPSetOptions(hCurlHandle, poHandleHelper->GetURL().c_str(),
                                   aosHTTPOptions.List()));
-            headers = VSICurlMergeHeaders(
-                headers, poHandleHelper->GetCurlHeaders("GET", headers));
+            headers = poHandleHelper->GetCurlHeaders("GET", headers);
 
             CurlRequestHelper requestHelper;
             const long response_code = requestHelper.perform(
@@ -1606,7 +1709,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortPendingUploads(
                 else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                          poHandleHelper->CanRestartOnError(
                              requestHelper.sWriteFuncData.pBuffer,
-                             requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                             requestHelper.sWriteFuncHeaderData.pBuffer, true))
                 {
                     bRetry = true;
                 }
@@ -1763,7 +1866,7 @@ VSIS3FSHandler::CreateWriteHandle(const char *pszFilename,
 /*                                Open()                                */
 /************************************************************************/
 
-VSIVirtualHandle *VSICurlFilesystemHandlerBaseWritable::Open(
+VSIVirtualHandleUniquePtr VSICurlFilesystemHandlerBaseWritable::Open(
     const char *pszFilename, const char *pszAccess, bool bSetError,
     CSLConstList papszOptions)
 {
@@ -1786,11 +1889,12 @@ VSIVirtualHandle *VSICurlFilesystemHandlerBaseWritable::Open(
             return nullptr;
         }
 
-        const std::string osTmpFilename(CPLGenerateTempFilename(nullptr));
+        const std::string osTmpFilename(
+            CPLGenerateTempFilenameSafe(CPLGetFilename(pszFilename)));
         if (strchr(pszAccess, 'r'))
         {
             auto poExistingFile =
-                VSIVirtualHandleUniquePtr(VSIFOpenL(pszFilename, "rb"));
+                VSIFilesystemHandler::OpenStatic(pszFilename, "rb");
             if (!poExistingFile)
             {
                 return nullptr;
@@ -1804,11 +1908,11 @@ VSIVirtualHandle *VSICurlFilesystemHandlerBaseWritable::Open(
             }
         }
 
-        auto fpTemp = VSIVirtualHandleUniquePtr(
-            VSIFOpenL(osTmpFilename.c_str(), pszAccess));
+        auto fpTemp =
+            VSIFilesystemHandler::OpenStatic(osTmpFilename.c_str(), pszAccess);
+        VSIUnlink(osTmpFilename.c_str());
         if (!fpTemp)
         {
-            VSIUnlink(osTmpFilename.c_str());
             return nullptr;
         }
 
@@ -1818,12 +1922,13 @@ VSIVirtualHandle *VSICurlFilesystemHandlerBaseWritable::Open(
             return nullptr;
         }
 
-        return VSICreateUploadOnCloseFile(std::move(poWriteHandle),
-                                          std::move(fpTemp), osTmpFilename);
+        return VSIVirtualHandleUniquePtr(VSICreateUploadOnCloseFile(
+            std::move(poWriteHandle), std::move(fpTemp), osTmpFilename));
     }
     else if (strchr(pszAccess, 'w') || strchr(pszAccess, 'a'))
     {
-        return CreateWriteHandle(pszFilename, papszOptions).release();
+        return VSIVirtualHandleUniquePtr(
+            CreateWriteHandle(pszFilename, papszOptions).release());
     }
 
     if (std::string(pszFilename).back() != '/')
@@ -1831,7 +1936,7 @@ VSIVirtualHandle *VSICurlFilesystemHandlerBaseWritable::Open(
         // If there's directory content for the directory where this file
         // belongs to, use it to detect if the object does not exist
         CachedDirList cachedDirList;
-        const std::string osDirname(CPLGetDirname(pszFilename));
+        const std::string osDirname(CPLGetDirnameSafe(pszFilename));
         if (STARTS_WITH_CI(osDirname.c_str(), GetFSPrefix().c_str()) &&
             GetCachedDirList(osDirname.c_str(), cachedDirList) &&
             cachedDirList.bGotFileList)
@@ -1908,9 +2013,15 @@ const char *VSIS3FSHandler::GetOptions()
                 "description='Access key id'/>"
                 "  <Option name='AWS_SESSION_TOKEN' type='string' "
                 "description='Session token'/>"
+                "  <Option name='AWS_S3SESSION_TOKEN' type='string' "
+                "description='S3 Express session token (for directory "
+                "buckets)'/>"
                 "  <Option name='AWS_REQUEST_PAYER' type='string' "
                 "description='Content of the x-amz-request-payer HTTP header. "
                 "Typically \"requester\" for requester-pays buckets'/>"
+                "  <Option name='AWS_S3_ENDPOINT' type='string' "
+                "description='Endpoint for a S3-compatible API' "
+                "default='https://s3.amazonaws.com'/>"
                 "  <Option name='AWS_VIRTUAL_HOSTING' type='boolean' "
                 "description='Whether to use virtual hosting server name when "
                 "the "
@@ -1925,8 +2036,12 @@ const char *VSIS3FSHandler::GetOptions()
                 "to "
                 "determine if current host is an AWS EC2 instance' "
                 "default='YES'/>"
-                "  <Option name='AWS_DEFAULT_PROFILE' type='string' "
+                "  <Option name='AWS_PROFILE' type='string' "
                 "description='Name of the profile to use for IAM credentials "
+                "retrieval on EC2 instances' default='default'/>"
+                "  <Option name='AWS_DEFAULT_PROFILE' type='string' "
+                "description='(deprecated) Name of the profile to use for "
+                "IAM credentials "
                 "retrieval on EC2 instances' default='default'/>"
                 "  <Option name='AWS_CONFIG_FILE' type='string' "
                 "description='Filename that contains AWS configuration' "
@@ -2192,9 +2307,8 @@ std::set<std::string> VSIS3FSHandler::DeleteObjects(const char *pszBucket,
                               aosHTTPOptions.List()));
         headers = curl_slist_append(headers, "Content-Type: application/xml");
         headers = curl_slist_append(headers, osContentMD5.c_str());
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("POST", headers, pszXML,
-                                                      strlen(pszXML)));
+        headers = poS3HandleHelper->GetCurlHeaders("POST", headers, pszXML,
+                                                   strlen(pszXML));
 
         CurlRequestHelper requestHelper;
         const long response_code = requestHelper.perform(
@@ -2224,7 +2338,7 @@ std::set<std::string> VSIS3FSHandler::DeleteObjects(const char *pszBucket,
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -2260,7 +2374,7 @@ std::set<std::string> VSIS3FSHandler::DeleteObjects(const char *pszBucket,
                             InvalidateCachedData(
                                 (poS3HandleHelper->GetURL() + osKey).c_str());
 
-                            InvalidateDirContent(CPLGetDirname(
+                            InvalidateDirContent(CPLGetDirnameSafe(
                                 (GetFSPrefix() + pszBucket + "/" + osKey)
                                     .c_str()));
                         }
@@ -2317,8 +2431,7 @@ char **VSIS3FSHandler::GetFileMetadata(const char *pszFilename,
         struct curl_slist *headers = static_cast<struct curl_slist *>(
             CPLHTTPSetOptions(hCurlHandle, poS3HandleHelper->GetURL().c_str(),
                               aosHTTPOptions.List()));
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("GET", headers));
+        headers = poS3HandleHelper->GetCurlHeaders("GET", headers);
 
         CurlRequestHelper requestHelper;
         const long response_code = requestHelper.perform(
@@ -2347,7 +2460,7 @@ char **VSIS3FSHandler::GetFileMetadata(const char *pszFilename,
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -2504,15 +2617,13 @@ bool VSIS3FSHandler::SetFileMetadata(const char *pszFilename,
             headers =
                 curl_slist_append(headers, "Content-Type: application/xml");
             headers = curl_slist_append(headers, osContentMD5.c_str());
-            headers = VSICurlMergeHeaders(
-                headers, poS3HandleHelper->GetCurlHeaders(
-                             "PUT", headers, osXML.c_str(), osXML.size()));
+            headers = poS3HandleHelper->GetCurlHeaders(
+                "PUT", headers, osXML.c_str(), osXML.size());
             NetworkStatisticsLogger::LogPUT(osXML.size());
         }
         else
         {
-            headers = VSICurlMergeHeaders(
-                headers, poS3HandleHelper->GetCurlHeaders("DELETE", headers));
+            headers = poS3HandleHelper->GetCurlHeaders("DELETE", headers);
             NetworkStatisticsLogger::LogDELETE();
         }
 
@@ -2541,7 +2652,7 @@ bool VSIS3FSHandler::SetFileMetadata(const char *pszFilename,
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -2628,7 +2739,8 @@ int IVSIS3LikeFSHandler::MkdirInternal(const char *pszDirname, long /*nMode*/,
         std::string osDirnameWithoutEndSlash(osDirname);
         osDirnameWithoutEndSlash.pop_back();
 
-        InvalidateDirContent(CPLGetDirname(osDirnameWithoutEndSlash.c_str()));
+        InvalidateDirContent(
+            CPLGetDirnameSafe(osDirnameWithoutEndSlash.c_str()));
 
         FileProp cachedFileProp;
         GetCachedFileProp(GetURLFromFilename(osDirname.c_str()).c_str(),
@@ -2742,7 +2854,8 @@ int IVSIS3LikeFSHandler::Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
     // If there's directory content for the directory where this file belongs
     // to, use it to detect if the object does not exist
     CachedDirList cachedDirList;
-    const std::string osDirname(CPLGetDirname(osFilenameWithoutSlash.c_str()));
+    const std::string osDirname(
+        CPLGetDirnameSafe(osFilenameWithoutSlash.c_str()));
     if (STARTS_WITH_CI(osDirname.c_str(), GetFSPrefix().c_str()) &&
         GetCachedDirList(osDirname.c_str(), cachedDirList) &&
         cachedDirList.bGotFileList)
@@ -2764,8 +2877,25 @@ int IVSIS3LikeFSHandler::Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
         }
     }
 
-    if (VSICurlFilesystemHandlerBase::Stat(osFilename.c_str(), pStatBuf,
-                                           nFlags) == 0)
+    // We cannot stat the root directory of a S3 directory bucket, otherwise
+    // we get a 501 error.
+    bool bStatBaseObject = true;
+    if (GetFSPrefix() == "/vsis3/")
+    {
+        auto poS3HandleHelper = std::unique_ptr<VSIS3HandleHelper>(
+            VSIS3HandleHelper::BuildFromURI(pszFilename + GetFSPrefix().size(),
+                                            GetFSPrefix().c_str(), true));
+        if (poS3HandleHelper)
+        {
+            const bool bIsDirectoryBucket =
+                poS3HandleHelper->IsDirectoryBucket();
+            if (bIsDirectoryBucket && poS3HandleHelper->GetObjectKey().empty())
+                bStatBaseObject = false;
+        }
+    }
+
+    if (bStatBaseObject && VSICurlFilesystemHandlerBase::Stat(
+                               osFilename.c_str(), pStatBuf, nFlags) == 0)
     {
         return 0;
     }
@@ -2881,7 +3011,9 @@ int IVSIS3LikeFSHandler::Unlink(const char *pszFilename)
 /*                               Rename()                               */
 /************************************************************************/
 
-int IVSIS3LikeFSHandler::Rename(const char *oldpath, const char *newpath)
+int IVSIS3LikeFSHandler::Rename(const char *oldpath, const char *newpath,
+                                GDALProgressFunc pfnProgress,
+                                void *pProgressData)
 {
     if (!STARTS_WITH_CI(oldpath, GetFSPrefix().c_str()))
         return -1;
@@ -2907,21 +3039,28 @@ int IVSIS3LikeFSHandler::Rename(const char *oldpath, const char *newpath)
 
     if (VSI_ISDIR(sStat.st_mode))
     {
-        CPLStringList aosList(VSIReadDir(oldpath));
+        int ret = 0;
+        const CPLStringList aosList(VSIReadDir(oldpath));
         Mkdir(newpath, 0755);
-        for (int i = 0; i < aosList.size(); i++)
+        const int nListSize = aosList.size();
+        for (int i = 0; ret == 0 && i < nListSize; i++)
         {
             const std::string osSrc =
-                CPLFormFilename(oldpath, aosList[i], nullptr);
+                CPLFormFilenameSafe(oldpath, aosList[i], nullptr);
             const std::string osTarget =
-                CPLFormFilename(newpath, aosList[i], nullptr);
-            if (Rename(osSrc.c_str(), osTarget.c_str()) != 0)
-            {
-                return -1;
-            }
+                CPLFormFilenameSafe(newpath, aosList[i], nullptr);
+            void *pScaledProgress =
+                GDALCreateScaledProgress(static_cast<double>(i) / nListSize,
+                                         static_cast<double>(i + 1) / nListSize,
+                                         pfnProgress, pProgressData);
+            ret = Rename(osSrc.c_str(), osTarget.c_str(),
+                         pScaledProgress ? GDALScaledProgress : nullptr,
+                         pScaledProgress);
+            GDALDestroyScaledProgress(pScaledProgress);
         }
-        Rmdir(oldpath);
-        return 0;
+        if (ret == 0)
+            Rmdir(oldpath);
+        return ret;
     }
     else
     {
@@ -3012,8 +3151,7 @@ int IVSIS3LikeFSHandler::CopyObject(const char *oldpath, const char *newpath,
             }
         }
         headers = VSICurlSetContentTypeFromExt(headers, newpath);
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("PUT", headers));
+        headers = poS3HandleHelper->GetCurlHeaders("PUT", headers);
 
         CurlRequestHelper requestHelper;
         const long response_code = requestHelper.perform(
@@ -3041,7 +3179,7 @@ int IVSIS3LikeFSHandler::CopyObject(const char *oldpath, const char *newpath,
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -3066,7 +3204,8 @@ int IVSIS3LikeFSHandler::CopyObject(const char *oldpath, const char *newpath,
                 osFilenameWithoutSlash.resize(osFilenameWithoutSlash.size() -
                                               1);
 
-            InvalidateDirContent(CPLGetDirname(osFilenameWithoutSlash.c_str()));
+            InvalidateDirContent(
+                CPLGetDirnameSafe(osFilenameWithoutSlash.c_str()));
         }
 
         curl_easy_cleanup(hCurlHandle);
@@ -3110,8 +3249,7 @@ int IVSIS3LikeFSHandler::DeleteObject(const char *pszFilename)
         struct curl_slist *headers = static_cast<struct curl_slist *>(
             CPLHTTPSetOptions(hCurlHandle, poS3HandleHelper->GetURL().c_str(),
                               aosHTTPOptions.List()));
-        headers = VSICurlMergeHeaders(
-            headers, poS3HandleHelper->GetCurlHeaders("DELETE", headers));
+        headers = poS3HandleHelper->GetCurlHeaders("DELETE", headers);
 
         CurlRequestHelper requestHelper;
         const long response_code =
@@ -3141,7 +3279,7 @@ int IVSIS3LikeFSHandler::DeleteObject(const char *pszFilename)
             else if (requestHelper.sWriteFuncData.pBuffer != nullptr &&
                      poS3HandleHelper->CanRestartOnError(
                          requestHelper.sWriteFuncData.pBuffer,
-                         requestHelper.sWriteFuncHeaderData.pBuffer, false))
+                         requestHelper.sWriteFuncHeaderData.pBuffer, true))
             {
                 bRetry = true;
             }
@@ -3166,7 +3304,8 @@ int IVSIS3LikeFSHandler::DeleteObject(const char *pszFilename)
                 osFilenameWithoutSlash.resize(osFilenameWithoutSlash.size() -
                                               1);
 
-            InvalidateDirContent(CPLGetDirname(osFilenameWithoutSlash.c_str()));
+            InvalidateDirContent(
+                CPLGetDirnameSafe(osFilenameWithoutSlash.c_str()));
         }
 
         curl_easy_cleanup(hCurlHandle);
@@ -3263,17 +3402,16 @@ VSIDIR *IVSIS3LikeFSHandler::OpenDir(const char *pszPath, int nRecurseDepth,
         osObjectKey = osDirnameWithoutPrefix.substr(nSlashPos + 1);
     }
 
-    IVSIS3LikeHandleHelper *poS3HandleHelper =
-        CreateHandleHelper(osBucket.c_str(), true);
+    auto poS3HandleHelper = std::unique_ptr<IVSIS3LikeHandleHelper>(
+        CreateHandleHelper(osBucket.c_str(), true));
     if (poS3HandleHelper == nullptr)
     {
         return nullptr;
     }
 
-    VSIDIRS3 *dir = new VSIDIRS3(this);
+    VSIDIRS3 *dir = new VSIDIRS3(pszPath, this);
     dir->nRecurseDepth = nRecurseDepth;
-    dir->poFS = this;
-    dir->poS3HandleHelper = poS3HandleHelper;
+    dir->poHandleHelper = std::move(poS3HandleHelper);
     dir->osBucket = std::move(osBucket);
     dir->osObjectKey = std::move(osObjectKey);
     dir->nMaxFiles = atoi(CSLFetchNameValueDef(papszOptions, "MAXFILES", "0"));
@@ -3282,6 +3420,9 @@ VSIDIR *IVSIS3LikeFSHandler::OpenDir(const char *pszPath, int nRecurseDepth,
     dir->m_osFilterPrefix = CSLFetchNameValueDef(papszOptions, "PREFIX", "");
     dir->m_bSynthetizeMissingDirectories = CPLTestBool(CSLFetchNameValueDef(
         papszOptions, "SYNTHETIZE_MISSING_DIRECTORIES", "NO"));
+    dir->m_bListBucket =
+        dir->osBucket.empty() &&
+        dynamic_cast<VSIS3HandleHelper *>(dir->poHandleHelper.get()) != nullptr;
     if (!dir->IssueListDir())
     {
         delete dir;
@@ -3491,7 +3632,8 @@ int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
     }
 
     const char *pszChunkSize = CSLFetchNameValue(papszOptions, "CHUNK_SIZE");
-    size_t nChunkSize = GetUploadChunkSizeInBytes(pszTarget, pszChunkSize);
+    size_t nChunkSize =
+        std::max<size_t>(1, GetUploadChunkSizeInBytes(pszTarget, pszChunkSize));
 
     VSIStatBufL sStatBuf;
     if (VSIStatL(pszSource, &sStatBuf) != 0)
@@ -3584,8 +3726,8 @@ int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
             return -1;
         }
 
-        const auto nChunkCountLarge =
-            (sStatBuf.st_size + nChunkSize - 1) / nChunkSize;
+        const auto nChunkCountLarge = cpl::div_round_up(
+            static_cast<uint64_t>(sStatBuf.st_size), nChunkSize);
         if (nChunkCountLarge != static_cast<size_t>(oEtags.Size()))
         {
             CPLError(
@@ -3602,14 +3744,14 @@ int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
     else
     {
         // Compute the number of chunks
-        auto nChunkCountLarge =
-            (sStatBuf.st_size + nChunkSize - 1) / nChunkSize;
+        auto nChunkCountLarge = cpl::div_round_up(
+            static_cast<uint64_t>(sStatBuf.st_size), nChunkSize);
         if (nChunkCountLarge > static_cast<size_t>(GetMaximumPartCount()))
         {
             // Re-adjust the chunk size if needed
             const int nWishedChunkCount = GetMaximumPartCount() / 10;
             const uint64_t nMinChunkSizeLarge =
-                (sStatBuf.st_size + nWishedChunkCount - 1) / nWishedChunkCount;
+                cpl::div_round_up(sStatBuf.st_size, nWishedChunkCount);
             if (pszChunkSize)
             {
                 CPLError(
@@ -3626,7 +3768,7 @@ int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
                 return -1;
             }
             nChunkSize = static_cast<size_t>(nMinChunkSizeLarge);
-            nChunkCountLarge = (sStatBuf.st_size + nChunkSize - 1) / nChunkSize;
+            nChunkCountLarge = cpl::div_round_up(sStatBuf.st_size, nChunkSize);
         }
         nChunkCount = static_cast<int>(nChunkCountLarge);
         aosEtags.resize(nChunkCount);
@@ -3763,7 +3905,7 @@ int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
                     bStop = true;
                     break;
                 }
-                aosEtags[iChunk] = osEtag;
+                aosEtags[iChunk] = std::move(osEtag);
             }
 
             if (bRunInThread)
@@ -3774,8 +3916,8 @@ int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
             else
             {
                 if (pProgressFunc &&
-                    !pProgressFunc(double(iChunk) / nChunkCount, osMsg.c_str(),
-                                   pProgressData))
+                    !pProgressFunc(double(iChunk) / std::max(1, nChunkCount),
+                                   osMsg.c_str(), pProgressData))
                 {
                     // Lock taken only to make static analyzer happy...
                     std::lock_guard oLock(oMutex);
@@ -4235,8 +4377,8 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
         osTargetDir = pszTarget;
         if (osSource.back() != '/' && osSource.back() != '\\')
         {
-            osTargetDir = CPLFormFilename(osTargetDir.c_str(),
-                                          CPLGetFilename(pszSource), nullptr);
+            osTargetDir = CPLFormFilenameSafe(
+                osTargetDir.c_str(), CPLGetFilename(pszSource), nullptr);
         }
 
         if (!poSourceDir)
@@ -4261,16 +4403,16 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                 const auto entry = VSIGetNextDirEntry(poTargetDir.get());
                 if (!entry)
                     break;
-                const auto osDstName =
+                auto osDstName =
                     NormalizeDirSeparatorForDstFilename(entry->pszName);
                 if (VSI_ISDIR(entry->nMode))
                 {
-                    oSetTargetSubdirs.insert(osDstName);
+                    oSetTargetSubdirs.insert(std::move(osDstName));
                 }
                 else
                 {
                     oMapExistingTargetFiles.insert(
-                        std::pair<std::string, VSIDIREntry>(osDstName, *entry));
+                        std::make_pair(std::move(osDstName), *entry));
                 }
             }
             poTargetDir.reset();
@@ -4300,9 +4442,9 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                 if (oSetTargetSubdirs.find(osDstName) ==
                     oSetTargetSubdirs.end())
                 {
-                    const std::string osTargetSubdir(CPLFormFilename(
+                    std::string osTargetSubdir(CPLFormFilenameSafe(
                         osTargetDir.c_str(), osDstName.c_str(), nullptr));
-                    aoSetDirsToCreate.insert(osTargetSubdir);
+                    aoSetDirsToCreate.insert(std::move(osTargetSubdir));
                 }
             }
             else
@@ -4311,7 +4453,7 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                 const vsi_l_offset nChunksLarge =
                     nMaxChunkSize == 0
                         ? 1
-                        : (entry->nSize + nMaxChunkSize - 1) / nMaxChunkSize;
+                        : cpl::div_round_up(entry->nSize, nMaxChunkSize);
                 if (nChunksLarge >
                     1000)  // must also be below knMAX_PART_NUMBER for upload
                 {
@@ -4368,9 +4510,9 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
             if (chunk.nStartOffset != 0)
                 continue;
             const std::string osSubSource(
-                CPLFormFilename(osSourceWithoutSlash.c_str(),
-                                chunk.osSrcFilename.c_str(), nullptr));
-            const std::string osSubTarget(CPLFormFilename(
+                CPLFormFilenameSafe(osSourceWithoutSlash.c_str(),
+                                    chunk.osSrcFilename.c_str(), nullptr));
+            const std::string osSubTarget(CPLFormFilenameSafe(
                 osTargetDir.c_str(), chunk.osDstFilename.c_str(), nullptr));
             bool bSkip = false;
             const auto oIterExistingTarget =
@@ -4448,7 +4590,7 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                         if (poS3HandleHelper == nullptr)
                             return false;
 
-                        const auto osUploadID =
+                        std::string osUploadID =
                             poTargetFSMultipartHandler->InitiateMultipartUpload(
                                 osSubTarget, poS3HandleHelper.get(),
                                 oRetryParameters,
@@ -4458,9 +4600,9 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                             return false;
                         }
                         MultiPartDef def;
-                        def.osUploadID = osUploadID;
+                        def.osUploadID = std::move(osUploadID);
                         def.nExpectedCount = static_cast<int>(
-                            (chunk.nTotalSize + chunk.nSize - 1) / chunk.nSize);
+                            cpl::div_round_up(chunk.nTotalSize, chunk.nSize));
                         def.nTotalSize = chunk.nTotalSize;
                         oMapMultiPartDefs[osSubTarget] = std::move(def);
                     }
@@ -4487,20 +4629,20 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
             // Proceed to file copy
             bool ret = true;
             uint64_t nAccSize = 0;
+            const uint64_t nTotalSizeDenom = std::max<uint64_t>(1, nTotalSize);
             for (const size_t iChunk : anIndexToCopy)
             {
                 const auto &chunk = aoChunksToCopy[iChunk];
                 CPLAssert(chunk.nStartOffset == 0);
                 const std::string osSubSource(
-                    CPLFormFilename(osSourceWithoutSlash.c_str(),
-                                    chunk.osSrcFilename.c_str(), nullptr));
-                const std::string osSubTarget(CPLFormFilename(
+                    CPLFormFilenameSafe(osSourceWithoutSlash.c_str(),
+                                        chunk.osSrcFilename.c_str(), nullptr));
+                const std::string osSubTarget(CPLFormFilenameSafe(
                     osTargetDir.c_str(), chunk.osDstFilename.c_str(), nullptr));
-                // coverity[divide_by_zero]
                 void *pScaledProgress = GDALCreateScaledProgress(
-                    double(nAccSize) / nTotalSize,
-                    double(nAccSize + chunk.nSize) / nTotalSize, pProgressFunc,
-                    pProgressData);
+                    double(nAccSize) / nTotalSizeDenom,
+                    double(nAccSize + chunk.nSize) / nTotalSizeDenom,
+                    pProgressFunc, pProgressData);
                 ret =
                     CopyFile(osSubSource.c_str(), osSubTarget.c_str(), nullptr,
                              chunk.nSize, aosObjectCreationOptions.List(),
@@ -4530,8 +4672,8 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
             bTargetIsFile = true;
             if (VSI_ISDIR(sTarget.st_mode))
             {
-                osTarget = CPLFormFilename(osTarget.c_str(),
-                                           CPLGetFilename(pszSource), nullptr);
+                osTarget = CPLFormFilenameSafe(
+                    osTarget.c_str(), CPLGetFilename(pszSource), nullptr);
                 bTargetIsFile = VSIStatL(osTarget.c_str(), &sTarget) == 0 &&
                                 !CPL_TO_BOOL(VSI_ISDIR(sTarget.st_mode));
             }
@@ -4615,7 +4757,7 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
         const vsi_l_offset nChunksLarge =
             nMaxChunkSize == 0
                 ? 1
-                : (sSource.st_size + nMaxChunkSize - 1) / nMaxChunkSize;
+                : cpl::div_round_up(sSource.st_size, nMaxChunkSize);
         if (nChunksLarge >
             1000)  // must also be below knMAX_PART_NUMBER for upload
         {
@@ -4659,19 +4801,18 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                         if (poS3HandleHelper == nullptr)
                             return false;
 
-                        const auto osUploadID =
+                        MultiPartDef def;
+                        def.osUploadID =
                             poTargetFSMultipartHandler->InitiateMultipartUpload(
                                 osTarget, poS3HandleHelper.get(),
                                 oRetryParameters,
                                 aosObjectCreationOptions.List());
-                        if (osUploadID.empty())
+                        if (def.osUploadID.empty())
                         {
                             return false;
                         }
-                        MultiPartDef def;
-                        def.osUploadID = osUploadID;
                         def.nExpectedCount = static_cast<int>(
-                            (chunk.nTotalSize + chunk.nSize - 1) / chunk.nSize);
+                            cpl::div_round_up(chunk.nTotalSize, chunk.nSize));
                         def.nTotalSize = chunk.nTotalSize;
                         oMapMultiPartDefs[osTarget] = std::move(def);
                     }
@@ -4794,14 +4935,16 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                 queue->aoChunksToCopy[queue->anIndexToCopy[idx]];
             const std::string osSubSource(
                 queue->osTargetDir.empty()
-                    ? queue->osSource.c_str()
-                    : CPLFormFilename(queue->osSourceDir.c_str(),
-                                      chunk.osSrcFilename.c_str(), nullptr));
+                    ? queue->osSource
+                    : CPLFormFilenameSafe(queue->osSourceDir.c_str(),
+                                          chunk.osSrcFilename.c_str(),
+                                          nullptr));
             const std::string osSubTarget(
                 queue->osTargetDir.empty()
-                    ? queue->osTarget.c_str()
-                    : CPLFormFilename(queue->osTargetDir.c_str(),
-                                      chunk.osDstFilename.c_str(), nullptr));
+                    ? queue->osTarget
+                    : CPLFormFilenameSafe(queue->osTargetDir.c_str(),
+                                          chunk.osDstFilename.c_str(),
+                                          nullptr));
 
             ProgressData progressData;
             progressData.nFileSize = chunk.nSize;
@@ -4834,7 +4977,7 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                                      ? 0 /* shouldn't happen */
                                      : static_cast<int>(chunk.nStartOffset /
                                                         queue->nMaxChunkSize));
-                        const std::string osEtag =
+                        std::string osEtag =
                             queue->poTargetFSMultipartHandler->UploadPart(
                                 osSubTarget, nPartNumber,
                                 iter->second.osUploadID, chunk.nStartOffset,
@@ -4849,7 +4992,8 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                                 std::max(nPartNumber,
                                          static_cast<int>(
                                              iter->second.aosEtags.size())));
-                            iter->second.aosEtags[nPartNumber - 1] = osEtag;
+                            iter->second.aosEtags[nPartNumber - 1] =
+                                std::move(osEtag);
                             bSuccess = true;
                         }
                     }
@@ -4911,14 +5055,14 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
         }
         if (pProgressFunc)
         {
+            const uint64_t nTotalSizeDenom = std::max<uint64_t>(1, nTotalSize);
             while (!sJobQueue.stop)
             {
                 CPLSleep(0.1);
                 sJobQueue.sMutex.lock();
                 const auto nTotalCopied = sJobQueue.nTotalCopied;
                 sJobQueue.sMutex.unlock();
-                // coverity[divide_by_zero]
-                if (!pProgressFunc(double(nTotalCopied) / nTotalSize, "",
+                if (!pProgressFunc(double(nTotalCopied) / nTotalSizeDenom, "",
                                    pProgressData))
                 {
                     sJobQueue.ret = false;
@@ -4964,7 +5108,7 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
                     oSetKeysToRemove.insert(kv.first);
 
                     InvalidateCachedData(poS3HandleHelper->GetURL().c_str());
-                    InvalidateDirContent(CPLGetDirname(kv.first.c_str()));
+                    InvalidateDirContent(CPLGetDirnameSafe(kv.first.c_str()));
                 }
             }
         }
@@ -5119,11 +5263,10 @@ VSIS3Handle::~VSIS3Handle()
 /*                           GetCurlHeaders()                           */
 /************************************************************************/
 
-struct curl_slist *
-VSIS3Handle::GetCurlHeaders(const std::string &osVerb,
-                            const struct curl_slist *psExistingHeaders)
+struct curl_slist *VSIS3Handle::GetCurlHeaders(const std::string &osVerb,
+                                               struct curl_slist *psHeaders)
 {
-    return m_poS3HandleHelper->GetCurlHeaders(osVerb, psExistingHeaders);
+    return m_poS3HandleHelper->GetCurlHeaders(osVerb, psHeaders);
 }
 
 /************************************************************************/

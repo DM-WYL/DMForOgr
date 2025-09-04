@@ -81,7 +81,7 @@ BIGGifRasterBand::BIGGifRasterBand(BIGGIFDataset *poDSIn, int nBackground)
 CPLErr BIGGifRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff, int nBlockYOff,
                                     void *pImage)
 {
-    BIGGIFDataset *poGDS = (BIGGIFDataset *)poDS;
+    BIGGIFDataset *poGDS = cpl::down_cast<BIGGIFDataset *>(poDS);
 
     CPLAssert(nBlockXOff == 0);
 
@@ -220,7 +220,7 @@ CPLErr BIGGIFDataset::ReOpen()
             /* while closing and then destroying this temporary dataset */
             const char *apszOptions[] = {"COMPRESS=LZW", "SPARSE_OK=YES",
                                          nullptr};
-            CPLString osTempFilename = CPLGenerateTempFilename("biggif");
+            CPLString osTempFilename = CPLGenerateTempFilenameSafe("biggif");
 
             osTempFilename += ".tif";
 
@@ -284,9 +284,7 @@ GDALDataset *BIGGIFDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The GIF driver does not support update access to existing"
-                 " files.\n");
+        ReportUpdateNotSupportedByDriver("GIF");
         return nullptr;
     }
 

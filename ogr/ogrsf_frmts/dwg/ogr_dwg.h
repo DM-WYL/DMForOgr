@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  DWG Translator
  * Purpose:  Definition of classes for OGR .dwg driver.
@@ -44,6 +43,9 @@ class DWGBlockDefinition
 
     OGRGeometry *poGeometry;
     std::vector<OGRFeature *> apoFeatures;
+
+  private:
+    CPL_DISALLOW_COPY_ASSIGN(DWGBlockDefinition)
 };
 
 /************************************************************************/
@@ -68,12 +70,12 @@ class OGRDWGBlocksLayer final : public OGRLayer
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     OGRFeature *GetNextUnfilteredFeature();
 
@@ -132,12 +134,12 @@ class OGRDWGLayer final : public OGRLayer
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     OGRFeature *GetNextUnfilteredFeature();
 
@@ -189,12 +191,12 @@ class OGRDWGDataSource final : public GDALDataset
     int Open(OGRDWGServices *poServices, const char *pszFilename,
              int bHeaderOnly = FALSE);
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return static_cast<int>(apoLayers.size());
     }
 
-    OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
     // The following is only used by OGRDWGLayer
 

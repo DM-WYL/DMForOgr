@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  PDS Translator
  * Purpose:  Definition of classes for OGR .pdstable driver.
@@ -76,12 +75,12 @@ class OGRPDSLayer final : public OGRLayer,
     virtual void ResetReading() override;
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRPDSLayer)
 
-    virtual OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
 
@@ -116,12 +115,12 @@ class OGRPDSDataSource final : public GDALDataset
 
     int Open(const char *pszFilename);
 
-    virtual int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return nLayers;
     }
 
-    virtual OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
     static void CleanString(CPLString &osInput);
 };

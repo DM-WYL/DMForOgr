@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  FlatGeobuf driver test suite.
@@ -969,7 +968,7 @@ def test_ogr_flatgeobuf_invalid_output_filename():
     ids=["regular", "no_spatial_index"],
 )
 def test_ogr_flatgeobuf_arrow_stream_numpy(layer_creation_options):
-    pytest.importorskip("osgeo.gdal_array")
+    gdaltest.importorskip_gdal_array()
     numpy = pytest.importorskip("numpy")
 
     ds = ogr.GetDriverByName("FlatGeoBuf").CreateDataSource("/vsimem/test.fgb")
@@ -1261,7 +1260,7 @@ def test_ogr_flatgeobuf_title_description_metadata(tmp_vsimem):
 @gdaltest.enable_exceptions()
 def test_ogr_flatgeobuf_write_arrow(tmp_vsimem):
 
-    ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+    ds = ogr.GetDriverByName("MEM").CreateDataSource("")
     src_lyr = ds.CreateLayer("src_lyr")
 
     field_def = ogr.FieldDefn("field_bool", ogr.OFTInteger)
@@ -1447,7 +1446,7 @@ def test_ogr_flatgeobuf_sql_arrow(tmp_vsimem):
         with ds.ExecuteSQL("SELECT 'a' FROM test") as lyr:
             assert not lyr.TestCapability(ogr.OLCFastGetArrowStream)
 
-            tmp_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+            tmp_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
             tmp_lyr = tmp_ds.CreateLayer("test")
             tmp_lyr.WriteArrow(lyr)
             f = tmp_lyr.GetNextFeature()
@@ -1505,7 +1504,7 @@ def test_ogr_flatgeobuf_sql_arrow(tmp_vsimem):
         with ds.ExecuteSQL(sql) as lyr:
             assert lyr.TestCapability(ogr.OLCFastGetArrowStream)
 
-            tmp_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+            tmp_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
             tmp_lyr = tmp_ds.CreateLayer("test")
             tmp_lyr.WriteArrow(lyr)
             assert tmp_lyr.GetLayerDefn().GetFieldCount() == 2
@@ -1525,7 +1524,7 @@ def test_ogr_flatgeobuf_sql_arrow(tmp_vsimem):
         with ds.ExecuteSQL(sql) as lyr:
             assert lyr.TestCapability(ogr.OLCFastGetArrowStream)
 
-            tmp_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+            tmp_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
             tmp_lyr = tmp_ds.CreateLayer("test")
             tmp_lyr.WriteArrow(lyr)
             assert tmp_lyr.GetLayerDefn().GetFieldCount() == 1
@@ -1538,7 +1537,7 @@ def test_ogr_flatgeobuf_sql_arrow(tmp_vsimem):
         with ds.ExecuteSQL(sql) as lyr:
             assert lyr.TestCapability(ogr.OLCFastGetArrowStream)
 
-            tmp_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+            tmp_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
             tmp_lyr = tmp_ds.CreateLayer("test")
             tmp_lyr.WriteArrow(lyr)
             assert tmp_lyr.GetFeatureCount() == 1
@@ -1552,7 +1551,7 @@ def test_ogr_flatgeobuf_sql_arrow(tmp_vsimem):
             lyr.SetSpatialFilterRect(1, 2, 1, 2)
             assert lyr.TestCapability(ogr.OLCFastGetArrowStream)
 
-            tmp_ds = ogr.GetDriverByName("Memory").CreateDataSource("")
+            tmp_ds = ogr.GetDriverByName("MEM").CreateDataSource("")
             tmp_lyr = tmp_ds.CreateLayer("test")
             tmp_lyr.WriteArrow(lyr)
             assert tmp_lyr.GetLayerDefn().GetFieldCount() == 2
@@ -1564,3 +1563,90 @@ def test_ogr_flatgeobuf_sql_arrow(tmp_vsimem):
             assert f["bar"] == "baz"
             assert f.GetGeometryRef().ExportToWkt() == "POINT (1 2)"
             f = tmp_lyr.GetNextFeature()
+
+
+###############################################################################
+# Test DATETIME_AS_STRING=YES GetArrowStream() option
+
+
+def test_ogr_flatgeobuf_arrow_stream_numpy_datetime_as_string(tmp_vsimem):
+    gdaltest.importorskip_gdal_array()
+    pytest.importorskip("numpy")
+
+    filename = str(tmp_vsimem / "datetime_as_string.fgb")
+    with ogr.GetDriverByName("FlatGeoBuf").CreateDataSource(filename) as ds:
+        lyr = ds.CreateLayer("test")
+
+        field = ogr.FieldDefn("datetime", ogr.OFTDateTime)
+        lyr.CreateField(field)
+
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        lyr.CreateFeature(f)
+
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetField("datetime", "2022-05-31T12:34:56.789Z")
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        lyr.CreateFeature(f)
+
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetField("datetime", "2022-05-31T12:34:56")
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        lyr.CreateFeature(f)
+
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetField("datetime", "2022-05-31T12:34:56+12:30")
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POINT (1 2)"))
+        lyr.CreateFeature(f)
+
+    with ogr.Open(filename) as ds:
+        lyr = ds.GetLayer(0)
+        stream = lyr.GetArrowStreamAsNumPy(
+            options=["USE_MASKED_ARRAYS=NO", "DATETIME_AS_STRING=YES"]
+        )
+        batches = [batch for batch in stream]
+        assert len(batches) == 1
+        batch = batches[0]
+        assert len(batch["datetime"]) == 4
+        assert batch["datetime"][0] == b""
+        assert batch["datetime"][1] == b"2022-05-31T12:34:56.789Z"
+        assert batch["datetime"][2] == b"2022-05-31T12:34:56"
+        assert batch["datetime"][3] == b"2022-05-31T12:34:56+12:30"
+
+
+def test_ogr_flatgeobuf_write_empty_geometries_no_spatial_index(tmp_vsimem):
+    # Verify empty geom handling without spatial index
+    out_filename = str(tmp_vsimem / "out.fgb")
+    with ogr.GetDriverByName("FlatGeobuf").CreateDataSource(out_filename) as ds:
+        lyr = ds.CreateLayer(
+            "test", geom_type=ogr.wkbPolygon, options=["SPATIAL_INDEX=NO"]
+        )
+
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetGeometry(ogr.CreateGeometryFromWkt("POLYGON EMPTY"))
+        lyr.CreateFeature(f)
+        f = ogr.Feature(lyr.GetLayerDefn())
+        lyr.CreateFeature(f)
+
+    with gdal.OpenEx(out_filename) as ds:
+        lyr = ds.GetLayer(0)
+        f = lyr.GetNextFeature()
+        g = f.GetGeometryRef()
+        assert g is None
+
+
+def test_ogr_flatgeobuf_write_empty_file_no_spatial_index(tmp_vsimem):
+    # Verify empty geom handling without spatial index
+    out_filename = str(tmp_vsimem / "out.fgb")
+    with ogr.GetDriverByName("FlatGeobuf").CreateDataSource(out_filename) as ds:
+        srs = osr.SpatialReference()
+        srs.ImportFromEPSG(32631)
+        ds.CreateLayer(
+            "test", geom_type=ogr.wkbPolygon, srs=srs, options=["SPATIAL_INDEX=NO"]
+        )
+
+    with gdal.OpenEx(out_filename) as ds:
+        lyr = ds.GetLayer(0)
+        assert lyr.GetFeatureCount() == 0
+        assert lyr.GetExtent(can_return_null=True) is None
+        assert lyr.GetSpatialRef().GetAuthorityCode(None) == "32631"

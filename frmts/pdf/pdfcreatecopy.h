@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  PDF driver
  * Purpose:  GDALDataset driver for PDF dataset.
@@ -49,6 +48,7 @@ class GDALFakePDFDataset final : public GDALDataset
 {
   public:
     GDALFakePDFDataset() = default;
+    ~GDALFakePDFDataset() override;
 };
 
 /************************************************************************/
@@ -226,11 +226,6 @@ class GDALPDFBaseWriter
                                        const char *pszNEATLINE,
                                        PDFMargins *psMargins,
                                        int bWriteViewport);
-    GDALPDFObjectNum WriteSRS_OGC_BP(GDALDataset *poSrcDS, double dfUserUnit,
-                                     const char *pszNEATLINE,
-                                     PDFMargins *psMargins);
-    static GDALPDFDictionaryRW *
-    GDALPDFBuildOGC_BP_Projection(const OGRSpatialReference *poSRS);
 
     GDALPDFObjectNum
     WriteOCG(const char *pszLayerName,

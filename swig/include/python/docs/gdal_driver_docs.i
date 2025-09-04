@@ -35,7 +35,7 @@ ysize : int
    Height of created raster in pixels. Set to zero for vector datasets.
 bands : int, default = 1
     Number of bands. Set to zero for vector datasets.
-eType : int, default = :py:const:`GDT_Byte`
+eType : int/NumPy dtype, default = :py:const:`GDT_Byte`
     Raster data type. Set to :py:const:`GDT_Unknown` for vector datasets.
 options : list/dict
     List of driver-specific options
@@ -125,6 +125,29 @@ Examples
 
 ";
 
+%feature("docstring") CreateVector "
+
+Create a new vector :py:class:`Dataset` with this driver.
+This method is an alias for ``Create(name, 0, 0, 0, gdal.GDT_Unknown)``.
+
+Parameters
+----------
+utf8_path : str
+   Path of the dataset to create.
+
+Returns
+-------
+Dataset
+
+Examples
+--------
+>>> with gdal.GetDriverByName('ESRI Shapefile').CreateVector('test.shp') as ds:
+...     print(ds.GetLayerCount())
+... 
+0
+
+";
+
 %feature("docstring") Delete "
 Delete a :py:class:`Dataset`.
 See :cpp:func:`GDALDriver::Delete`.
@@ -143,6 +166,29 @@ int:
 %feature("docstring") Deregister "
 Deregister the driver.
 See :cpp:func:`GDALDriverManager::DeregisterDriver`.
+";
+
+%feature("docstring") HasOpenOption "
+
+Reports whether the driver supports a specified open option.
+
+Parameters
+----------
+openOptionName : str
+   The name of the option to test
+
+Returns
+-------
+bool:
+   ``True``, if the option is supported by this driver, ``False`` otherwise.
+
+Examples
+--------
+>>> gdal.GetDriverByName('GPKG').HasOpenOption('PRELUDE_STATEMENTS')
+True
+>>> gdal.GetDriverByName('GPKG').HasOpenOption('CLOSING_STATEMENTS')
+False
+
 ";
 
 %feature("docstring") HelpTopic "
@@ -181,6 +227,31 @@ int:
 The short name of a :py:class:`Driver` that can be passed to
 :py:func:`GetDriverByName`.
 See :cpp:func:`GDALGetDriverShortName`.
+";
+
+%feature("docstring") TestCapability "
+
+Check whether the driver supports a specified capability
+(:py:const:`ogr.ODrCCreateDataSource` or
+:py:const:`ogr.ODrCDeleteDataSource`)`.
+
+Parameters
+----------
+cap : str
+    The name of the capability to test
+
+Returns
+-------
+bool:
+   ``True`` if the driver supports the capability, ``False`` otherwise.
+
+Examples
+--------
+>>> gdal.GetDriverByName('ESRI Shapefile').TestCapability(ogr.ODrCCreateDataSource)
+True
+>>> gdal.GetDriverByName('GTiff').TestCapability(ogr.ODrCCreateDataSource)
+True
+
 ";
 
 };

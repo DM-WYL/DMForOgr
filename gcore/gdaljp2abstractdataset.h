@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  GDAL
  * Purpose:  GDALGeorefPamDataset with helper to read georeferencing and other
@@ -52,8 +51,8 @@ class CPL_DLL GDALJP2AbstractDataset : public GDALGeorefPamDataset
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain = "") override;
 
-    int GetLayerCount() override;
-    OGRLayer *GetLayer(int i) override;
+    int GetLayerCount() const override;
+    OGRLayer *GetLayer(int i) const override;
 };
 
 //! @endcond

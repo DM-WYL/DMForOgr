@@ -38,6 +38,8 @@ class TileDBRasterBand final : public GDALPamRasterBand
     double m_dfNoData = 0;
     bool m_bNoDataSet = false;
 
+    CPL_DISALLOW_COPY_ASSIGN(TileDBRasterBand)
+
   public:
     TileDBRasterBand(TileDBRasterDataset *, int,
                      const std::string &osAttr = TILEDB_VALUES);
@@ -283,9 +285,12 @@ CPLErr TileDBRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     {
         const uint64_t nBandIdx = poGDS->nBandStart + nBand - 1;
         std::vector<uint64_t> oaSubarray = {
-            nBandIdx,        nBandIdx,
-            (uint64_t)nYOff, (uint64_t)nYOff + nYSize - 1,
-            (uint64_t)nXOff, (uint64_t)nXOff + nXSize - 1};
+            nBandIdx,
+            nBandIdx,
+            static_cast<uint64_t>(nYOff),
+            static_cast<uint64_t>(nYOff) + nYSize - 1,
+            static_cast<uint64_t>(nXOff),
+            static_cast<uint64_t>(nXOff) + nXSize - 1};
         if (poGDS->eIndexMode == PIXEL)
             std::rotate(oaSubarray.begin(), oaSubarray.begin() + 2,
                         oaSubarray.end());
@@ -348,8 +353,8 @@ CPLErr TileDBRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 
                     if (eErr == CE_None)
                     {
-                        CPLString osName = CPLString().Printf(
-                            "%s", CPLGetBasename(poAttrDS->GetDescription()));
+                        CPLString osName =
+                            CPLGetBasenameSafe(poAttrDS->GetDescription());
 
                         SetBuffer(poQuery.get(), eAttrType, osName, pAttrBlock,
                                   nValues);
@@ -514,6 +519,11 @@ double TileDBRasterBand::GetNoDataValue(int *pbHasNoData)
                     dfNoData = static_cast<double>(
                         *static_cast<const int64_t *>(value));
                     break;
+                case GDT_Float16:
+                case GDT_CFloat16:
+                    // tileDB does not support float16
+                    CPLAssert(false);
+                    break;
                 case GDT_Float32:
                 case GDT_CFloat32:
                     dfNoData = *static_cast<const float *>(value);
@@ -600,9 +610,14 @@ CPLErr TileDBRasterBand::SetNoDataValue(double dfNoData)
         case GDT_Int64:
             bIsValid = IsValidNoData<int64_t>(dfNoData);
             break;
+        case GDT_Float16:
+        case GDT_CFloat16:
+            // tileDB does not support float16
+            bIsValid = CPLIsNan(dfNoData) || IsValidNoData<float>(dfNoData);
+            break;
         case GDT_Float32:
         case GDT_CFloat32:
-            bIsValid = std::isnan(dfNoData) || IsValidNoData<float>(dfNoData);
+            bIsValid = CPLIsNan(dfNoData) || IsValidNoData<float>(dfNoData);
             break;
         case GDT_Float64:
         case GDT_CFloat64:
@@ -739,8 +754,10 @@ CPLErr TileDBRasterDataset::IRasterIO(
          nBandSpace == nBufYSize * nLineSpace))
     {
         std::vector<uint64_t> oaSubarray = {
-            (uint64_t)nYOff, (uint64_t)nYOff + nYSize - 1, (uint64_t)nXOff,
-            (uint64_t)nXOff + nXSize - 1};
+            static_cast<uint64_t>(nYOff),
+            static_cast<uint64_t>(nYOff) + nYSize - 1,
+            static_cast<uint64_t>(nXOff),
+            static_cast<uint64_t>(nXOff) + nXSize - 1};
 
         try
         {
@@ -1178,7 +1195,7 @@ CPLErr TileDBRasterDataset::TryLoadCachedXML(CSLConstList /*papszSiblingFiles*/,
                 fbuf.open(psPam->pszPamFilename, std::ios::in);
                 std::istream is(&fbuf);
                 osMetaDoc.resize(nBytes);
-                is.read((char *)osMetaDoc.data(), nBytes);
+                is.read(&osMetaDoc[0], nBytes);
                 fbuf.close();
                 psTree = CPLParseXMLString(osMetaDoc);
             }
@@ -1240,7 +1257,7 @@ CPLErr TileDBRasterDataset::TryLoadCachedXML(CSLConstList /*papszSiblingFiles*/,
         /* --------------------------------------------------------------------
          */
 
-        CPLString osPath(CPLGetPath(psPam->pszPamFilename));
+        CPLString osPath(CPLGetPathSafe(psPam->pszPamFilename));
         const CPLErr eErr = XMLInit(psTree, osPath);
 
         CPLDestroyXMLNode(psTree);
@@ -1352,7 +1369,6 @@ GDALDataset *TileDBRasterDataset::OpenInternal(GDALOpenInfo *poOpenInfo,
         poDS->nTimestamp = std::strtoull(pszTimestamp, nullptr, 10);
 
     CPLString osURI;
-    CPLString osAux;
     CPLString osSubdataset;
 
     std::string osAttrNameTmp;
@@ -1387,11 +1403,12 @@ GDALDataset *TileDBRasterDataset::OpenInternal(GDALOpenInfo *poOpenInfo,
         osURI = TileDBDataset::VSI_to_tiledb_uri(poOpenInfo->pszFilename);
     }
 
-    const char *pszArrayName = CPLGetBasename(osURI);
-    osAux.Printf("%s.tdb", pszArrayName);
+    CPLString osAux = CPLGetBasenameSafe(osURI);
+    osAux += ".tdb";
 
     // aux file is in array folder
-    poDS->SetPhysicalFilename(CPLFormFilename(osURI, osAux, nullptr));
+    poDS->SetPhysicalFilename(
+        CPLFormFilenameSafe(osURI, osAux, nullptr).c_str());
     // Initialize any PAM information.
     poDS->SetDescription(osURI);
 
@@ -1401,7 +1418,16 @@ GDALDataset *TileDBRasterDataset::OpenInternal(GDALOpenInfo *poOpenInfo,
         poDS->m_bDatasetInGroup = true;
 
         // Full resolution raster array
-        poDS->m_osArrayURI = CPLFormFilename(osURI.c_str(), "l_0", nullptr);
+        poDS->m_osArrayURI = CPLFormFilenameSafe(osURI.c_str(), "l_0", nullptr);
+    }
+
+    if ((poOpenInfo->eAccess == GA_ReadOnly) &&
+        (!TileDBDataset::TileDBObjectExists(poDS->m_osArrayURI)))
+    {
+        CPLError(CE_Failure, CPLE_OpenFailed,
+                 "Failed to open %s as an array or group.",
+                 poOpenInfo->pszFilename);
+        return nullptr;
     }
 
     const tiledb_query_type_t eMode =
@@ -2111,7 +2137,8 @@ TileDBRasterDataset *TileDBRasterDataset::CreateLL(const char *pszFilename,
             }
 
             // Full resolution raster array
-            poDS->m_osArrayURI = CPLFormFilename(pszFilename, "l_0", nullptr);
+            poDS->m_osArrayURI =
+                CPLFormFilenameSafe(pszFilename, "l_0", nullptr);
         }
         else
         {
@@ -2157,12 +2184,11 @@ TileDBRasterDataset *TileDBRasterDataset::CreateLL(const char *pszFilename,
             }
         }
 
-        CPLString osAux;
-        const char *pszArrayName = CPLGetBasename(pszFilename);
-        osAux.Printf("%s.tdb", pszArrayName);
+        CPLString osAux = CPLGetBasenameSafe(pszFilename);
+        osAux += ".tdb";
 
         poDS->SetPhysicalFilename(
-            CPLFormFilename(pszFilename, osAux.c_str(), nullptr));
+            CPLFormFilenameSafe(pszFilename, osAux.c_str(), nullptr).c_str());
 
         // Initialize PAM information.
         poDS->SetDescription(pszFilename);
@@ -2250,8 +2276,8 @@ bool TileDBRasterDataset::DeferredCreate(bool bCreateArray)
         // this driver enforces that all subdatasets are the same size
         tiledb::Domain domain(*m_ctx);
 
-        uint64_t w = (uint64_t)nBlocksX * nBlockXSize - 1;
-        uint64_t h = (uint64_t)nBlocksY * nBlockYSize - 1;
+        const uint64_t w = static_cast<uint64_t>(nBlocksX) * nBlockXSize - 1;
+        const uint64_t h = static_cast<uint64_t>(nBlocksY) * nBlockYSize - 1;
 
         auto d1 = tiledb::Dimension::create<uint64_t>(*m_ctx, "X", {0, w},
                                                       uint64_t(nBlockXSize));
@@ -2285,13 +2311,13 @@ bool TileDBRasterDataset::DeferredCreate(bool bCreateArray)
         // be reported as subdatasets on future reads
         for (const auto &poAttrDS : m_lpoAttributeDS)
         {
-            const char *pszAttrName =
-                CPLGetBasename(poAttrDS->GetDescription());
+            const std::string osAttrName =
+                CPLGetBasenameSafe(poAttrDS->GetDescription());
             GDALRasterBand *poAttrBand = poAttrDS->GetRasterBand(1);
             int bHasNoData = false;
             const double dfNoData = poAttrBand->GetNoDataValue(&bHasNoData);
-            CreateAttribute(poAttrBand->GetRasterDataType(), pszAttrName, 1,
-                            CPL_TO_BOOL(bHasNoData), dfNoData);
+            CreateAttribute(poAttrBand->GetRasterDataType(), osAttrName.c_str(),
+                            1, CPL_TO_BOOL(bHasNoData), dfNoData);
         }
 
         if (bCreateArray)
@@ -2419,8 +2445,10 @@ CPLErr TileDBRasterDataset::CopySubDatasets(GDALDataset *poSrcDS,
                 int bHasNoData = FALSE;
                 const double dfNoData = poBand->GetNoDataValue(&bHasNoData);
 
-                if ((poSubDS->GetRasterXSize() != (int)nSubXSize) ||
-                    (poSubDS->GetRasterYSize() != (int)nSubYSize) ||
+                if ((poSubDS->GetRasterXSize() !=
+                     static_cast<int>(nSubXSize)) ||
+                    (poSubDS->GetRasterYSize() !=
+                     static_cast<int>(nSubYSize)) ||
                     (nBlockXSize != poDstDS->nBlockXSize) ||
                     (nBlockYSize != poDstDS->nBlockYSize))
                 {
@@ -2602,7 +2630,7 @@ TileDBRasterDataset *TileDBRasterDataset::Create(const char *pszFilename,
             {
                 aosImageStruct.SetNameValue(
                     CPLString().Printf("TILEDB_ATTRIBUTE_%i", ++i),
-                    CPLGetBasename(poAttrDS->GetDescription()));
+                    CPLGetBasenameSafe(poAttrDS->GetDescription()).c_str());
             }
         }
         poDS->SetMetadata(aosImageStruct.List(), "IMAGE_STRUCTURE");
@@ -2809,8 +2837,8 @@ void TileDBRasterDataset::LoadOverviews()
     for (int i = 0; i < m_nOverviewCountFromMetadata; ++i)
     {
         const std::string osArrayName = CPLSPrintf("l_%d", 1 + i);
-        std::string osOvrDatasetName =
-            CPLFormFilename(GetDescription(), osArrayName.c_str(), nullptr);
+        const std::string osOvrDatasetName =
+            CPLFormFilenameSafe(GetDescription(), osArrayName.c_str(), nullptr);
 
         GDALOpenInfo oOpenInfo(osOvrDatasetName.c_str(), eAccess);
         oOpenInfo.papszOpenOptions = aosOpenOptions.List();
@@ -2933,7 +2961,10 @@ CPLErr TileDBRasterDataset::IBuildOverviews(
             {
                 CPL_IGNORE_RET_VAL(poODS->Close());
                 tiledb::Array::delete_array(*m_ctx, poODS->GetDescription());
-                vfs.remove_dir(poODS->GetDescription());
+                if (vfs.is_dir(poODS->GetDescription()))
+                {
+                    vfs.remove_dir(poODS->GetDescription());
+                }
             }
             catch (const tiledb::TileDBError &e)
             {
@@ -2958,10 +2989,8 @@ CPLErr TileDBRasterDataset::IBuildOverviews(
     std::vector<bool> abRequireNewOverview(nOverviews, true);
     for (int i = 0; i < nOverviews; ++i)
     {
-        const int nOXSize =
-            (GetRasterXSize() + panOverviewList[i] - 1) / panOverviewList[i];
-        const int nOYSize =
-            (GetRasterYSize() + panOverviewList[i] - 1) / panOverviewList[i];
+        const int nOXSize = DIV_ROUND_UP(GetRasterXSize(), panOverviewList[i]);
+        const int nOYSize = DIV_ROUND_UP(GetRasterYSize(), panOverviewList[i]);
 
         for (const auto &poODS : m_apoOverviewDS)
         {
@@ -3009,8 +3038,8 @@ CPLErr TileDBRasterDataset::IBuildOverviews(
 
             const std::string osArrayName =
                 CPLSPrintf("l_%d", 1 + int(m_apoOverviewDS.size()));
-            std::string osOvrDatasetName =
-                CPLFormFilename(GetDescription(), osArrayName.c_str(), nullptr);
+            const std::string osOvrDatasetName = CPLFormFilenameSafe(
+                GetDescription(), osArrayName.c_str(), nullptr);
 
             auto poOvrDS = std::unique_ptr<TileDBRasterDataset>(
                 Create(osOvrDatasetName.c_str(), nOXSize, nOYSize, nBands,
@@ -3031,18 +3060,12 @@ CPLErr TileDBRasterDataset::IBuildOverviews(
 
             // Apply georeferencing from main dataset
             poOvrDS->SetSpatialRef(GetSpatialRef());
-            double adfGeoTransform[6];
-            if (GetGeoTransform(adfGeoTransform) == CE_None)
+            GDALGeoTransform gt;
+            if (GetGeoTransform(gt) == CE_None)
             {
-                adfGeoTransform[1] *=
-                    static_cast<double>(nRasterXSize) / nOXSize;
-                adfGeoTransform[2] *=
-                    static_cast<double>(nRasterXSize) / nOXSize;
-                adfGeoTransform[4] *=
-                    static_cast<double>(nRasterYSize) / nOYSize;
-                adfGeoTransform[5] *=
-                    static_cast<double>(nRasterYSize) / nOYSize;
-                poOvrDS->SetGeoTransform(adfGeoTransform);
+                gt.Rescale(static_cast<double>(nRasterXSize) / nOXSize,
+                           static_cast<double>(nRasterYSize) / nOYSize);
+                poOvrDS->SetGeoTransform(gt);
             }
 
             poOvrDS->DeferredCreate(/* bCreateArray = */ true);

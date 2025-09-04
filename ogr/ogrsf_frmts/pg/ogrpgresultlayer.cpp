@@ -206,7 +206,7 @@ GIntBig OGRPGResultLayer::GetFeatureCount(int bForce)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRPGResultLayer::TestCapability(const char *pszCap)
+int OGRPGResultLayer::TestCapability(const char *pszCap) const
 
 {
     GetLayerDefn();
@@ -281,23 +281,13 @@ OGRFeature *OGRPGResultLayer::GetNextFeature()
 }
 
 /************************************************************************/
-/*                          SetSpatialFilter()                          */
+/*                         ISetSpatialFilter()                          */
 /************************************************************************/
 
-void OGRPGResultLayer::SetSpatialFilter(int iGeomField, OGRGeometry *poGeomIn)
+OGRErr OGRPGResultLayer::ISetSpatialFilter(int iGeomField,
+                                           const OGRGeometry *poGeomIn)
 
 {
-    if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount() ||
-        CPLAssertNotNull(GetLayerDefn()->GetGeomFieldDefn(iGeomField))
-                ->GetType() == wkbNone)
-    {
-        if (iGeomField != 0)
-        {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "Invalid geometry field index : %d", iGeomField);
-        }
-        return;
-    }
     m_iGeomFieldFilter = iGeomField;
 
     OGRPGGeomFieldDefn *poGeomFieldDefn =
@@ -347,6 +337,7 @@ void OGRPGResultLayer::SetSpatialFilter(int iGeomField, OGRGeometry *poGeomIn)
 
         ResetReading();
     }
+    return OGRERR_NONE;
 }
 
 /************************************************************************/

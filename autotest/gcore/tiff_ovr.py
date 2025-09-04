@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test Overview Support (mostly a GeoTIFF issue).
@@ -164,6 +163,24 @@ def test_tiff_ovr_3(mfloat32_tif, both_endian):
     tiff_ovr_check(src_ds)
 
     src_ds = None
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_tiff_ovr_invalid_ovr_factor(tmp_path):
+    tif_fname = str(tmp_path / "byte.tif")
+
+    shutil.copyfile("data/byte.tif", tif_fname)
+
+    ds = gdal.Open(tif_fname, gdal.GA_Update)
+    with pytest.raises(
+        Exception,
+        match=r"panOverviewList\[1\] = 0 is invalid\. It must be a positive value",
+    ):
+        ds.BuildOverviews(overviewlist=[2, 0])
 
 
 ###############################################################################
@@ -1677,6 +1694,33 @@ def test_tiff_ovr_43(tmp_path, both_endian):
 
 
 ###############################################################################
+# Test that we do not propagate PHOTOMETRIC=YCBCR on overviews when
+# COMPRESS_OVERVIEW != JPEG
+
+
+@pytest.mark.require_creation_option("GTiff", "JPEG")
+@gdaltest.enable_exceptions()
+def test_tiff_ovr_do_not_propagate_photometric_ycbcr_if_ovr_if_not_jpeg(tmp_path):
+
+    tif_fname = str(tmp_path / "test.tif")
+
+    ds = gdal.GetDriverByName("GTiff").Create(
+        tif_fname, 8, 8, 3, options=["COMPRESS=JPEG", "PHOTOMETRIC=YCBCR"]
+    )
+    ds.GetRasterBand(1).Fill(255)
+    ds.GetRasterBand(2).Fill(255)
+    ds.GetRasterBand(3).Fill(255)
+    ds = None
+
+    with gdal.Open(tif_fname, gdal.GA_Update) as ds:
+        with gdal.config_option("COMPRESS_OVERVIEW", "DEFLATE"):
+            ds.BuildOverviews("NEAR", [2])
+
+    with gdal.Open(tif_fname) as ds:
+        assert ds.GetRasterBand(1).GetOverview(0).ComputeRasterMinMax() == (255, 255)
+
+
+###############################################################################
 # Test that we can change overview block size through GDAL_TIFF_OVR_BLOCKSIZE configuration
 # option
 
@@ -2428,6 +2472,7 @@ def test_tiff_ovr_color_table_bug_3336_bis():
 
 def test_tiff_ovr_nodata_multiband():
 
+    gdaltest.importorskip_gdal_array()
     numpy = pytest.importorskip("numpy")
 
     temp_path = "/vsimem/test.tif"
@@ -2636,7 +2681,31 @@ def test_tiff_ovr_external_mask_update(tmp_vsimem):
 # of the default scanlines based one
 
 
-def test_tiff_ovr_fallback_to_multiband_overview_generate():
+@pytest.mark.parametrize(
+    "config_options",
+    [
+        {
+            "GDAL_OVR_CHUNK_MAX_SIZE": "1000",
+            "GDAL_OVR_CHUNK_MAX_SIZE_FOR_TEMP_FILE": "10000",
+        },
+        {
+            "GDAL_OVR_CHUNK_MAX_SIZE": "1000",
+            "GDAL_OVR_CHUNK_MAX_SIZE_FOR_TEMP_FILE": "10000",
+            "GDAL_OVR_TEMP_DRIVER": "MEM",
+        },
+        {
+            "GDAL_OVR_CHUNK_MAX_SIZE": "1000",
+            "GDAL_OVR_CHUNK_MAX_SIZE_FOR_TEMP_FILE": "10000",
+            "GDAL_OVR_TEMP_DRIVER": "GTIFF",
+        },
+        {
+            "GDAL_OVR_CHUNK_MAX_SIZE": "1000",
+            "GDAL_OVR_CHUNK_MAX_SIZE_FOR_TEMP_FILE": "1000",
+            "GDAL_OVR_TEMP_DRIVER": "GTIFF",
+        },
+    ],
+)
+def test_tiff_ovr_fallback_to_multiband_overview_generate(config_options):
 
     filename = "/vsimem/test_tiff_ovr_issue_4932_src.tif"
     ds = gdal.Translate(
@@ -2644,15 +2713,13 @@ def test_tiff_ovr_fallback_to_multiband_overview_generate():
         "data/byte.tif",
         options="-b 1 -b 1 -b 1 -co INTERLEAVE=BAND -co TILED=YES -outsize 1024 1024",
     )
-    with gdaltest.config_options(
-        {"GDAL_OVR_CHUNK_MAX_SIZE": "1000", "GDAL_OVR_TEMP_DRIVER": "MEM"}
-    ):
+    with gdaltest.config_options(config_options):
         ds.BuildOverviews("NEAR", overviewlist=[2, 4, 8])
     ds = None
 
     ds = gdal.Open(filename)
     cs = ds.GetRasterBand(1).GetOverview(0).Checksum()
-    assert cs == 37308
+    assert cs == 36766
     ds = None
 
     gdal.GetDriverByName("GTiff").Delete(filename)
@@ -2951,3 +3018,128 @@ def test_tiff_ovr_JXL_ALPHA_DISTANCE_OVERVIEW(tmp_vsimem):
     assert ds.GetRasterBand(4).Checksum() != cs4
     del ds
     gdal.Unlink(tmpfilename + ".ovr")
+
+
+###############################################################################
+# Test fix for https://github.com/OSGeo/gdal/issues/11555
+
+
+def test_tiff_ovr_internal_mask_issue_11555(tmp_vsimem):
+
+    if "debug build" in gdal.VersionInfo("--version") and "CI" in os.environ:
+        pytest.skip("test skipped on CI for debug builds (to keep things fast)")
+
+    tmpfilename = str(tmp_vsimem / "test.tif")
+    gdal.FileFromMemBuffer(tmpfilename, open("data/test_11555.tif", "rb").read())
+
+    ds = gdal.Open(tmpfilename, gdal.GA_Update)
+    ds.BuildOverviews("bilinear", [2])
+    del ds
+
+    ds = gdal.Open(tmpfilename)
+
+    # Check that we have non-zero data when mask = 255
+    assert ds.GetRasterBand(1).GetOverview(0).ReadRaster(0, 5270, 1, 1) == b"\x7F"
+    assert ds.GetRasterBand(2).GetOverview(0).ReadRaster(0, 5270, 1, 1) == b"\x7F"
+    assert (
+        ds.GetRasterBand(1).GetMaskBand().GetOverview(0).ReadRaster(0, 5270, 1, 1)
+        == b"\xFF"
+    )
+
+    # Check that we have zero data when mask = 0
+    assert ds.GetRasterBand(1).GetOverview(0).ReadRaster(0, 5271, 1, 1) == b"\x00"
+    assert ds.GetRasterBand(2).GetOverview(0).ReadRaster(0, 5271, 1, 1) == b"\x00"
+    assert (
+        ds.GetRasterBand(1).GetMaskBand().GetOverview(0).ReadRaster(0, 5271, 1, 1)
+        == b"\x00"
+    )
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_tiff_ovr_huge_raster_with_ovr_huge_block(tmp_vsimem):
+
+    gdal.FileFromMemBuffer(
+        tmp_vsimem / "tmp.tif",
+        open("data/gtiff/huge_raster_with_ovr_huge_block.tif", "rb").read(),
+    )
+
+    with pytest.raises(Exception):
+        with gdal.Open(tmp_vsimem / "tmp.tif", gdal.GA_Update) as ds:
+            ds.BuildOverviews("AVERAGE", [2])
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_tiff_ovr_huge_reduction_factor_nodata(tmp_vsimem):
+
+    ds = gdal.GetDriverByName("GTIFF").Create(
+        tmp_vsimem / "test.tif",
+        1024,
+        1024,
+        3,
+        options=["BLOCKYSIZE=1024", "COMPRESS=LZW"],
+    )
+    ds.GetRasterBand(1).SetNoDataValue(0)
+    ds.GetRasterBand(2).SetNoDataValue(0)
+    ds.GetRasterBand(3).SetNoDataValue(0)
+    ds.WriteRaster(511, 511, 1, 1, b"\xFF" * 3)
+    with gdaltest.config_options(
+        {
+            "GDAL_OVR_CHUNK_MAX_SIZE": "1000",
+            "GDAL_OVR_CHUNK_MAX_SIZE_FOR_TEMP_FILE": "1000",
+        }
+    ):
+        ds.BuildOverviews("AVERAGE", [1024])
+    assert ds.GetRasterBand(1).GetOverview(0).ReadRaster() == b"\xFF"
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_tiff_ovr_huge_reduction_factor_mask(tmp_vsimem):
+
+    ds = gdal.GetDriverByName("GTIFF").Create(
+        tmp_vsimem / "test.tif",
+        1024,
+        1024,
+        3,
+        options=["BLOCKYSIZE=1024", "COMPRESS=LZW"],
+    )
+    ds.WriteRaster(511, 511, 1, 1, b"\xFF" * 3)
+    ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteRaster(511, 511, 1, 1, b"\xFF")
+    with gdaltest.config_options(
+        {
+            "GDAL_OVR_CHUNK_MAX_SIZE": "1000",
+            "GDAL_OVR_CHUNK_MAX_SIZE_FOR_TEMP_FILE": "1000",
+        }
+    ):
+        ds.BuildOverviews("AVERAGE", [1024])
+    assert ds.GetRasterBand(1).GetOverview(0).ReadRaster() == b"\xFF"
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_tiff_ovr_INT_MAX_reduction_factor_internal(tmp_vsimem):
+
+    ds = gdal.GetDriverByName("GTIFF").Create(tmp_vsimem / "out.tif", 20, 20)
+    ds.BuildOverviews("NEAR", [(1 << 31) - 1])
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_tiff_ovr_INT_MAX_reduction_factor_external(tmp_vsimem):
+
+    gdal.GetDriverByName("GTIFF").Create(tmp_vsimem / "out.tif", 20, 20)
+    ds = gdal.Open(tmp_vsimem / "out.tif")
+    ds.BuildOverviews("NEAR", [(1 << 31) - 1])

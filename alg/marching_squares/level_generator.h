@@ -118,12 +118,22 @@ class FixedLevelRangeIterator
         return minLevel_;
     }
 
+    size_t levelsCount() const
+    {
+        return count_;
+    }
+
   private:
     const double *levels_;
     size_t count_;
     const double minLevel_;
     const double maxLevel_;
 };
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wweak-vtables"
+#endif
 
 struct TooManyLevelsException : public std::exception
 {
@@ -133,6 +143,10 @@ struct TooManyLevelsException : public std::exception
                "levels";
     }
 };
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 // Arbitrary threshold to avoid too much computation time and memory
 // consumption

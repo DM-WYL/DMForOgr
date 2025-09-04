@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  MapInfo driver testing.
@@ -2997,3 +2996,28 @@ def test_ogr_mitab_alter_field_defn_to_string(tmp_vsimem):
     assert fld_defn.GetWidth() == 254
     f = lyr.GetNextFeature()
     assert f["str_field"] == "1234"
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_mitab_read_dbf_with_delete_column():
+
+    with ogr.Open("data/mitab/tab_with_dbf_with_delete_column.tab") as ds:
+        lyr = ds.GetLayer(0)
+        assert lyr.GetLayerDefn().GetFieldCount() == 2
+        f = lyr.GetNextFeature()
+        assert f["id"] == 1
+        assert f["str"] == "foo"
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_mitab_creation_illegal_layer_name(tmp_vsimem):
+
+    ds = ogr.GetDriverByName("MapInfo File").CreateDataSource(tmp_vsimem / "out")
+    with pytest.raises(Exception, match="Illegal character"):
+        ds.CreateLayer("illegal/with/slash")

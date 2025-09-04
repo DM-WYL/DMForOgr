@@ -357,7 +357,7 @@ OGRErr OGRPGeoTableLayer::SetAttributeFilter(const char *pszQueryIn)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRPGeoTableLayer::TestCapability(const char *pszCap)
+int OGRPGeoTableLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))
@@ -407,11 +407,11 @@ GIntBig OGRPGeoTableLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /************************************************************************/
 
-OGRErr OGRPGeoTableLayer::GetExtent(OGREnvelope *psExtent,
-                                    CPL_UNUSED int bForce)
+OGRErr OGRPGeoTableLayer::IGetExtent(int /* iGeomField */,
+                                     OGREnvelope *psExtent, bool /* bForce */)
 {
     if (pszGeomColumn == nullptr)
     {

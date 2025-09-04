@@ -117,7 +117,7 @@ VSIPluginFilesystemHandler::~VSIPluginFilesystemHandler()
     delete m_cb;
 }
 
-VSIVirtualHandle *
+VSIVirtualHandleUniquePtr
 VSIPluginFilesystemHandler::Open(const char *pszFilename, const char *pszAccess,
                                  bool bSetError,
                                  CSLConstList /* papszOptions */)
@@ -134,16 +134,17 @@ VSIPluginFilesystemHandler::Open(const char *pszFilename, const char *pszAccess,
         }
         return nullptr;
     }
+    auto poPluginHandle = std::make_unique<VSIPluginHandle>(this, cbData);
     if (m_cb->nBufferSize == 0)
     {
-        return new VSIPluginHandle(this, cbData);
+        return VSIVirtualHandleUniquePtr(poPluginHandle.release());
     }
     else
     {
-        return VSICreateCachedFile(
-            new VSIPluginHandle(this, cbData), m_cb->nBufferSize,
+        return VSIVirtualHandleUniquePtr(VSICreateCachedFile(
+            poPluginHandle.release(), m_cb->nBufferSize,
             (m_cb->nCacheSize < m_cb->nBufferSize) ? m_cb->nBufferSize
-                                                   : m_cb->nCacheSize);
+                                                   : m_cb->nCacheSize));
     }
 }
 
@@ -452,7 +453,8 @@ int VSIPluginFilesystemHandler::Unlink(const char *pszFilename)
     return unlink(GetCallbackFilename(pszFilename));
 }
 
-int VSIPluginFilesystemHandler::Rename(const char *oldpath, const char *newpath)
+int VSIPluginFilesystemHandler::Rename(const char *oldpath, const char *newpath,
+                                       GDALProgressFunc, void *)
 {
     if (m_cb->rename == nullptr || !IsValidFilename(oldpath) ||
         !IsValidFilename(newpath))

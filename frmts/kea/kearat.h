@@ -1,5 +1,4 @@
 /*
- * $Id$
  *  kearat.h
  *
  *  Created by Pete Bunting on 01/08/2012.
@@ -49,9 +48,10 @@ class KEARasterAttributeTable : public GDALDefaultRasterAttributeTable
     virtual int GetValueAsInt(int iRow, int iField) const override;
     virtual double GetValueAsDouble(int iRow, int iField) const override;
 
-    virtual void SetValue(int iRow, int iField, const char *pszValue) override;
-    virtual void SetValue(int iRow, int iField, double dfValue) override;
-    virtual void SetValue(int iRow, int iField, int nValue) override;
+    virtual CPLErr SetValue(int iRow, int iField,
+                            const char *pszValue) override;
+    virtual CPLErr SetValue(int iRow, int iField, double dfValue) override;
+    virtual CPLErr SetValue(int iRow, int iField, int nValue) override;
 
     virtual CPLErr ValuesIO(GDALRWFlag eRWFlag, int iField, int iStartRow,
                             int iLength, double *pdfData) override;

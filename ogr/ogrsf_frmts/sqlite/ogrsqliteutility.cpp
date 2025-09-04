@@ -872,20 +872,20 @@ void OGRSQLite_gdal_get_pixel_value_common(const char *pszFunctionName,
     {
         const double X = sqlite3_value_double(argv[3]);
         const double Y = sqlite3_value_double(argv[4]);
-        double adfGeoTransform[6];
-        if (poDS->GetGeoTransform(adfGeoTransform) != CE_None)
+        GDALGeoTransform gt;
+        if (poDS->GetGeoTransform(gt) != CE_None)
         {
             sqlite3_result_null(pContext);
             return;
         }
-        double adfInvGT[6];
-        if (!GDALInvGeoTransform(adfGeoTransform, adfInvGT))
+        GDALGeoTransform invGT;
+        if (!gt.GetInverse(invGT))
         {
             sqlite3_result_null(pContext);
             return;
         }
-        x = adfInvGT[0] + X * adfInvGT[1] + Y * adfInvGT[2];
-        y = adfInvGT[3] + X * adfInvGT[4] + Y * adfInvGT[5];
+        x = invGT[0] + X * invGT[1] + Y * invGT[2];
+        y = invGT[3] + X * invGT[4] + Y * invGT[5];
     }
     else if (EQUAL(pszCoordType, "pixel"))
     {
@@ -956,4 +956,108 @@ void OGRSQLite_gdal_get_pixel_value_common(const char *pszFunctionName,
         }
         return sqlite3_result_double(pContext, dfValue);
     }
+}
+
+#if defined(DEBUG) || defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION) ||     \
+    defined(ALLOW_FORMAT_DUMPS)
+
+/************************************************************************/
+/*                          SQLCheckLineIsSafe()                        */
+/************************************************************************/
+
+bool SQLCheckLineIsSafe(const char *pszLine)
+{
+    CPLString osLine;
+    // Strip identifiers and string literals from line
+    char chStringEnd = 0;
+    for (size_t i = 0; pszLine[i]; ++i)
+    {
+        if (chStringEnd)
+        {
+            if (pszLine[i] == chStringEnd && pszLine[i + 1] == chStringEnd)
+                ++i;
+            else if (pszLine[i] == chStringEnd)
+            {
+                osLine += chStringEnd;
+                chStringEnd = 0;
+            }
+        }
+        else if (pszLine[i] == '\'' || pszLine[i] == '"')
+            chStringEnd = pszLine[i];
+        else
+            osLine += chStringEnd;
+    }
+    osLine.replaceAll("replace(", 'x');
+
+    // Reject a few words tat might have security implications
+    // Basically we just want to allow CREATE TABLE and INSERT INTO
+    if (osLine.ifind("ATTACH") != std::string::npos ||
+        osLine.ifind("DETACH") != std::string::npos ||
+        osLine.ifind("PRAGMA") != std::string::npos ||
+        osLine.ifind("SELECT") != std::string::npos ||
+        osLine.ifind("UPDATE") != std::string::npos ||
+        osLine.ifind("REPLACE") != std::string::npos ||
+        osLine.ifind("DELETE") != std::string::npos ||
+        osLine.ifind("DROP") != std::string::npos ||
+        osLine.ifind("ALTER") != std::string::npos ||
+        osLine.ifind("VIRTUAL") != std::string::npos)
+    {
+        bool bOK = false;
+        // Accept creation of spatial index
+        if (STARTS_WITH_CI(pszLine, "CREATE VIRTUAL TABLE "))
+        {
+            const char *pszStr = pszLine + strlen("CREATE VIRTUAL TABLE ");
+            if (*pszStr == '"')
+                pszStr++;
+            while ((*pszStr >= 'a' && *pszStr <= 'z') ||
+                   (*pszStr >= 'A' && *pszStr <= 'Z') || *pszStr == '_')
+            {
+                pszStr++;
+            }
+            if (*pszStr == '"')
+                pszStr++;
+            if (EQUAL(pszStr, " USING rtree(id, minx, maxx, miny, maxy);"))
+            {
+                bOK = true;
+            }
+        }
+        // Accept INSERT INTO rtree_poly_geom SELECT fid, ST_MinX(geom),
+        // ST_MaxX(geom), ST_MinY(geom), ST_MaxY(geom) FROM poly;
+        else if (STARTS_WITH_CI(pszLine, "INSERT INTO rtree_") &&
+                 CPLString(pszLine).ifind("SELECT") != std::string::npos)
+        {
+            const CPLStringList aosTokens(
+                CSLTokenizeString2(pszLine, " (),,", 0));
+            if (aosTokens.size() == 15 && EQUAL(aosTokens[3], "SELECT") &&
+                EQUAL(aosTokens[5], "ST_MinX") &&
+                EQUAL(aosTokens[7], "ST_MaxX") &&
+                EQUAL(aosTokens[9], "ST_MinY") &&
+                EQUAL(aosTokens[11], "ST_MaxY") && EQUAL(aosTokens[13], "FROM"))
+            {
+                bOK = true;
+            }
+        }
+
+        if (!bOK)
+        {
+            CPLError(CE_Failure, CPLE_NotSupported, "Rejected statement: %s",
+                     pszLine);
+            return false;
+        }
+    }
+    return true;
+}
+
+#endif
+
+int SQLPrepareWithError(sqlite3 *db, const char *sql, int nByte,
+                        sqlite3_stmt **ppStmt, const char **pzTail)
+{
+    int ret = sqlite3_prepare_v2(db, sql, nByte, ppStmt, pzTail);
+    if (ret != SQLITE_OK)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Failed to prepare SQL %s: %s",
+                 sql, sqlite3_errmsg(db));
+    }
+    return ret;
 }

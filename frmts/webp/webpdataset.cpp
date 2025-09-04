@@ -11,6 +11,7 @@
  ****************************************************************************/
 
 #include "cpl_string.h"
+#include "cpl_vsi_virtual.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
 
@@ -38,6 +39,8 @@ class WEBPDataset final : public GDALPamDataset
     CPLErr Uncompress();
 
     int bHasReadXMPMetadata;
+
+    CPL_DISALLOW_COPY_ASSIGN(WEBPDataset)
 
   public:
     WEBPDataset();
@@ -108,7 +111,7 @@ WEBPRasterBand::WEBPRasterBand(WEBPDataset *poDSIn, int)
 CPLErr WEBPRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff, int nBlockYOff,
                                   void *pImage)
 {
-    WEBPDataset *poGDS = reinterpret_cast<WEBPDataset *>(poDS);
+    WEBPDataset *poGDS = cpl::down_cast<WEBPDataset *>(poDS);
 
     if (poGDS->Uncompress() != CE_None)
         return CE_Failure;
@@ -339,9 +342,8 @@ CPLErr WEBPDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     if ((eRWFlag == GF_Read) && (nBandCount == nBands) && (nXOff == 0) &&
         (nYOff == 0) && (nXSize == nBufXSize) && (nXSize == nRasterXSize) &&
         (nYSize == nBufYSize) && (nYSize == nRasterYSize) &&
-        (eBufType == GDT_Byte) && (pData != nullptr) && (panBandMap[0] == 1) &&
-        (panBandMap[1] == 2) && (panBandMap[2] == 3) &&
-        (nBands == 3 || panBandMap[3] == 4))
+        (eBufType == GDT_Byte) && (pData != nullptr) &&
+        IsAllBands(nBandCount, panBandMap))
     {
         if (Uncompress() != CE_None)
             return CE_Failure;
@@ -535,7 +537,9 @@ GDALPamDataset *WEBPDataset::OpenPAM(GDALOpenInfo *poOpenInfo)
         config.input.format == 2 ? "LOSSLESS" : "LOSSY", "IMAGE_STRUCTURE");
 #endif
 
-    if (config.input.has_alpha)
+    if (config.input.has_alpha ||
+        CPLTestBool(CSLFetchNameValueDef(poOpenInfo->papszOpenOptions,
+                                         "FORCE_4BANDS", "NO")))
         nBands = 4;
 
     WebPFreeDecBuffer(&config.output);
@@ -547,9 +551,7 @@ GDALPamDataset *WEBPDataset::OpenPAM(GDALOpenInfo *poOpenInfo)
 
     if (poOpenInfo->eAccess == GA_Update)
     {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The WEBP driver does not support update access to existing"
-                 " datasets.\n");
+        ReportUpdateNotSupportedByDriver("WEBP");
         return nullptr;
     }
 
@@ -695,7 +697,14 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
 
             if (!abyData.empty())
             {
-                VSILFILE *fpImage = VSIFOpenL(pszFilename, "wb");
+                auto fpImage(
+                    CPLTestBool(CSLFetchNameValueDef(
+                        papszOptions, "@CREATE_ONLY_VISIBLE_AT_CLOSE_TIME",
+                        "NO"))
+                        ? VSIFileManager::GetHandler(pszFilename)
+                              ->CreateOnlyVisibleAtCloseTime(pszFilename, true,
+                                                             nullptr)
+                        : VSIFilesystemHandler::OpenStatic(pszFilename, "wb"));
                 if (fpImage == nullptr)
                 {
                     CPLError(CE_Failure, CPLE_OpenFailed,
@@ -703,18 +712,20 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
 
                     return nullptr;
                 }
-                if (VSIFWriteL(abyData.data(), 1, abyData.size(), fpImage) !=
+                if (fpImage->Write(abyData.data(), 1, abyData.size()) !=
                     abyData.size())
                 {
                     CPLError(CE_Failure, CPLE_FileIO,
                              "Failure writing data: %s", VSIStrerror(errno));
-                    VSIFCloseL(fpImage);
+                    fpImage->CancelCreation();
                     return nullptr;
                 }
-                if (VSIFCloseL(fpImage) != 0)
+
+                if (fpImage->Close() != 0)
                 {
                     CPLError(CE_Failure, CPLE_FileIO,
-                             "Failure writing data: %s", VSIStrerror(errno));
+                             "Error at file closing of '%s': %s", pszFilename,
+                             VSIStrerror(errno));
                     return nullptr;
                 }
 
@@ -909,7 +920,7 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
     /*      Allocate memory                                                 */
     /* -------------------------------------------------------------------- */
     GByte *pabyBuffer =
-        reinterpret_cast<GByte *>(VSI_MALLOC3_VERBOSE(nBands, nXSize, nYSize));
+        static_cast<GByte *>(VSI_MALLOC3_VERBOSE(nBands, nXSize, nYSize));
     if (pabyBuffer == nullptr)
     {
         return nullptr;
@@ -918,7 +929,12 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
     /* -------------------------------------------------------------------- */
     /*      Create the dataset.                                             */
     /* -------------------------------------------------------------------- */
-    VSILFILE *fpImage = VSIFOpenL(pszFilename, "wb");
+    auto fpImage(
+        CPLTestBool(CSLFetchNameValueDef(
+            papszOptions, "@CREATE_ONLY_VISIBLE_AT_CLOSE_TIME", "NO"))
+            ? VSIFileManager::GetHandler(pszFilename)
+                  ->CreateOnlyVisibleAtCloseTime(pszFilename, true, nullptr)
+            : VSIFilesystemHandler::OpenStatic(pszFilename, "wb"));
     if (fpImage == nullptr)
     {
         CPLError(CE_Failure, CPLE_OpenFailed,
@@ -928,7 +944,7 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
     }
 
     WebPUserData sUserData;
-    sUserData.fp = fpImage;
+    sUserData.fp = fpImage.get();
     sUserData.pfnProgress = pfnProgress ? pfnProgress : GDALDummyProgress;
     sUserData.pProgressData = pProgressData;
 
@@ -947,7 +963,7 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
     {
         CPLError(CE_Failure, CPLE_AppDefined, "WebPPictureAlloc() failed");
         VSIFree(pabyBuffer);
-        VSIFCloseL(fpImage);
+        fpImage->CancelCreation();
         return nullptr;
     }
 
@@ -980,6 +996,9 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
         CPLError(CE_Failure, CPLE_AppDefined, "WebPPictureImportRGB() failed");
         eErr = CE_Failure;
     }
+
+    if (pfnProgress)
+        pfnProgress(0.5, "", pProgressData);
 
     if (eErr == CE_None && !WebPEncode(&sConfig, &sPicture))
     {
@@ -1040,7 +1059,21 @@ GDALDataset *WEBPDataset::CreateCopy(const char *pszFilename,
 
     WebPPictureFree(&sPicture);
 
-    VSIFCloseL(fpImage);
+    if (eErr == CE_None)
+    {
+        if (fpImage->Close() != 0)
+        {
+            CPLError(CE_Failure, CPLE_FileIO,
+                     "Error at file closing of '%s': %s", pszFilename,
+                     VSIStrerror(errno));
+            eErr = CE_Failure;
+        }
+    }
+    else
+    {
+        fpImage->CancelCreation();
+        fpImage.reset();
+    }
 
     if (pfnProgress)
         pfnProgress(1.0, "", pProgressData);

@@ -240,7 +240,7 @@ int OGRGPSBabelDataSource::Open(const char *pszDatasourceName,
     const char *pszOptionUseTempFile =
         CPLGetConfigOption("USE_TEMPFILE", nullptr);
     if (pszOptionUseTempFile && CPLTestBool(pszOptionUseTempFile))
-        osTmpFileName = CPLGenerateTempFilename(nullptr);
+        osTmpFileName = CPLGenerateTempFilenameSafe(nullptr);
     else
         osTmpFileName = VSIMemGenerateHiddenFilename("gpsbabel");
 
@@ -366,7 +366,7 @@ int OGRGPSBabelDataSource::Open(const char *pszDatasourceName,
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRGPSBabelDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRGPSBabelDataSource::GetLayer(int iLayer) const
 
 {
     if (iLayer < 0 || iLayer >= nLayers)

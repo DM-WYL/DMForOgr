@@ -284,7 +284,7 @@ class USGSDEMDataset final : public GDALPamDataset
     int nDataStartOffset;
     GDALDataType eNaturalDataFormat;
 
-    double adfGeoTransform[6];
+    GDALGeoTransform m_gt{};
     OGRSpatialReference m_oSRS{};
 
     double fVRes;
@@ -301,7 +301,7 @@ class USGSDEMDataset final : public GDALPamDataset
 
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
-    CPLErr GetGeoTransform(double *padfTransform) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 };
 
@@ -348,7 +348,7 @@ CPLErr USGSDEMRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff,
 
 {
     /* int bad = FALSE; */
-    USGSDEMDataset *poGDS = reinterpret_cast<USGSDEMDataset *>(poDS);
+    USGSDEMDataset *poGDS = cpl::down_cast<USGSDEMDataset *>(poDS);
 
     /* -------------------------------------------------------------------- */
     /*      Initialize image buffer to nodata value.                        */
@@ -362,8 +362,7 @@ CPLErr USGSDEMRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff,
     /* -------------------------------------------------------------------- */
     CPL_IGNORE_RET_VAL(VSIFSeekL(poGDS->fp, poGDS->nDataStartOffset, 0));
 
-    double dfYMin = poGDS->adfGeoTransform[3] +
-                    (GetYSize() - 0.5) * poGDS->adfGeoTransform[5];
+    double dfYMin = poGDS->m_gt[3] + (GetYSize() - 0.5) * poGDS->m_gt[5];
 
     /* -------------------------------------------------------------------- */
     /*      Read all the profiles into the image buffer.                    */
@@ -371,7 +370,7 @@ CPLErr USGSDEMRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff,
 
     Buffer sBuffer;
     sBuffer.max_size = 32768;
-    sBuffer.buffer = reinterpret_cast<char *>(CPLMalloc(sBuffer.max_size + 1));
+    sBuffer.buffer = static_cast<char *>(CPLMalloc(sBuffer.max_size + 1));
     sBuffer.fp = poGDS->fp;
     sBuffer.buffer_size = 0;
     sBuffer.cur_index = 0;
@@ -436,7 +435,7 @@ CPLErr USGSDEMRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff,
         if (poGDS->m_oSRS.IsGeographic())
             dyStart = dyStart / 3600.0;
 
-        double dygap = (dfYMin - dyStart) / poGDS->adfGeoTransform[5] + 0.5;
+        double dygap = (dfYMin - dyStart) / poGDS->m_gt[5] + 0.5;
         if (dygap <= INT_MIN || dygap >= INT_MAX || !std::isfinite(dygap))
         {
             CPLFree(sBuffer.buffer);
@@ -533,7 +532,7 @@ double USGSDEMRasterBand::GetNoDataValue(int *pbSuccess)
 /************************************************************************/
 const char *USGSDEMRasterBand::GetUnitType()
 {
-    USGSDEMDataset *poGDS = reinterpret_cast<USGSDEMDataset *>(poDS);
+    USGSDEMDataset *poGDS = cpl::down_cast<USGSDEMDataset *>(poDS);
 
     return poGDS->pszUnits;
 }
@@ -553,7 +552,6 @@ USGSDEMDataset::USGSDEMDataset()
       pszUnits(nullptr), fp(nullptr)
 {
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-    memset(adfGeoTransform, 0, sizeof(adfGeoTransform));
 }
 
 /************************************************************************/
@@ -806,12 +804,12 @@ int USGSDEMDataset::LoadFromFile(VSILFILE *InDem)
             static_cast<int>((extent_max.y - extent_min.y) / dydelta + 1.5);
         nRasterXSize = nProfiles;
 
-        adfGeoTransform[0] = dxStart - dxdelta / 2.0;
-        adfGeoTransform[1] = dxdelta;
-        adfGeoTransform[2] = 0.0;
-        adfGeoTransform[3] = extent_max.y + dydelta / 2.0;
-        adfGeoTransform[4] = 0.0;
-        adfGeoTransform[5] = -dydelta;
+        m_gt[0] = dxStart - dxdelta / 2.0;
+        m_gt[1] = dxdelta;
+        m_gt[2] = 0.0;
+        m_gt[3] = extent_max.y + dydelta / 2.0;
+        m_gt[4] = 0.0;
+        m_gt[5] = -dydelta;
     }
     /* -------------------------------------------------------------------- */
     /*      Geographic -- use corners directly.                             */
@@ -823,12 +821,12 @@ int USGSDEMDataset::LoadFromFile(VSILFILE *InDem)
         nRasterXSize = nProfiles;
 
         // Translate extents from arc-seconds to decimal degrees.
-        adfGeoTransform[0] = (extent_min.x - dxdelta / 2.0) / 3600.0;
-        adfGeoTransform[1] = dxdelta / 3600.0;
-        adfGeoTransform[2] = 0.0;
-        adfGeoTransform[3] = (extent_max.y + dydelta / 2.0) / 3600.0;
-        adfGeoTransform[4] = 0.0;
-        adfGeoTransform[5] = (-dydelta) / 3600.0;
+        m_gt[0] = (extent_min.x - dxdelta / 2.0) / 3600.0;
+        m_gt[1] = dxdelta / 3600.0;
+        m_gt[2] = 0.0;
+        m_gt[3] = (extent_max.y + dydelta / 2.0) / 3600.0;
+        m_gt[4] = 0.0;
+        m_gt[5] = (-dydelta) / 3600.0;
     }
 
     // IReadBlock() not ready for more than INT_MAX pixels, and that
@@ -846,10 +844,10 @@ int USGSDEMDataset::LoadFromFile(VSILFILE *InDem)
 /*                          GetGeoTransform()                           */
 /************************************************************************/
 
-CPLErr USGSDEMDataset::GetGeoTransform(double *padfTransform)
+CPLErr USGSDEMDataset::GetGeoTransform(GDALGeoTransform &gt) const
 
 {
-    memcpy(padfTransform, adfGeoTransform, sizeof(double) * 6);
+    gt = m_gt;
     return CE_None;
 }
 
@@ -920,9 +918,7 @@ GDALDataset *USGSDEMDataset::Open(GDALOpenInfo *poOpenInfo)
     if (poOpenInfo->eAccess == GA_Update)
     {
         delete poDS;
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "The USGSDEM driver does not support update access to existing"
-                 " datasets.\n");
+        ReportUpdateNotSupportedByDriver("USGSDEM");
         return nullptr;
     }
 
@@ -966,47 +962,10 @@ void GDALRegister_USGSDEM()
                               "USGS Optional ASCII DEM (and CDED)");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC,
                               "drivers/raster/usgsdem.html");
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES, "Int16");
-    poDriver->SetMetadataItem(
-        GDAL_DMD_CREATIONOPTIONLIST,
-        "<CreationOptionList>"
-        "   <Option name='PRODUCT' type='string-select' description='Specific "
-        "Product Type'>"
-        "       <Value>DEFAULT</Value>"
-        "       <Value>CDED50K</Value>"
-        "   </Option>"
-        "   <Option name='TOPLEFT' type='string' description='Top left product "
-        "corner (i.e. 117d15w,52d30n'/>"
-        "   <Option name='RESAMPLE' type='string-select' "
-        "description='Resampling kernel to use if resampled.'>"
-        "       <Value>Nearest</Value>"
-        "       <Value>Bilinear</Value>"
-        "       <Value>Cubic</Value>"
-        "       <Value>CubicSpline</Value>"
-        "   </Option>"
-        "   <Option name='TEMPLATE' type='string' description='File to default "
-        "metadata from.'/>"
-        "   <Option name='DEMLevelCode' type='int' description='DEM Level (1, "
-        "2 or 3 if set)'/>"
-        "   <Option name='DataSpecVersion' type='int' description='Data and "
-        "Specification version/revision (eg. 1020)'/>"
-        "   <Option name='PRODUCER' type='string' description='Producer Agency "
-        "(up to 60 characters)'/>"
-        "   <Option name='OriginCode' type='string' description='Origin code "
-        "(up to 4 characters, YT for Yukon)'/>"
-        "   <Option name='ProcessCode' type='string' description='Processing "
-        "Code (8=ANUDEM, 9=FME, A=TopoGrid)'/>"
-        "   <Option name='ZRESOLUTION' type='float' description='Scaling "
-        "factor for elevation values'/>"
-        "   <Option name='NTS' type='string' description='NTS Mapsheet name, "
-        "used to derive TOPLEFT.'/>"
-        "   <Option name='INTERNALNAME' type='string' description='Dataset "
-        "name written into file header.'/>"
-        "</CreationOptionList>");
+
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
 
     poDriver->pfnOpen = USGSDEMDataset::Open;
-    poDriver->pfnCreateCopy = USGSDEMCreateCopy;
     poDriver->pfnIdentify = USGSDEMDataset::Identify;
 
     GetGDALDriverManager()->RegisterDriver(poDriver);

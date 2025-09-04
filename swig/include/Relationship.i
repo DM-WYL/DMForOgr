@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Name:     Relationship.i
  * Project:  GDAL Python Interface
@@ -20,22 +19,6 @@
 #ifndef SWIGCSHARP
 typedef int GDALRelationshipCardinality;
 typedef int GDALRelationshipType;
-#else
-%rename (RelationshipCardinality) GDALRelationshipCardinality;
-typedef enum {
-    /*! One-to-one */ GRC_ONE_TO_ONE,
-    /*! One-to-many */ GRC_ONE_TO_MANY,
-    /*! Many-to-one */ GRC_MANY_TO_ONE,
-    /*! Many-to-many */ GRC_MANY_TO_MANY,
-} GDALRelationshipCardinality;
-
-%rename (RelationshipType) GDALRelationshipType;
-typedef enum {
-    /*! Composite relationship */ GRT_COMPOSITE,
-    /*! Association relationship */ GRT_ASSOCIATION,
-    /*! Aggregation relationship */ GRT_AGGREGATION
-} GDALRelationshipType;
-
 #endif /* CSHARP */
 
 %rename (Relationship) GDALRelationshipShadow;
@@ -136,9 +119,15 @@ public:
       }
     %clear char**pList;
 
+    #ifdef SWIGCSHARP
+    GDALRelationshipType GetRelationshipType() {
+        return GDALRelationshipGetType( self );
+    }
+    #else
     GDALRelationshipType GetType() {
         return GDALRelationshipGetType( self );
     }
+    #endif
 
     void SetType( GDALRelationshipType type ) {
       return GDALRelationshipSetType( self, type );

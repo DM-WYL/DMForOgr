@@ -16,6 +16,7 @@
 #include "gdal_priv.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstring>
 #include <utility>
@@ -116,6 +117,8 @@ static GDALDataType GetWorkDataType(GDALDataType eDataType)
             eWrkDT = GDT_Int32;
             break;
 
+        case GDT_Float16:
+        case GDT_CFloat16:
         case GDT_Float32:
         case GDT_CFloat32:
             eWrkDT = GDT_Float32;
@@ -155,6 +158,11 @@ bool GDALNoDataMaskBand::IsNoDataInRange(double dfNoDataValue,
             return GDALIsValueInRange<GByte>(dfNoDataValue);
         }
 
+        case GDT_Int8:
+        {
+            return GDALIsValueInRange<signed char>(dfNoDataValue);
+        }
+
         case GDT_Int16:
         {
             return GDALIsValueInRange<GInt16>(dfNoDataValue);
@@ -184,6 +192,12 @@ bool GDALNoDataMaskBand::IsNoDataInRange(double dfNoDataValue,
             return GDALIsValueInRange<int64_t>(dfNoDataValue);
         }
 
+        case GDT_Float16:
+        {
+            return std::isnan(dfNoDataValue) || std::isinf(dfNoDataValue) ||
+                   GDALIsValueInRange<GFloat16>(dfNoDataValue);
+        }
+
         case GDT_Float32:
         {
             return std::isnan(dfNoDataValue) || std::isinf(dfNoDataValue) ||
@@ -195,10 +209,18 @@ bool GDALNoDataMaskBand::IsNoDataInRange(double dfNoDataValue,
             return true;
         }
 
-        default:
-            CPLAssert(false);
-            return false;
+        case GDT_CFloat16:
+        case GDT_CFloat32:
+        case GDT_CFloat64:
+        case GDT_CInt16:
+        case GDT_CInt32:
+        case GDT_Unknown:
+        case GDT_TypeCount:
+            break;
     }
+
+    CPLAssert(false);
+    return false;
 }
 
 /************************************************************************/
@@ -260,12 +282,7 @@ static void SetZeroOr255(GByte *pabyDest, const T *panSrc, int nBufXSize,
                          int nBufYSize, GSpacing nPixelSpace,
                          GSpacing nLineSpace, T nNoData)
 {
-    if (nPixelSpace == 1 && nLineSpace == nBufXSize)
-    {
-        const size_t nBufSize = static_cast<size_t>(nBufXSize) * nBufYSize;
-        SetZeroOr255(pabyDest, panSrc, nBufSize, nNoData);
-    }
-    else if (nPixelSpace == 1)
+    if (nPixelSpace == 1)
     {
         for (int iY = 0; iY < nBufYSize; iY++)
         {
@@ -311,7 +328,8 @@ CPLErr GDALNoDataMaskBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     // Optimization in common use case (#4488).
     // This avoids triggering the block cache on this band, which helps
     // reducing the global block cache consumption.
-    if (eBufType == GDT_Byte && eWrkDT == GDT_Byte)
+    if (eBufType == GDT_Byte && eWrkDT == GDT_Byte && nPixelSpace == 1 &&
+        nLineSpace >= nBufXSize)
     {
         const CPLErr eErr = m_poParent->RasterIO(
             GF_Read, nXOff, nYOff, nXSize, nYSize, pData, nBufXSize, nBufYSize,
@@ -322,15 +340,19 @@ CPLErr GDALNoDataMaskBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
         GByte *pabyData = static_cast<GByte *>(pData);
         const GByte byNoData = static_cast<GByte>(m_dfNoDataValue);
 
-        if (nPixelSpace == 1 && nLineSpace == nBufXSize)
+        if (nLineSpace == nBufXSize)
         {
             const size_t nBufSize = static_cast<size_t>(nBufXSize) * nBufYSize;
             SetZeroOr255(pabyData, nBufSize, byNoData);
         }
         else
         {
-            SetZeroOr255(pabyData, pabyData, nBufXSize, nBufYSize, nPixelSpace,
-                         nLineSpace, byNoData);
+            assert(nLineSpace > nBufXSize);
+            for (int iY = 0; iY < nBufYSize; iY++)
+            {
+                SetZeroOr255(pabyData, nBufXSize, byNoData);
+                pabyData += nLineSpace;
+            }
         }
         return CE_None;
     }
@@ -413,6 +435,15 @@ CPLErr GDALNoDataMaskBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
          */
         switch (eWrkDT)
         {
+            case GDT_Byte:
+            {
+                const auto nNoData = static_cast<GByte>(m_dfNoDataValue);
+                const auto *panSrc = static_cast<const GByte *>(pTemp);
+                SetZeroOr255(pabyDest, panSrc, nBufXSize, nBufYSize,
+                             nPixelSpace, nLineSpace, nNoData);
+            }
+            break;
+
             case GDT_Int16:
             {
                 const auto nNoData = static_cast<int16_t>(m_dfNoDataValue);
@@ -539,13 +570,27 @@ CPLErr GDALNoDataMaskBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 
     for (int iY = 0; iY < nBufYSize; iY++)
     {
-        GDALCopyWords(
+        GDALCopyWords64(
             static_cast<GByte *>(pTemp) + static_cast<size_t>(iY) * nBufXSize,
             GDT_Byte, 1, static_cast<GByte *>(pData) + iY * nLineSpace,
             eBufType, static_cast<int>(nPixelSpace), nBufXSize);
     }
     VSIFree(pTemp);
     return CE_None;
+}
+
+/************************************************************************/
+/*                   EmitErrorMessageIfWriteNotSupported()              */
+/************************************************************************/
+
+bool GDALNoDataMaskBand::EmitErrorMessageIfWriteNotSupported(
+    const char *pszCaller) const
+{
+    ReportError(CE_Failure, CPLE_NoWriteAccess,
+                "%s: attempt to write to a nodata implicit mask band.",
+                pszCaller);
+
+    return true;
 }
 
 //! @endcond

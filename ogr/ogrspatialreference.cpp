@@ -45,6 +45,8 @@
 #include "proj_experimental.h"
 #include "proj_constants.h"
 
+bool GDALThreadLocalDatasetCacheIsInDestruction();
+
 // Exists since 8.0.1
 #ifndef PROJ_AT_LEAST_VERSION
 #define PROJ_COMPUTE_VERSION(maj, min, patch)                                  \
@@ -72,10 +74,7 @@ struct OGRSpatialReference::Private
         Listener(const Listener &) = delete;
         Listener &operator=(const Listener &) = delete;
 
-        void notifyChange(OGR_SRSNode *) override
-        {
-            m_poObj->nodesChanged();
-        }
+        void notifyChange(OGR_SRSNode *) override;
     };
 
     OGRSpatialReference *m_poSelf = nullptr;
@@ -91,6 +90,7 @@ struct OGRSpatialReference::Private
     std::vector<std::string> m_wktImportWarnings{};
     std::vector<std::string> m_wktImportErrors{};
     CPLString m_osAreaName{};
+    CPLString m_celestialBodyName{};
 
     bool m_bIsThreadSafe = false;
     bool m_bNodesChanged = false;
@@ -195,6 +195,11 @@ struct OGRSpatialReference::Private
     }
 };
 
+void OGRSpatialReference::Private::Listener::notifyChange(OGR_SRSNode *)
+{
+    m_poObj->nodesChanged();
+}
+
 #define TAKE_OPTIONAL_LOCK()                                                   \
     auto lock = d->GetOptionalLockGuard();                                     \
     CPL_IGNORE_RET_VAL(lock)
@@ -233,7 +238,17 @@ OGRSpatialReference::Private::~Private()
     // In case we destroy the object not in the thread that created it,
     // we need to reassign the PROJ context. Having the context bundled inside
     // PJ* deeply sucks...
-    auto ctxt = getPROJContext();
+    PJ_CONTEXT *pj_context_to_destroy = nullptr;
+    PJ_CONTEXT *ctxt;
+    if (GDALThreadLocalDatasetCacheIsInDestruction())
+    {
+        pj_context_to_destroy = proj_context_create();
+        ctxt = pj_context_to_destroy;
+    }
+    else
+    {
+        ctxt = getPROJContext();
+    }
 
     proj_assign_context(m_pj_crs, ctxt);
     proj_destroy(m_pj_crs);
@@ -255,6 +270,7 @@ OGRSpatialReference::Private::~Private()
 
     delete m_poRootBackup;
     delete m_poRoot;
+    proj_context_destroy(pj_context_to_destroy);
 }
 
 void OGRSpatialReference::Private::clear()
@@ -1415,6 +1431,73 @@ const char *OSRGetName(OGRSpatialReferenceH hSRS)
 }
 
 /************************************************************************/
+/*                       GetCelestialBodyName()                         */
+/************************************************************************/
+
+/**
+ * \brief Return the name of the celestial body of this CRS.
+ *
+ * e.g. "Earth" for an Earth CRS
+ *
+ * The returned value is only short lived and should not be used after other
+ * calls to methods on this object.
+ *
+ * @since GDAL 3.12 and PROJ 8.1
+ */
+
+const char *OGRSpatialReference::GetCelestialBodyName() const
+{
+#if PROJ_AT_LEAST_VERSION(8, 1, 0)
+
+    TAKE_OPTIONAL_LOCK();
+
+    d->refreshProjObj();
+    if (!d->m_pj_crs)
+        return nullptr;
+    d->demoteFromBoundCRS();
+    const char *name =
+        proj_get_celestial_body_name(d->getPROJContext(), d->m_pj_crs);
+    if (name)
+    {
+        d->m_celestialBodyName = name;
+    }
+    d->undoDemoteFromBoundCRS();
+    return d->m_celestialBodyName.c_str();
+#else
+    if (std::fabs(GetSemiMajor(nullptr) - SRS_WGS84_SEMIMAJOR) <=
+        0.05 * SRS_WGS84_SEMIMAJOR)
+        return "Earth";
+    const char *pszAuthName = GetAuthorityName(nullptr);
+    if (pszAuthName && EQUAL(pszAuthName, "EPSG"))
+        return "Earth";
+    return nullptr;
+#endif
+}
+
+/************************************************************************/
+/*                       OSRGetCelestialBodyName()                      */
+/************************************************************************/
+
+/**
+ * \brief Return the name of the celestial body of this CRS.
+ *
+ * e.g. "Earth" for an Earth CRS
+ *
+ * The returned value is only short lived and should not be used after other
+ * calls to methods on this object.
+ *
+ * @since GDAL 3.12 and PROJ 8.1
+ */
+
+const char *OSRGetCelestialBodyName(OGRSpatialReferenceH hSRS)
+
+{
+    VALIDATE_POINTER1(hSRS, "GetCelestialBodyName", nullptr);
+
+    return ToPointer(hSRS)->GetCelestialBodyName();
+}
+
+/************************************************************************/
 /*                               Clone()                                */
 /************************************************************************/
 
@@ -1754,12 +1837,15 @@ OGRErr OGRSpatialReference::exportToWkt(char **ppszResult,
             d->getPROJContext(), d->m_pj_crs, true, true);
     }
 
-    std::vector<CPLErrorHandlerAccumulatorStruct> aoErrors;
-    CPLInstallErrorHandlerAccumulator(aoErrors);
-    const char *pszWKT = proj_as_wkt(ctxt, boundCRS ? boundCRS : d->m_pj_crs,
-                                     wktFormat, aosOptions.List());
-    CPLUninstallErrorHandlerAccumulator();
-    for (const auto &oError : aoErrors)
+    CPLErrorAccumulator oErrorAccumulator;
+    const char *pszWKT;
+    {
+        auto oAccumulator = oErrorAccumulator.InstallForCurrentScope();
+        CPL_IGNORE_RET_VAL(oAccumulator);
+        pszWKT = proj_as_wkt(ctxt, boundCRS ? boundCRS : d->m_pj_crs, wktFormat,
+                             aosOptions.List());
+    }
+    for (const auto &oError : oErrorAccumulator.GetErrors())
     {
         if (pszFormat[0] == '\0' &&
             (oError.msg.find("Unsupported conversion method") !=
@@ -4168,6 +4254,34 @@ OGRErr OGRSpatialReference::SetFromUserInput(const char *pszDefinition,
         return SetFromUserInput("EPSG:25832+7837");
     }
 
+    // Used by  Japan's Fundamental Geospatial Data (FGD) GML
+    if (EQUAL(pszDefinition, "fguuid:jgd2001.bl"))
+        return importFromEPSG(4612);  // JGD2000 (slight difference in years)
+    else if (EQUAL(pszDefinition, "fguuid:jgd2011.bl"))
+        return importFromEPSG(6668);  // JGD2011
+    else if (EQUAL(pszDefinition, "fguuid:jgd2024.bl"))
+    {
+        // FIXME when EPSG attributes a CRS code
+        return importFromWkt(
+            "GEOGCRS[\"JGD2024\",\n"
+            "    DATUM[\"Japanese Geodetic Datum 2024\",\n"
+            "        ELLIPSOID[\"GRS 1980\",6378137,298.257222101,\n"
+            "            LENGTHUNIT[\"metre\",1]]],\n"
+            "    PRIMEM[\"Greenwich\",0,\n"
+            "        ANGLEUNIT[\"degree\",0.0174532925199433]],\n"
+            "    CS[ellipsoidal,2],\n"
+            "        AXIS[\"geodetic latitude (Lat)\",north,\n"
+            "            ORDER[1],\n"
+            "            ANGLEUNIT[\"degree\",0.0174532925199433]],\n"
+            "        AXIS[\"geodetic longitude (Lon)\",east,\n"
+            "            ORDER[2],\n"
+            "            ANGLEUNIT[\"degree\",0.0174532925199433]],\n"
+            "    USAGE[\n"
+            "        SCOPE[\"Horizontal component of 3D system.\"],\n"
+            "        AREA[\"Japan - onshore and offshore.\"],\n"
+            "        BBOX[17.09,122.38,46.05,157.65]]]");
+    }
+
     // Deal with IGNF:xxx, ESRI:xxx, etc from the PROJ database
     const char *pszDot = strrchr(pszDefinition, ':');
     if (pszDot)
@@ -4569,6 +4683,14 @@ OGRErr OGRSpatialReference::importFromURNPart(const char *pszAuthority,
 OGRErr OGRSpatialReference::importFromURN(const char *pszURN)
 
 {
+    constexpr const char *EPSG_URN_CRS_PREFIX = "urn:ogc:def:crs:EPSG::";
+    if (STARTS_WITH(pszURN, EPSG_URN_CRS_PREFIX) &&
+        CPLGetValueType(pszURN + strlen(EPSG_URN_CRS_PREFIX)) ==
+            CPL_VALUE_INTEGER)
+    {
+        return importFromEPSG(atoi(pszURN + strlen(EPSG_URN_CRS_PREFIX)));
+    }
+
     TAKE_OPTIONAL_LOCK();
 
 #if PROJ_AT_LEAST_VERSION(8, 1, 0)
@@ -9516,7 +9638,7 @@ int OSRIsDynamic(OGRSpatialReferenceH hSRS)
  * \brief Check if a CRS has at least an associated point motion operation.
  *
  * Some CRS are not formally declared as dynamic, but may behave as such
- * in practice due to the prsence of point motion operation, to perform
+ * in practice due to the presence of point motion operation, to perform
  * coordinate epoch changes within the CRS. Typically NAD83(CSRS)v7
  *
  * @return true if the CRS has at least an associated point motion operation.
@@ -9552,7 +9674,7 @@ bool OGRSpatialReference::HasPointMotionOperation() const
  * \brief Check if a CRS has at least an associated point motion operation.
  *
  * Some CRS are not formally declared as dynamic, but may behave as such
- * in practice due to the prsence of point motion operation, to perform
+ * in practice due to the presence of point motion operation, to perform
  * coordinate epoch changes within the CRS. Typically NAD83(CSRS)v7
  *
  * This function is the same as OGRSpatialReference::HasPointMotionOperation().
@@ -11461,14 +11583,9 @@ OGRErr OGRSpatialReference::importFromProj4(const char *pszProj4)
     if (osProj4.find("+init=epsg:") != std::string::npos &&
         getenv("PROJ_USE_PROJ4_INIT_RULES") == nullptr)
     {
-        static bool bHasWarned = false;
-        if (!bHasWarned)
-        {
-            CPLError(CE_Warning, CPLE_AppDefined,
+        CPLErrorOnce(CE_Warning, CPLE_AppDefined,
                      "+init=epsg:XXXX syntax is deprecated. It might return "
                      "a CRS with a non-EPSG compliant axis order.");
-            bHasWarned = true;
-        }
     }
     proj_context_use_proj4_init_rules(d->getPROJContext(), true);
     d->setPjCRS(proj_create(d->getPROJContext(), osProj4.c_str()));
@@ -11563,15 +11680,10 @@ OGRErr OGRSpatialReference::exportToProj4(char **ppszProj4) const
     const char *pszUseETMERC = CPLGetConfigOption("OSR_USE_ETMERC", nullptr);
     if (pszUseETMERC && pszUseETMERC[0])
     {
-        static bool bHasWarned = false;
-        if (!bHasWarned)
-        {
-            CPLError(CE_Warning, CPLE_AppDefined,
+        CPLErrorOnce(CE_Warning, CPLE_AppDefined,
                      "OSR_USE_ETMERC is a legacy configuration option, which "
                      "now has only effect when set to NO (YES is the default). "
                      "Use OSR_USE_APPROX_TMERC=YES instead");
-            bHasWarned = true;
-        }
         bForceApproxTMerc = !CPLTestBool(pszUseETMERC);
     }
     else
@@ -11923,12 +12035,57 @@ OGRErr OGRSpatialReference::importFromEPSGA(int nCode)
 
     CPLString osCode;
     osCode.Printf("%d", nCode);
-    auto obj =
-        proj_create_from_database(d->getPROJContext(), "EPSG", osCode.c_str(),
-                                  PJ_CATEGORY_CRS, true, nullptr);
-    if (!obj)
+    PJ *obj;
+    constexpr int FIRST_NON_DEPRECATED_ESRI_CODE = 53001;
+    if (nCode < FIRST_NON_DEPRECATED_ESRI_CODE)
     {
-        return OGRERR_FAILURE;
+        obj = proj_create_from_database(d->getPROJContext(), "EPSG",
+                                        osCode.c_str(), PJ_CATEGORY_CRS, true,
+                                        nullptr);
+        if (!obj)
+        {
+            return OGRERR_FAILURE;
+        }
+    }
+    else
+    {
+        // Likely to be an ESRI CRS...
+        CPLErr eLastErrorType = CE_None;
+        CPLErrorNum eLastErrorNum = CPLE_None;
+        std::string osLastErrorMsg;
+        bool bIsESRI = false;
+        {
+            CPLErrorStateBackuper oBackuper(CPLQuietErrorHandler);
+            CPLErrorReset();
+            obj = proj_create_from_database(d->getPROJContext(), "EPSG",
+                                            osCode.c_str(), PJ_CATEGORY_CRS,
+                                            true, nullptr);
+            if (!obj)
+            {
+                eLastErrorType = CPLGetLastErrorType();
+                eLastErrorNum = CPLGetLastErrorNo();
+                osLastErrorMsg = CPLGetLastErrorMsg();
+                obj = proj_create_from_database(d->getPROJContext(), "ESRI",
+                                                osCode.c_str(), PJ_CATEGORY_CRS,
+                                                true, nullptr);
+                if (obj)
+                    bIsESRI = true;
+            }
+        }
+        if (!obj)
+        {
+            if (eLastErrorType != CE_None)
+                CPLError(eLastErrorType, eLastErrorNum, "%s",
+                         osLastErrorMsg.c_str());
+            return OGRERR_FAILURE;
+        }
+        if (bIsESRI)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "EPSG:%d is not a valid CRS code, but ESRI:%d is. "
+                     "Assuming ESRI:%d was meant",
+                     nCode, nCode, nCode);
+        }
     }
 
     if (bUseNonDeprecated && proj_is_deprecated(obj))
@@ -12822,6 +12979,17 @@ OSRGetCRSInfoListFromDatabase(const char *pszAuthName,
             projList[i]->projection_method_name
                 ? CPLStrdup(projList[i]->projection_method_name)
                 : nullptr;
+#if PROJ_AT_LEAST_VERSION(8, 1, 0)
+        res[i]->pszCelestialBodyName =
+            projList[i]->celestial_body_name
+                ? CPLStrdup(projList[i]->celestial_body_name)
+                : nullptr;
+#else
+        res[i]->pszCelestialBodyName =
+            res[i]->pszAuthName && EQUAL(res[i]->pszAuthName, "EPSG")
+                ? CPLStrdup("Earth")
+                : nullptr;
+#endif
     }
     res[nResultCount] = nullptr;
     proj_crs_info_list_destroy(projList);
@@ -12848,6 +13016,7 @@ void OSRDestroyCRSInfoList(OSRCRSInfo **list)
             CPLFree(list[i]->pszName);
             CPLFree(list[i]->pszAreaName);
             CPLFree(list[i]->pszProjectionMethod);
+            CPLFree(list[i]->pszCelestialBodyName);
             delete list[i];
         }
         delete[] list;

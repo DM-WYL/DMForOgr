@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test Geolocation warper.
@@ -15,6 +14,7 @@
 
 import array
 import random
+import struct
 
 import gdaltest
 import pytest
@@ -117,12 +117,13 @@ def test_geoloc_fill_line(use_temp_datasets):
     ds.SetMetadata(md, "GEOLOCATION")
     ds.GetRasterBand(1).Fill(1)
     with gdaltest.config_option("GDAL_GEOLOC_USE_TEMP_DATASETS", use_temp_datasets):
-        warped_ds = gdal.Warp("", ds, format="MEM")
+        warped_ds = gdal.Warp(
+            "",
+            ds,
+            format="MEM",
+        )
         assert warped_ds
-        assert warped_ds.GetRasterBand(1).Checksum() in (
-            22339,
-            22336,
-        )  # 22336 with Intel(R) oneAPI DPC++/C++ Compiler 2022.1.0
+        assert warped_ds.GetRasterBand(1).Checksum() == 20177
 
 
 ###############################################################################
@@ -603,3 +604,26 @@ def test_geoloc_warnings_inconsistent_size(
         else:
             assert gdal.GetLastErrorMsg() == ""
         assert tr
+
+
+###############################################################################
+# Test effect of normalizing longitude from geolocation arrays
+
+
+@pytest.mark.skipif(
+    not gdaltest.vrt_has_open_support(),
+    reason="VRT driver open missing",
+)
+def test_geoloc_normalize_longitude():
+    vrt = "../gcore/data/geolocation_arrays_lon180_lon360.vrt"
+    warped_ds = gdal.Warp(
+        "",
+        vrt,
+        format="MEM",
+        outputBounds=(-180, -90, 180, 90),
+        width=6,
+        height=3,
+        dstSRS="EPSG:4326",
+        transformerOptions=["GEOLOC_NORMALIZE_LONGITUDE_MINUS_180_PLUS_180=YES"],
+    )
+    assert struct.unpack("f", warped_ds.ReadRaster(2, 0, 1, 1)) == (12.0,)

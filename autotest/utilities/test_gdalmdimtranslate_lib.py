@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  test librarified gdalmdimtranslate
@@ -54,6 +53,22 @@ def test_gdalmdimtranslate_multidim_to_mem():
     ar = rg.OpenMDArray("time_increasing")
     assert ar
     assert ar.Read() == ["2010-01-01", "2011-01-01", "2012-01-01", "2013-01-01"]
+
+
+###############################################################################
+
+
+@pytest.mark.skipif(
+    not gdaltest.vrt_has_open_support(),
+    reason="VRT driver open missing",
+)
+def test_gdalmdimtranslate_multidim_to_unknown_format():
+
+    with pytest.raises(
+        Exception,
+        match="Cannot determine output driver for dataset name 'unknown.unknown'",
+    ):
+        gdal.MultiDimTranslate("unknown.unknown", "data/mdim.vrt")
 
 
 ###############################################################################

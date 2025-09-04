@@ -35,6 +35,9 @@
 #define TIFFCvtNativeToIEEEFloat(tif, n, fp)
 #define TIFFCvtNativeToIEEEDouble(tif, n, dp)
 #else
+/* If your machine does not support IEEE floating point then you will need to
+ * add support to tif_machdep.c to convert between the native format and
+ * IEEE format. */
 extern void TIFFCvtNativeToIEEEFloat(TIFF *tif, uint32_t n, float *fp);
 extern void TIFFCvtNativeToIEEEDouble(TIFF *tif, uint32_t n, double *dp);
 #endif
@@ -534,6 +537,7 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
         {
             _TIFFfreeExt(tif, tif->tif_rawdata);
             tif->tif_rawdata = NULL;
+            tif->tif_rawcp = NULL;
             tif->tif_rawcc = 0;
             tif->tif_rawdatasize = 0;
             tif->tif_rawdataoff = 0;
@@ -563,7 +567,7 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
         if (isimage)
         {
             /*-- Step 1: Process named tags for an image with FIELD bits
-             *           assocciated. --*/
+             *           associated. --*/
             if (TIFFFieldSet(tif, FIELD_IMAGEDIMENSIONS))
             {
                 if (!TIFFWriteDirectoryTagShortLong(tif, &ndir, dir,
@@ -875,7 +879,7 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
                     if ((o->field_bit >= FIELD_CODEC) &&
                         (TIFFFieldSet(tif, o->field_bit)))
                     {
-                        switch (o->set_field_type)
+                        switch (o->set_get_field_type)
                         {
                             case TIFF_SETGET_ASCII:
                             {
@@ -1016,7 +1020,8 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
                 case TIFF_RATIONAL:
                 {
                     /*-- Rational2Double: For Rationals evaluate
-                     * "set_field_type" to determine internal storage size. */
+                     * "set_get_field_type" to determine internal storage size.
+                     */
                     int tv_size;
                     tv_size = TIFFFieldSetGetSize(
                         tif->tif_dir.td_customValues[m].info);
@@ -1038,11 +1043,11 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
                          * tv_size==4 should be set as default. */
                         if (tv_size != 4)
                         {
-                            TIFFErrorExtR(tif,
-                                          "TIFFLib: _TIFFWriteDirectorySec()",
-                                          "Rational2Double: .set_field_type is "
-                                          "not 4 but %d",
-                                          tv_size);
+                            TIFFErrorExtR(
+                                tif, "TIFFLib: _TIFFWriteDirectorySec()",
+                                "Rational2Double: .set_get_field_type is "
+                                "not 4 but %d",
+                                tv_size);
                         }
                     }
                 }
@@ -1050,7 +1055,8 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
                 case TIFF_SRATIONAL:
                 {
                     /*-- Rational2Double: For Rationals evaluate
-                     * "set_field_type" to determine internal storage size. */
+                     * "set_get_field_type" to determine internal storage size.
+                     */
                     int tv_size;
                     tv_size = TIFFFieldSetGetSize(
                         tif->tif_dir.td_customValues[m].info);
@@ -1072,11 +1078,11 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
                          * tv_size==4 should be set as default. */
                         if (tv_size != 4)
                         {
-                            TIFFErrorExtR(tif,
-                                          "TIFFLib: _TIFFWriteDirectorySec()",
-                                          "Rational2Double: .set_field_type is "
-                                          "not 4 but %d",
-                                          tv_size);
+                            TIFFErrorExtR(
+                                tif, "TIFFLib: _TIFFWriteDirectorySec()",
+                                "Rational2Double: .set_get_field_type is "
+                                "not 4 but %d",
+                                tv_size);
                         }
                     }
                 }
@@ -1377,7 +1383,6 @@ static int TIFFWriteDirectorySec(TIFF *tif, int isimage, int imagedone,
         TIFFFreeDirectory(tif);
         tif->tif_flags &= ~TIFF_DIRTYDIRECT;
         tif->tif_flags &= ~TIFF_DIRTYSTRIP;
-        (*tif->tif_cleanup)(tif);
         /* Reset directory-related state for subsequent directories. */
         TIFFCreateDirectory(tif);
     }
@@ -2966,7 +2971,7 @@ static int TIFFWriteDirectoryTagCheckedFloatArray(TIFF *tif, uint32_t *ndir,
         EvaluateIFDdatasizeWrite(tif, count, 4, ndir);
         return 1;
     }
-    TIFFCvtNativeToIEEEFloat(tif, count, &value);
+    TIFFCvtNativeToIEEEFloat(tif, count, value);
     if (tif->tif_flags & TIFF_SWAB)
         TIFFSwabArrayOfFloat(value, count);
     return (TIFFWriteDirectoryTagData(tif, ndir, dir, tag, TIFF_FLOAT, count,
@@ -2985,7 +2990,7 @@ static int TIFFWriteDirectoryTagCheckedDoubleArray(TIFF *tif, uint32_t *ndir,
         EvaluateIFDdatasizeWrite(tif, count, 8, ndir);
         return 1;
     }
-    TIFFCvtNativeToIEEEDouble(tif, count, &value);
+    TIFFCvtNativeToIEEEDouble(tif, count, value);
     if (tif->tif_flags & TIFF_SWAB)
         TIFFSwabArrayOfDouble(value, count);
     return (TIFFWriteDirectoryTagData(tif, ndir, dir, tag, TIFF_DOUBLE, count,

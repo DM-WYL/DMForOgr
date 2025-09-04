@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  XLSX Translator
  * Purpose:  Definition of classes for OGR OpenOfficeSpreadsheet .xlsx driver.
@@ -17,7 +16,7 @@
 #include "ogrsf_frmts.h"
 
 #include "ogr_expat.h"
-#include "ogr_mem.h"
+#include "memdataset.h"
 
 #include <vector>
 #include <set>
@@ -70,17 +69,17 @@ class OGRXLSXLayer final : public OGRMemLayer
         bHasHeaderLine = bIn;
     }
 
-    const char *GetName() override
+    const char *GetName() const override
     {
         return OGRMemLayer::GetLayerDefn()->GetName();
     }
 
-    OGRwkbGeometryType GetGeomType() override
+    OGRwkbGeometryType GetGeomType() const override
     {
         return wkbNone;
     }
 
-    virtual OGRSpatialReference *GetSpatialRef() override
+    const OGRSpatialReference *GetSpatialRef() const override
     {
         return nullptr;
     }
@@ -115,9 +114,9 @@ class OGRXLSXLayer final : public OGRMemLayer
 
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
-        Init();
+        const_cast<OGRXLSXLayer *>(this)->Init();
         return OGRMemLayer::GetLayerDefn();
     }
 
@@ -150,12 +149,6 @@ class OGRXLSXLayer final : public OGRMemLayer
         Init();
         SetUpdated();
         return OGRMemLayer::AlterFieldDefn(iField, poNewFieldDefn, nFlagsIn);
-    }
-
-    int TestCapability(const char *pszCap) override
-    {
-        Init();
-        return OGRMemLayer::TestCapability(pszCap);
     }
 
     const std::string &GetCols() const
@@ -289,10 +282,10 @@ class OGRXLSXDataSource final : public GDALDataset
              VSILFILE *fpSharedStrings, VSILFILE *fpStyles, int bUpdate);
     int Create(const char *pszName, char **papszOptions);
 
-    virtual int GetLayerCount() override;
-    virtual OGRLayer *GetLayer(int) override;
+    int GetLayerCount() const override;
+    const OGRLayer *GetLayer(int) const override;
 
-    virtual int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     OGRLayer *ICreateLayer(const char *pszName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,

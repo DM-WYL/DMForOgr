@@ -38,6 +38,8 @@ struct GDALMultiDimTranslateOptions
     bool bStrict = false;
     void *pProgressData = nullptr;
     bool bUpdate = false;
+    bool bOverwrite = false;
+    bool bNoOverwrite = false;
 };
 
 /*************************************************************************/
@@ -84,7 +86,7 @@ GDALMultiDimTranslateAppOptionsGetParser(
         .action([psOptions](const std::string &s)
                 { psOptions->aosArrayOptions.AddString(s.c_str()); })
         .help(_("Option passed to GDALGroup::GetMDArrayNames() to filter "
-                "reported arrays."));
+                "arrays."));
 
     group.add_argument("-group")
         .metavar("<group_spec>")
@@ -120,6 +122,16 @@ GDALMultiDimTranslateAppOptionsGetParser(
         .flag()
         .store_into(psOptions->bStrict)
         .help(_("Turn warnings into failures."));
+
+    // Undocumented option used by gdal mdim convert
+    argParser->add_argument("--overwrite")
+        .store_into(psOptions->bOverwrite)
+        .hidden();
+
+    // Undocumented option used by gdal mdim convert
+    argParser->add_argument("--no-overwrite")
+        .store_into(psOptions->bNoOverwrite)
+        .hidden();
 
     if (psOptionsForBinary)
     {
@@ -528,7 +540,7 @@ GetDimensionDesc(DimensionRemapper &oDimRemapper,
             if (aosTokens.size() != 1 && aosTokens.size() != 2)
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
-                         "Invalid number of valus in subset specification.");
+                         "Invalid number of values in subset specification.");
                 return nullptr;
             }
 
@@ -786,7 +798,20 @@ static bool ParseArraySpec(const std::string &arraySpec, std::string &srcName,
                 CSLTokenizeString2(transposeExpr.c_str(), ",", 0));
             for (int i = 0; i < aosAxis.size(); ++i)
             {
-                anTransposedAxis.push_back(atoi(aosAxis[i]));
+                int iAxis = atoi(aosAxis[i]);
+                // check for non-integer characters
+                if (iAxis == 0)
+                {
+                    if (!EQUAL(aosAxis[i], "0"))
+                    {
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "Invalid value for axis in transpose: %s",
+                                 aosAxis[i]);
+                        return false;
+                    }
+                }
+
+                anTransposedAxis.push_back(iAxis);
             }
         }
         else if (STARTS_WITH(token.c_str(), "view="))
@@ -1163,9 +1188,9 @@ static bool TranslateArray(
             }
             else
             {
-                double adfGT[6];
-                if (poSrcDS->GetGeoTransform(adfGT) == CE_None &&
-                    adfGT[2] == 0.0 && adfGT[4] == 0.0)
+                GDALGeoTransform gt;
+                if (poSrcDS->GetGeoTransform(gt) == CE_None && gt[2] == 0.0 &&
+                    gt[4] == 0.0)
                 {
                     auto var = std::dynamic_pointer_cast<VRTMDArray>(
                         poDstGroup->CreateMDArray(
@@ -1175,13 +1200,10 @@ static bool TranslateArray(
                     {
                         const double dfStart =
                             srcIndexVar->GetName() == "X"
-                                ? adfGT[0] +
-                                      (range.m_nStartIdx + 0.5) * adfGT[1]
-                                : adfGT[3] +
-                                      (range.m_nStartIdx + 0.5) * adfGT[5];
+                                ? gt[0] + (range.m_nStartIdx + 0.5) * gt[1]
+                                : gt[3] + (range.m_nStartIdx + 0.5) * gt[5];
                         const double dfIncr =
-                            (srcIndexVar->GetName() == "X" ? adfGT[1]
-                                                           : adfGT[5]) *
+                            (srcIndexVar->GetName() == "X" ? gt[1] : gt[5]) *
                             range.m_nIncr;
                         std::unique_ptr<VRTMDArraySourceRegularlySpaced>
                             poSource(new VRTMDArraySourceRegularlySpaced(
@@ -1788,18 +1810,46 @@ GDALMultiDimTranslate(const char *pszDest, GDALDatasetH hDstDS, int nSrcCount,
         pszDest = GDALGetDescription(hDstDS);
 #endif
 
+    if (psOptions && psOptions->bOverwrite && !EQUAL(pszDest, ""))
+    {
+        VSIRmdirRecursive(pszDest);
+    }
+    else if (psOptions && psOptions->bNoOverwrite && !EQUAL(pszDest, ""))
+    {
+        VSIStatBufL sStat;
+        if (VSIStatL(pszDest, &sStat) == 0)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "File '%s' already exists. Specify the --overwrite "
+                     "option to overwrite it.",
+                     pszDest);
+            return nullptr;
+        }
+        else if (std::unique_ptr<GDALDataset>(GDALDataset::Open(pszDest)))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Dataset '%s' already exists. Specify the --overwrite "
+                     "option to overwrite it.",
+                     pszDest);
+            return nullptr;
+        }
+    }
+
 #ifdef this_is_dead_code_for_now
     if (hDstDS == nullptr)
 #endif
     {
         if (osFormat.empty())
         {
-            if (EQUAL(CPLGetExtension(pszDest), "nc"))
+            if (EQUAL(CPLGetExtensionSafe(pszDest).c_str(), "nc"))
                 osFormat = "netCDF";
             else
                 osFormat = GetOutputDriverForRaster(pszDest);
             if (osFormat.empty())
             {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Cannot determine output driver for dataset name '%s'",
+                         pszDest);
                 return nullptr;
             }
         }

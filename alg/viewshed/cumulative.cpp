@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "cpl_worker_thread_pool.h"
+#include "memdataset.h"
 
 #include "combiner.h"
 #include "cumulative.h"
@@ -71,13 +72,16 @@ bool Cumulative::run(const std::string &srcFilename,
     const int numThreads = m_opts.numJobs;
     std::atomic<bool> err = false;
     std::atomic<int> running = numThreads;
+    std::atomic<bool> hasFoundNoData = false;
     Progress progress(pfnProgress, pProgressArg,
                       m_observerQueue.size() * m_extent.ySize());
     CPLWorkerThreadPool executorPool(numThreads);
     for (int i = 0; i < numThreads; ++i)
         executorPool.SubmitJob(
-            [this, &srcFilename, &progress, &err, &running]
-            { runExecutor(srcFilename, progress, err, running); });
+            [this, &srcFilename, &progress, &err, &running, &hasFoundNoData] {
+                runExecutor(srcFilename, progress, err, running,
+                            hasFoundNoData);
+            });
 
     // Run combiners that create 8-bit sums of executor jobs.
     CPLWorkerThreadPool combinerPool(numThreads);
@@ -101,6 +105,13 @@ bool Cumulative::run(const std::string &srcFilename,
     // completion and exit with outstanding threads.
     executorPool.WaitCompletion();
 
+    if (hasFoundNoData)
+    {
+        CPLError(
+            CE_Warning, CPLE_AppDefined,
+            "Nodata value found in input DEM. Output will be likely incorrect");
+    }
+
     // Scale the data so that we can write an 8-bit raster output.
     scaleOutput();
     if (!writeOutput(createOutputDataset(*pSrcBand, m_opts, m_extent)))
@@ -119,8 +130,10 @@ bool Cumulative::run(const std::string &srcFilename,
 /// @param progress  Progress supporting support.
 /// @param err  Shared error flag.
 /// @param running  Shared count of number of executors running.
+/// @param hasFoundNoData Shared flag to indicate if a point at nodata has been encountered.
 void Cumulative::runExecutor(const std::string &srcFilename, Progress &progress,
-                             std::atomic<bool> &err, std::atomic<int> &running)
+                             std::atomic<bool> &err, std::atomic<int> &running,
+                             std::atomic<bool> &hasFoundNoData)
 {
     DatasetPtr srcDs(GDALDataset::Open(srcFilename.c_str(), GA_ReadOnly));
     if (!srcDs)
@@ -132,12 +145,8 @@ void Cumulative::runExecutor(const std::string &srcFilename, Progress &progress,
         Location loc;
         while (!err && m_observerQueue.pop(loc))
         {
-            GDALDriver *memDriver =
-                GetGDALDriverManager()->GetDriverByName("MEM");
-            DatasetPtr dstDs(memDriver ? memDriver->Create("", m_extent.xSize(),
-                                                           m_extent.ySize(), 1,
-                                                           GDT_Byte, nullptr)
-                                       : nullptr);
+            DatasetPtr dstDs(MEMDataset::Create(
+                "", m_extent.xSize(), m_extent.ySize(), 1, GDT_Byte, nullptr));
             if (!dstDs)
             {
                 err = true;
@@ -146,10 +155,15 @@ void Cumulative::runExecutor(const std::string &srcFilename, Progress &progress,
             {
                 ViewshedExecutor executor(
                     *srcDs->GetRasterBand(1), *dstDs->GetRasterBand(1), loc.x,
-                    loc.y, m_extent, m_extent, m_opts, progress);
+                    loc.y, m_extent, m_extent, m_opts, progress,
+                    /* emitWarningIfNoData = */ false);
                 err = !executor.run();
                 if (!err)
                     m_datasetQueue.push(std::move(dstDs));
+                if (executor.hasFoundNoData())
+                {
+                    hasFoundNoData = true;
+                }
             }
         }
     }

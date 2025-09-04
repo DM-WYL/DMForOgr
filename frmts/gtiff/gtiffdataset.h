@@ -158,7 +158,7 @@ class GTiffDataset final : public GDALPamDataset
     char *m_pszGeorefFilename = nullptr;
     char *m_pszXMLFilename = nullptr;
 
-    double m_adfGeoTransform[6]{0, 1, 0, 0, 0, 1};
+    GDALGeoTransform m_gt{};
     double m_dfMaxZError = 0.0;
     double m_dfMaxZErrorOverview = 0.0;
     uint32_t m_anLercAddCompressionAndVersion[2]{0, 0};
@@ -305,6 +305,7 @@ class GTiffDataset final : public GDALPamDataset
     bool m_bWriteKnownIncompatibleEdition : 1;
     bool m_bHasUsedReadEncodedAPI : 1;  // for debugging
     bool m_bWriteCOGLayout : 1;
+    bool m_bTileInterleave : 1;
 
     void ScanDirectories();
     bool ReadStrile(int nBlockId, void *pOutputBuffer,
@@ -326,9 +327,8 @@ class GTiffDataset final : public GDALPamDataset
 
     int GetJPEGOverviewCount();
 
-    bool IsBlockAvailable(int nBlockId, vsi_l_offset *pnOffset = nullptr,
-                          vsi_l_offset *pnSize = nullptr,
-                          bool *pbErrOccurred = nullptr);
+    bool IsBlockAvailable(int nBlockId, vsi_l_offset *pnOffset,
+                          vsi_l_offset *pnSize, bool *pbErrOccurred);
 
     void ApplyPamInfo();
     void PushMetadataToPam();
@@ -440,6 +440,10 @@ class GTiffDataset final : public GDALPamDataset
 
     bool IsWholeBlock(int nXOff, int nYOff, int nXSize, int nYSize) const;
 
+    void *CacheMultiRange(int nXOff, int nYOff, int nXSize, int nYSize,
+                          int nBufXSize, int nBufYSize, const int *panBandMap,
+                          int nBandCount, GDALRasterIOExtraArg *psExtraArg);
+
     static void ThreadDecompressionFunc(void *pData);
 
     static GTIF *GTIFNew(TIFF *hTIFF);
@@ -456,8 +460,8 @@ class GTiffDataset final : public GDALPamDataset
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
-    virtual CPLErr GetGeoTransform(double *) override;
-    virtual CPLErr SetGeoTransform(double *) override;
+    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
 
     virtual int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
@@ -493,6 +497,11 @@ class GTiffDataset final : public GDALPamDataset
     virtual CPLErr IBuildOverviews(const char *, int, const int *, int,
                                    const int *, GDALProgressFunc, void *,
                                    CSLConstList papszOptions) override;
+
+    virtual CPLErr AddOverviews(const std::vector<GDALDataset *> &apoSrcOvrDS,
+                                GDALProgressFunc pfnProgress,
+                                void *pProgressData,
+                                CSLConstList papszOptions) override;
 
     bool ComputeBlocksPerColRowAndBand(int l_nBands);
 
@@ -542,7 +551,8 @@ class GTiffDataset final : public GDALPamDataset
                           int nBands, GDALDataType eType,
                           double dfExtraSpaceForOverviews,
                           int nColorTableMultiplier, char **papszParamList,
-                          VSILFILE **pfpL, CPLString &osTmpFilename);
+                          VSILFILE **pfpL, CPLString &osTmpFilename,
+                          bool bCreateCopy, bool &bTileInterleavingOut);
 
     CPLErr WriteEncodedTileOrStrip(uint32_t tile_or_strip, void *data,
                                    int bPreserveDataBuffer);

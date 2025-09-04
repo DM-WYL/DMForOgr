@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  PlanetLabs scene driver
  * Purpose:  PLScenes driver interface
@@ -28,7 +27,7 @@ class OGRPLScenesDataV1Layer;
 
 class OGRPLScenesDataV1Dataset final : public GDALDataset
 {
-    bool m_bLayerListInitialized;
+    mutable bool m_bLayerListInitialized;
     bool m_bMustCleanPersistent;
     CPLString m_osBaseURL;
     CPLString m_osAPIKey;
@@ -52,8 +51,10 @@ class OGRPLScenesDataV1Dataset final : public GDALDataset
     OGRPLScenesDataV1Dataset();
     virtual ~OGRPLScenesDataV1Dataset();
 
-    virtual int GetLayerCount() override;
-    virtual OGRLayer *GetLayer(int idx) override;
+    int GetLayerCount() const override;
+
+    using GDALDataset::GetLayer;
+    const OGRLayer *GetLayer(int idx) const override;
     virtual OGRLayer *GetLayerByName(const char *pszName) override;
 
     json_object *RunRequest(const char *pszURL, int bQuiet404Error = FALSE,
@@ -153,30 +154,21 @@ class OGRPLScenesDataV1Layer final : public OGRLayer
 
     virtual void ResetReading() override;
     virtual OGRFeature *GetNextFeature() override;
-    virtual int TestCapability(const char *) override;
-    virtual OGRFeatureDefn *GetLayerDefn() override;
+    int TestCapability(const char *) const override;
+    const OGRFeatureDefn *GetLayerDefn() const override;
     virtual GIntBig GetFeatureCount(int bForce = FALSE) override;
 
     virtual char **GetMetadata(const char *pszDomain = "") override;
     virtual const char *GetMetadataItem(const char *pszName,
                                         const char *pszDomain = "") override;
 
-    virtual void SetSpatialFilter(OGRGeometry *poGeom) override;
-
-    virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
-    {
-        OGRLayer::SetSpatialFilter(iGeomField, poGeom);
-    }
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
     virtual OGRErr SetAttributeFilter(const char *) override;
 
-    virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
+    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                              bool bForce) override;
 };
 
 #endif /* ndef OGR_PLSCENES_H_INCLUDED */

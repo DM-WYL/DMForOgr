@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
-#
 # Project:  GDAL/OGR Utilities
 # Purpose:  Bash completion script generation
 # Author:   Guillaume Pasero <guillaume dot pasero at c dash s dot fr>
@@ -131,9 +129,8 @@ def getCompletionScript(name, optList):
     output = []
     output.append("_" + name + "()\n")
     output.append("{\n")
-    output.append("  local cur prev\n")
     output.append("  COMPREPLY=()\n")
-    output.append("  _get_comp_words_by_ref cur prev\n")
+    output.append('  cur="${COMP_WORDS[$COMP_CWORD]}"\n')
     output.append('  case "$cur" in\n')
     output.append("    -*)\n")
     optLine = '      key_list="'
@@ -141,7 +138,13 @@ def getCompletionScript(name, optList):
         optLine += item + " "
     optLine += '"\n'
     output.append(optLine)
-    output.append('      mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n')
+    output.append('      if [ "$CURRENT_SHELL" = "bash" ]; then\n')
+    output.append(
+        '        mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n'
+    )
+    output.append("      else\n")
+    output.append('        COMPREPLY=( "$(compgen -W "$key_list" -- "$cur")" )\n')
+    output.append("      fi\n")
     output.append("      return 0\n")
     output.append("      ;;\n")
     output.append("  esac\n")
@@ -157,38 +160,60 @@ def getCompletionScript(name, optList):
         formatParsingCmd = "$tool --formats | tail -n +2 | cut -f 3 -d ' '"
         if ("-ot" in optList) or ("-of" in optList) or ("--format" in optList):
             output.append("  tool=${COMP_WORDS[0]}\n")
+            output.append('  prev="${COMP_WORDS[$COMP_CWORD-1]}"\n')
             output.append('  case "$prev" in\n')
             if "-ot" in optList:
                 output.append("    -ot)\n")
                 output.append(
                     '      key_list="Byte Int16 UInt16 UInt32 Int32 Float32 Float64 CInt16 CInt32 CFloat32 CFloat64"\n'
                 )
+                output.append('      if [ "$CURRENT_SHELL" = "bash" ]; then\n')
                 output.append(
-                    '      mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n'
+                    '        mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n'
                 )
+                output.append("      else\n")
+                output.append(
+                    '        COMPREPLY=( "$(compgen -W "$key_list" -- "$cur")" )\n'
+                )
+                output.append("      fi\n")
                 output.append("      ;;\n")
             for arg in ("-f", "-of"):
                 if (arg in optList) and isGdal:
                     output.append("    %s)\n" % arg)
                     output.append('      key_list="$( ' + formatParsingCmd + ')"\n')
+                    output.append('      if [ "$CURRENT_SHELL" = "bash" ]; then\n')
                     output.append(
-                        '      mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n'
+                        '        mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n'
                     )
+                    output.append("      else\n")
+                    output.append(
+                        '        COMPREPLY=( "$(compgen -W "$key_list" -- "$cur")" )\n'
+                    )
+                    output.append("      fi\n")
                     output.append("      ;;\n")
             if ("--format" in optList) and isGdal:
                 output.append("    --format)\n")
                 output.append('      key_list="$( ' + formatParsingCmd + ')"\n')
+                output.append('      if [ "$CURRENT_SHELL" = "bash" ]; then\n')
                 output.append(
-                    '      mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n'
+                    '        mapfile -t COMPREPLY < <(compgen -W "$key_list" -- "$cur")\n'
                 )
+                output.append("      else\n")
+                output.append(
+                    '        COMPREPLY=( "$(compgen -W "$key_list" -- "$cur")" )\n'
+                )
+                output.append("      fi\n")
                 output.append("      ;;\n")
             output.append("  esac\n")
     else:
         # ogr type
-        formatParsingCmd = "$tool --formats | tail -n +2 | grep -o -E '\"[^\"]+\"' | sed 's/\ /__/'"  # noqa: W605
+        formatParsingCmd = (
+            "$tool --formats | tail -n +2 | grep -o -E '\"[^\"]+\"' | sed 's/\\ /__/'"
+        )
         if "-f" in optList:
             # replace ogrtindex by ogr2ogr to check --formats
             output.append("  tool=${COMP_WORDS[0]/ogrtindex/ogr2ogr}\n")
+            output.append('  prev="${COMP_WORDS[$COMP_CWORD-1]}"\n')
             output.append('  case "$prev" in\n')
             for arg in ("-f", "-of"):
                 if (arg in optList) and not isGdal:
@@ -266,16 +291,110 @@ def main(argv):
     outFile = argv[1]
     of = open(outFile, "w")
     of.write("# shellcheck shell=bash disable=SC2148\n")
-    of.write("# File auto-generated by completionFinder.py, do not modify manually\n")
+    of.write(
+        "# WARNING: File auto-generated by completionFinder.py, do not modify manually\n"
+    )
     of.write(
         """
-function_exists() {
-    declare -f -F \"$1\" > /dev/null
-    return $?
+
+if ! ps -p $$ >/dev/null 2>/dev/null; then
+  # For busybox
+  CURRENT_SHELL="bash"
+else
+  CURRENT_SHELL="$(sh -c 'ps -p $$ -o ppid=' | xargs ps -o comm= -p)"
+fi
+
+if [ "$CURRENT_SHELL" = "zsh" ]; then
+  autoload -U bashcompinit
+  bashcompinit
+fi
+
+HAS_GET_COMP_WORDS_BY_REF=no
+if [ "$CURRENT_SHELL" = "bash" ]; then
+  function_exists() {
+      declare -f -F "$1" > /dev/null
+      return $?
+  }
+
+  # Checks that bash-completion is recent enough
+  if function_exists _get_comp_words_by_ref; then
+    HAS_GET_COMP_WORDS_BY_REF=yes;
+  fi
+fi
+
+_gdal()
+{
+  COMPREPLY=()
+  cur="${COMP_WORDS[$COMP_CWORD]}"
+
+  if test "$HAS_GET_COMP_WORDS_BY_REF" = "yes"; then
+    local cur prev
+    _get_comp_words_by_ref cur prev
+    if test "$cur" = ""; then
+      extra="last_word_is_complete=true"
+    else
+      extra="prev=${prev} cur=${cur}"
+    fi
+    choices=$(gdal completion ${COMP_LINE} ${extra})
+  else
+    choices=$(gdal completion ${COMP_LINE})
+  fi
+  if [ "$CURRENT_SHELL" = "bash" ]; then
+    if [[ "$cur" == "=" ]]; then
+      mapfile -t COMPREPLY < <(compgen -W "$choices" --)
+    elif [[ "$cur" == ":" ]]; then
+      mapfile -t COMPREPLY < <(compgen -W "$choices" --)
+    elif [[ "$cur" == "!" ]]; then
+      mapfile -t COMPREPLY < <(compgen -W "$choices" -P "! " --)
+    else
+      mapfile -t COMPREPLY < <(compgen -W "$choices" -- "$cur")
+    fi
+    for element in "${COMPREPLY[@]}"; do
+      if [[ $element == */ ]]; then
+        # Do not add a space if one of the suggestion ends with slash
+        compopt -o nospace
+        break
+      elif [[ $element == *= ]]; then
+        # Do not add a space if one of the suggestion ends with equal
+        compopt -o nospace
+        break
+      elif [[ $element == *: ]]; then
+        # Do not add a space if one of the suggestion ends with colon
+        compopt -o nospace
+        break
+      fi
+    done
+  else
+    # zsh
+    if [ "$cur" = "=" ]; then
+      COMPREPLY=( "$(compgen -W "$choices" --)" )
+    elif [ "$cur" = ":" ]; then
+      COMPREPLY=( "$(compgen -W "$choices" --)" )
+    elif [ "$cur" = "!" ]; then
+      COMPREPLY=( "$(compgen -W "$choices" -P "! " --)" )
+    else
+      COMPREPLY=( "$(compgen -W "$choices" -- "$cur")" )
+    fi
+    for element in "${COMPREPLY[@]}"; do
+      if [[ $element == */ ]]; then
+        # Do not add a space if one of the suggestion ends with slash
+        _COMP_OPTIONS+=(nospace)
+        break
+      elif [[ $element == *= ]]; then
+        # Do not add a space if one of the suggestion ends with equal
+        _COMP_OPTIONS+=(nospace)
+        break
+      elif [[ $element == *: ]]; then
+        # Do not add a space if one of the suggestion ends with colon
+        _COMP_OPTIONS+=(nospace)
+        break
+      fi
+    done
+  fi
 }
 
-# Checks that bash-completion is recent enough
-function_exists _get_comp_words_by_ref || return 0
+# nosort requires bash 4.4
+complete -o nosort -o default -F _gdal gdal 2>/dev/null || complete -o default -F _gdal gdal
 
 """
     )

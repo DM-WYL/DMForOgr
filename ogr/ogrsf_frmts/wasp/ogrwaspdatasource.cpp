@@ -41,7 +41,7 @@ OGRWAsPDataSource::~OGRWAsPDataSource()
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRWAsPDataSource::TestCapability(const char *pszCap)
+int OGRWAsPDataSource::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, ODsCCreateLayer) && oLayer.get() == nullptr)
@@ -102,7 +102,8 @@ OGRErr OGRWAsPDataSource::Load(bool bSilent)
     CPLReadLineL(hFile);
     CPLReadLineL(hFile);
 
-    oLayer.reset(new OGRWAsPLayer(this, CPLGetBasename(sFilename.c_str()),
+    oLayer.reset(new OGRWAsPLayer(this,
+                                  CPLGetBasenameSafe(sFilename.c_str()).c_str(),
                                   hFile, poSpatialRef));
     if (poSpatialRef)
         poSpatialRef->Release();
@@ -159,7 +160,7 @@ OGRErr OGRWAsPDataSource::Load(bool bSilent)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRWAsPDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRWAsPDataSource::GetLayer(int iLayer) const
 
 {
     return (iLayer == 0) ? oLayer.get() : nullptr;
@@ -209,7 +210,7 @@ OGRWAsPDataSource::ICreateLayer(const char *pszName,
     CPLString sFirstField, sSecondField, sGeomField;
 
     const char *pszFields = CSLFetchNameValue(papszOptions, "WASP_FIELDS");
-    const CPLString sFields(pszFields ? pszFields : "");
+    CPLString sFields(pszFields ? pszFields : "");
     if (!sFields.empty())
     {
         /* parse the comma separated list of fields */
@@ -221,7 +222,7 @@ OGRWAsPDataSource::ICreateLayer(const char *pszName,
         }
         else
         {
-            sFirstField = sFields;
+            sFirstField = std::move(sFields);
         }
     }
 
@@ -299,8 +300,8 @@ OGRWAsPDataSource::ICreateLayer(const char *pszName,
         poSRSClone->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     }
     oLayer.reset(new OGRWAsPLayer(
-        this, CPLGetBasename(pszName), hFile, poSRSClone, sFirstField,
-        sSecondField, sGeomField, bMerge, pdfTolerance.release(),
+        this, CPLGetBasenameSafe(pszName).c_str(), hFile, poSRSClone,
+        sFirstField, sSecondField, sGeomField, bMerge, pdfTolerance.release(),
         pdfAdjacentPointTolerance.release(), pdfPointToCircleRadius.release()));
     if (poSRSClone)
         poSRSClone->Release();

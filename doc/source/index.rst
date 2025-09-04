@@ -2,7 +2,8 @@
 GDAL
 ================================================================================
 
-.. include:: ./about_no_title.rst
+.. include:: ./about.rst
+   :start-after: .. descriptionstartshere
 
 .. toctree::
     :maxdepth: 2
@@ -20,6 +21,7 @@ GDAL
     sponsors/index
     contributing/index
     faq
+    glossary
     license
     thanks
 

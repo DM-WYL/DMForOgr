@@ -54,7 +54,7 @@ VFKReaderSQLite::VFKReaderSQLite(const GDALOpenInfo *poOpenInfo)
         }
         else
         {
-            osDbName = CPLResetExtension(m_pszFilename, "db");
+            osDbName = CPLResetExtensionSafe(m_pszFilename, "db");
         }
         nLen = osDbName.length();
         if (nLen > 2048)
@@ -294,7 +294,8 @@ int VFKReaderSQLite::ReadDataBlocks(bool bSuppressGeometry)
                  * OGR_VFK_DB_READ_ALL_BLOCKS NO" than attempt to fetch feature
                  * from geometry-included layer: SOBR -fid 1
                  */
-                ((VFKDataBlockSQLite *)poNewDataBlock)->AddGeometryColumn();
+                cpl::down_cast<VFKDataBlockSQLite *>(poNewDataBlock)
+                    ->AddGeometryColumn();
             }
             poNewDataBlock->SetProperties(pszDefn);
             VFKReader::AddDataBlock(poNewDataBlock, nullptr);
@@ -442,24 +443,29 @@ int64_t VFKReaderSQLite::ReadDataRecords(IVFKDataBlock *poDataBlock)
         StoreInfo2DB();
 
         /* Insert VFK data records into DB */
-        nDataRecords += VFKReader::ReadDataRecords(poDataBlock);
-
-        /* update VFK_DB_TABLE table */
-        poDataBlockCurrent = nullptr;
-        for (int iDataBlock = 0; iDataBlock < GetDataBlockCount(); iDataBlock++)
+        const int64_t nExtraRecords = VFKReader::ReadDataRecords(poDataBlock);
+        if (nExtraRecords >= 0)
         {
-            poDataBlockCurrent = GetDataBlock(iDataBlock);
+            nDataRecords += nExtraRecords;
 
-            if (poDataBlock && poDataBlock != poDataBlockCurrent)
-                continue;
+            /* update VFK_DB_TABLE table */
+            poDataBlockCurrent = nullptr;
+            for (int iDataBlock = 0; iDataBlock < GetDataBlockCount();
+                 iDataBlock++)
+            {
+                poDataBlockCurrent = GetDataBlock(iDataBlock);
 
-            /* update number of records in metadata table */
-            osSQL.Printf("UPDATE %s SET num_records = %d WHERE "
-                         "table_name = '%s'",
-                         VFK_DB_TABLE, poDataBlockCurrent->GetRecordCount(),
-                         poDataBlockCurrent->GetName());
+                if (poDataBlock && poDataBlock != poDataBlockCurrent)
+                    continue;
 
-            ExecuteSQL(osSQL);
+                /* update number of records in metadata table */
+                osSQL.Printf("UPDATE %s SET num_records = %d WHERE "
+                             "table_name = '%s'",
+                             VFK_DB_TABLE, poDataBlockCurrent->GetRecordCount(),
+                             poDataBlockCurrent->GetName());
+
+                ExecuteSQL(osSQL);
+            }
         }
 
         /* create indices if not exist */
@@ -545,7 +551,8 @@ void VFKReaderSQLite::CreateIndices()
             EQUAL(pszBlockName, "ZVB") || EQUAL(pszBlockName, "PAR") ||
             EQUAL(pszBlockName, "BUD"))
         {
-            const char *pszKey = ((VFKDataBlockSQLite *)poDataBlock)->GetKey();
+            const char *pszKey =
+                cpl::down_cast<VFKDataBlockSQLite *>(poDataBlock)->GetKey();
             if (pszKey)
             {
                 /* ID */
@@ -679,8 +686,8 @@ void VFKReaderSQLite::AddDataBlock(IVFKDataBlock *poDataBlock,
                 (GUIntBig)m_poFStat->st_size, pszBlockName, pszDefn);
             ExecuteSQL(osCommand.c_str());
 
-            int geom_type =
-                ((VFKDataBlockSQLite *)poDataBlock)->GetGeometrySQLType();
+            int geom_type = cpl::down_cast<VFKDataBlockSQLite *>(poDataBlock)
+                                ->GetGeometrySQLType();
             /* update VFK_DB_GEOMETRY_TABLE */
             osCommand.Printf("INSERT INTO %s (f_table_name, f_geometry_column, "
                              "geometry_type, "
@@ -803,8 +810,6 @@ OGRErr VFKReaderSQLite::AddFeature(IVFKDataBlock *poDataBlock,
 {
     CPLString osValue;
 
-    const VFKProperty *poProperty = nullptr;
-
     const char *pszBlockName = poDataBlock->GetName();
     CPLString osCommand;
     osCommand.Printf("INSERT INTO '%s' VALUES(", pszBlockName);
@@ -812,11 +817,11 @@ OGRErr VFKReaderSQLite::AddFeature(IVFKDataBlock *poDataBlock,
     for (int i = 0; i < poDataBlock->GetPropertyCount(); i++)
     {
         const OGRFieldType ftype = poDataBlock->GetProperty(i)->GetType();
-        poProperty = poFeature->GetProperty(i);
+        const VFKProperty *poProperty = poFeature->GetProperty(i);
         if (i > 0)
             osCommand += ",";
 
-        if (poProperty->IsNull())
+        if (!poProperty || poProperty->IsNull())
         {
             osValue.Printf("NULL");
         }
@@ -856,7 +861,8 @@ OGRErr VFKReaderSQLite::AddFeature(IVFKDataBlock *poDataBlock,
 
     if (EQUAL(pszBlockName, "SBP") || EQUAL(pszBlockName, "SBPG"))
     {
-        poProperty = poFeature->GetProperty("PORADOVE_CISLO_BODU");
+        const VFKProperty *poProperty =
+            poFeature->GetProperty("PORADOVE_CISLO_BODU");
         if (poProperty == nullptr)
         {
             CPLError(CE_Failure, CPLE_AppDefined,

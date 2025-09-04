@@ -413,8 +413,8 @@ static int JXLPreDecode(TIFF *tif, uint16_t s)
             if (buffer_size != channel_size)
             {
                 TIFFErrorExtR(tif, module,
-                              "JxlDecoderExtraChannelBufferSize returned %ld, "
-                              "expecting %u",
+                              "JxlDecoderExtraChannelBufferSize returned "
+                              "%" TIFF_SIZE_FORMAT ", expecting %u",
                               buffer_size, channel_size);
                 _TIFFfreeExt(tif, extra_channel_buffer);
                 return 0;
@@ -890,7 +890,7 @@ static int JXLPostEncode(TIFF *tif)
                    td->td_extrasamples == td->td_samplesperpixel - 3 &&
                    (td->td_sampleinfo[0] != EXTRASAMPLE_UNASSALPHA ||
                     !bAlphaDistanceSameAsMainChannel))))
-        {  // rgb without alpha, or differente distance for alpha vs non-alpha
+        {  // rgb without alpha, or different distance for alpha vs non-alpha
             // channels
             format.num_channels = 3;
             basic_info.num_color_channels = 3;
@@ -997,7 +997,7 @@ static int JXLPostEncode(TIFF *tif)
         int inStep = nBytesPerSample * td->td_samplesperpixel;
         uint8_t *cur_outbuffer = main_buffer;
         uint8_t *cur_inbuffer = sp->uncompressed_buffer;
-        for (; cur_outbuffer - main_buffer < main_size;
+        for (; (size_t)(cur_outbuffer - main_buffer) < main_size;
              cur_outbuffer += outChunkSize, cur_inbuffer += inStep)
         {
             memcpy(cur_outbuffer, cur_inbuffer, outChunkSize);
@@ -1176,14 +1176,14 @@ static void JXLCleanup(TIFF *tif)
 }
 
 static const TIFFField JXLFields[] = {
-    {TIFFTAG_JXL_LOSSYNESS, 0, 0, TIFF_ANY, 0, TIFF_SETGET_UINT32,
-     TIFF_SETGET_UNDEFINED, FIELD_PSEUDO, FALSE, FALSE, "Lossyness", NULL},
-    {TIFFTAG_JXL_EFFORT, 0, 0, TIFF_ANY, 0, TIFF_SETGET_UINT32,
-     TIFF_SETGET_UNDEFINED, FIELD_PSEUDO, FALSE, FALSE, "Effort", NULL},
-    {TIFFTAG_JXL_DISTANCE, 0, 0, TIFF_ANY, 0, TIFF_SETGET_FLOAT,
-     TIFF_SETGET_UNDEFINED, FIELD_PSEUDO, FALSE, FALSE, "Distance", NULL},
+    {TIFFTAG_JXL_LOSSYNESS, 0, 0, TIFF_ANY, 0, TIFF_SETGET_UINT32, FIELD_PSEUDO,
+     FALSE, FALSE, "Lossyness", NULL},
+    {TIFFTAG_JXL_EFFORT, 0, 0, TIFF_ANY, 0, TIFF_SETGET_UINT32, FIELD_PSEUDO,
+     FALSE, FALSE, "Effort", NULL},
+    {TIFFTAG_JXL_DISTANCE, 0, 0, TIFF_ANY, 0, TIFF_SETGET_FLOAT, FIELD_PSEUDO,
+     FALSE, FALSE, "Distance", NULL},
     {TIFFTAG_JXL_ALPHA_DISTANCE, 0, 0, TIFF_ANY, 0, TIFF_SETGET_FLOAT,
-     TIFF_SETGET_UNDEFINED, FIELD_PSEUDO, FALSE, FALSE, "AlphaDistance", NULL},
+     FIELD_PSEUDO, FALSE, FALSE, "AlphaDistance", NULL},
 };
 
 static int JXLVSetField(TIFF *tif, uint32_t tag, va_list ap)

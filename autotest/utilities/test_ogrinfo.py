@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  ogrinfo testing
@@ -306,7 +305,7 @@ def test_ogrinfo_18(ogrinfo_path, tmp_path):
 def test_ogrinfo_19(ogrinfo_path):
 
     ret = gdaltest.runexternal(ogrinfo_path + " --formats", check_memleak=False)
-    assert "ESRI Shapefile -vector- (rw+v): ESRI Shapefile" in ret
+    assert "ESRI Shapefile -vector- (rw+uv): ESRI Shapefile" in ret
 
 
 ###############################################################################
@@ -323,7 +322,7 @@ def test_ogrinfo_formats_json(ogrinfo_path):
         "short_name": "ESRI Shapefile",
         "long_name": "ESRI Shapefile",
         "scopes": ["vector"],
-        "capabilities": ["open", "create", "virtual_io"],
+        "capabilities": ["open", "create", "update", "virtual_io"],
         "file_extensions": ["shp", "dbf", "shz", "shp.zip"],
     } in ret
 

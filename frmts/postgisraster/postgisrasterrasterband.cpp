@@ -7,7 +7,6 @@
  *
  * Author:       David Zwarg, dzwarg@azavea.com
  *
- * Last changes: $Id$
  *
  ***********************************************************************
  * Copyright (c) 2009 - 2013, Jorge Arevalo, David Zwarg
@@ -319,7 +318,7 @@ CPLErr PostGISRasterRasterBand::IRasterIO(
     GIntBig nMemoryRequiredForTiles = 0;
     CPLString osIDsToFetch;
     int nTilesToFetch = 0;
-    int nBandDataTypeSize = GDALGetDataTypeSize(eDataType) / 8;
+    const int nBandDataTypeSize = GDALGetDataTypeSizeBytes(eDataType);
 
     // Loop just over the intersecting sources
     for (i = 0; i < nFeatureCount; i++)
@@ -348,8 +347,8 @@ CPLErr PostGISRasterRasterBand::IRasterIO(
             }
 
             double dfTileMinX, dfTileMinY, dfTileMaxX, dfTileMaxY;
-            poTile->GetExtent(&dfTileMinX, &dfTileMinY, &dfTileMaxX,
-                              &dfTileMaxY);
+            poTile->GetNativeExtent(&dfTileMinX, &dfTileMinY, &dfTileMaxX,
+                                    &dfTileMaxY);
 
             /**
              * We keep the general max and min values of all the missing

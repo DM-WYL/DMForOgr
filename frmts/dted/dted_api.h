@@ -1,5 +1,4 @@
 /******************************************************************************
- * $Id$
  *
  * Project:  DTED Translator
  * Purpose:  Public (C callable) interface for DTED/CDED reading.
@@ -111,6 +110,8 @@ typedef struct
 
     int *
         panMapLogicalColsToOffsets; /* size of nXSize elements. Might be NULL */
+
+    bool bAssumeConformant;
 
 } DTEDInfo;
 

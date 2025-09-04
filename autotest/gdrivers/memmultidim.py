@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test multidimensional support in MEM driver
@@ -2039,6 +2038,10 @@ def test_mem_md_array_get_mask():
     try:
         import numpy
 
+        from osgeo import gdal_array
+
+        str(gdal_array)
+
         has_numpy = True
     except ImportError:
         has_numpy = False
@@ -3001,6 +3004,32 @@ def test_mem_md_delete_array_attribute():
 
     with pytest.raises(Exception, match="has been deleted"):
         ar_attr.Rename("foo")
+
+
+@gdaltest.enable_exceptions()
+def test_mem_md_GetMDArrayFullNamesRecursive():
+
+    drv = gdal.GetDriverByName("MEM")
+    ds = drv.CreateMultiDimensional("myds")
+    rg = ds.GetRootGroup()
+
+    rg.CreateMDArray("ar0", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+
+    group = rg.CreateGroup("group")
+    group.CreateMDArray("ar1", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+
+    subgroup = group.CreateGroup("subgroup")
+    subgroup.CreateMDArray("ar2", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+
+    group2 = rg.CreateGroup("group2")
+    group2.CreateMDArray("ar3", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+
+    assert rg.GetMDArrayFullNamesRecursive() == [
+        "/ar0",
+        "/group/ar1",
+        "/group/subgroup/ar2",
+        "/group2/ar3",
+    ]
 
 
 def XX_test_all_forever():

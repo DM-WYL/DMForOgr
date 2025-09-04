@@ -15,10 +15,12 @@
 
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <tuple>
 
 #include "ogr_parquet.h"
 #include "ogrparquetdrivercore.h"
+#include "memdataset.h"
 
 #include "../arrow_common/ograrrowrandomaccessfile.h"
 #include "../arrow_common/vsiarrowfilesystem.hpp"
@@ -47,8 +49,8 @@ static GDALDataset *OpenFromDatasetFactory(
     const bool bIsVSI = STARTS_WITH(osBasePath.c_str(), "/vsi");
     auto poDS = std::make_unique<OGRParquetDataset>(poMemoryPool);
     auto poLayer = std::make_unique<OGRParquetDatasetLayer>(
-        poDS.get(), CPLGetBasename(osBasePath.c_str()), bIsVSI, dataset,
-        papszOpenOptions);
+        poDS.get(), CPLGetBasenameSafe(osBasePath.c_str()).c_str(), bIsVSI,
+        dataset, papszOpenOptions);
     poDS->SetLayer(std::move(poLayer));
     poDS->SetFileSystem(fs);
     return poDS.release();
@@ -86,13 +88,34 @@ GetFileSystem(std::string &osBasePathInOut,
             char *pszCurDir = CPLGetCurrentDir();
             if (pszCurDir == nullptr)
                 return {nullptr, osFSFilename};
-            osPath = CPLFormFilename(pszCurDir, osPath.c_str(), nullptr);
+            osPath = CPLFormFilenameSafe(pszCurDir, osPath.c_str(), nullptr);
             CPLFree(pszCurDir);
         }
         PARQUET_ASSIGN_OR_THROW(
             fs, arrow::fs::FileSystemFromUriOrPath(osPath, &osFSFilename));
     }
     return {fs, osFSFilename};
+}
+
+/************************************************************************/
+/*                       MakeParquetFileFormat()                        */
+/************************************************************************/
+
+static std::shared_ptr<arrow::dataset::ParquetFileFormat>
+MakeParquetFileFormat()
+{
+    auto parquetFileFormat =
+        std::make_shared<arrow::dataset::ParquetFileFormat>();
+#if ARROW_VERSION_MAJOR >= 21
+    auto fragmentScanOptions =
+        std::dynamic_pointer_cast<arrow::dataset::ParquetFragmentScanOptions>(
+            parquetFileFormat->default_fragment_scan_options);
+    CPLAssert(fragmentScanOptions);
+    fragmentScanOptions->arrow_reader_properties->set_arrow_extensions_enabled(
+        CPLTestBool(
+            CPLGetConfigOption("OGR_PARQUET_ENABLE_ARROW_EXTENSIONS", "YES")));
+#endif
+    return parquetFileFormat;
 }
 
 /************************************************************************/
@@ -113,12 +136,10 @@ static GDALDataset *OpenParquetDatasetWithMetadata(
         arrow::dataset::PartitioningOrFactory(std::move(partitioningFactory));
 
     std::shared_ptr<arrow::dataset::DatasetFactory> factory;
-    // coverity[copy_constructor_call]
-    PARQUET_ASSIGN_OR_THROW(
-        factory, arrow::dataset::ParquetDatasetFactory::Make(
-                     osFSFilename + '/' + pszMetadataFile, fs,
-                     std::make_shared<arrow::dataset::ParquetFileFormat>(),
-                     std::move(options)));
+    PARQUET_ASSIGN_OR_THROW(factory,
+                            arrow::dataset::ParquetDatasetFactory::Make(
+                                osFSFilename + '/' + pszMetadataFile, fs,
+                                MakeParquetFileFormat(), std::move(options)));
 
     return OpenFromDatasetFactory(osBasePath, factory, papszOpenOptions, fs);
 }
@@ -142,11 +163,9 @@ OpenParquetDatasetWithoutMetadata(const std::string &osBasePathIn,
     const auto fileInfo = fs->GetFileInfo(osFSFilename);
     if (fileInfo->IsFile())
     {
-        // coverity[copy_constructor_call]
         PARQUET_ASSIGN_OR_THROW(
             factory, arrow::dataset::FileSystemDatasetFactory::Make(
-                         fs, {std::move(osFSFilename)},
-                         std::make_shared<arrow::dataset::ParquetFileFormat>(),
+                         fs, {std::move(osFSFilename)}, MakeParquetFileFormat(),
                          std::move(options)));
     }
     else
@@ -160,11 +179,9 @@ OpenParquetDatasetWithoutMetadata(const std::string &osBasePathIn,
         selector.base_dir = std::move(osFSFilename);
         selector.recursive = true;
 
-        // coverity[copy_constructor_call]
         PARQUET_ASSIGN_OR_THROW(
             factory, arrow::dataset::FileSystemDatasetFactory::Make(
-                         fs, std::move(selector),
-                         std::make_shared<arrow::dataset::ParquetFileFormat>(),
+                         fs, std::move(selector), MakeParquetFileFormat(),
                          std::move(options)));
     }
 
@@ -177,7 +194,7 @@ OpenParquetDatasetWithoutMetadata(const std::string &osBasePathIn,
 /*                  BuildMemDatasetWithRowGroupExtents()                */
 /************************************************************************/
 
-/** Builds a Memory dataset that contains, for each row-group of the input file,
+/** Builds a MEM dataset that contains, for each row-group of the input file,
  * the feature count and spatial extent of the features of this row group,
  * using Parquet statistics. This assumes that the Parquet file declares
  * a "covering":{"bbox":{ ... }} metadata item.
@@ -193,11 +210,8 @@ static GDALDataset *BuildMemDatasetWithRowGroupExtents(OGRParquetLayer *poLayer)
     if (poLayer->GeomColsBBOXParquet(0, iParquetXMin, iParquetYMin,
                                      iParquetXMax, iParquetYMax))
     {
-        auto poMemDrv = GetGDALDriverManager()->GetDriverByName("Memory");
-        if (!poMemDrv)
-            return nullptr;
         auto poMemDS = std::unique_ptr<GDALDataset>(
-            poMemDrv->Create("", 0, 0, 0, GDT_Unknown, nullptr));
+            MEMDataset::Create("", 0, 0, 0, GDT_Unknown, nullptr));
         if (!poMemDS)
             return nullptr;
         OGRSpatialReference *poTmpSRS = nullptr;
@@ -300,6 +314,18 @@ static GDALDataset *OGRParquetDriverOpen(GDALOpenInfo *poOpenInfo)
     if (poOpenInfo->eAccess == GA_Update)
         return nullptr;
 
+#if ARROW_VERSION_MAJOR >= 21
+    // Register geoarrow.wkb extension if not already done
+    if (!arrow::GetExtensionType(EXTENSION_NAME_GEOARROW_WKB) &&
+        CPLTestBool(CPLGetConfigOption(
+            "OGR_PARQUET_REGISTER_GEOARROW_WKB_EXTENSION", "YES")))
+    {
+        CPL_IGNORE_RET_VAL(arrow::RegisterExtensionType(
+            std::make_shared<OGRGeoArrowWkbExtensionType>(
+                std::move(arrow::binary()), std::string())));
+    }
+#endif
+
 #ifdef GDAL_USE_ARROWDATASET
     std::string osBasePath(poOpenInfo->pszFilename);
     std::string osQueryParameters;
@@ -331,8 +357,8 @@ static GDALDataset *OGRParquetDriverOpen(GDALOpenInfo *poOpenInfo)
         VSIStatBufL sStat;
         if (!osBasePath.empty() && osBasePath.back() == '/')
             osBasePath.pop_back();
-        std::string osMetadataPath =
-            CPLFormFilename(osBasePath.c_str(), "_metadata", nullptr);
+        const std::string osMetadataPath =
+            CPLFormFilenameSafe(osBasePath.c_str(), "_metadata", nullptr);
         if (CPLTestBool(
                 CPLGetConfigOption("OGR_PARQUET_USE_METADATA_FILE", "YES")) &&
             VSIStatL((osMetadataPath + osQueryParameters).c_str(), &sStat) == 0)
@@ -362,7 +388,8 @@ static GDALDataset *OGRParquetDriverOpen(GDALOpenInfo *poOpenInfo)
                 const CPLStringList aosFiles(VSIReadDir(osBasePath.c_str()));
                 for (const char *pszFilename : cpl::Iterate(aosFiles))
                 {
-                    if (EQUAL(CPLGetExtension(pszFilename), "parquet"))
+                    if (EQUAL(CPLGetExtensionSafe(pszFilename).c_str(),
+                              "parquet"))
                     {
                         bLikelyParquetDataset = true;
                         break;
@@ -370,8 +397,9 @@ static GDALDataset *OGRParquetDriverOpen(GDALOpenInfo *poOpenInfo)
                     else if (strchr(pszFilename, '='))
                     {
                         // HIVE partitioning
-                        if (VSIStatL(CPLFormFilename(osBasePath.c_str(),
-                                                     pszFilename, nullptr),
+                        if (VSIStatL(CPLFormFilenameSafe(osBasePath.c_str(),
+                                                         pszFilename, nullptr)
+                                         .c_str(),
                                      &sStat) == 0 &&
                             VSI_ISDIR(sStat.st_mode))
                         {
@@ -447,18 +475,88 @@ static GDALDataset *OGRParquetDriverOpen(GDALOpenInfo *poOpenInfo)
         std::unique_ptr<parquet::arrow::FileReader> arrow_reader;
         auto poMemoryPool = std::shared_ptr<arrow::MemoryPool>(
             arrow::MemoryPool::CreateDefault().release());
+
+        const int nNumCPUs = OGRParquetLayerBase::GetNumCPUs();
+        const char *pszUseThreads =
+            CPLGetConfigOption("OGR_PARQUET_USE_THREADS", nullptr);
+        if (!pszUseThreads && nNumCPUs > 1)
+        {
+            pszUseThreads = "YES";
+        }
+        const bool bUseThreads = pszUseThreads && CPLTestBool(pszUseThreads);
+
+        const char *pszParquetBatchSize =
+            CPLGetConfigOption("OGR_PARQUET_BATCH_SIZE", nullptr);
+
+#if ARROW_VERSION_MAJOR >= 21
+        parquet::arrow::FileReaderBuilder fileReaderBuilder;
+        {
+            auto st = fileReaderBuilder.Open(std::move(infile));
+            if (!st.ok())
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "parquet::arrow::FileReaderBuilder::Open() failed: %s",
+                         st.message().c_str());
+                return nullptr;
+            }
+        }
+        fileReaderBuilder.memory_pool(poMemoryPool.get());
+        parquet::ArrowReaderProperties fileReaderProperties;
+        fileReaderProperties.set_arrow_extensions_enabled(CPLTestBool(
+            CPLGetConfigOption("OGR_PARQUET_ENABLE_ARROW_EXTENSIONS", "YES")));
+        if (pszParquetBatchSize)
+        {
+            fileReaderProperties.set_batch_size(
+                CPLAtoGIntBig(pszParquetBatchSize));
+        }
+        if (bUseThreads)
+        {
+            fileReaderProperties.set_use_threads(true);
+        }
+        fileReaderBuilder.properties(fileReaderProperties);
+        {
+            auto res = fileReaderBuilder.Build();
+            if (!res.ok())
+            {
+                CPLError(
+                    CE_Failure, CPLE_AppDefined,
+                    "parquet::arrow::FileReaderBuilder::Build() failed: %s",
+                    res.status().message().c_str());
+                return nullptr;
+            }
+            arrow_reader = std::move(*res);
+        }
+#elif ARROW_VERSION_MAJOR >= 19
+        PARQUET_ASSIGN_OR_THROW(
+            arrow_reader,
+            parquet::arrow::OpenFile(std::move(infile), poMemoryPool.get()));
+#else
         auto st = parquet::arrow::OpenFile(std::move(infile),
                                            poMemoryPool.get(), &arrow_reader);
         if (!st.ok())
         {
             CPLError(CE_Failure, CPLE_AppDefined,
-                     "parquet::arrow::OpenFile() failed");
+                     "parquet::arrow::OpenFile() failed: %s",
+                     st.message().c_str());
             return nullptr;
         }
+#endif
+
+#if ARROW_VERSION_MAJOR < 21
+        if (pszParquetBatchSize)
+        {
+            arrow_reader->set_batch_size(CPLAtoGIntBig(pszParquetBatchSize));
+        }
+
+        if (bUseThreads)
+        {
+            arrow_reader->set_use_threads(true);
+        }
+#endif
 
         auto poDS = std::make_unique<OGRParquetDataset>(poMemoryPool);
         auto poLayer = std::make_unique<OGRParquetLayer>(
-            poDS.get(), CPLGetBasename(osFilename.c_str()),
+            poDS.get(), CPLGetBasenameSafe(osFilename.c_str()).c_str(),
             std::move(arrow_reader), poOpenInfo->papszOpenOptions);
 
         // For debug purposes: return a layer with the extent of each row group
@@ -497,13 +595,14 @@ static GDALDataset *OGRParquetDriverCreate(const char *pszName, int nXSize,
         if (STARTS_WITH(pszName, "/vsi") ||
             CPLTestBool(CPLGetConfigOption("OGR_PARQUET_USE_VSI", "YES")))
         {
-            VSILFILE *fp = VSIFOpenL(pszName, "wb");
+            VSIVirtualHandleUniquePtr fp =
+                VSIFilesystemHandler::OpenStatic(pszName, "wb");
             if (fp == nullptr)
             {
                 CPLError(CE_Failure, CPLE_FileIO, "Cannot create %s", pszName);
                 return nullptr;
             }
-            out_file = std::make_shared<OGRArrowWritableFile>(fp);
+            out_file = std::make_shared<OGRArrowWritableFile>(std::move(fp));
         }
         else
         {
@@ -527,26 +626,32 @@ static GDALDataset *OGRParquetDriverCreate(const char *pszName, int nXSize,
 
 class OGRParquetDriver final : public GDALDriver
 {
+    std::mutex m_oMutex{};
     bool m_bMetadataInitialized = false;
     void InitMetadata();
 
   public:
     const char *GetMetadataItem(const char *pszName,
-                                const char *pszDomain) override
-    {
-        if (EQUAL(pszName, GDAL_DS_LAYER_CREATIONOPTIONLIST))
-        {
-            InitMetadata();
-        }
-        return GDALDriver::GetMetadataItem(pszName, pszDomain);
-    }
+                                const char *pszDomain) override;
 
     char **GetMetadata(const char *pszDomain) override
     {
+        std::lock_guard oLock(m_oMutex);
         InitMetadata();
         return GDALDriver::GetMetadata(pszDomain);
     }
 };
+
+const char *OGRParquetDriver::GetMetadataItem(const char *pszName,
+                                              const char *pszDomain)
+{
+    std::lock_guard oLock(m_oMutex);
+    if (EQUAL(pszName, GDAL_DS_LAYER_CREATIONOPTIONLIST))
+    {
+        InitMetadata();
+    }
+    return GDALDriver::GetMetadataItem(pszName, pszDomain);
+}
 
 void OGRParquetDriver::InitMetadata()
 {
@@ -559,16 +664,48 @@ void OGRParquetDriver::InitMetadata()
 
     std::vector<const char *> apszCompressionMethods;
     bool bHasSnappy = false;
+    int minComprLevel = INT_MAX;
+    int maxComprLevel = INT_MIN;
+    std::string osCompressionLevelDesc = "Compression level, codec dependent.";
     for (const char *pszMethod :
          {"SNAPPY", "GZIP", "BROTLI", "ZSTD", "LZ4_RAW", "LZO", "LZ4_HADOOP"})
     {
-        auto oResult = arrow::util::Codec::GetCompressionType(
+        auto compressionTypeRes = arrow::util::Codec::GetCompressionType(
             CPLString(pszMethod).tolower());
-        if (oResult.ok() && arrow::util::Codec::IsAvailable(*oResult))
+        if (compressionTypeRes.ok() &&
+            arrow::util::Codec::IsAvailable(*compressionTypeRes))
         {
+            const auto compressionType = *compressionTypeRes;
             if (EQUAL(pszMethod, "SNAPPY"))
                 bHasSnappy = true;
             apszCompressionMethods.emplace_back(pszMethod);
+
+            auto minCompressLevelRes =
+                arrow::util::Codec::MinimumCompressionLevel(compressionType);
+            auto maxCompressLevelRes =
+                arrow::util::Codec::MaximumCompressionLevel(compressionType);
+            auto defCompressLevelRes =
+                arrow::util::Codec::DefaultCompressionLevel(compressionType);
+            if (minCompressLevelRes.ok() && maxCompressLevelRes.ok() &&
+                defCompressLevelRes.ok())
+            {
+                minComprLevel = std::min(minComprLevel, *minCompressLevelRes);
+                maxComprLevel = std::max(maxComprLevel, *maxCompressLevelRes);
+                osCompressionLevelDesc += ' ';
+                osCompressionLevelDesc += pszMethod;
+                osCompressionLevelDesc += ": [";
+                osCompressionLevelDesc += std::to_string(*minCompressLevelRes);
+                osCompressionLevelDesc += ',';
+                osCompressionLevelDesc += std::to_string(*maxCompressLevelRes);
+                osCompressionLevelDesc += "], default=";
+                if (EQUAL(pszMethod, "ZSTD"))
+                    osCompressionLevelDesc += std::to_string(
+                        OGR_PARQUET_ZSTD_DEFAULT_COMPRESSION_LEVEL);
+                else
+                    osCompressionLevelDesc +=
+                        std::to_string(*defCompressLevelRes);
+                osCompressionLevelDesc += '.';
+            }
         }
     }
 
@@ -590,6 +727,23 @@ void OGRParquetDriver::InitMetadata()
             auto poValueNode = CPLCreateXMLNode(psOption, CXT_Element, "Value");
             CPLCreateXMLNode(poValueNode, CXT_Text, pszMethod);
         }
+    }
+
+    if (minComprLevel <= maxComprLevel)
+    {
+        auto psOption = CPLCreateXMLNode(oTree.get(), CXT_Element, "Option");
+        CPLAddXMLAttributeAndValue(psOption, "name", "COMPRESSION_LEVEL");
+        CPLAddXMLAttributeAndValue(psOption, "type", "int");
+        CPLAddXMLAttributeAndValue(
+            psOption, "min",
+            CPLSPrintf("%d",
+                       std::min(DEFAULT_COMPRESSION_LEVEL, minComprLevel)));
+        CPLAddXMLAttributeAndValue(psOption, "max",
+                                   CPLSPrintf("%d", maxComprLevel));
+        CPLAddXMLAttributeAndValue(psOption, "description",
+                                   osCompressionLevelDesc.c_str());
+        CPLAddXMLAttributeAndValue(psOption, "default",
+                                   CPLSPrintf("%d", DEFAULT_COMPRESSION_LEVEL));
     }
 
     {
@@ -680,13 +834,32 @@ void OGRParquetDriver::InitMetadata()
     {
         auto psOption = CPLCreateXMLNode(oTree.get(), CXT_Element, "Option");
         CPLAddXMLAttributeAndValue(psOption, "name", "WRITE_COVERING_BBOX");
-        CPLAddXMLAttributeAndValue(psOption, "type", "boolean");
-        CPLAddXMLAttributeAndValue(psOption, "default", "YES");
+        CPLAddXMLAttributeAndValue(psOption, "type", "string-select");
+        CPLAddXMLAttributeAndValue(psOption, "default", "AUTO");
         CPLAddXMLAttributeAndValue(psOption, "description",
                                    "Whether to write xmin/ymin/xmax/ymax "
                                    "columns with the bounding box of "
                                    "geometries");
+        CPLCreateXMLElementAndValue(psOption, "Value", "AUTO");
+        CPLCreateXMLElementAndValue(psOption, "Value", "YES");
+        CPLCreateXMLElementAndValue(psOption, "Value", "NO");
     }
+
+#if ARROW_VERSION_MAJOR >= 21
+    {
+        auto psOption = CPLCreateXMLNode(oTree.get(), CXT_Element, "Option");
+        CPLAddXMLAttributeAndValue(psOption, "name", "USE_PARQUET_GEO_TYPES");
+        CPLAddXMLAttributeAndValue(psOption, "default", "NO");
+        CPLAddXMLAttributeAndValue(psOption, "type", "string-select");
+        CPLAddXMLAttributeAndValue(psOption, "description",
+                                   "Whether to use Parquet Geometry/Geography "
+                                   "logical types (introduced in libarrow 21), "
+                                   "when using GEOMETRY_ENCODING=WKB encoding");
+        CPLCreateXMLElementAndValue(psOption, "Value", "YES");
+        CPLCreateXMLElementAndValue(psOption, "Value", "NO");
+        CPLCreateXMLElementAndValue(psOption, "Value", "ONLY");
+    }
+#endif
 
     {
         auto psOption = CPLCreateXMLNode(oTree.get(), CXT_Element, "Option");
@@ -737,6 +910,18 @@ void RegisterOGRParquet()
             CPLError(CE_Warning, CPLE_AppDefined,
                      "arrow::fs::LoadFileSystemFactories() failed with %s",
                      result.message().c_str());
+        }
+    }
+#endif
+
+#if defined(GDAL_USE_ARROWDATASET) && defined(GDAL_USE_ARROWCOMPUTE)
+    {
+        auto status = arrow::compute::Initialize();
+        if (!status.ok())
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "arrow::compute::Initialize() failed with %s",
+                     status.message().c_str());
         }
     }
 #endif

@@ -36,10 +36,9 @@ OGRDXFFeature *OGRDXFLayer::TranslateHATCH()
     int nCode = 0;
     OGRDXFFeature *poFeature = new OGRDXFFeature(poFeatureDefn);
 
-    CPLString osHatchPattern;
     double dfElevation = 0.0;  // Z value to be used for EVERY point
-    /* int nFillFlag = 0; */
     OGRGeometryCollection oGC;
+    std::string osExtendedData;
 
     while ((nCode = poDS->ReadValue(szLineBuf, sizeof(szLineBuf))) > 0)
     {
@@ -51,12 +50,15 @@ OGRDXFFeature *OGRDXFLayer::TranslateHATCH()
                 break;
 
             case 70:
-                /* nFillFlag = atoi(szLineBuf); */
+            {
+                const int nFillFlag = atoi(szLineBuf);
+                poFeature->oStyleProperties["FillFlag"] =
+                    nFillFlag ? "Filled" : "Pattern";
                 break;
+            }
 
-            case 2:
-                osHatchPattern = szLineBuf;
-                poFeature->SetField("Text", osHatchPattern.c_str());
+            case 2:  // Hatch pattern name
+                poFeature->SetField("Text", szLineBuf);
                 break;
 
             case 91:
@@ -71,6 +73,32 @@ OGRDXFFeature *OGRDXFLayer::TranslateHATCH()
                 }
             }
             break;
+
+            case 52:
+            {
+                poFeature->oStyleProperties["HatchPatternRotation"] = szLineBuf;
+                break;
+            }
+
+            case 41:
+            {
+                poFeature->oStyleProperties["HatchPatternScale"] = szLineBuf;
+                break;
+            }
+
+            case 1001:
+            {
+                osExtendedData = szLineBuf;
+                break;
+            }
+
+            case 1071:
+            {
+                if (osExtendedData == "HATCHBACKGROUNDCOLOR")
+                    poFeature->oStyleProperties["HatchBackgroundColor"] =
+                        szLineBuf;
+                break;
+            }
 
             default:
                 TranslateGenericProperty(poFeature, nCode, szLineBuf);
@@ -463,7 +491,7 @@ OGRErr OGRDXFLayer::CollectBoundaryPath(OGRGeometryCollection *poGC,
             else
                 break;
 
-            std::vector<double> adfKnots(1, 0.0);
+            std::vector<double> adfKnots(FORTRAN_INDEXING, 0.0);
 
             nCode = poDS->ReadValue(szLineBuf, sizeof(szLineBuf));
             if (nCode != 40)
@@ -475,8 +503,8 @@ OGRErr OGRDXFLayer::CollectBoundaryPath(OGRGeometryCollection *poGC,
                 nCode = poDS->ReadValue(szLineBuf, sizeof(szLineBuf));
             }
 
-            std::vector<double> adfControlPoints(1, 0.0);
-            std::vector<double> adfWeights(1, 0.0);
+            std::vector<double> adfControlPoints(FORTRAN_INDEXING, 0.0);
+            std::vector<double> adfWeights(FORTRAN_INDEXING, 0.0);
 
             if (nCode != 10)
                 break;
@@ -516,9 +544,10 @@ OGRErr OGRDXFLayer::CollectBoundaryPath(OGRGeometryCollection *poGC,
             if (nCode > 0)
                 poDS->UnreadValue();
 
-            auto poLS = InsertSplineWithChecks(nDegree, adfControlPoints,
-                                               nControlPoints, adfKnots, nKnots,
-                                               adfWeights);
+            auto poLS =
+                InsertSplineWithChecks(nDegree, adfControlPoints,
+                                       /* bHaZ = */ false, nControlPoints,
+                                       adfKnots, nKnots, adfWeights);
 
             if (!poLS)
             {

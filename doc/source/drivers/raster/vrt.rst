@@ -186,7 +186,7 @@ VRTRasterBand
 The attributes for VRTRasterBand are:
 
 - **dataType** (optional): type of the pixel data associated with this band (use
-  names Byte, UInt16, Int16, UInt32, Int32, Float32, Float64, CInt16, CInt32, CFloat32 or CFloat64).
+  names Byte, Int8, UInt16, Int16, UInt32, Int32, UInt64, Int64, Float32, Float64, CInt16, CInt32, CFloat32 or CFloat64).
   If not specified, defaults to 1
 
 - **band** (optional): band number this element represents (1 based).
@@ -207,13 +207,24 @@ The allowed subelements for VRTRasterBand are :
 
   <ColorInterp>Gray</ColorInterp>:
 
-- **NoDataValue**: If the input datasets to be composed have a nodata value for this raster band, set this element's value to that nodata value for it to be reflected in the VRT. This must not be confused with the NODATA element of a VRTComplexSource element.
+- **NoDataValue**: Specifies the NoData value that the raster band will report.
+  If not specified, NoData pixels from the band's sources (as well as pixels
+  not covered by any source) will be set to zero. If the source rasters have
+  their own NoData values that differ from the one specified in
+  ``<NoDataValue>``, a ``ComplexSource`` with a ``<NODATA>`` element can be
+  used to convert source NoData pixels to the value specified here.
 
 .. code-block:: xml
 
   <NoDataValue>-100.0</NoDataValue>
 
-- **HideNoDataValue**: If this value is 1, the nodata value will not be reported.  Essentially, the caller will not be aware of a nodata pixel when it reads one.  Any datasets copied/translated from this will not have a nodata value.  This is useful when you want to specify a fixed background value for the dataset.  The background will be the value specified by the NoDataValue element. Default value is 0 when this element is absent.
+- **HideNoDataValue**: If this value is ``YES``/``TRUE``/``1``, the NoData
+  value specified by ``<NoDataValue>`` will not be reported.  Essentially, the
+  reader will not be aware of a NoData pixel when it reads one.  Any datasets
+  copied/translated from this will not have a NoData value.  This is useful
+  when you want to specify a fixed background value for the dataset. (The
+  background will be the value specified by the NoDataValue element.) Default
+  value is ``NO`` when this element is absent.
 
 .. code-block:: xml
 
@@ -289,7 +300,7 @@ The allowed subelements for VRTRasterBand are :
 
 .. code-block:: xml
 
-  <Scale>0.0</Scale>
+  <Scale>1.0</Scale>
 
 - **Overview**: This optional element describes one overview level for the band.  It should have a child SourceFilename and SourceBand element.  The SourceFilename may have a relativeToVRT boolean attribute.  Multiple elements may be used to describe multiple overviews.
 
@@ -405,6 +416,31 @@ cubicspline,lanczos,average,mode.
       <DstRect xOff="0" yOff="0" xSize="128" ySize="128"/>
     </SimpleSource>
 
+
+Starting with GDAL 3.11, it is also possible to use a in-line VRTDataset as
+the source by using the VRTDataset element instead of SourceFilename.
+
+.. code-block:: xml
+
+    <SimpleSource>
+      <VRTDataset rasterXSize="20" rasterYSize="20">
+        <VRTRasterBand dataType="Byte" band="1">
+          <SimpleSource>
+            <SourceFilename relativeToVRT="1">../byte.tif</SourceFilename>
+            <SourceBand>1</SourceBand>
+            <SourceProperties RasterXSize="20" RasterYSize="20" DataType="Byte" BlockXSize="20" BlockYSize="20" />
+            <SrcRect xOff="0" yOff="0" xSize="20" ySize="20" />
+            <DstRect xOff="0" yOff="0" xSize="20" ySize="20" />
+          </SimpleSource>
+        </VRTRasterBand>
+      </VRTDataset>
+      <SourceBand>1</SourceBand>
+      <SourceProperties RasterXSize="20" RasterYSize="20" DataType="Byte" BlockXSize="20" BlockYSize="20" />
+      <SrcRect xOff="0" yOff="0" xSize="20" ySize="20" />
+      <DstRect xOff="0" yOff="0" xSize="20" ySize="20" />
+    </SimpleSource>
+
+
 ComplexSource
 ~~~~~~~~~~~~~
 
@@ -432,6 +468,7 @@ Clamping is performed for input pixel values outside of the range specified by t
 input pixel value is lower than the minimum source value, then the destination
 value corresponding to that minimum source value is used as the output pixel value.
 And similarly for an input pixel value that is greater than the maximum source value.
+To remap values without interpolation, the "reclassify" pixel function can be used. See :ref:`vrt_derived_bands`.
 
 The ComplexSource supports fetching a color component from a source raster
 band that has a color table. The ColorTableComponent value is the index of the
@@ -762,8 +799,14 @@ Except if (from top priority to lesser priority) :
   a single SimpleSource or ComplexSource that has overviews.
   Those virtual overviews will be hidden by external .vrt.ovr overviews that might be built later.
 
+.. _vrtrawrasterband:
+
 .vrt Descriptions for Raw Files
 -------------------------------
+
+.. warning:: Consult the :ref:`vrtrawrasterband_restricted_access` below
+             section for potential security issues related to that functionality
+             and how to restrict it.
 
 So far we have described how to derive new virtual datasets from existing
 files supported by GDAL.  However, it is also common to need to utilize
@@ -815,8 +858,6 @@ A few other notes:
 
 - The VRTRawRasterBand supports in place update of the raster, whereas the source based VRTRasterBand is always read-only.
 
-- The OpenEV tool includes a File menu option to input parameters describing a raw raster file in a GUI and create the corresponding .vrt file.
-
 - Multiple bands in the one .vrt file can come from the same raw file. Just ensure that the ImageOffset, PixelOffset, and LineOffset definition for each band is appropriate for the pixels of that particular band.
 
 Another example, in this case a 400x300 RGB pixel interleaved image.
@@ -846,6 +887,59 @@ Another example, in this case a 400x300 RGB pixel interleaved image.
         <LineOffset>1200</LineOffset>
     </VRTRasterBand>
     </VRTDataset>
+
+.. _vrtrawrasterband_restricted_access:
+
+Restricting access to Raw Files
+-------------------------------
+
+Some usages of GDAL, for example its use on a server that allows users to upload
+a (VRT) file, convert it to another format, and get the result back,
+could be abused to read the content of local files. Starting with GDAL 3.12, it
+is possible to restrict the use of the VRTRawRasterBand capability in several
+ways:
+
+- at build time, the CMake ``GDAL_VRT_ENABLE_RAWRASTERBAND`` variable can be set
+  to ``OFF``, to complete disable VRTRawRasterBand.
+
+- at runtime, with the following configuration options:
+
+  * .. config:: GDAL_VRT_ENABLE_RAWRASTERBAND
+       :choices: YES, NO
+       :default: YES
+       :since: 3.12
+
+       Whether the VRTRawRasterBand capability is allowed at runtime.
+
+  * .. config:: GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE
+       :choices: SIBLING_OR_CHILD_OF_VRT_PATH, ONLY_REMOTE, ALL, <path>
+       :default: SIBLING_OR_CHILD_OF_VRT_PATH
+       :since: 3.12
+
+       Restricts which SourceFilename values are allowed:
+
+       - if set to ``SIBLING_OR_CHILD_OF_VRT_PATH`` (which is the default value of
+         that configuration option starting with GDAL 3.12), the ``relativeToVRT``
+         attribute of ``SourceFilename`` will need to set to ``1``, and the path
+         expressed by ``SourceFilename`` must not contain any `../` or `..\\` substring.
+         Note that GDAL does not try to detect if one of the files, in the file
+         hierarchy below the directory of the VRT, is a symbolic link pointing to
+         elsewhere in the file system.
+
+       - if set to ``ONLY_REMOTE``, only ``SourceFilename`` pointing to one of the
+         :ref:`VSI network based file systems <network_based_file_systems>` will be
+         allowed. Be careful though that this could still be used to access files
+         accessible on a local network, depending on the network configuration of the
+         machine on which GDAL is run.
+
+       - if set to ``ALL`` there is no restriction on the value of  ``SourceFilename``.
+
+       - if set to one absolute path (or several ones, separated by the ``;`` (semi-colon) character
+         on Windows, or ``:`` (colon) on other operating systems), only ``SourceFilename`` that
+         start with those allowed absolute paths will be accepted.
+
+In versions before GDAL 3.12, disabling entirely the VRT driver by setting the
+:config:`GDAL_SKIP` configuration option to ``VRT`` may be a workaround.
 
 Creation of VRT Datasets
 ------------------------
@@ -1012,219 +1106,521 @@ should be specified with the above :cpp:func:`GDALRasterBand::SetMetadataItem` e
 
 .. _vrt_derived_bands:
 
-Using Derived Bands (with pixel functions in C/C++)
----------------------------------------------------
+Derived Bands (pixel functions)
+-------------------------------
 
-A specialized type of band is a 'derived' band which derives its pixel
-information from its source bands.  With this type of band you must also
-specify a pixel function, which has the responsibility of generating the
-output raster.  Pixel functions are created by an application and then
-registered with GDAL using a unique key.
-
+A "derived" band is a specialized type of band that derives its pixel
+values from its source bands using a "pixel function" at the time
+that values are read from the raster.
 Using derived bands you can create VRT datasets that manipulate bands on
-the fly without having to create new band files on disk.  For example, you
-might want to generate a band using four source bands from a nine band input
+the fly without having to create new band files on disk.
+GDAL provides a number of
+:ref:`built-in pixel functions <builtin_pixel_functions>`;
+additional pixel functions can be defined in :ref:`C++ <cpp_pixel_functions>`
+or :ref:`Python <python_pixel_functions>` and registered with GDAL using
+a unique key.
+
+A VRTRasterBand can be made a VRTDerivedRasterBand by setting attribute subClass="VRTDerivedRasterBand".
+
+Some of the common subelements for VRTRasterBand (whose subClass="VRTDerivedRasterBand") are listed here. They can be used with built-in, C++, or Python pixel functions.
+
+- **PixelFunctionType**: (required): A pixel function with this name must be defined.
+- **SkipNonContributingSources**: (optional, added in GDAL 3.7, defaults to false) = true/false: Whether sources that do not intersect the VRTRasterBand RasterIO() requested region should be omitted. By default, data for all sources, including ones that do not intersect it, are passed to the pixel function. By setting this parameter to true, only sources that intersect the requested region will be passed.
+
+.. example::
+   :title: Calculating a derived band
+   :id: vrt-derived-1
+
+For example, you
+might want to generate a band using four source bands from a nine-band input
 dataset (x0, x3, x4, and x8) and some constant y:
 
 .. code-block:: c
 
   band_value = sqrt((x3*x3+x4*x4)/(x0*x8)) + y;
 
-You could write the pixel function to compute this value and then register
-it with GDAL with the name "MyFirstFunction".  Then, the following VRT XML
-could be used to display this derived band:
-
+This can be accomplished using the built-in "expression" pixel function.
+The following VRT XML can be used:
 
 .. code-block:: xml
 
     <VRTDataset rasterXSize="1000" rasterYSize="1000">
         <VRTRasterBand dataType="Float32" band="1" subClass="VRTDerivedRasterBand">
             <Description>Magnitude</Description>
-            <PixelFunctionType>MyFirstFunction</PixelFunctionType>
-            <PixelFunctionArguments y="4" />
-            <SimpleSource>
+            <PixelFunctionType>expression</PixelFunctionType>
+            <PixelFunctionArguments expression="sqrt((x3*x3+x4*x4)/(x0*x8)) + 4" />
+            <SimpleSource name="x0">
                 <SourceFilename relativeToVRT="1">nine_band.dat</SourceFilename>
                 <SourceBand>1</SourceBand>
-                <SrcRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
-                <DstRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
             </SimpleSource>
-            <SimpleSource>
+            <SimpleSource name="x3">
                 <SourceFilename relativeToVRT="1">nine_band.dat</SourceFilename>
                 <SourceBand>4</SourceBand>
-                <SrcRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
-                <DstRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
             </SimpleSource>
-            <SimpleSource>
+            <SimpleSource name="x4">
                 <SourceFilename relativeToVRT="1">nine_band.dat</SourceFilename>
                 <SourceBand>5</SourceBand>
-                <SrcRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
-                <DstRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
             </SimpleSource>
-            <SimpleSource>
+            <SimpleSource name="x8">
                 <SourceFilename relativeToVRT="1">nine_band.dat</SourceFilename>
                 <SourceBand>9</SourceBand>
-                <SrcRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
-                <DstRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
             </SimpleSource>
         </VRTRasterBand>
     </VRTDataset>
 
-.. note::
+.. seealso::
+   :ref:`VRT processed datasets <vrt_processed_dataset>`, which provide a means of calculating multiple bands at once.
 
-    PixelFunctionArguments can only be used with C++ pixel functions in GDAL versions 3.4 and greater.
 
+.. _builtin_pixel_functions:
 
-In addition to the subclass specification (VRTDerivedRasterBand) and
-the PixelFunctionType value, there is another new parameter that can come
-in handy: SourceTransferType.  Typically the source rasters are obtained
-using the data type of the derived band.  There might be times,
-however, when you want the pixel function to have access to
-higher resolution source data than the data type being generated.
-For example, you might have a derived band of type "Float", which takes
-a single source of type "CFloat32" or "CFloat64", and returns the imaginary
-portion.  To accomplish this, set the SourceTransferType to "CFloat64".
-Otherwise the source would be converted to "Float" prior to
-calling the pixel function, and the imaginary portion would be lost.
-
-.. code-block:: xml
-
-    <VRTDataset rasterXSize="1000" rasterYSize="1000">
-        <VRTRasterBand dataType="Float32" band="1" subClass="VRTDerivedRasterBand">
-            <Description>Magnitude</Description>
-            <PixelFunctionType>MyFirstFunction</PixelFunctionType>
-            <SourceTransferType>CFloat64</SourceTransferType>
-            ...
-
-Default Pixel Functions
-+++++++++++++++++++++++
+Built-in Pixel Functions
+++++++++++++++++++++++++
 
 GDAL provides a set of default pixel functions that can be used without writing new code:
 
 
 .. list-table::
-   :widths: 15 10 20 55
+   :widths: 15 10 10 65
    :header-rows: 1
 
    * - PixelFunctionType
      - Number of input sources
      - PixelFunctionArguments
      - Description
+   * - **argmax**
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+     - (GDAL >= 3.12) Index (1-based, contrary to ``numpy.argmax``) of band with the maximum value
+   * - **argmin**
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+     - (GDAL >= 3.12) Index (1-based, contrary to ``numpy.argmin``) of band with the minimum value
    * - **cmul**
      - 2
      - -
-     - multiply the first band for the complex conjugate of the second
+     - Multiply the first band for the complex conjugate of the second
    * - **complex**
      - 2
      - -
-     - make a complex band merging two bands used as real and imag values
+     - Make a complex band merging two bands used as real and imag values
    * - **conj**
      - 1
      - -
-     - computes the complex conjugate of a single raster band (just a copy if the input is non-complex)
+     - Computes the complex conjugate of a single raster band
+
+       (just a copy if the input is non-complex)
    * - **dB**
      - 1
      - ``fact`` (optional)
-     - perform conversion to dB of the abs of a single raster band (real or complex): ``20. * log10( abs( x ) )``. The optional ``fact`` parameter can be set to ``10`` to get the alternative formula: ``10. * log10( abs( x ) )``
+     - Perform conversion to dB of the abs of a single raster band (real or complex):
+
+       ``20. * log10( abs( x ) )``.
+
+       The optional ``fact`` parameter can be set to ``10``
+
+       to get the alternative formula: ``10. * log10( abs( x ) )``
    * - **dB2amp**
      - 1
      - -
-     - perform scale conversion from logarithmic to linear (amplitude) (i.e. ``10 ^ ( x / 20 )`` ) of a single raster band (real only). Deprecated in GDAL v3.5. Please use the ``exp`` pixel function with ``base = 10.`` and ``fact = 0.05`` i.e. ``1./20``
+     - Perform scale conversion from logarithmic to linear (amplitude) (i.e. ``10 ^ ( x / 20 )`` )
+       of a single raster band (real only).
+
+       Deprecated in GDAL 3.5. Please use the ``exp`` pixel function with
+       ``base = 10.`` and ``fact = 0.05`` i.e. ``1./20``
    * - **dB2pow**
      - 1
      - -
-     - perform scale conversion from logarithmic to linear (power) (i.e. ``10 ^ ( x / 10 )`` ) of a single raster band (real only). Deprecated in GDAL v3.5. Please use the ``exp`` pixel function with ``base = 10.`` and ``fact = 0.1`` i.e. ``1./10``
+     - Perform scale conversion from logarithmic to linear (power) (i.e. ``10 ^ ( x / 10 )`` )
+       of a single raster band (real only).
+
+       Deprecated in GDAL 3.5. Please use the ``exp`` pixel function with
+       ``base = 10.`` and ``fact = 0.1`` i.e. ``1./10``
    * - **diff**
      - 2
      - -
-     - computes the difference between 2 raster bands (``b1 - b2``)
+     - Computes the difference between 2 raster bands (``b1 - b2``).
+
+       Starting with GDAL 3.12, if either ``b1`` or ``b2`` is equal to the
+
+       derived band's NoData value (set with ``<NoDataValue>``), the result
+
+       will be the NoData value.
    * - **div**
      - 2
      - -
-     - divide one raster band by another (``b1 / b2``)
-   * - **norm_diff**
-     - 2
-     - -
-     - computes the normalized difference between two raster bands: ``(b1 - b2)/(b1 + b2)``
+     - Divide one raster band by another (``b1 / b2``).
+
+       Starting with GDAL 3.12, if either ``b1`` or ``b2`` is equal to the
+
+       derived band's NoData value (set with ``<NoDataValue>``), the result
+
+       will be the NoData value.
    * - **exp**
      - 1
-     - ``base`` (optional), ``fact`` (optional)
-     - computes the exponential of each element in the input band ``x`` (of real values): ``e ^ x``. The function also accepts two optional parameters: ``base`` and ``fact`` that allow to compute the generalized formula: ``base ^ ( fact * x )``. Note: this function is the recommended one to perform conversion form logarithmic scale (dB): `` 10. ^ (x / 20.)``, in this case ``base = 10.`` and ``fact = 0.05`` i.e. ``1. / 20``
+     - ``base`` (optional)
+
+       ``fact`` (optional)
+     - Computes the exponential of each element in the input band ``x`` (of real values): ``e ^ x``.
+
+       The function also accepts two optional parameters: ``base`` and ``fact``
+
+       that allow to compute the generalized formula: ``base ^ ( fact * x )``.
+
+       Note: this function is the recommended one to perform conversion form
+
+       logarithmic scale (dB): `` 10. ^ (x / 20.)``, in this case
+
+       ``base = 10.`` and ``fact = 0.05`` i.e. ``1. / 20``
+
+       Starting with GDAL 3.12, if ``x`` is equal to the derived band's NoData value
+
+       (set with ``<NoDataValue>``), the result will be the NoData value.
+
+   * - **expression**
+     - 1
+     - ``expression``
+
+       ``dialect`` (optional)
+
+       ``propagateNoData`` (GDAL >= 3.12, optional, default=false)
+
+     - Evaluate a specified expression using `muparser <https://beltoforion.de/en/muparser/>`__ (default)
+       or `ExprTk <https://www.partow.net/programming/exprtk/index.html>`__.
+
+       The expression is specified using the "expression" argument.
+       The dialect may be specified using the "dialect" argument.
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be passed to the expression
+
+       as-is. The expression can then use the ``NODATA`` variable (or ``isnodata``
+
+       muparser function) to test for these pixels and handle them accordingly.
+
+       Within the expression, band values can be accessed:
+
+       - through the variables ``B1``, ``B2``, etc.
+
+       - by giving a name to a source band (e.g., ``<SimpleSource name="NIR">``)
+
+       - or through the ``BANDS`` vector.
+         With ExprTk, ``BANDS`` is exposed as a standard (0-indexed) vector.
+
+         With muparser, it is expanded into a list of all input bands.
+
+       Starting with GDAL 3.12, the variables ``_CENTER_X_`` and ``_CENTER_Y_`` can be
+
+       included in the expression to access cell center coordinates. The variable ``NODATA``
+
+       can be included in the expression if the derived band has a NoData value.
+
+       ExprTk and muparser support a number of built-in functions and control structures.
+
+       Refer to the documentation of those libraries for details.
+   * - **geometric_mean**
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+     - (GDAL >= 3.12) Geometric mean of input raster bands.
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be ignored.
+   * - **harmonic_mean**
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+
+       ``propagateZero`` (optional, default=false)
+     - (GDAL >= 3.12) Harmonic mean of input raster bands.
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be ignored.
+
+       If zero values are encountered in one of the bands, the output will
+
+       be set to NoData unless ``propagateZero`` is set to ``true``.
+
    * - **imag**
      - 1
      - -
-     - extract imaginary part from a single raster band (0 for non-complex)
+     - Extract imaginary part from a single raster band (0 for non-complex)
    * - **intensity**
      - 1
      - -
-     - computes the intensity ``Re( x * conj(x) )`` of a single raster band (real or complex)
+     - Computes the intensity ``Re( x * conj(x) )`` of a single raster band (real or complex)
    * - **interpolate_exp**
      - >= 2
      - ``t0``, ``dt``, ``t``
-     - interpolate a value at time (or position) ``t`` given input sources beginning at position ``t0`` with spacing ``dt`` using exponential interpolation
+     - Interpolate a value at time (or position) ``t`` given input sources
+
+       beginning at position ``t0`` with spacing ``dt`` using exponential interpolation.
+
+       Starting with GDAL 3.12, if either input source bounding ``t`` is equal to the NoData
+
+       value of the derived band (set with ``<NoDataValue>``), the result will be the
+
+       NoData value.
    * - **interpolate_linear**
      - >= 2
      - ``t0``, ``dt``, ``t``
-     - interpolate a value at time (or position) ``t`` given input sources beginning at ``t0`` with spacing ``dt`` using linear interpolation
+     - Interpolate a value at time (or position) ``t`` given input sources
+
+       beginning at ``t0`` with spacing ``dt`` using linear interpolation.
+
+       Starting with GDAL 3.12, if either input source bounding ``t`` is equal to the NoData
+
+       value of the derived band (set with ``<NoDataValue>``), the result will be the
+
+       NoData value.
    * - **inv**
      - 1
      - ``k`` (optional)
-     - inverse (``1./x``). If the optional ``k`` parameter is set then the result is multiplied by ``k`` (``k / x``)
+     - Inverse (``1./x``). If the optional ``k`` parameter is set,
+
+       then the result is multiplied by ``k`` (``k / x``).
+
+       Starting with GDAL 3.12, if ``x`` is equal to the derived band's NoData value
+
+       (set with ``<NoDataValue>``), the result will be the NoData value.
    * - **log10**
      - 1
      - -
-     - compute the logarithm (base 10) of the abs of a single raster band (real or complex): ``log10( abs( x ) )``
+     - Compute the logarithm (base 10) of the abs of a single raster band
+
+       (real or complex): ``log10( abs( x ) )``
+
+       Starting with GDAL 3.12, if ``x`` is equal to the derived band's NoData value
+
+       (set with ``<NoDataValue>``), the result will be the NoData value.
    * - **max**
-     - >= 2
-     - ``propagateNoData`` (optional)
-     - (GDAL >= 3.8) maximum of 2 or more raster bands, ignoring by default pixels at nodata. If the optional ``propagateNoData`` parameter is set to ``true``, then if a nodata pixel is found in one of the bands, if will be propagated to the output value.
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+
+       ``k``: constant (optional)
+     - (GDAL >= 3.8) Maximum of raster band(s) and an optional constant
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be ignored.
+   * - **mean**
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+     - (GDAL >= 3.12) Arithmetic mean of input raster bands.
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be ignored.
+   * - **median**
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+     - (GDAL >= 3.12) Median of input raster bands.
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be ignored.
    * - **min**
-     - >= 2
-     - ``propagateNoData`` (optional)
-     - (GDAL >= 3.8) minimum of 2 or more raster bands, ignoring by default pixels at nodata. If the optional ``propagateNoData`` parameter is set to ``true``, then if a nodata pixel is found in one of the bands, if will be propagated to the output value.
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+
+       ``k``: constant (optional)
+     - (GDAL >= 3.8) Minimum of raster band(s) and an optional constant
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be ignored.
    * - **mod**
      - 1
      - -
-     - extract module from a single raster band (real or complex)
+     - Extract module from a single raster band (real or complex)
+   * - **mode**
+     - >= 1
+     - ``propagateNoData`` (optional, default=false)
+     - (GDAL >= 3.12) Mode (most common value) of input raster bands.
+
+       If the optional ``propagateNoData`` parameter is set to ``true``, then
+
+       if a NoData pixel is found in one of the bands, if will be propagated to
+
+       the output value. Otherwise, NoData pixels will be ignored.
    * - **mul**
-     - >= 2
+     - >= 1
      - ``k`` (optional)
-     - multiply 2 or more raster bands. If the optional ``k`` parameter is provided then the result is multiplied by the scalar ``k``.
+
+       ``propagateNoData`` (optional, default=false)
+     - Multiply 1 or more raster bands.
+
+       If the optional ``k`` parameter is provided then the result is
+
+       multiplied by the scalar ``k``.
+
+       Starting with GDAL 3.12, if ``propagateNoData`` is true, any input pixel
+
+       equal to the derived band's NoData value (set with ``<NoDataValue>``)
+
+       will cause the result to be the NoData value. If ``propagateNoData`` is
+
+       false, input NoData values will be ignored.
+   * - **norm_diff**
+     - 2
+     - -
+     - Computes the normalized difference between two raster bands: ``(b1 - b2)/(b1 + b2)``
+
+       Starting with GDAL 3.12, if either ``b1`` or ``b2`` is equal to the
+
+       derived band's NoData value (set with ``<NoDataValue>``), the result
+
+       will be the NoData value.
    * - **phase**
      - 1
      - -
-     - extract phase from a single raster band [-PI,PI] (0 or PI for non-complex)
+     - Extract phase from a single raster band [-PI,PI] (0 or PI for non-complex)
    * - **polar**
      - 2
      - ``amplitude_type`` (optional)
-     - make a complex band using input bands for amplitude and phase values ``b1 * exp( j * b2 )``. The optional (string) parameter ``amplitude_type`` can be ``AMPLITUDE`` (default) ``INTENSITY`` or ``dB``. Note: if ``amplitude_type`` is set to ``INTENSITY`` then negative values are clipped to zero.
+     - Make a complex band using input bands for amplitude and phase values ``b1 * exp( j * b2 )``.
+
+       The optional (string) parameter ``amplitude_type`` can be:
+
+       - ``AMPLITUDE`` (default),
+
+       - ``INTENSITY`` or
+
+       - ``dB``.
+
+       Note: if ``amplitude_type`` is set to ``INTENSITY`` then negative values are clipped to zero.
    * - **pow**
      - 1
      - ``power``
-     - raise a single raster band to a constant power, specified with argument ``power`` (real only)
+     - Raise a single raster band to a constant power, specified with argument ``power`` (real only)
+
+       Starting with GDAL 3.12, if the input is equal to the derived band's NoData value
+
+       (set with ``<NoDataValue>``), the result will be the NoData value.
    * - **real**
      - 1
      - -
-     - extract real part from a single raster band (just a copy if the input is non-complex)
-   * - **sqrt**
-     - 1
-     - -
-     - perform the square root of a single raster band (real only)
-   * - **sum**
-     - >= 2
-     - ``k`` (optional)
-     - sum 2 or more raster bands. If the optional ``k`` parameter is provided then it is added to each element of the result
+     - Extract real part from a single raster band (just a copy if the input is non-complex)
+   * - **reclassify**
+     - = 1
+     - ``mapping``
+
+       ``default``
+     - Reclassify values according to a mapping provided by ``mapping``.
+
+       The format of the mapping is ``SOURCE=DEST;SOURCE=DEST;...`` where each
+       ``SOURCE`` element is:
+
+       - either a single value
+
+       - an interval (e.g., ``(-inf,30]``), ``NO_DATA``, or ``DEFAULT``.
+
+       ``DEST`` may be:
+
+       - any constant,
+
+       - ``PASS_THROUGH`` (to skip reclassification for certain values),
+
+       - or ``NO_DATA``.
+
+       An error will be raised if a pixel value is not covered by any interval.
+
+       A similar functionality, but with interpolation, is offered by the ``ComplexSource``.
    * - **replace_nodata**
      - = 1
      - ``to`` (optional)
-     - convert incoming ``NoData`` values to a new value, IEEE 754 `nan` by default
+     - Convert incoming ``NoData`` values to a new value, IEEE 754 `nan` by default
    * - **scale**
      - = 1
      - -
-     - perform scaling according to the ``offset`` and ``scale`` values of the raster band
+     - Perform scaling according to the ``offset`` and ``scale`` values of the raster band
 
-Writing Pixel Functions
-+++++++++++++++++++++++
+       Starting with GDAL 3.12, if the input is equal to the derived band's NoData value
 
+       (set with ``<NoDataValue>``), the result will be the NoData value.
+   * - **sqrt**
+     - 1
+     - -
+     - Perform the square root of a single raster band (real only).
+
+       Starting with GDAL 3.12, if the input is equal to the derived band's NoData value
+
+       (set with ``<NoDataValue>``), the result will be the NoData value.
+   * - **sum**
+     - >= 1
+     - ``k`` (optional)
+
+       ``propagateNoData`` (optional, default=``false``)
+     - Sum 1 or more raster bands. If the optional ``k`` parameter is provided
+
+       then it is added to each element of the result.
+
+       Starting with GDAL 3.12, if ``propagateNoData`` is true, any input pixel
+
+       equal to the derived band's NoData value (set with ``<NoDataValue>``)
+
+       will cause the result to be the NoData value. If ``propagateNoData`` is
+
+       false, input NoData values will be ignored.
+
+.. example::
+   :title: VRT expression with a simple condition
+
+   This example uses a simple ``if`` block to calculate the derived band
+   value depending on the value of an input band. Note the use of ``&gt;``
+   to escape the ``>`` character in the XML attribute. Using the same
+   VRT as :example:`vrt-derived-1`, the following expression can be
+   used:
+
+   .. code-block:: xml
+
+      <PixelFunctionType>expression</PixelFunctionType>
+      <PixelFunctionArguments dialect="muparser" expression="B1 ? 1.5*B3 : B1" />
+
+   or
+
+   .. code-block:: xml
+
+      <PixelFunctionType>expression</PixelFunctionType>
+      <PixelFunctionArguments dialect="exprtk" expression="if (B1 &gt; 1) 1.5*B3 ; else B1" />
+
+.. example::
+   :title: VRT expression using all bands
+
+   The ``BANDS`` variable provides access to all of the input bands, either
+   individually (``BANDS[0]`` for the first band) or collectively. Here,
+   we concisely evaluate the value of a band relative to the sum of other
+   bands. Using the same VRT as :example:`vrt-derived-1`:
+
+   .. code-block:: xml
+
+      <PixelFunctionType>expression</PixelFunctionType>
+      <PixelFunctionArguments expression="B1 / sum(BANDS)" />
+
+
+.. _cpp_pixel_functions:
+
+Writing Pixel Functions in C/C++
+++++++++++++++++++++++++++++++++
+
+If the built-in pixel functions are not suitable, a custom function can be written in C or C++. In this case, the
+You could write the pixel function to compute this value and then
+register it with GDAL with a name such as "MyFirstFunction".
 To register this function with GDAL (prior to accessing any VRT datasets
 with derived bands that use this function), an application calls
 :cpp:func:`GDALAddDerivedBandPixelFuncWithArgs` with a key and a :cpp:type:`GDALDerivedPixelFuncWithArgs`:
@@ -1347,13 +1743,44 @@ The following is an implementation of the pixel function:
         return CE_None;
     }
 
-Using Derived Bands (with pixel functions in Python)
-----------------------------------------------------
+Setting the working data type
+*****************************
 
-Starting with GDAL 2.2, in addition to pixel functions written in C/C++ as
+In addition to the subclass specification (VRTDerivedRasterBand) and
+the PixelFunctionType value, there is another new parameter that can come
+in handy: SourceTransferType.  Typically the source rasters are obtained
+using the data type of the derived band.  There might be times,
+however, when you want the pixel function to have access to
+higher resolution source data than the data type being generated.
+For example, you might have a derived band of type "Float", which takes
+a single source of type "CFloat32" or "CFloat64", and returns the imaginary
+portion.  To accomplish this, set the SourceTransferType to "CFloat64".
+Otherwise the source would be converted to "Float" prior to
+calling the pixel function, and the imaginary portion would be lost.
+
+.. code-block:: xml
+
+    <VRTDataset rasterXSize="1000" rasterYSize="1000">
+        <VRTRasterBand dataType="Float32" band="1" subClass="VRTDerivedRasterBand">
+            <Description>Magnitude</Description>
+            <PixelFunctionType>MyFirstFunction</PixelFunctionType>
+            <SourceTransferType>CFloat64</SourceTransferType>
+            ...
+
+.. _python_pixel_functions:
+
+Writing Pixel Functions in Python
++++++++++++++++++++++++++++++++++
+
+In addition to pixel functions written in C/C++ as
 documented in the :ref:`vrt_derived_bands` section, it is possible to use
 pixel functions written in Python. Both `CPython <https://www.python.org/>`_
 and `NumPy <http://www.numpy.org/>`_ are requirements at run-time.
+
+.. note::
+
+   Python pixel functions are not enabled by default; see :ref:`raster_vrt_security_implications`.
+
 
 The subelements for VRTRasterBand (whose subclass specification must be
 set to VRTDerivedRasterBand) are :
@@ -1365,8 +1792,6 @@ set to VRTDerivedRasterBand) are :
 - **PixelFunctionCode** (required if PixelFunctionType is of the form "function_name", ignored otherwise). The in-lined code of a Python module, that must be at least have a function whose name is given by PixelFunctionType.
 
 - **BufferRadius** (optional, defaults to 0): Amount of extra pixels, with respect to the original RasterIO() request to satisfy, that are fetched at the left, right, bottom and top of the input and output buffers passed to the pixel function. Note that the values of the output buffer in this buffer zone will be ignored.
-
-- **SkipNonContributingSources** (optional, added in GDAL 3.7, defaults to false) = true/false: Whether sources that do not intersect the VRTRasterBand RasterIO() requested region should be omitted. By default, data for all sources, including ones that do not intersect it, are passed to the pixel function. By setting this parameter to false, only sources that intersect the requested region will be passed.
 
 The signature of the Python pixel function must have the following arguments:
 
@@ -1390,157 +1815,156 @@ returned by the pixel function is ignored.
     If wanting to fill ``out_ar`` from another array, use the ``out_ar[:] = ...``
     syntax.
 
-Examples
-++++++++
+Python pixel function examples
+++++++++++++++++++++++++++++++
 
-VRT that multiplies the values of the source file by a factor of 1.5
-********************************************************************
+.. example::
+   :title: VRT that multiplies the values of the source file by a factor of 1.5
 
-.. code-block:: xml
+    .. code-block:: xml
 
-    <VRTDataset rasterXSize="20" rasterYSize="20">
-        <SRS>EPSG:26711</SRS>
-        <GeoTransform>440720,60,0,3751320,0,-60</GeoTransform>
-        <VRTRasterBand dataType="Byte" band="1" subClass="VRTDerivedRasterBand">
-            <PixelFunctionType>multiply</PixelFunctionType>
-            <PixelFunctionLanguage>Python</PixelFunctionLanguage>
-            <PixelFunctionArguments factor="1.5"/>
-            <PixelFunctionCode><![CDATA[
-                import numpy as np
-                def multiply(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
-                                raster_ysize, buf_radius, gt, **kwargs):
-                    factor = float(kwargs['factor'])
-                    out_ar[:] = np.round_(np.clip(in_ar[0] * factor,0,255))
-                ]]>
-            </PixelFunctionCode>
-            <SimpleSource>
-                <SourceFilename relativeToVRT="1">byte.tif</SourceFilename>
-            </SimpleSource>
-        </VRTRasterBand>
-    </VRTDataset>
+        <VRTDataset rasterXSize="20" rasterYSize="20">
+            <SRS>EPSG:26711</SRS>
+            <GeoTransform>440720,60,0,3751320,0,-60</GeoTransform>
+            <VRTRasterBand dataType="Byte" band="1" subClass="VRTDerivedRasterBand">
+                <PixelFunctionType>multiply</PixelFunctionType>
+                <PixelFunctionLanguage>Python</PixelFunctionLanguage>
+                <PixelFunctionArguments factor="1.5"/>
+                <PixelFunctionCode><![CDATA[
+                    import numpy as np
+                    def multiply(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
+                                    raster_ysize, buf_radius, gt, **kwargs):
+                        factor = float(kwargs['factor'])
+                        out_ar[:] = np.round_(np.clip(in_ar[0] * factor,0,255))
+                    ]]>
+                </PixelFunctionCode>
+                <SimpleSource>
+                    <SourceFilename relativeToVRT="1">byte.tif</SourceFilename>
+                </SimpleSource>
+            </VRTRasterBand>
+        </VRTDataset>
 
-VRT that adds 2 (or more) rasters
-*********************************
+.. example::
+   :title: VRT that adds 2 (or more) rasters
 
-.. code-block:: xml
+   .. code-block:: xml
 
-    <VRTDataset rasterXSize="20" rasterYSize="20">
-        <SRS>EPSG:26711</SRS>
-        <GeoTransform>440720,60,0,3751320,0,-60</GeoTransform>
-        <VRTRasterBand dataType="Byte" band="1" subClass="VRTDerivedRasterBand">
-            <PixelFunctionType>add</PixelFunctionType>
-            <PixelFunctionLanguage>Python</PixelFunctionLanguage>
-            <PixelFunctionCode><![CDATA[
-                import numpy as np
-                def add(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
-                                raster_ysize, buf_radius, gt, **kwargs):
-                    np.round_(np.clip(np.sum(in_ar, axis = 0, dtype = 'uint16'),0,255),
-                            out = out_ar)
-                ]]>
-            </PixelFunctionCode>
-            <SimpleSource>
-                <SourceFilename relativeToVRT="1">byte.tif</SourceFilename>
-            </SimpleSource>
-            <SimpleSource>
-                <SourceFilename relativeToVRT="1">byte2.tif</SourceFilename>
-            </SimpleSource>
-        </VRTRasterBand>
-    </VRTDataset>
+       <VRTDataset rasterXSize="20" rasterYSize="20">
+           <SRS>EPSG:26711</SRS>
+           <GeoTransform>440720,60,0,3751320,0,-60</GeoTransform>
+           <VRTRasterBand dataType="Byte" band="1" subClass="VRTDerivedRasterBand">
+               <PixelFunctionType>add</PixelFunctionType>
+               <PixelFunctionLanguage>Python</PixelFunctionLanguage>
+               <PixelFunctionCode><![CDATA[
+                   import numpy as np
+                   def add(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
+                                   raster_ysize, buf_radius, gt, **kwargs):
+                       np.round_(np.clip(np.sum(in_ar, axis = 0, dtype = 'uint16'),0,255),
+                               out = out_ar)
+                   ]]>
+               </PixelFunctionCode>
+               <SimpleSource>
+                   <SourceFilename relativeToVRT="1">byte.tif</SourceFilename>
+               </SimpleSource>
+               <SimpleSource>
+                   <SourceFilename relativeToVRT="1">byte2.tif</SourceFilename>
+               </SimpleSource>
+           </VRTRasterBand>
+       </VRTDataset>
 
-VRT that computes hillshading using an external library
-*******************************************************
+.. example::
+   :title: VRT that computes hillshading using an external library
 
-.. code-block:: xml
+   .. code-block:: xml
 
-    <VRTDataset rasterXSize="121" rasterYSize="121">
-        <SRS>EPSG:4326</SRS>
-        <GeoTransform>-80.004166666666663,0.008333333333333,0,
-        44.004166666666663,0,-0.008333333333333</GeoTransform>
-        <VRTRasterBand dataType="Byte" band="1" subClass="VRTDerivedRasterBand">
-            <ColorInterp>Gray</ColorInterp>
-            <SimpleSource>
-                <SourceFilename relativeToVRT="1">n43.dt0</SourceFilename>
-            </SimpleSource>
-            <PixelFunctionLanguage>Python</PixelFunctionLanguage>
-            <PixelFunctionType>hillshading.hillshade</PixelFunctionType>
-            <PixelFunctionArguments scale="111120" z_factor="30" />
-            <BufferRadius>1</BufferRadius>
-            <SourceTransferType>Int16</SourceTransferType>
-        </VRTRasterBand>
-    </VRTDataset>
+       <VRTDataset rasterXSize="121" rasterYSize="121">
+           <SRS>EPSG:4326</SRS>
+           <GeoTransform>-80.004166666666663,0.008333333333333,0,
+           44.004166666666663,0,-0.008333333333333</GeoTransform>
+           <VRTRasterBand dataType="Byte" band="1" subClass="VRTDerivedRasterBand">
+               <ColorInterp>Gray</ColorInterp>
+               <SimpleSource>
+                   <SourceFilename relativeToVRT="1">n43.dt0</SourceFilename>
+               </SimpleSource>
+               <PixelFunctionLanguage>Python</PixelFunctionLanguage>
+               <PixelFunctionType>hillshading.hillshade</PixelFunctionType>
+               <PixelFunctionArguments scale="111120" z_factor="30" />
+               <BufferRadius>1</BufferRadius>
+               <SourceTransferType>Int16</SourceTransferType>
+           </VRTRasterBand>
+       </VRTDataset>
 
-with hillshading.py:
+   with :file:`hillshading.py`:
 
-.. code-block:: python
+   .. code-block:: python
 
-    # Licence: MIT
-    # Copyright 2016, Even Rouault
-    import math
+       # Licence: MIT
+       # Copyright 2016, Even Rouault
+       import math
 
-    def hillshade_int(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
-                            raster_ysize, radius, gt, z, scale):
-        ovr_scale_x = float(out_ar.shape[1] - 2 * radius) / xsize
-        ovr_scale_y = float(out_ar.shape[0] - 2 * radius) / ysize
-        ewres = gt[1] / ovr_scale_x
-        nsres = gt[5] / ovr_scale_y
-        inv_nsres = 1.0 / nsres
-        inv_ewres = 1.0 / ewres
+       def hillshade_int(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
+                               raster_ysize, radius, gt, z, scale):
+           ovr_scale_x = float(out_ar.shape[1] - 2 * radius) / xsize
+           ovr_scale_y = float(out_ar.shape[0] - 2 * radius) / ysize
+           ewres = gt[1] / ovr_scale_x
+           nsres = gt[5] / ovr_scale_y
+           inv_nsres = 1.0 / nsres
+           inv_ewres = 1.0 / ewres
 
-        az = 315
-        alt = 45
-        degreesToRadians = math.pi / 180
+           az = 315
+           alt = 45
+           degreesToRadians = math.pi / 180
 
-        sin_alt = math.sin(alt * degreesToRadians)
-        azRadians = az * degreesToRadians
-        z_scale_factor = z / (8 * scale)
-        cos_alt_mul_z_scale_factor = \
-                math.cos(alt * degreesToRadians) * z_scale_factor
-        cos_az_mul_cos_alt_mul_z_scale_factor_mul_254 = \
-                    254 * math.cos(azRadians) * cos_alt_mul_z_scale_factor
-        sin_az_mul_cos_alt_mul_z_scale_factor_mul_254 = \
-                    254 * math.sin(azRadians) * cos_alt_mul_z_scale_factor
-        square_z_scale_factor = z_scale_factor * z_scale_factor
-        sin_alt_mul_254 = 254.0 * sin_alt
+           sin_alt = math.sin(alt * degreesToRadians)
+           azRadians = az * degreesToRadians
+           z_scale_factor = z / (8 * scale)
+           cos_alt_mul_z_scale_factor = \
+                   math.cos(alt * degreesToRadians) * z_scale_factor
+           cos_az_mul_cos_alt_mul_z_scale_factor_mul_254 = \
+                       254 * math.cos(azRadians) * cos_alt_mul_z_scale_factor
+           sin_az_mul_cos_alt_mul_z_scale_factor_mul_254 = \
+                       254 * math.sin(azRadians) * cos_alt_mul_z_scale_factor
+           square_z_scale_factor = z_scale_factor * z_scale_factor
+           sin_alt_mul_254 = 254.0 * sin_alt
 
-        for j in range(radius, out_ar.shape[0]-radius):
-            win_line = in_ar[0][j-radius:j+radius+1,:]
-            for i in range(radius, out_ar.shape[1]-radius):
-                win = win_line[:,i-radius:i+radius+1].tolist()
-                x = inv_ewres * ((win[0][0] + win[1][0] + win[1][0] + win[2][0])-\
-                                (win[0][2] + win[1][2] + win[1][2] + win[2][2]))
-                y = inv_nsres * ((win[2][0] + win[2][1] + win[2][1] + win[2][2])-\
-                                (win[0][0] + win[0][1] + win[0][1] + win[0][2]))
-                xx_plus_yy = x * x + y * y
-                cang_mul_254 = (sin_alt_mul_254 - \
-                    (y * cos_az_mul_cos_alt_mul_z_scale_factor_mul_254 - \
-                        x * sin_az_mul_cos_alt_mul_z_scale_factor_mul_254)) / \
-                    math.sqrt(1 + square_z_scale_factor * xx_plus_yy)
-                if cang_mul_254 < 0:
-                    out_ar[j,i] = 1
-                else:
-                    out_ar[j,i] = 1 + round(cang_mul_254)
+           for j in range(radius, out_ar.shape[0]-radius):
+               win_line = in_ar[0][j-radius:j+radius+1,:]
+               for i in range(radius, out_ar.shape[1]-radius):
+                   win = win_line[:,i-radius:i+radius+1].tolist()
+                   x = inv_ewres * ((win[0][0] + win[1][0] + win[1][0] + win[2][0])-\
+                                   (win[0][2] + win[1][2] + win[1][2] + win[2][2]))
+                   y = inv_nsres * ((win[2][0] + win[2][1] + win[2][1] + win[2][2])-\
+                                   (win[0][0] + win[0][1] + win[0][1] + win[0][2]))
+                   xx_plus_yy = x * x + y * y
+                   cang_mul_254 = (sin_alt_mul_254 - \
+                       (y * cos_az_mul_cos_alt_mul_z_scale_factor_mul_254 - \
+                           x * sin_az_mul_cos_alt_mul_z_scale_factor_mul_254)) / \
+                       math.sqrt(1 + square_z_scale_factor * xx_plus_yy)
+                   if cang_mul_254 < 0:
+                       out_ar[j,i] = 1
+                   else:
+                       out_ar[j,i] = 1 + round(cang_mul_254)
 
-    def hillshade(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
-                raster_ysize, radius, gt, **kwargs):
-        z = float(kwargs['z_factor'])
-        scale= float(kwargs['scale'])
-        hillshade_int(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
-                    raster_ysize, radius, gt, z, scale)
+       def hillshade(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
+                   raster_ysize, radius, gt, **kwargs):
+           z = float(kwargs['z_factor'])
+           scale= float(kwargs['scale'])
+           hillshade_int(in_ar, out_ar, xoff, yoff, xsize, ysize, raster_xsize,
+                       raster_ysize, radius, gt, z, scale)
 
-Python module path
-++++++++++++++++++
+.. note::
 
-When importing modules from inline Python code or when relying on out-of-line
-code (PixelFunctionType of the form "module_name.function_name"), you need
-to make sure the modules are accessible through the python path. Note that
-contrary to the Python interactive interpreter, the current path is not
-automatically added when used from GDAL. So you may need to define the
-**PYTHONPATH** environment variable if you get ModuleNotFoundError exceptions.
+   When importing modules from inline Python code or when relying on out-of-line
+   code (PixelFunctionType of the form "module_name.function_name"), you need
+   to make sure the modules are accessible through the python path. Note that
+   contrary to the Python interactive interpreter, the current path is not
+   automatically added when used from GDAL. So you may need to define the
+   **PYTHONPATH** environment variable if you get ModuleNotFoundError exceptions.
 
 .. _raster_vrt_security_implications:
 
 Security implications
-*********************
++++++++++++++++++++++
 
 The ability to run Python code potentially opens the door to many potential
 vulnerabilities if the user of GDAL may process untrusted datasets. To avoid
@@ -1567,7 +1991,7 @@ configuration options:
 Linking mechanism to a Python interpreter
 *****************************************
 
-Currently only CPython 2 and 3 is supported. The GDAL shared object
+Currently only CPython 3 is supported. The GDAL shared object
 is not explicitly linked at build time to any of the CPython library. When GDAL
 will need to run Python code, it will first determine if the Python interpreter
 is loaded in the current process (which is the case if the program is a Python
@@ -1583,9 +2007,9 @@ configuration option is not defined, it will look for a "python" binary in the
 directories of the PATH and will try to determine the related shared object
 (it will retry with "python3" if no "python" has been found). If the above
 was not successful, then a predefined list of shared objects names
-will be tried. At the time of writing, the order of versions searched is
-3.8, 3.9, 3.10, 3.11, 3.12, 3.7, 3.6, 3.5, 3.4, 3.3, 3.2. Enabling debug information (:config:`CPL_DEBUG=ON`) will
-show which Python version is used.
+will be tried. As of GDAL 3.12, the order of versions searched is
+3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.7, 3.6, 3.5.
+Enabling debug information (:config:`CPL_DEBUG=ON`) will show which Python version is used.
 
 Just-in-time compilation
 ++++++++++++++++++++++++
@@ -1605,7 +2029,7 @@ Given the following :file:`mandelbrot.py` file :
         #print('Using numba')
         g_max_iterations = 100
     except Exception:
-        class jit(object):
+        class jit:
             def __init__(self, nopython = True, nogil = True):
                 pass
 
@@ -1894,7 +2318,7 @@ pseudo panchromatic intensity, but not bound to an output band.
                 <SourceFilename relativeToVRT="1">world_rgbnir.tif</SourceFilename>
                 <SourceBand>2</SourceBand>
             </SpectralBand>
-                <SpectralBand dstBand="4">
+            <SpectralBand dstBand="4">
                 <SourceFilename relativeToVRT="1">world_rgbnir.tif</SourceFilename>
                 <SourceBand>3</SourceBand>
             </SpectralBand>
@@ -2073,7 +2497,7 @@ The effect of the ``eco`` option (added in GDAL 3.8) is that ``srcwin`` or ``pro
 The effect of the ``sd_name`` option (added in GDAL 3.9) is to choose an individual subdataset by
 name for sources that have multiple subdatasets. This means that rather than a fully-qualified description
 such as "NETCDF:myfile.nc:somearray" we may use "vrt://myfile.nc?sd_name=somearray". This option
-is mutually exclusive with ``sd``.
+is mutually exclusive with ``sd``, and with ``transpose``.
 
 The effect of the ``sd`` option (added in GDAL 3.9) is to choose an individual subdataset by
 number for sources that have multiple subdatasets. This means that rather than a fully-qualified
@@ -2081,8 +2505,18 @@ description such as "NETCDF:myfile.nc:somearray" we may use "vrt://myfile.nc?sd=
 is between 1 and the number of subdatasets. Note that there is no guarantee of the order of the
 subdatasets within a source between GDAL versions (or in some cases between file series in datasets). This
 mode is for convenience only, please use ``sd_name`` to choose a subdataset by name explicitly.
-This option is mutually exclusive with ``sd_name``.
+This option is mutually exclusive with ``sd_name``, and with ``transpose``.
 
+The effect of the ``transpose`` option (added in GDAL 3.12) is to specify just one array by name from a
+multidimensional dataset and nominate the indexes for the two axes that define the 2D dataset. This is
+an interface to the function :cpp:func:`GDALMDArray::AsClassicDataset` in the multidimensional raster model.
+This can be valuable for reorienting an array that presents X and Y in YX or some other order. (There's a
+possible added advantage that a valid geotransform may be provided that the classic 2D model doesn't yet infer,
+because the multidimensional model can derive one from coordinates referenced in that form).
+The usage syntax is ``vrt://somefile.extension?transpose=varname:iXDim,iYDim`` with a no-op case
+``vrt://somefile.extension?transpose=varname:0,1`` and ``vrt://somefile.extension?transpose=varname:1,0`` would be a
+transpose on the first two axes. There must be two unique axis indexes with values between 0 and the maximum available.
+This option is mutually exclusive with ``sd_name`` and ``sd``.
 
 The options may be chained together separated by '&'. (Beware the need for quoting to protect
 the ampersand).

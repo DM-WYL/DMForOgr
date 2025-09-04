@@ -1449,7 +1449,8 @@ OGRErr MIFFile::CreateFeature(TABFeature *poFeature)
          * .MID schema has been initialized.
          *------------------------------------------------------------*/
         if (m_poDefn == nullptr)
-            SetFeatureDefn(poFeature->GetDefnRef(), nullptr);
+            SetFeatureDefn(
+                const_cast<OGRFeatureDefn *>(poFeature->GetDefnRef()), nullptr);
 
         WriteMIFHeader();
         nFeatureId = 1;
@@ -1486,7 +1487,7 @@ OGRErr MIFFile::CreateFeature(TABFeature *poFeature)
 }
 
 /**********************************************************************
- *                   MIFFile::GetLayerDefn()
+ *                   MIFFile::GetLayerDefn() const
  *
  * Returns a reference to the OGRFeatureDefn that will be used to create
  * features in this dataset.
@@ -1496,7 +1497,7 @@ OGRErr MIFFile::CreateFeature(TABFeature *poFeature)
  * NULL if the OGRFeatureDefn has not been initialized yet (i.e. no file
  * opened yet)
  **********************************************************************/
-OGRFeatureDefn *MIFFile::GetLayerDefn()
+const OGRFeatureDefn *MIFFile::GetLayerDefn() const
 {
     return m_poDefn;
 }
@@ -1951,7 +1952,7 @@ void MIFFile::SetStrictLaundering(bool bStrictLaundering)
 /*                       MIFFile::GetSpatialRef()                       */
 /************************************************************************/
 
-OGRSpatialReference *MIFFile::GetSpatialRef()
+const OGRSpatialReference *MIFFile::GetSpatialRef() const
 
 {
     if (m_poSpatialRef == nullptr)
@@ -2094,9 +2095,10 @@ int MIFFile::GetBounds(double &dXMin, double &dYMin, double &dXMax,
  *
  * Returns OGRERR_NONE/OGRRERR_FAILURE.
  **********************************************************************/
-OGRErr MIFFile::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr MIFFile::IGetExtent(int /* iGeomField */, OGREnvelope *psExtent,
+                           bool bForce)
 {
-    if (bForce == TRUE)
+    if (bForce)
         PreParseFile();
 
     if (m_bPreParsed && m_bExtentsSet)
@@ -2112,7 +2114,7 @@ OGRErr MIFFile::GetExtent(OGREnvelope *psExtent, int bForce)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int MIFFile::TestCapability(const char *pszCap)
+int MIFFile::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))

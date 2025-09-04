@@ -9,7 +9,7 @@
  * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Portions Copyright (c) Her majesty the Queen in right of Canada as
- * represented by the Minister of National Defence, 2006.
+ * represented by the Minister of National Defence, 2006, 2020
  *
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
@@ -19,9 +19,6 @@
 
 #include <climits>
 #include <cstring>
-#if HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
 #include <algorithm>
 #include <map>
 #include <utility>
@@ -367,8 +364,7 @@ void NITFProxyPamRasterBand::UnrefUnderlyingRasterBand(
 /************************************************************************/
 
 NITFRasterBand::NITFRasterBand(NITFDataset *poDSIn, int nBandIn)
-    : psImage(poDSIn->psImage), poColorTable(nullptr), pUnpackData(nullptr),
-      bScanlineAccess(FALSE)
+    : psImage(poDSIn->psImage)
 {
     NITFBandInfo *psBandInfo = poDSIn->psImage->pasBandInfo + nBandIn - 1;
 
@@ -487,7 +483,7 @@ NITFRasterBand::~NITFRasterBand()
 CPLErr NITFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
 
 {
-    NITFDataset *poGDS = reinterpret_cast<NITFDataset *>(poDS);
+    NITFDataset *poGDS = cpl::down_cast<NITFDataset *>(poDS);
 
     /* -------------------------------------------------------------------- */
     /*      Special case for JPEG blocks.                                   */
@@ -719,15 +715,14 @@ GDALColorTable *NITFRasterBand::GetColorTable()
 CPLErr NITFRasterBand::SetColorTable(GDALColorTable *poNewCT)
 
 {
-    NITFDataset *poGDS = reinterpret_cast<NITFDataset *>(poDS);
+    NITFDataset *poGDS = cpl::down_cast<NITFDataset *>(poDS);
     if (poGDS->bInLoadXML)
         return GDALPamRasterBand::SetColorTable(poNewCT);
 
     if (poNewCT == nullptr)
         return CE_Failure;
 
-    GByte abyNITFLUT[768];
-    memset(abyNITFLUT, 0, 768);
+    std::vector<GByte> abyNITFLUT(768);
 
     const int nCount = std::min(256, poNewCT->GetColorEntryCount());
     for (int i = 0; i < nCount; i++)
@@ -735,12 +730,12 @@ CPLErr NITFRasterBand::SetColorTable(GDALColorTable *poNewCT)
         GDALColorEntry sEntry;
 
         poNewCT->GetColorEntryAsRGB(i, &sEntry);
-        abyNITFLUT[i] = (GByte)sEntry.c1;
-        abyNITFLUT[i + 256] = (GByte)sEntry.c2;
-        abyNITFLUT[i + 512] = (GByte)sEntry.c3;
+        abyNITFLUT[i + 256 * 0] = static_cast<GByte>(sEntry.c1);
+        abyNITFLUT[i + 256 * 1] = static_cast<GByte>(sEntry.c2);
+        abyNITFLUT[i + 256 * 2] = static_cast<GByte>(sEntry.c3);
     }
 
-    if (NITFWriteLUT(psImage, nBand, nCount, abyNITFLUT))
+    if (NITFWriteLUT(psImage, nBand, nCount, abyNITFLUT.data()))
         return CE_None;
 
     return CE_Failure;
@@ -781,7 +776,9 @@ void NITFRasterBand::Unpack(GByte *pData)
             // DANGER: Non-standard decrement of counter in the test section of
             // for.
             for (int i = n; --i >= 0;)
-                pData[i] = (pData[i >> 2] >> (GByte)s_Shift2[i & 3]) & 0x03;
+                pData[i] =
+                    (pData[i >> 2] >> static_cast<GByte>(s_Shift2[i & 3])) &
+                    0x03;
 
             break;
         }
@@ -792,7 +789,9 @@ void NITFRasterBand::Unpack(GByte *pData)
             // DANGER: Non-standard decrement of counter in the test section of
             // for.
             for (int i = n; --i >= 0;)
-                pData[i] = (pData[i >> 1] >> (GByte)s_Shift4[i & 1]) & 0x0f;
+                pData[i] =
+                    (pData[i >> 1] >> static_cast<GByte>(s_Shift4[i & 1])) &
+                    0x0f;
 
             break;
         }
@@ -992,8 +991,7 @@ void NITFRasterBand::Unpack(GByte *pData)
 NITFWrapperRasterBand::NITFWrapperRasterBand(NITFDataset *poDSIn,
                                              GDALRasterBand *poBaseBandIn,
                                              int nBandIn)
-    : poBaseBand(poBaseBandIn), poColorTable(nullptr),
-      eInterp(poBaseBandIn->GetColorInterpretation()),
+    : poBaseBand(poBaseBandIn), eInterp(poBaseBandIn->GetColorInterpretation()),
       bIsJPEG(poBaseBandIn->GetDataset() != nullptr &&
               poBaseBandIn->GetDataset()->GetDriver() != nullptr &&
               EQUAL(poBaseBandIn->GetDataset()->GetDriver()->GetDescription(),
@@ -1040,7 +1038,7 @@ GDALColorTable *NITFWrapperRasterBand::GetColorTable()
 
 void NITFWrapperRasterBand::SetColorTableFromNITFBandInfo()
 {
-    NITFDataset *poGDS = reinterpret_cast<NITFDataset *>(poDS);
+    NITFDataset *poGDS = cpl::down_cast<NITFDataset *>(poDS);
     poColorTable = NITFMakeColorTable(poGDS->psImage,
                                       poGDS->psImage->pasBandInfo + nBand - 1);
 }
@@ -1077,7 +1075,7 @@ int NITFWrapperRasterBand::GetOverviewCount()
 {
     if (bIsJPEG)
     {
-        if ((reinterpret_cast<NITFDataset *>(poDS))
+        if ((cpl::down_cast<NITFDataset *>(poDS))
                 ->ExposeUnderlyingJPEGDatasetOverviews())
             return NITFProxyPamRasterBand::GetOverviewCount();
 
@@ -1095,7 +1093,7 @@ GDALRasterBand *NITFWrapperRasterBand::GetOverview(int iOverview)
 {
     if (bIsJPEG)
     {
-        if ((reinterpret_cast<NITFDataset *>(poDS))
+        if ((cpl::down_cast<NITFDataset *>(poDS))
                 ->ExposeUnderlyingJPEGDatasetOverviews())
             return NITFProxyPamRasterBand::GetOverview(iOverview);
 
@@ -1103,4 +1101,140 @@ GDALRasterBand *NITFWrapperRasterBand::GetOverview(int iOverview)
     }
 
     return NITFProxyPamRasterBand::GetOverview(iOverview);
+}
+
+/************************************************************************/
+/*                      NITFComplexRasterBand()                         */
+/************************************************************************/
+
+NITFComplexRasterBand::NITFComplexRasterBand(NITFDataset *poDSIn,
+                                             GDALRasterBand *poBandI,
+                                             GDALRasterBand *poBandQ,
+                                             int nIBand, int nQBand)
+    : NITFRasterBand(poDSIn, nIBand)
+{
+
+    CPLAssert(poBandI->GetRasterDataType() == poBandQ->GetRasterDataType());
+    underlyingDataType = poBandI->GetRasterDataType();
+
+    //add the I and Q bands to an intermediate dataset
+    poIntermediateDS = std::make_unique<NITFDataset>();
+    poIntermediateDS->nRasterXSize = poDSIn->nRasterXSize;
+    poIntermediateDS->nRasterYSize = poDSIn->nRasterYSize;
+    poIntermediateDS->eAccess = poDSIn->eAccess;
+
+    poIntermediateDS->SetBand(nIBand, poBandI);
+    poIntermediateDS->SetBand(nQBand, poBandQ);
+
+    anBandMap[0] = nIBand;
+    anBandMap[1] = nQBand;
+
+    //set the new datatype
+    switch (underlyingDataType)
+    {
+        case GDT_Int16:
+            eDataType = GDT_CInt16;
+            break;
+        case GDT_Int32:
+            eDataType = GDT_CInt32;
+            break;
+        case GDT_Float32:
+            eDataType = GDT_CFloat32;
+            break;
+        case GDT_Float64:
+            eDataType = GDT_CFloat64;
+            break;
+        default:
+            eDataType = GDT_Unknown;
+            CPLError(CE_Failure, CPLE_NotSupported,
+                     "Unsupported complex datatype");
+            break;
+    }
+
+    complexDataTypeSize = GDALGetDataTypeSizeBytes(eDataType);
+    underlyingDataTypeSize = GDALGetDataTypeSizeBytes(underlyingDataType);
+    CPLAssert(underlyingDataTypeSize * 2 == complexDataTypeSize);
+
+    poBandI->GetBlockSize(&nBlockXSize, &nBlockYSize);
+}
+
+/************************************************************************/
+/*                             IReadBlock()                             */
+/************************************************************************/
+
+CPLErr NITFComplexRasterBand::IBlockIO(int nBlockXOff, int nBlockYOff,
+                                       void *pImage, GDALRWFlag rwFlag)
+
+{
+    int nRequestYSize;
+    int nRequestXSize;
+    bool bMemset = false;
+
+    /* -------------------------------------------------------------------- */
+    /*      If the last strip is partial, we need to avoid                  */
+    /*      over-requesting.  We also need to initialize the extra part     */
+    /*      of the block to zero.                                           */
+    /* -------------------------------------------------------------------- */
+    if ((nBlockYOff + 1) * nBlockYSize > nRasterYSize)
+    {
+        nRequestYSize = nRasterYSize - nBlockYOff * nBlockYSize;
+        if (rwFlag == GF_Read)
+            bMemset = true;
+    }
+    else
+    {
+        nRequestYSize = nBlockYSize;
+    }
+
+    /*-------------------------------------------------------------------- */
+    /*      If the input imagery is tiled, also need to avoid over-        */
+    /*      requesting in the X-direction.                                 */
+    /* ------------------------------------------------------------------- */
+    if ((nBlockXOff + 1) * nBlockXSize > nRasterXSize)
+    {
+        nRequestXSize = nRasterXSize - nBlockXOff * nBlockXSize;
+        if (rwFlag == GF_Read)
+            bMemset = true;
+    }
+    else
+    {
+        nRequestXSize = nBlockXSize;
+    }
+
+    if (bMemset)
+    {
+        memset(pImage, 0,
+               static_cast<size_t>(GDALGetDataTypeSizeBytes(eDataType)) *
+                   nBlockXSize * nBlockYSize);
+    }
+
+    //read/write both bands with interleaved pixels
+    return poIntermediateDS->RasterIO(
+        rwFlag, nBlockXOff * nBlockXSize, nBlockYOff * nBlockYSize,
+        nRequestXSize, nRequestYSize, pImage, nRequestXSize, nRequestYSize,
+        underlyingDataType, 2, &anBandMap[0], complexDataTypeSize,
+        static_cast<GSpacing>(complexDataTypeSize) * nBlockXSize,
+        underlyingDataTypeSize, nullptr);
+}
+
+/************************************************************************/
+/*                             IReadBlock()                             */
+/************************************************************************/
+
+CPLErr NITFComplexRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
+                                         void *pImage)
+
+{
+    return IBlockIO(nBlockXOff, nBlockYOff, pImage, GF_Read);
+}
+
+/************************************************************************/
+/*                            IWriteBlock()                             */
+/************************************************************************/
+
+CPLErr NITFComplexRasterBand::IWriteBlock(int nBlockXOff, int nBlockYOff,
+                                          void *pImage)
+
+{
+    return IBlockIO(nBlockXOff, nBlockYOff, pImage, GF_Write);
 }

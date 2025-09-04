@@ -165,24 +165,25 @@ ColumnTypeInfo ParseColumnTypeInfo(const CPLString &typeDef)
     typeName.Trim();
 
     if (EQUAL(typeName.c_str(), "BOOLEAN"))
-        return {typeName, QGRHanaDataTypes::Boolean, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::Boolean, 0, 0};
     else if (EQUAL(typeName.c_str(), "TINYINT"))
-        return {typeName, QGRHanaDataTypes::TinyInt, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::TinyInt, 0, 0};
     else if (EQUAL(typeName.c_str(), "SMALLINT"))
-        return {typeName, QGRHanaDataTypes::SmallInt, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::SmallInt, 0, 0};
     else if (EQUAL(typeName.c_str(), "INTEGER"))
-        return {typeName, QGRHanaDataTypes::Integer, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::Integer, 0, 0};
     else if (EQUAL(typeName.c_str(), "DECIMAL"))
     {
         switch (typeSize.size())
         {
             case 0:
-                return {typeName, QGRHanaDataTypes::Decimal, 0, 0};
+                return {std::move(typeName), QGRHanaDataTypes::Decimal, 0, 0};
             case 1:
-                return {typeName, QGRHanaDataTypes::Decimal, typeSize[0], 0};
+                return {std::move(typeName), QGRHanaDataTypes::Decimal,
+                        typeSize[0], 0};
             case 2:
-                return {typeName, QGRHanaDataTypes::Decimal, typeSize[0],
-                        typeSize[1]};
+                return {std::move(typeName), QGRHanaDataTypes::Decimal,
+                        typeSize[0], typeSize[1]};
         }
     }
     else if (EQUAL(typeName.c_str(), "FLOAT"))
@@ -190,26 +191,28 @@ ColumnTypeInfo ParseColumnTypeInfo(const CPLString &typeDef)
         switch (typeSize.size())
         {
             case 0:
-                return {typeName, QGRHanaDataTypes::Float, 10, 0};
+                return {std::move(typeName), QGRHanaDataTypes::Float, 10, 0};
             case 1:
-                return {typeName, QGRHanaDataTypes::Float, typeSize[0], 0};
+                return {std::move(typeName), QGRHanaDataTypes::Float,
+                        typeSize[0], 0};
             default:
                 incorrectFormatErr();
                 return {"", QGRHanaDataTypes::Unknown, 0, 0};
         }
     }
     else if (EQUAL(typeName.c_str(), "REAL"))
-        return {typeName, QGRHanaDataTypes::Real, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::Real, 0, 0};
     else if (EQUAL(typeName.c_str(), "DOUBLE"))
-        return {typeName, QGRHanaDataTypes::Double, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::Double, 0, 0};
     else if (EQUAL(typeName.c_str(), "VARCHAR"))
     {
         switch (typeSize.size())
         {
             case 0:
-                return {typeName, QGRHanaDataTypes::VarChar, 1, 0};
+                return {std::move(typeName), QGRHanaDataTypes::VarChar, 1, 0};
             case 1:
-                return {typeName, QGRHanaDataTypes::VarChar, typeSize[0], 0};
+                return {std::move(typeName), QGRHanaDataTypes::VarChar,
+                        typeSize[0], 0};
             default:
                 incorrectFormatErr();
                 return {"", QGRHanaDataTypes::Unknown, 0, 0};
@@ -220,45 +223,49 @@ ColumnTypeInfo ParseColumnTypeInfo(const CPLString &typeDef)
         switch (typeSize.size())
         {
             case 0:
-                return {typeName, QGRHanaDataTypes::WVarChar, 1, 0};
+                return {std::move(typeName), QGRHanaDataTypes::WVarChar, 1, 0};
             case 1:
-                return {typeName, QGRHanaDataTypes::WVarChar, typeSize[0], 0};
+                return {std::move(typeName), QGRHanaDataTypes::WVarChar,
+                        typeSize[0], 0};
             case 2:
                 incorrectFormatErr();
                 return {"", QGRHanaDataTypes::Unknown, 0, 0};
         }
     }
     else if (EQUAL(typeName.c_str(), "NCLOB"))
-        return {typeName, QGRHanaDataTypes::WLongVarChar, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::WLongVarChar, 0, 0};
     else if (EQUAL(typeName.c_str(), "DATE"))
-        return {typeName, QGRHanaDataTypes::Date, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::Date, 0, 0};
     else if (EQUAL(typeName.c_str(), "TIME"))
-        return {typeName, QGRHanaDataTypes::Time, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::Time, 0, 0};
     else if (EQUAL(typeName.c_str(), "TIMESTAMP"))
-        return {typeName, QGRHanaDataTypes::Timestamp, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::Timestamp, 0, 0};
     else if (EQUAL(typeName.c_str(), "VARBINARY"))
     {
         switch (typeSize.size())
         {
             case 0:
-                return {typeName, QGRHanaDataTypes::VarBinary, 1, 0};
+                return {std::move(typeName), QGRHanaDataTypes::VarBinary, 1, 0};
             case 1:
-                return {typeName, QGRHanaDataTypes::VarBinary, typeSize[0], 0};
+                return {std::move(typeName), QGRHanaDataTypes::VarBinary,
+                        typeSize[0], 0};
             case 2:
                 incorrectFormatErr();
                 return {"", QGRHanaDataTypes::Unknown, 0, 0};
         }
     }
     else if (EQUAL(typeName.c_str(), "BLOB"))
-        return {typeName, QGRHanaDataTypes::LongVarBinary, 0, 0};
+        return {std::move(typeName), QGRHanaDataTypes::LongVarBinary, 0, 0};
     else if (EQUAL(typeName.c_str(), "REAL_VECTOR"))
     {
         switch (typeSize.size())
         {
             case 0:
-                return {typeName, QGRHanaDataTypes::RealVector, 1, 0};
+                return {std::move(typeName), QGRHanaDataTypes::RealVector, 1,
+                        0};
             case 1:
-                return {typeName, QGRHanaDataTypes::RealVector, typeSize[0], 0};
+                return {std::move(typeName), QGRHanaDataTypes::RealVector,
+                        typeSize[0], 0};
             case 2:
                 incorrectFormatErr();
                 return {"", QGRHanaDataTypes::Unknown, 0, 0};
@@ -1073,18 +1080,18 @@ OGRErr OGRHanaTableLayer::GetGeometryWkb(OGRFeature *feature, int fieldIndex,
 }
 
 /************************************************************************/
-/*                                 GetExtent()                          */
+/*                                IGetExtent()                          */
 /************************************************************************/
 
-OGRErr OGRHanaTableLayer::GetExtent(int geomField, OGREnvelope *extent,
-                                    int force)
+OGRErr OGRHanaTableLayer::IGetExtent(int geomField, OGREnvelope *extent,
+                                     bool force)
 {
     if (geomField >= 0 && geomField < GetLayerDefn()->GetGeomFieldCount())
     {
         FlushPendingBatches(false);
     }
 
-    return OGRHanaLayer::GetExtent(geomField, extent, force);
+    return OGRHanaLayer::IGetExtent(geomField, extent, force);
 }
 
 /************************************************************************/
@@ -1116,23 +1123,23 @@ void OGRHanaTableLayer::ResetReading()
 /*                            TestCapability()                          */
 /************************************************************************/
 
-int OGRHanaTableLayer::TestCapability(const char *capabilities)
+int OGRHanaTableLayer::TestCapability(const char *capabilities) const
 {
     if (EQUAL(capabilities, OLCRandomRead))
     {
-        EnsureInitialized();
+        const_cast<OGRHanaTableLayer *>(this)->EnsureInitialized();
         return fidFieldIndex_ != OGRNullFID;
     }
     if (EQUAL(capabilities, OLCFastFeatureCount))
         return TRUE;
     if (EQUAL(capabilities, OLCFastSpatialFilter))
     {
-        EnsureInitialized();
+        const_cast<OGRHanaTableLayer *>(this)->EnsureInitialized();
         return !geomColumns_.empty();
     }
     if (EQUAL(capabilities, OLCFastGetExtent))
     {
-        EnsureInitialized();
+        const_cast<OGRHanaTableLayer *>(this)->EnsureInitialized();
         return IsFastExtentAvailable();
     }
     if (EQUAL(capabilities, OLCCreateField))
@@ -1144,7 +1151,7 @@ int OGRHanaTableLayer::TestCapability(const char *capabilities)
         return updateMode_;
     if (EQUAL(capabilities, OLCDeleteFeature))
     {
-        EnsureInitialized();
+        const_cast<OGRHanaTableLayer *>(this)->EnsureInitialized();
         return updateMode_ && fidFieldIndex_ != OGRNullFID;
     }
     if (EQUAL(capabilities, OLCAlterFieldDefn))
@@ -1531,7 +1538,7 @@ OGRErr OGRHanaTableLayer::CreateField(const OGRFieldDefn *srsField,
     if (dstField.GetDefault() != nullptr)
         clmDesc.defaultValue = dstField.GetDefault();
 
-    attrColumns_.push_back(clmDesc);
+    attrColumns_.push_back(std::move(clmDesc));
     featureDefn_->AddFieldDefn(&dstField);
 
     ColumnsChanged();

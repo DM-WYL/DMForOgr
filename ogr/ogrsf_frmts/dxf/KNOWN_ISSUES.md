@@ -7,7 +7,7 @@ driver. Anyone is welcome to contribute code that addresses these issues.
 ## Reader
 
 * The following DXF entities are not supported at all: MESH, MPOLYGON, RAY,
-TABLE, TOLERANCE, WIPEOUT, XLINE.
+TABLE, TOLERANCE, XLINE.
 
 ### 3DFACE
 
@@ -50,6 +50,11 @@ such as different colors or linetypes for the different elements of the line.
 * 3D (z-coordinate) and OCS (extrusion) support is missing. This entity is
 very complex and adding 3D/OCS support would take a long time.
 
+### WIPEOUT
+
+* A basic reading for WIPEOUT is supported. This feature can only translate
+the outline of each WIPEOUT entity. Any data about embedded image is ignored.
+
 ### Text entities
 
 * Text using AutoCAD-specific SHX (plotter) fonts, such as "txt", is
@@ -63,10 +68,6 @@ other software.
 
 ## Writer
 
-* The writer doesn't know about transparency. This means that hidden objects,
-which are represented using fully transparent colors by the reader, do not
-round-trip correctly.
-
 * As noted above, 3DFACE entities are represented by POLYGON geometries with a
 PEN() style tool, a combination which the writer handles poorly.
 
@@ -77,6 +78,6 @@ write this code if someone expresses a need for it.
 
 ---
 
-Alan Thomas, ThinkSpatial  
-athomas@thinkspatial.com.au  
+Alan Thomas, ThinkSpatial
+athomas@thinkspatial.com.au
 June 2018

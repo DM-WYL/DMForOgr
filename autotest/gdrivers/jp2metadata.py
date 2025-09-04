@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  Test JP2 metadata support.
@@ -22,7 +21,7 @@ from osgeo import gdal
 
 def have_jpeg2000_capable_driver():
     # JP2MrSID doesn't manage to open data/jpeg2000/IMG_md_ple_R1C1.jp2
-    for drv_name in ["JP2KAK", "JP2LURA", "JP2ECW", "JP2OpenJPEG"]:
+    for drv_name in ["JP2KAK", "JP2ECW", "JP2OpenJPEG"]:
         if gdal.GetDriverByName(drv_name):
             return True
     return False
@@ -41,7 +40,7 @@ def test_jp2metadata_1():
     ds = gdal.Open("data/jpeg2000/erdas_foo.jp2")
     wkt = ds.GetProjectionRef()
     gt = ds.GetGeoTransform()
-    assert wkt.startswith('PROJCS["ETRS89')
+    assert wkt.startswith('PROJCS["ETRS89') or wkt.startswith('PROJCS["EUREF-FIN')
     expected_gt = (356000.0, 0.5, 0.0, 7596000.0, 0.0, -0.5)
     for i in range(6):
         assert gt[i] == pytest.approx(expected_gt[i], abs=1e-5)

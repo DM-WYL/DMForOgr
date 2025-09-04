@@ -37,7 +37,7 @@ OGRGmtLayer::OGRGmtLayer(GDALDataset *poDS, const char *pszFilename,
     /* -------------------------------------------------------------------- */
     /*      Create the feature definition                                   */
     /* -------------------------------------------------------------------- */
-    poFeatureDefn = new OGRFeatureDefn(CPLGetBasename(pszFilename));
+    poFeatureDefn = new OGRFeatureDefn(CPLGetBasenameSafe(pszFilename).c_str());
     SetDescription(poFeatureDefn->GetName());
     poFeatureDefn->Reference();
 
@@ -321,7 +321,8 @@ bool OGRGmtLayer::ReadLine()
             size_t iValEnd = i + 2;  // Used after for.
             for (; iValEnd < osLine.length(); iValEnd++)
             {
-                if (!bInQuotes && isspace((unsigned char)osLine[iValEnd]))
+                if (!bInQuotes &&
+                    isspace(static_cast<unsigned char>(osLine[iValEnd])))
                     break;
 
                 if (bInQuotes && iValEnd < osLine.length() - 1 &&
@@ -378,7 +379,7 @@ void OGRGmtLayer::ResetReading()
 bool OGRGmtLayer::ScanAheadForHole()
 
 {
-    const CPLString osSavedLine = osLine;
+    CPLString osSavedLine = osLine;
     const vsi_l_offset nSavedLocation = VSIFTellL(m_fp);
 
     while (ReadLine() && osLine[0] == '#')
@@ -388,7 +389,7 @@ bool OGRGmtLayer::ScanAheadForHole()
     }
 
     VSIFSeekL(m_fp, nSavedLocation, SEEK_SET);
-    osLine = osSavedLine;
+    osLine = std::move(osSavedLine);
 
     // We do not actually restore papszKeyedValues, but we
     // assume it does not matter since this method is only called
@@ -408,7 +409,7 @@ bool OGRGmtLayer::ScanAheadForHole()
 bool OGRGmtLayer::NextIsFeature()
 
 {
-    const CPLString osSavedLine = osLine;
+    CPLString osSavedLine = osLine;
     const vsi_l_offset nSavedLocation = VSIFTellL(m_fp);
     bool bReturn = false;
 
@@ -418,7 +419,7 @@ bool OGRGmtLayer::NextIsFeature()
         bReturn = true;
 
     VSIFSeekL(m_fp, nSavedLocation, SEEK_SET);
-    osLine = osSavedLine;
+    osLine = std::move(osSavedLine);
 
     // We do not actually restore papszKeyedValues, but we
     // assume it does not matter since this method is only called
@@ -958,7 +959,7 @@ OGRErr OGRGmtLayer::WriteGeometry(OGRGeometryH hGeom, bool bHaveAngle)
 }
 
 /************************************************************************/
-/*                             GetExtent()                              */
+/*                            IGetExtent()                              */
 /*                                                                      */
 /*      Fetch extent of the data currently stored in the dataset.       */
 /*      The bForce flag has no effect on SHO files since that value     */
@@ -967,7 +968,8 @@ OGRErr OGRGmtLayer::WriteGeometry(OGRGeometryH hGeom, bool bHaveAngle)
 /*      Returns OGRERR_NONE/OGRRERR_FAILURE.                            */
 /************************************************************************/
 
-OGRErr OGRGmtLayer::GetExtent(OGREnvelope *psExtent, int bForce)
+OGRErr OGRGmtLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                               bool bForce)
 
 {
     if (bRegionComplete && sRegion.IsInit())
@@ -976,14 +978,14 @@ OGRErr OGRGmtLayer::GetExtent(OGREnvelope *psExtent, int bForce)
         return OGRERR_NONE;
     }
 
-    return OGRLayer::GetExtent(psExtent, bForce);
+    return OGRLayer::IGetExtent(iGeomField, psExtent, bForce);
 }
 
 /************************************************************************/
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRGmtLayer::TestCapability(const char *pszCap)
+int OGRGmtLayer::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, OLCRandomRead))

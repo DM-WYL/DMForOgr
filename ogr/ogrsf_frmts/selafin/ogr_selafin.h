@@ -86,7 +86,7 @@ class OGRSelafinLayer final : public OGRLayer
                     SelafinTypeDef eTypeP);
     ~OGRSelafinLayer();
 
-    OGRSpatialReference *GetSpatialRef() override
+    const OGRSpatialReference *GetSpatialRef() const override
     {
         return poSpatialRef;
     }
@@ -101,20 +101,15 @@ class OGRSelafinLayer final : public OGRLayer
     void ResetReading() override;
     OGRErr SetNextByIndex(GIntBig nIndex) override;
 
-    OGRFeatureDefn *GetLayerDefn() override
+    const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    int TestCapability(const char *pszCap) override;
+    int TestCapability(const char *pszCap) const override;
     GIntBig GetFeatureCount(int bForce = TRUE) override;
-    OGRErr GetExtent(OGREnvelope *psExtent, int bForce = TRUE) override;
-
-    virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
-    }
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
     OGRErr ISetFeature(OGRFeature *poFeature) override;
     OGRErr ICreateFeature(OGRFeature *poFeature) override;
@@ -154,19 +149,19 @@ class OGRSelafinDataSource final : public GDALDataset
     int Open(const char *pszFilename, int bUpdate, int bCreate);
     int OpenTable(const char *pszFilename);
 
-    int GetLayerCount() override
+    int GetLayerCount() const override
     {
         return nLayers;
     }
 
-    OGRLayer *GetLayer(int) override;
+    const OGRLayer *GetLayer(int) const override;
 
     OGRLayer *ICreateLayer(const char *pszName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
     virtual OGRErr DeleteLayer(int) override;
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     void SetDefaultSelafinName(const char *pszNameIn)
     {

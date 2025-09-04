@@ -692,7 +692,7 @@ GDALDataset *JP2KAKDataset::Open(GDALOpenInfo *poOpenInfo)
     KakaduInitialize();
 
     // Handle setting up datasource for JPIP.
-    const char *pszExtension = CPLGetExtension(poOpenInfo->pszFilename);
+    const char *pszExtension = poOpenInfo->osExtension.c_str();
     std::vector<GByte> abySubfileHeader(16);  // leave in this scope
     if (poOpenInfo->nHeaderBytes < 16)
     {
@@ -1460,30 +1460,29 @@ CPLErr JP2KAKDataset::DirectRasterIO(
                     {
                         // TODO(schwehr): Cleanup this block.
                         if (eBufType == GDT_Byte)
-                            ((GByte *)pData)[iX * nPixelSpace +
-                                             iY * nLineSpace + i * nBandSpace] =
-                                pabyIntermediate[iSrcX * nBandCount +
-                                                 static_cast<GPtrDiff_t>(
-                                                     iSrcY) *
-                                                     l_dims.size.x *
-                                                     nBandCount +
-                                                 i];
+                            static_cast<GByte *>(
+                                pData)[iX * nPixelSpace + iY * nLineSpace +
+                                       i * nBandSpace] = pabyIntermediate
+                                [iSrcX * nBandCount +
+                                 static_cast<GPtrDiff_t>(iSrcY) *
+                                     l_dims.size.x * nBandCount +
+                                 i];
                         else if (eBufType == GDT_Int16 ||
                                  eBufType == GDT_UInt16)
-                            ((GUInt16 *)pData)[iX * nPixelSpace / 2 +
-                                               iY * nLineSpace / 2 +
-                                               i * nBandSpace / 2] =
-                                ((GUInt16 *)pabyIntermediate)
+                            static_cast<GUInt16 *>(pData)[iX * nPixelSpace / 2 +
+                                                          iY * nLineSpace / 2 +
+                                                          i * nBandSpace / 2] =
+                                reinterpret_cast<GUInt16 *>(pabyIntermediate)
                                     [iSrcX * nBandCount +
                                      static_cast<GPtrDiff_t>(iSrcY) *
                                          l_dims.size.x * nBandCount +
                                      i];
                         else if (eBufType == GDT_Int32 ||
                                  eBufType == GDT_UInt32)
-                            ((GUInt32 *)pData)[iX * nPixelSpace / 4 +
-                                               iY * nLineSpace / 4 +
-                                               i * nBandSpace / 4] =
-                                ((GUInt32 *)pabyIntermediate)
+                            static_cast<GUInt32 *>(pData)[iX * nPixelSpace / 4 +
+                                                          iY * nLineSpace / 4 +
+                                                          i * nBandSpace / 4] =
+                                reinterpret_cast<GUInt32 *>(pabyIntermediate)
                                     [iSrcX * nBandCount +
                                      static_cast<GPtrDiff_t>(iSrcY) *
                                          l_dims.size.x * nBandCount +
@@ -1684,8 +1683,6 @@ static bool JP2KAKCreateCopy_WriteTile(
     int iLinesWritten = 0;
 
     void *pabyBuffer = CPLMalloc(nXSize * GDALGetDataTypeSizeBytes(eType));
-
-    CPLAssert(!oTile.get_ycc());
 
     bool bRet = true;
     while (true)
@@ -2334,7 +2331,7 @@ static GDALDataset *JP2KAKCreateCopy(const char *pszFilename,
     }
     else
     {
-        nBits = GDALGetDataTypeSize(eType);
+        nBits = GDALGetDataTypeSizeBits(eType);
         // Otherwise: we get a "Insufficient implementation precision available
         // for true reversible compression!" error or the data is not actually
         // reversible (on autotest/gcore/data/int32.tif / uint32.tif)
@@ -2363,7 +2360,14 @@ static GDALDataset *JP2KAKCreateCopy(const char *pszFilename,
     }
 
     kdu_params *poSizeRef = &oSizeParams;
-    poSizeRef->finalize();
+    try
+    {
+        poSizeRef->finalize();
+    }
+    catch (...)
+    {
+        return nullptr;
+    }
 
     // Open output file, and setup codestream.
     if (!pfnProgress(0.0, nullptr, pProgressData))
@@ -2373,22 +2377,24 @@ static GDALDataset *JP2KAKCreateCopy(const char *pszFilename,
 #ifdef KAKADU_JPX
     jpx_family_tgt jpx_family;
     jpx_target jpx_out;
-    const bool bIsJPX = !EQUAL(CPLGetExtension(pszFilename), "jpf") &&
-                        !EQUAL(CPLGetExtension(pszFilename), "jpc") &&
-                        !EQUAL(CPLGetExtension(pszFilename), "j2k") &&
-                        !(pszCodec != NULL && EQUAL(pszCodec, "J2K"));
+    const bool bIsJPX =
+        !EQUAL(CPLGetExtensionSafe(pszFilename).c_str(), "jpf") &&
+        !EQUAL(CPLGetExtensionSafe(pszFilename).c_str(), "jpc") &&
+        !EQUAL(CPLGetExtensionSafe(pszFilename).c_str(), "j2k") &&
+        !(pszCodec != NULL && EQUAL(pszCodec, "J2K"));
 #endif
 
     kdu_compressed_target *poOutputFile = nullptr;
     jp2_target jp2_out;
     const char *pszCodec = CSLFetchNameValueDef(papszOptions, "CODEC", nullptr);
-    const bool bIsJP2 = (!EQUAL(CPLGetExtension(pszFilename), "jpc") &&
-                         !EQUAL(CPLGetExtension(pszFilename), "j2k") &&
+    const bool bIsJP2 =
+        (!EQUAL(CPLGetExtensionSafe(pszFilename).c_str(), "jpc") &&
+         !EQUAL(CPLGetExtensionSafe(pszFilename).c_str(), "j2k") &&
 #ifdef KAKADU_JPX
-                         !bIsJPX &&
+         !bIsJPX &&
 #endif
-                         !(pszCodec != nullptr && EQUAL(pszCodec, "J2K"))) ||
-                        (pszCodec != nullptr && EQUAL(pszCodec, "JP2"));
+         !(pszCodec != nullptr && EQUAL(pszCodec, "J2K"))) ||
+        (pszCodec != nullptr && EQUAL(pszCodec, "JP2"));
     kdu_codestream oCodeStream;
 
     vsil_target oVSILTarget;
@@ -2667,13 +2673,12 @@ static GDALDataset *JP2KAKCreateCopy(const char *pszFilename,
 
     // Set the GeoTIFF and GML boxes if georeferencing is available,
     // and this is a JP2 file.
-    double adfGeoTransform[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    GDALGeoTransform gt;
     // cppcheck-suppress knownConditionTrueFalse
     if (bIsJP2 &&
-        ((poSrcDS->GetGeoTransform(adfGeoTransform) == CE_None &&
-          (adfGeoTransform[0] != 0.0 || adfGeoTransform[1] != 1.0 ||
-           adfGeoTransform[2] != 0.0 || adfGeoTransform[3] != 0.0 ||
-           adfGeoTransform[4] != 0.0 || std::abs(adfGeoTransform[5]) != 1.0)) ||
+        ((poSrcDS->GetGeoTransform(gt) == CE_None &&
+          (gt[0] != 0.0 || gt[1] != 1.0 || gt[2] != 0.0 || gt[3] != 0.0 ||
+           gt[4] != 0.0 || std::abs(gt[5]) != 1.0)) ||
          poSrcDS->GetGCPCount() > 0 || poSrcDS->GetMetadata("RPC") != nullptr))
     {
         GDALJP2Metadata oJP2MD;
@@ -2686,7 +2691,7 @@ static GDALDataset *JP2KAKCreateCopy(const char *pszFilename,
         else
         {
             oJP2MD.SetSpatialRef(poSrcDS->GetSpatialRef());
-            oJP2MD.SetGeoTransform(adfGeoTransform);
+            oJP2MD.SetGeoTransform(gt);
         }
 
         oJP2MD.SetRPCMD(poSrcDS->GetMetadata("RPC"));

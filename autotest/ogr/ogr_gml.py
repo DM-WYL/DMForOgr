@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 # -*- coding: utf-8 -*-
 ###############################################################################
-# $Id$
 #
 # Project:  GDAL/OGR Test Suite
 # Purpose:  GML driver testing.
@@ -14,6 +13,7 @@
 # SPDX-License-Identifier: MIT
 ###############################################################################
 
+import json
 import os
 import shutil
 import sys
@@ -1277,7 +1277,8 @@ def test_ogr_gml_35(tmp_path):
 
 
 @pytest.mark.parametrize("GML_FACE_HOLE_NEGATIVE", ("NO", "YES"))
-def test_ogr_gml_36(tmp_path, GML_FACE_HOLE_NEGATIVE):
+@pytest.mark.parametrize("skip_resolve_as_open_option", (True, False))
+def test_ogr_gml_36(tmp_path, GML_FACE_HOLE_NEGATIVE, skip_resolve_as_open_option):
 
     if GML_FACE_HOLE_NEGATIVE == "NO":
         if not ogrtest.have_geos():
@@ -1285,13 +1286,24 @@ def test_ogr_gml_36(tmp_path, GML_FACE_HOLE_NEGATIVE):
 
     shutil.copy("data/gml/GmlTopo-sample.xml", tmp_path)
 
-    with gdal.config_options(
-        {
-            "GML_SKIP_RESOLVE_ELEMS": "NONE",
-            "GML_FACE_HOLE_NEGATIVE": GML_FACE_HOLE_NEGATIVE,
-        }
-    ):
-        ds = ogr.Open(tmp_path / "GmlTopo-sample.xml")
+    if skip_resolve_as_open_option:
+        with gdal.config_options(
+            {
+                "GML_FACE_HOLE_NEGATIVE": GML_FACE_HOLE_NEGATIVE,
+            }
+        ):
+            ds = gdal.OpenEx(
+                tmp_path / "GmlTopo-sample.xml",
+                open_options=["SKIP_RESOLVE_ELEMS=NONE"],
+            )
+    else:
+        with gdal.config_options(
+            {
+                "GML_SKIP_RESOLVE_ELEMS": "NONE",
+                "GML_FACE_HOLE_NEGATIVE": GML_FACE_HOLE_NEGATIVE,
+            }
+        ):
+            ds = ogr.Open(tmp_path / "GmlTopo-sample.xml")
     assert gdal.GetLastErrorMsg() == "", "did not expect error"
 
     lyr = ds.GetLayerByName("Suolo")
@@ -1318,8 +1330,9 @@ def test_ogr_gml_36(tmp_path, GML_FACE_HOLE_NEGATIVE):
 
 
 @pytest.mark.parametrize("resolver", ("HUGE", "NONE"))
+@pytest.mark.parametrize("skip_resolve_as_open_option", (True, False))
 @pytest.mark.require_geos
-def test_ogr_gml_38(tmp_path, resolver):
+def test_ogr_gml_38(tmp_path, resolver, skip_resolve_as_open_option):
 
     if resolver == "HUGE" and ogr.GetDriverByName("SQLite") is None:
         pytest.skip("Requires SQLite support")
@@ -1329,8 +1342,15 @@ def test_ogr_gml_38(tmp_path, resolver):
         tmp_path,
     )
 
-    with gdal.config_option("GML_SKIP_RESOLVE_ELEMS", resolver):
-        ds = ogr.Open(tmp_path / "sample_gml_face_hole_negative_no.xml")
+    if skip_resolve_as_open_option:
+        ds = gdal.OpenEx(
+            tmp_path / "sample_gml_face_hole_negative_no.xml",
+            open_options=[f"SKIP_RESOLVE_ELEMS={resolver}"],
+        )
+    else:
+        with gdal.config_option("GML_SKIP_RESOLVE_ELEMS", resolver):
+            ds = ogr.Open(tmp_path / "sample_gml_face_hole_negative_no.xml")
+
     gdal.SetConfigOption("GML_FACE_HOLE_NEGATIVE", None)
 
     if resolver == "HUGE":
@@ -1353,7 +1373,10 @@ def test_ogr_gml_38(tmp_path, resolver):
 
 @pytest.mark.require_driver("SQLite")
 @pytest.mark.require_geos
-def test_ogr_gml_huge_resolver_same_nested_property_name(tmp_path):
+@pytest.mark.parametrize("skip_resolve_as_open_option", (True, False))
+def test_ogr_gml_huge_resolver_same_nested_property_name(
+    tmp_path, skip_resolve_as_open_option
+):
 
     shutil.copy(
         "data/gml/same_nested_property_name.gml",
@@ -1370,9 +1393,16 @@ def test_ogr_gml_huge_resolver_same_nested_property_name(tmp_path):
     ds = ogr.Open(tmp_path / "same_nested_property_name.gml")
     check_ds(ds)
 
-    with gdal.config_option("GML_SKIP_RESOLVE_ELEMS", "HUGE"):
-        ds = ogr.Open(tmp_path / "same_nested_property_name.gml")
-        check_ds(ds)
+    if skip_resolve_as_open_option:
+        ds = gdal.OpenEx(
+            tmp_path / "same_nested_property_name.gml",
+            open_options=["SKIP_RESOLVE_ELEMS=HUGE"],
+        )
+    else:
+        with gdal.config_option("GML_SKIP_RESOLVE_ELEMS", "HUGE"):
+            ds = ogr.Open(tmp_path / "same_nested_property_name.gml")
+
+    check_ds(ds)
 
 
 ###############################################################################
@@ -3560,6 +3590,55 @@ def test_ogr_gml_78(tmp_vsimem):
 
 
 ###############################################################################
+# Test effect of SWAP_COORDINATES when there is no SRS
+# (https://github.com/OSGeo/gdal/issues/11491)
+
+
+def test_ogr_gml_SWAP_COORDINATES_no_srs(tmp_vsimem):
+
+    gdal.FileFromMemBuffer(
+        tmp_vsimem / "test_ogr_gml_SWAP_COORDINATES_no_srs.xml",
+        """<?xml version="1.0" encoding="utf-8" ?>
+<ogr:FeatureCollection
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xmlns:ogr="http://ogr.maptools.org/"
+     xmlns:gml="http://www.opengis.net/gml">
+  <ogr:featureMember>
+    <ogr:point gml:id="point.0">
+      <ogr:geometryProperty><gml:Point><gml:pos>2 49</gml:pos></gml:Point></ogr:geometryProperty>
+      <ogr:id>1</ogr:id>
+    </ogr:point>
+  </ogr:featureMember>
+</ogr:FeatureCollection>
+""",
+    )
+
+    ds = ogr.Open(tmp_vsimem / "test_ogr_gml_SWAP_COORDINATES_no_srs.xml")
+    lyr = ds.GetLayer(0)
+    f = lyr.GetNextFeature()
+    assert f.GetGeometryRef().ExportToWkt() == "POINT (2 49)"
+    ds = None
+
+    ds = gdal.OpenEx(
+        tmp_vsimem / "test_ogr_gml_SWAP_COORDINATES_no_srs.xml",
+        open_options=["SWAP_COORDINATES=YES"],
+    )
+    lyr = ds.GetLayer(0)
+    f = lyr.GetNextFeature()
+    assert f.GetGeometryRef().ExportToWkt() == "POINT (49 2)"
+    ds = None
+
+    ds = gdal.OpenEx(
+        tmp_vsimem / "test_ogr_gml_SWAP_COORDINATES_no_srs.xml",
+        open_options=["SWAP_COORDINATES=NO"],
+    )
+    lyr = ds.GetLayer(0)
+    f = lyr.GetNextFeature()
+    assert f.GetGeometryRef().ExportToWkt() == "POINT (2 49)"
+    ds = None
+
+
+###############################################################################
 # Test SRSNAME_FORMAT
 
 
@@ -3910,6 +3989,58 @@ def test_ogr_gml_aixm_elevated_surface(tmp_path):
     assert got_wkt == "POLYGON ((2 49,3 49,3 50,2 49))"
 
     ds = None
+
+
+###############################################################################
+# Read AIXM ElevatedCurve
+
+
+def test_ogr_gml_aixm_elevated_curve(tmp_path):
+
+    shutil.copy("data/gml/aixm_ElevatedCurve.xml", tmp_path)
+
+    ds = ogr.Open(tmp_path / "aixm_ElevatedCurve.xml")
+    lyr = ds.GetLayer("GuidanceLine")
+    feat = lyr.GetNextFeature()
+    geom = feat.GetGeometryRef()
+    got_wkt = geom.ExportToWkt()
+    assert got_wkt == "LINESTRING (2 49,3 50)"
+
+    lyr = ds.GetLayer("VerticalStructure")
+    feat = lyr.GetNextFeature()
+    geom = feat.GetGeometryRef()
+    got_wkt = geom.ExportToWkt()
+    assert got_wkt == "LINESTRING (2 45,3 46)"
+    assert feat["elevation"] == 75
+    assert feat["elevation_uom"] == "M"
+    assert feat["verticalDatum"] == "EGM_96"
+    assert feat["verticalAccuracy"] == 30
+    assert feat["verticalAccuracy_uom"] == "M"
+
+
+###############################################################################
+# Read AIXM VerticalStructure mixing ElevatedPoint and ElevatedCurve
+
+
+def test_ogr_gml_aixm_vertical_structure_mix_point_and_line(tmp_path):
+
+    shutil.copy("data/gml/aixm_VerticalStructure_mix_point_and_line.xml", tmp_path)
+
+    ds = ogr.Open(tmp_path / "aixm_VerticalStructure_mix_point_and_line.xml")
+    lyr = ds.GetLayer("VerticalStructure")
+    feat = lyr.GetNextFeature()
+    geom = feat.GetGeometryRef()
+    got_wkt = geom.ExportToWkt()
+    assert got_wkt == "POINT (2 49)"
+    assert feat["elevation"] == 10
+    assert feat["elevation_uom"] == "M"
+    assert feat["verticalAccuracy"] == 0.1
+
+    feat = lyr.GetNextFeature()
+    geom = feat.GetGeometryRef()
+    got_wkt = geom.ExportToWkt()
+    assert got_wkt == "LINESTRING (2 45,3 46)"
+    assert feat["elevation"] == 0
 
 
 ###############################################################################
@@ -4371,7 +4502,7 @@ def test_ogr_gml_ogr2ogr_from_layer_with_name_geom_field(
     tmp_vsimem, use_create_geom_field, has_srs
 ):
 
-    ds = gdal.GetDriverByName("Memory").Create("", 0, 0, 0, gdal.GDT_Unknown)
+    ds = gdal.GetDriverByName("MEM").Create("", 0, 0, 0, gdal.GDT_Unknown)
     if has_srs:
         srs = osr.SpatialReference()
         srs.ImportFromEPSG(4326)
@@ -4422,7 +4553,7 @@ def test_ogr_gml_ogr2ogr_from_layers_with_inconsistent_srs(
     tmp_vsimem, first_layer_has_srs
 ):
 
-    ds = gdal.GetDriverByName("Memory").Create("", 0, 0, 0, gdal.GDT_Unknown)
+    ds = gdal.GetDriverByName("MEM").Create("", 0, 0, 0, gdal.GDT_Unknown)
     srs = osr.SpatialReference()
     srs.ImportFromEPSG(4326)
     srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
@@ -4644,3 +4775,442 @@ def test_ogr_gml_force_opening(tmp_vsimem):
     with gdal.config_option("NAS_GFS_TEMPLATE", ""):
         ds = gdal.OpenEx(filename, allowed_drivers=["GML"])
         assert ds.GetDriver().GetDescription() == "GML"
+
+
+###############################################################################
+# Test field type override open option schema
+#
+
+
+@pytest.mark.parametrize("is_path", [False, True])
+@pytest.mark.parametrize(
+    "open_options, with_xsd, expected_field_types, expected_field_names, expected_warning",
+    [
+        ([], True, [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, ogr.OFTString], [], ""),
+        (
+            [],
+            False,
+            [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, ogr.OFTInteger],
+            [],
+            "",
+        ),
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "str", "type": "Real" }]}]}'
+            ],
+            False,
+            [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, ogr.OFTReal],
+            [],
+            "",
+        ),
+        # Case insensitivity test
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "str", "type": "Real" }]}]}'
+            ],
+            False,
+            [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, ogr.OFTReal],
+            [],
+            "",
+        ),
+        # Test override XSD
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "str", "type": "Real" }]}]}'
+            ],
+            True,
+            [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, ogr.OFTReal],
+            [],
+            "",
+        ),
+        # Test with a field that does not exist
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "xxxx", "type": "Real" }]}]}'
+            ],
+            True,
+            [],
+            [],
+            "Field xxxx not found in layer test_point",
+        ),
+        # Test with type which is not recognized
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "str", "type": "xxxx" }, {"name": "dbl", "type": "String" }]}]}'
+            ],
+            True,
+            [],
+            [],
+            "Unsupported field type: xxxx for field str",
+        ),
+        # Test with layer name
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "xxxx", "fields": [{ "name": "str", "type": "Real" }]}]}'
+            ],
+            True,
+            [],
+            [],
+            "Layer xxxx not found",
+        ),
+        # Test with layer name that does not exist
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "xxxx", "fields": [{ "name": "str", "type": "Real" }]}]}'
+            ],
+            True,
+            [],
+            [],
+            "Layer xxxx not found",
+        ),
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "str", "type": "Real" }]},{"name": "xxxx", "fields": [{ "name": "str", "type": "Real" }]}]}'
+            ],
+            True,
+            [],
+            [],
+            "Layer xxxx not found",
+        ),
+        # Test field newName
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "str", "newName": "new_str" }]}]}'
+            ],
+            True,
+            [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, ogr.OFTString],
+            ["fid", "dbl", "int", "new_str"],
+            "",
+        ),
+        # Test change subType
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "str", "subType": "UUID" }]}]}'
+            ],
+            True,
+            [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, (ogr.OFTString, ogr.OFSTUUID)],
+            ["fid", "dbl", "int", "str"],
+            "",
+        ),
+        # Test "full" schemaType
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "schemaType": "Full", "fields": [{ "name": "dbl"}, { "name": "str", "type": "String", "newName": "new_str", "subType": "UUID" }]}]}'
+            ],
+            True,
+            [ogr.OFTString, ogr.OFTReal, (ogr.OFTString, ogr.OFSTUUID)],
+            ["fid", "dbl", "new_str"],
+            "",
+        ),
+        # Test width and precision override
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "int", "width": 7, "precision": 3 }]}]}'
+            ],
+            True,
+            [ogr.OFTString, ogr.OFTReal, ogr.OFTInteger, ogr.OFTString],
+            [],
+            "",
+        ),
+        # Test boolean and short integer subtype
+        (
+            [
+                r'OGR_SCHEMA={"layers": [{"name": "test_point", "fields": [{ "name": "int", "subType": "Boolean" }, { "name": "dbl", "type": "Integer", "subType": "Int16" }]}]}'
+            ],
+            True,
+            [
+                ogr.OFTString,
+                (ogr.OFTInteger, ogr.OFSTInt16),
+                (ogr.OFTInteger, ogr.OFSTBoolean),
+                ogr.OFTString,
+            ],
+            ["fid", "dbl", "int", "str"],
+            "",
+        ),
+    ],
+)
+def test_ogr_gml_type_override(
+    tmp_path,
+    is_path,
+    open_options,
+    with_xsd,
+    expected_field_types,
+    expected_field_names,
+    expected_warning,
+):
+
+    shutil.copy("data/gml/test_point.gml", tmp_path)
+
+    if with_xsd:
+        shutil.copy("data/gml/test_point.xsd", tmp_path)
+
+    gdal.ErrorReset()
+
+    try:
+        schema = open_options[0].split("=")[1]
+        open_options = open_options[1:]
+    except IndexError:
+        schema = None
+        is_path = False
+
+    with gdal.quiet_errors():
+
+        if is_path:
+            schema_path = tmp_path / "ogr_schema.json"
+            with open(schema_path, "w+") as f:
+                f.write(schema)
+            open_options.append("OGR_SCHEMA=" + str(schema_path))
+        elif schema:
+            open_options.append("OGR_SCHEMA=" + schema)
+        else:
+            open_options = []
+
+        # Validate the JSON schema
+        if not expected_warning and schema:
+            schema = json.loads(schema)
+            gdaltest.validate_json(schema, "ogr_fields_override.schema.json")
+
+        # Check error if expected_field_types is empty
+        if not expected_field_types:
+            ds = gdal.OpenEx(
+                tmp_path / "test_point.gml",
+                gdal.OF_VECTOR | gdal.OF_READONLY,
+                open_options=open_options,
+                allowed_drivers=["GML"],
+            )
+            assert (
+                gdal.GetLastErrorMsg().find(expected_warning) != -1
+            ), f"Warning {expected_warning} not found, got {gdal.GetLastErrorMsg()} instead"
+            assert ds is None
+        else:
+
+            with gdal.OpenEx(
+                tmp_path / "test_point.gml",
+                gdal.OF_VECTOR | gdal.OF_READONLY,
+                open_options=open_options,
+                allowed_drivers=["GML"],
+            ) as gml_ds:
+
+                assert gml_ds.GetLayerCount() == 1, "wrong number of layers"
+
+                lyr = gml_ds.GetLayerByName("test_point")
+
+                feat = lyr.GetNextFeature()
+
+                if len(expected_field_names) == 0:
+                    expected_field_names = ("fid", "dbl", "int", "str")
+
+                # Check field types fid, dbl, int, str
+                for i in range(len(expected_field_names)):
+                    try:
+                        expected_type, expected_subtype = expected_field_types[i]
+                        assert feat.GetFieldDefnRef(i).GetType() == expected_type
+                        assert feat.GetFieldDefnRef(i).GetSubType() == expected_subtype
+                    except TypeError:
+                        expected_type = expected_field_types[i]
+                        assert feat.GetFieldDefnRef(i).GetType() == expected_type
+
+                # Test width and precision override
+                if len(open_options) > 0 and "precision" in open_options[0]:
+                    assert feat.GetFieldDefnRef(2).GetWidth() == 7
+                    assert feat.GetFieldDefnRef(2).GetPrecision() == 3
+
+                # Check feature content
+                assert feat.GetFieldAsString("fid") == "F0"
+                assert feat.GetFieldAsDouble("dbl") == 1.0
+                if len(expected_field_names) > 0:
+                    if "int" in expected_field_names:
+                        assert feat.GetFieldAsInteger("int") == 1
+                    if "str" in expected_field_names:
+                        assert feat.GetFieldAsString("str") == "1"
+                    if "new_str" in expected_field_names:
+                        assert feat.GetFieldAsString("new_str") == "1"
+
+                if expected_warning:
+                    assert (
+                        gdal.GetLastErrorMsg().find(expected_warning) != -1
+                    ), f"Warning {expected_warning} not found, got {gdal.GetLastErrorMsg()} instead"
+
+
+###############################################################################
+# Test a write error
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_gml_write_error(tmp_vsimem):
+
+    filename = str(tmp_vsimem / "test.gml||maxlength=200")
+    ds = ogr.GetDriverByName("GML").CreateDataSource(
+        filename, options=["XSISCHEMA=OFF"]
+    )
+    with pytest.raises(Exception, match="Could not write line"):
+        ds.Close()
+
+    filename = str(tmp_vsimem / "test.gml||maxlength=600")
+    ds = ogr.GetDriverByName("GML").CreateDataSource(
+        filename, options=["XSISCHEMA=OFF"]
+    )
+    lyr = ds.CreateLayer("test")
+    f = ogr.Feature(lyr.GetLayerDefn())
+    with pytest.raises(Exception, match="Could not write line"):
+        lyr.CreateFeature(f)
+    ds.Close()
+
+
+###############################################################################
+# Test open option SKIP_CORRUPTED_FEATURES
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_gml_skip_corrupted_features(tmp_vsimem):
+
+    filename = str(tmp_vsimem / "test.gml")
+    gdal.FileFromMemBuffer(
+        filename,
+        """<?xml version="1.0" encoding="utf-8" ?>
+<ogr:FeatureCollection
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:schemaLocation=""
+     xmlns:ogr="http://ogr.maptools.org/"
+     xmlns:gml="http://www.opengis.net/gml">
+  <gml:boundedBy>
+    <gml:Box>
+      <gml:coord><gml:X>0</gml:X><gml:Y>-5</gml:Y></gml:coord>
+      <gml:coord><gml:X>8</gml:X><gml:Y>3</gml:Y></gml:coord>
+    </gml:Box>
+  </gml:boundedBy>
+
+  <gml:featureMember>
+    <ogr:solids fid="solids.1">
+    <boundary>
+    <ClosureSurface>
+        <lod2MultiSurface>
+        <gml:MultiSurface>
+            <gml:surfaceMember>
+            <gml:Polygon gml:id="UUID_da310e81-cd4a-4167-94a0-3ea04f39ebd0">
+                <gml:exterior>
+                <gml:LinearRing>
+                    <gml:posList srsDimension="3">646102.957 5667459.848 146.668 646102.957 5667459.848 142.56 646107.611 5667459.649 142.56 646107.611 5667459.649 146.696 646102.957 5667459.848 146.668</gml:posList>
+                </gml:LinearRing>
+                </gml:exterior>
+            </gml:Polygon>
+            </gml:surfaceMember>
+        </gml:MultiSurface>
+        </lod2MultiSurface>
+    </ClosureSurface>
+    </boundary>
+      <gml:Solid>
+        <gml:exterior>
+          <gml:XXXX>
+            <gml:surfaceMember xlink:href="#UUID_da310e81-cd4a-4167-94a0-3ea04f39ebd0"/>
+          </gml:XXXX>
+        </gml:exterior>
+      </gml:Solid>
+    </ogr:solids>
+  </gml:featureMember>
+</ogr:FeatureCollection>""",
+    )
+
+    with gdal.config_option("GML_SKIP_CORRUPTED_FEATURES", "NO"):
+        with pytest.raises(
+            Exception,
+            match="You may set the GML_SKIP_CORRUPTED_FEATURES configuration option to YES to skip to the next feature",
+        ):
+            ds = ogr.Open(filename)
+            layer = ds.GetLayer(0)
+            layer.GetNextFeature()
+
+    with gdal.config_option("GML_SKIP_CORRUPTED_FEATURES", "YES"):
+        ds = ogr.Open(filename)
+        layer = ds.GetLayer(0)
+        f = layer.GetNextFeature()
+        assert f is None
+
+    with gdal.config_option("GML_SKIP_CORRUPTED_FEATURES", "NO"):
+        ds = gdal.OpenEx(filename, open_options=["SKIP_CORRUPTED_FEATURES=YES"])
+        layer = ds.GetLayer(0)
+        f = layer.GetNextFeature()
+        assert f is None
+
+    with gdal.config_option("GML_SKIP_CORRUPTED_FEATURES", "NO"):
+        with pytest.raises(
+            Exception,
+            match="You may set the GML_SKIP_CORRUPTED_FEATURES configuration option to YES to skip to the next feature",
+        ):
+            ds = gdal.OpenEx(filename, open_options=["SKIP_CORRUPTED_FEATURES=NO"])
+            layer = ds.GetLayer(0)
+            layer.GetNextFeature()
+
+
+###############################################################################
+# Test CityGML3 for issue GH #12769
+
+
+@pytest.mark.parametrize("skip_resolve_as_open_option", (True, False))
+def test_ogr_gml_citygml3(tmp_vsimem, skip_resolve_as_open_option):
+    """Test for issue GH #12769"""
+
+    filename = str(tmp_vsimem / "test.gml")
+    gdal.FileFromMemBuffer(
+        filename,
+        """<?xml version="1.0" encoding="utf-8" ?>
+<CityModel>
+<ogr:FeatureCollection
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:schemaLocation=""
+     xmlns:ogr="http://ogr.maptools.org/"
+     xmlns:gml="http://www.opengis.net/gml">
+  <gml:boundedBy>
+    <gml:Box>
+      <gml:coord><gml:X>0</gml:X><gml:Y>-5</gml:Y></gml:coord>
+      <gml:coord><gml:X>8</gml:X><gml:Y>3</gml:Y></gml:coord>
+    </gml:Box>
+  </gml:boundedBy>
+  <gml:featureMember>
+    <ogr:solids fid="solids.1">
+      <lod2Solid>
+        <gml:Solid>
+          <gml:exterior>
+            <gml:Shell>
+              <gml:surfaceMember xlink:href="#UUID_da310e81-cd4a-4167-94a0-3ea04f39ebd0"/>
+            </gml:Shell>
+          </gml:exterior>
+        </gml:Solid>
+      </lod2Solid>
+      <boundary>
+        <ClosureSurface>
+          <lod2MultiSurface>
+            <gml:MultiSurface>
+              <gml:surfaceMember>
+                <gml:Polygon gml:id="UUID_da310e81-cd4a-4167-94a0-3ea04f39ebd0">
+                  <gml:exterior>
+                    <gml:LinearRing>
+                      <gml:posList srsDimension="3">0 0 0 1 1 1 1 0 2 0 0 0</gml:posList>
+                    </gml:LinearRing>
+                  </gml:exterior>
+                </gml:Polygon>
+              </gml:surfaceMember>
+            </gml:MultiSurface>
+          </lod2MultiSurface>
+        </ClosureSurface>
+      </boundary>
+    </ogr:solids>
+  </gml:featureMember>
+</ogr:FeatureCollection>
+</CityModel>""",
+    )
+
+    if skip_resolve_as_open_option:
+        ds = gdal.OpenEx(filename, open_options=["SKIP_RESOLVE_ELEMS=NONE"])
+    else:
+        with gdal.config_option("GML_SKIP_RESOLVE_ELEMS", "NONE"):
+            ds = ogr.Open(filename)
+
+    layer = ds.GetLayer(0)
+    assert layer.GetGeometryColumn() == "lod2Solid"
+    f = layer.GetNextFeature()
+    assert f is not None
+    assert (
+        f.GetGeometryRef().ExportToWkt()
+        == "POLYHEDRALSURFACE Z (((0 0 0,1 1 1,1 0 2,0 0 0)))"
+    )

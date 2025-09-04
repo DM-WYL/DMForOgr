@@ -39,6 +39,10 @@
 #include "ogr_swq.h"
 #include "filegdb_coordprec_read.h"
 
+OGROpenFileGDBGeomFieldDefn::~OGROpenFileGDBGeomFieldDefn() = default;
+
+OGROpenFileGDBFeatureDefn::~OGROpenFileGDBFeatureDefn() = default;
+
 /************************************************************************/
 /*                      OGROpenFileGDBLayer()                           */
 /************************************************************************/
@@ -855,12 +859,12 @@ int OGROpenFileGDBLayer::BuildLayerDefinition()
 /*                           GetGeomType()                              */
 /************************************************************************/
 
-OGRwkbGeometryType OGROpenFileGDBLayer::GetGeomType()
+OGRwkbGeometryType OGROpenFileGDBLayer::GetGeomType() const
 {
     if (m_eGeomType == wkbUnknown ||
         m_osDefinition.empty() /* FileGDB v9 case */)
     {
-        (void)BuildLayerDefinition();
+        (void)const_cast<OGROpenFileGDBLayer *>(this)->BuildLayerDefinition();
     }
 
     return m_eGeomType;
@@ -870,7 +874,7 @@ OGRwkbGeometryType OGROpenFileGDBLayer::GetGeomType()
 /*                          GetLayerDefn()                             */
 /***********************************************************************/
 
-OGRFeatureDefn *OGROpenFileGDBLayer::GetLayerDefn()
+const OGRFeatureDefn *OGROpenFileGDBLayer::GetLayerDefn() const
 {
     return m_poFeatureDefn;
 }
@@ -879,9 +883,9 @@ OGRFeatureDefn *OGROpenFileGDBLayer::GetLayerDefn()
 /*                          GetFIDColumn()                             */
 /***********************************************************************/
 
-const char *OGROpenFileGDBLayer::GetFIDColumn()
+const char *OGROpenFileGDBLayer::GetFIDColumn() const
 {
-    if (!BuildLayerDefinition())
+    if (!const_cast<OGROpenFileGDBLayer *>(this)->BuildLayerDefinition())
         return "";
     int iIdx = m_poLyrTable->GetObjectIdFieldIdx();
     if (iIdx < 0)
@@ -911,15 +915,16 @@ void OGROpenFileGDBLayer::ResetReading()
 }
 
 /***********************************************************************/
-/*                         SetSpatialFilter()                          */
+/*                        ISetSpatialFilter()                          */
 /***********************************************************************/
 
-void OGROpenFileGDBLayer::SetSpatialFilter(OGRGeometry *poGeom)
+OGRErr OGROpenFileGDBLayer::ISetSpatialFilter(int iGeomField,
+                                              const OGRGeometry *poGeom)
 {
     if (!BuildLayerDefinition())
-        return;
+        return OGRERR_FAILURE;
 
-    OGRLayer::SetSpatialFilter(poGeom);
+    OGRLayer::ISetSpatialFilter(iGeomField, poGeom);
 
     if (m_bFilterIsEnvelope)
     {
@@ -936,7 +941,7 @@ void OGROpenFileGDBLayer::SetSpatialFilter(OGRGeometry *poGeom)
                                         "contains the layer spatial extent");
 #endif
                 poGeom = nullptr;
-                OGRLayer::SetSpatialFilter(poGeom);
+                OGRLayer::ISetSpatialFilter(iGeomField, poGeom);
             }
         }
     }
@@ -991,13 +996,16 @@ void OGROpenFileGDBLayer::SetSpatialFilter(OGRGeometry *poGeom)
     }
 
     BuildCombinedIterator();
+
+    return OGRERR_NONE;
 }
 
 /***********************************************************************/
 /*                            CompValues()                             */
 /***********************************************************************/
 
-static int CompValues(OGRFieldDefn *poFieldDefn, const swq_expr_node *poValue1,
+static int CompValues(const OGRFieldDefn *poFieldDefn,
+                      const swq_expr_node *poValue1,
                       const swq_expr_node *poValue2)
 {
     int ret = 0;
@@ -1085,7 +1093,7 @@ static const struct
     {SWQ_GE, SWQ_LE, 1, 999},  {SWQ_GE, SWQ_LT, 1, 999},
     {SWQ_GT, SWQ_LE, 1, 999}};
 
-static int AreExprExclusive(OGRFeatureDefn *poFeatureDefn,
+static int AreExprExclusive(const OGRFeatureDefn *poFeatureDefn,
                             const swq_expr_node *poNode1,
                             const swq_expr_node *poNode2)
 {
@@ -1113,7 +1121,7 @@ static int AreExprExclusive(OGRFeatureDefn *poFeatureDefn,
                 poColumn1->field_index == poColumn2->field_index &&
                 poColumn1->field_index < poFeatureDefn->GetFieldCount())
             {
-                OGRFieldDefn *poFieldDefn =
+                const OGRFieldDefn *poFieldDefn =
                     poFeatureDefn->GetFieldDefn(poColumn1->field_index);
 
                 const int nComp = CompValues(poFieldDefn, poValue1, poValue2);
@@ -1150,7 +1158,7 @@ static int AreExprExclusive(OGRFeatureDefn *poFeatureDefn,
 /*                     FillTargetValueFromSrcExpr()                    */
 /***********************************************************************/
 
-static int FillTargetValueFromSrcExpr(OGRFieldDefn *poFieldDefn,
+static int FillTargetValueFromSrcExpr(const OGRFieldDefn *poFieldDefn,
                                       OGRField *poTargetValue,
                                       const swq_expr_node *poSrcValue)
 {
@@ -1325,7 +1333,7 @@ OGROpenFileGDBLayer::BuildIteratorFromExprNode(swq_expr_node *poNode)
         if (poColumn != nullptr && poValue != nullptr &&
             poColumn->field_index < GetLayerDefn()->GetFieldCount())
         {
-            OGRFieldDefn *poFieldDefn =
+            const OGRFieldDefn *poFieldDefn =
                 GetLayerDefn()->GetFieldDefn(poColumn->field_index);
 
             int nTableColIdx =
@@ -1489,7 +1497,7 @@ OGROpenFileGDBLayer::BuildIteratorFromExprNode(swq_expr_node *poNode)
         if (poColumn->eNodeType == SNT_COLUMN &&
             poColumn->field_index < GetLayerDefn()->GetFieldCount())
         {
-            OGRFieldDefn *poFieldDefn =
+            const OGRFieldDefn *poFieldDefn =
                 GetLayerDefn()->GetFieldDefn(poColumn->field_index);
 
             int nTableColIdx =
@@ -1518,7 +1526,7 @@ OGROpenFileGDBLayer::BuildIteratorFromExprNode(swq_expr_node *poNode)
         if (poColumn->eNodeType == SNT_COLUMN &&
             poColumn->field_index < GetLayerDefn()->GetFieldCount())
         {
-            OGRFieldDefn *poFieldDefn =
+            const OGRFieldDefn *poFieldDefn =
                 GetLayerDefn()->GetFieldDefn(poColumn->field_index);
 
             int nTableColIdx =
@@ -1547,7 +1555,7 @@ OGROpenFileGDBLayer::BuildIteratorFromExprNode(swq_expr_node *poNode)
                 if (poNode->papoSubExpr[i]->eNodeType != SNT_CONSTANT)
                     bAllConstants = false;
             }
-            OGRFieldDefn *poFieldDefn =
+            const OGRFieldDefn *poFieldDefn =
                 GetLayerDefn()->GetFieldDefn(poColumn->field_index);
 
             int nTableColIdx =
@@ -2015,13 +2023,18 @@ OGRErr OGROpenFileGDBLayer::SetNextByIndex(GIntBig nIndex)
     if (!BuildLayerDefinition())
         return OGRERR_FAILURE;
 
+    m_bEOF = false;
+
     if (m_eSpatialIndexState == SPI_IN_BUILDING)
         m_eSpatialIndexState = SPI_INVALID;
 
     if (m_nFilteredFeatureCount >= 0)
     {
         if (nIndex < 0 || nIndex >= m_nFilteredFeatureCount)
-            return OGRERR_FAILURE;
+        {
+            m_bEOF = true;
+            return OGRERR_NON_EXISTING_FEATURE;
+        }
         m_iCurFeat = nIndex;
         return OGRERR_NONE;
     }
@@ -2029,7 +2042,10 @@ OGRErr OGROpenFileGDBLayer::SetNextByIndex(GIntBig nIndex)
              m_poLyrTable->GetTotalRecordCount())
     {
         if (nIndex < 0 || nIndex >= m_poLyrTable->GetValidRecordCount())
-            return OGRERR_FAILURE;
+        {
+            m_bEOF = true;
+            return OGRERR_NON_EXISTING_FEATURE;
+        }
         m_iCurFeat = nIndex;
         return OGRERR_NONE;
     }
@@ -2038,10 +2054,11 @@ OGRErr OGROpenFileGDBLayer::SetNextByIndex(GIntBig nIndex)
 }
 
 /***********************************************************************/
-/*                           GetExtent()                               */
+/*                          IGetExtent()                               */
 /***********************************************************************/
 
-OGRErr OGROpenFileGDBLayer::GetExtent(OGREnvelope *psExtent, int /* bForce */)
+OGRErr OGROpenFileGDBLayer::IGetExtent(int /* iGeomField */,
+                                       OGREnvelope *psExtent, bool /* bForce */)
 {
     if (!BuildLayerDefinition())
         return OGRERR_FAILURE;
@@ -2064,11 +2081,11 @@ OGRErr OGROpenFileGDBLayer::GetExtent(OGREnvelope *psExtent, int /* bForce */)
 }
 
 /***********************************************************************/
-/*                           GetExtent3D()                             */
+/*                          IGetExtent3D()                             */
 /***********************************************************************/
 
-OGRErr OGROpenFileGDBLayer::GetExtent3D(int iGeomField, OGREnvelope3D *psExtent,
-                                        int bForce)
+OGRErr OGROpenFileGDBLayer::IGetExtent3D(int iGeomField,
+                                         OGREnvelope3D *psExtent, bool bForce)
 {
     if (!BuildLayerDefinition())
         return OGRERR_FAILURE;
@@ -2093,7 +2110,7 @@ OGRErr OGROpenFileGDBLayer::GetExtent3D(int iGeomField, OGREnvelope3D *psExtent,
             {
                 if (OGR_GT_HasZ(m_eGeomType))
                 {
-                    return OGRLayer::GetExtent3D(iGeomField, psExtent, bForce);
+                    return OGRLayer::IGetExtent3D(iGeomField, psExtent, bForce);
                 }
                 psExtent->MinZ = std::numeric_limits<double>::infinity();
                 psExtent->MaxZ = -std::numeric_limits<double>::infinity();
@@ -2102,7 +2119,7 @@ OGRErr OGROpenFileGDBLayer::GetExtent3D(int iGeomField, OGREnvelope3D *psExtent,
         }
     }
 
-    return OGRLayer::GetExtent3D(iGeomField, psExtent, bForce);
+    return OGRLayer::IGetExtent3D(iGeomField, psExtent, bForce);
 }
 
 /***********************************************************************/
@@ -2268,9 +2285,9 @@ GIntBig OGROpenFileGDBLayer::GetFeatureCount(int bForce)
 /*                         TestCapability()                            */
 /***********************************************************************/
 
-int OGROpenFileGDBLayer::TestCapability(const char *pszCap)
+int OGROpenFileGDBLayer::TestCapability(const char *pszCap) const
 {
-    if (!BuildLayerDefinition())
+    if (!const_cast<OGROpenFileGDBLayer *>(this)->BuildLayerDefinition())
         return FALSE;
 
     if (EQUAL(pszCap, OLCCreateField) || EQUAL(pszCap, OLCDeleteField) ||
@@ -2381,7 +2398,7 @@ FileGDBIterator *OGROpenFileGDBLayer::BuildIndex(const char *pszFieldName,
     int idx = GetLayerDefn()->GetFieldIndex(pszFieldName);
     if (idx < 0)
         return nullptr;
-    OGRFieldDefn *poFieldDefn = GetLayerDefn()->GetFieldDefn(idx);
+    const OGRFieldDefn *poFieldDefn = GetLayerDefn()->GetFieldDefn(idx);
 
     int nTableColIdx = m_poLyrTable->GetFieldIdx(pszFieldName);
     if (nTableColIdx >= 0 && m_poLyrTable->GetField(nTableColIdx)->HasIndex())
@@ -2427,8 +2444,9 @@ FileGDBIterator *OGROpenFileGDBLayer::BuildIndex(const char *pszFieldName,
 /*                          GetMinMaxValue()                           */
 /***********************************************************************/
 
-const OGRField *OGROpenFileGDBLayer::GetMinMaxValue(OGRFieldDefn *poFieldDefn,
-                                                    int bIsMin, int &eOutType)
+const OGRField *
+OGROpenFileGDBLayer::GetMinMaxValue(const OGRFieldDefn *poFieldDefn, int bIsMin,
+                                    int &eOutType)
 {
     eOutType = -1;
     if (!BuildLayerDefinition())
@@ -2460,7 +2478,7 @@ const OGRField *OGROpenFileGDBLayer::GetMinMaxValue(OGRFieldDefn *poFieldDefn,
 /*                        GetMinMaxSumCount()                          */
 /***********************************************************************/
 
-int OGROpenFileGDBLayer::GetMinMaxSumCount(OGRFieldDefn *poFieldDefn,
+int OGROpenFileGDBLayer::GetMinMaxSumCount(const OGRFieldDefn *poFieldDefn,
                                            double &dfMin, double &dfMax,
                                            double &dfSum, int &nCount)
 {
