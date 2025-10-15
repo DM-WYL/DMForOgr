@@ -240,6 +240,9 @@ void OGRRegisterAllInternal()
 #ifdef ADBC_ENABLED
     RegisterOGRADBC();
 #endif
+#ifdef DM_ENABLED
+    RegisterOGRDM();
+#endif
 
     // NOTE: you need to generally insert your own driver before that line.
 

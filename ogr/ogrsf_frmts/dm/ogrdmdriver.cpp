@@ -1,3 +1,31 @@
+/******************************************************************************
+ *
+ * Project:  OpenGIS Simple Features Reference Implementation
+ * Purpose:  Implements OGRPGDriver class.
+ * Author:   YiLun Wu, wuyilun@dameng.com
+ *
+ ******************************************************************************
+ * Copyright (c) 2024, YiLun Wu
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
+
 #include "ogr_dm.h"
 
 CPL_CVSID("$Id$")
@@ -71,7 +99,7 @@ static GDALDataset *OGRDMDriverCreate(const char *pszName,
 void RegisterOGRDM()
 
 {
-    if (!GDAL_CHECK_VERSION("DM driver"))
+    if (!GDAL_CHECK_VERSION("OGR/DM driver"))
         return;
 
     if (GDALGetDriverByName("DM") != nullptr)
@@ -80,6 +108,14 @@ void RegisterOGRDM()
     GDALDriver *poDriver = new GDALDriver();
 
     poDriver->SetDescription("DM");
+    poDriver->SetMetadataItem(GDAL_DCAP_VECTOR, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CREATE_LAYER, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_DELETE_LAYER, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CREATE_FIELD, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_DELETE_FIELD, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CURVE_GEOMETRIES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_MEASURED_GEOMETRIES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_Z_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_LONGNAME, "DMGEO2");
     poDriver->SetMetadataItem(GDAL_DCAP_VECTOR, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "");
@@ -120,8 +156,6 @@ void RegisterOGRDM()
         "  <Option name='GEOMETRY_NAME' type='string' description='Name of "
         "geometry column. Defaults to wkb_geometry for GEOM_TYPE=geometry or "
         "the_geog for GEOM_TYPE=geography'/>"
-        "  <Option name='SPATIAL_INDEX' type='boolean' description='Type of "
-        "spatial index to create' default='GIST'/>"
         "  <Option name='FID' type='string' description='Name of the FID "
         "column to create' default='ogc_fid'/>"
         "  <Option name='FID64' type='boolean' description='Whether to create "
@@ -134,12 +168,16 @@ void RegisterOGRDM()
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATATYPES,
                               "Integer Integer64 Real String Date DateTime "
                               "Time Binary");
+    poDriver->SetMetadataItem(GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
+        "Name Type WidthPrecision Nullable Default Unique Comment");
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_DEFAULT_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_GEOMFIELDS, "YES");
 
-    poDriver->pfnOpen = OGRDMDriverOpen;
     poDriver->pfnIdentify = OGRDMDriverIdentify;
+    poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
+    poDriver->pfnOpen = OGRDMDriverOpen;
     poDriver->pfnCreate = OGRDMDriverCreate;
 
     GetGDALDriverManager()->RegisterDriver(poDriver);

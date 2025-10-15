@@ -1,3 +1,31 @@
+/******************************************************************************
+ *
+ * Project:  OpenGIS Simple Features Reference Implementation
+ * Purpose:  Implements OGRDMLayer class.
+ * Author:   YiLun Wu, wuyilun@dameng.com
+ *
+ ******************************************************************************
+ * Copyright (c) 2024, YiLun Wu 
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
+
 #include "ogr_dm.h"
 #include "cpl_conv.h"
 #include "ogr_p.h"
@@ -131,8 +159,7 @@ OGRFeature *OGRDMLayer::RecordToFeature(OGRDMStatement *hStmt,
                          "We cannot handle binary type!");
                 return NULL;
             }
-            else if (!poDS->bUseBinaryCursor &&
-                     STARTS_WITH_CI((const char *)pszFieldName,
+            else if (STARTS_WITH_CI((const char *)pszFieldName,
                                     "DMGEO2.ST_AsEWKB"))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
@@ -205,7 +232,7 @@ OGRFeature *OGRDMLayer::RecordToFeature(OGRDMStatement *hStmt,
         if (iOGRField < 0)
             continue;
         pabyData = result[iField][iRecord];
-        if (!pabyData)
+        if (!pabyData || strlen(pabyData) == 0)
         {
             poFeature->SetFieldNull(iOGRField);
             continue;
@@ -307,7 +334,8 @@ void OGRDMLayer::CreateMapFromFieldNameToIndex(OGRDMStatement *hStmt,
 void OGRDMLayer::SetInitialQuery()
 {
     OGRDMConn *hDMConn = poDS->GetDMConn();
-    poStatement = new OGRDMStatement(hDMConn);
+    if (poStatement == NULL)
+        poStatement = new OGRDMStatement(hDMConn);
     CPLString osCommand;
 
     CPLAssert(pszQueryStatement != nullptr);
@@ -357,7 +385,10 @@ OGRFeature *OGRDMLayer::GetNextRawFeature()
         if (rows < fetchnum)
             isfetchall = 1;
         if (rows == 0)
+        {
             poFeature = nullptr;
+            poStatement->Clean();
+        }
         else
         {
             poFeature = RecordToFeature(poStatement, m_panMapFieldNameToIndex,
@@ -369,63 +400,64 @@ OGRFeature *OGRDMLayer::GetNextRawFeature()
     else
     {
         poFeature = nullptr;
+        poStatement->Clean();
     }
     nResultOffset++;
     iNextShapeId++;
     return poFeature;
 }
-
-/************************************************************************/
-/*                           SetNextByIndex()                           */
-/************************************************************************/
-
-OGRErr OGRDMLayer::SetNextByIndex(GIntBig nIndex)
-
-{
-    GetLayerDefn();
-
-    if (!TestCapability(OLCFastSetNextByIndex))
-        return OGRLayer::SetNextByIndex(nIndex);
-
-    if (nIndex == iNextShapeId)
-    {
-        return OGRERR_NONE;
-    }
-
-    if (nIndex < 0)
-    {
-        CPLError(CE_Failure, CPLE_AppDefined, "Invalid index");
-        return OGRERR_FAILURE;
-    }
-
-    if (nIndex == 0)
-    {
-        ResetReading();
-        return OGRERR_NONE;
-    }
-
-    sdint2 nParams;
-    CPLString osCommand;
-    DPIRETURN rt;
-    rt = dpi_number_params(poStatement->GetStatement(), &nParams);
-    SetInitialQuery();
-
-    poStatement->SimpleFetchRow();
-    if (!DSQL_SUCCEEDED(rt) || nParams != 1)
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "Attempt to read feature at invalid index (" CPL_FRMT_GIB ").",
-                 nIndex);
-        iNextShapeId = 0;
-
-        return OGRERR_FAILURE;
-    }
-
-    nResultOffset = 0;
-    iNextShapeId = (int)nIndex;
-
-    return OGRERR_NONE;
-}
+//
+///************************************************************************/
+///*                           SetNextByIndex()                           */
+///************************************************************************/
+//
+//OGRErr OGRDMLayer::SetNextByIndex(GIntBig nIndex)
+//
+//{
+//    GetLayerDefn();
+//
+//    if (!TestCapability(OLCFastSetNextByIndex))
+//        return OGRLayer::SetNextByIndex(nIndex);
+//
+//    if (nIndex == iNextShapeId)
+//    {
+//        return OGRERR_NONE;
+//    }
+//
+//    if (nIndex < 0)
+//    {
+//        CPLError(CE_Failure, CPLE_AppDefined, "Invalid index");
+//        return OGRERR_FAILURE;
+//    }
+//
+//    if (nIndex == 0)
+//    {
+//        ResetReading();
+//        return OGRERR_NONE;
+//    }
+//
+//    sdint2 nParams;
+//    CPLString osCommand;
+//    DPIRETURN rt;
+//    rt = dpi_number_params(poStatement->GetStatement(), &nParams);
+//    SetInitialQuery();
+//
+//    poStatement->SimpleFetchRow();
+//    if (!DSQL_SUCCEEDED(rt) || nParams != 1)
+//    {
+//        CPLError(CE_Failure, CPLE_AppDefined,
+//                 "Attempt to read feature at invalid index (" CPL_FRMT_GIB ").",
+//                 nIndex);
+//        iNextShapeId = 0;
+//
+//        return OGRERR_FAILURE;
+//    }
+//
+//    nResultOffset = 0;
+//    iNextShapeId = (int)nIndex;
+//
+//    return OGRERR_NONE;
+//}
 
 /************************************************************************/
 /*                        BlobToGByteArray()                           */
@@ -554,7 +586,45 @@ const char *OGRDMLayer::GetFIDColumn()
 OGRErr OGRDMLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
                              int bForce)
 {
+    CPLString osCommand;
 
+    if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount() ||
+        CPLAssertNotNull(GetLayerDefn()->GetGeomFieldDefn(iGeomField))
+        ->GetType() == wkbNone)
+    {
+        if (iGeomField != 0)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Invalid geometry field index : %d", iGeomField);
+        }
+        return OGRERR_FAILURE;
+    }
+
+    OGRDMGeomFieldDefn *poGeomFieldDefn =
+        poFeatureDefn->GetGeomFieldDefn(iGeomField);
+
+    if (TestCapability(OLCFastGetExtent))
+    {
+        osCommand.Printf(
+            "SELECT DMGEO2.ST_Extent(%s) FROM %s AS ogrdmextent",
+            OGRDMEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
+            GetFromClauseForGetExtent().c_str());
+    }
+    else if (poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY)
+    {
+        osCommand.Printf(
+            "SELECT DMGEO2.ST_Extent(DMGEO2.ST_GeomFromWKB(DMGEO2.ST_AsBinary(%s))) FROM %s AS "
+            "ogrdmextent",
+            OGRDMEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
+            GetFromClauseForGetExtent().c_str());
+    }
+
+    if (!osCommand.empty())
+    {
+        if (RunGetExtentRequest(*psExtent, bForce, osCommand, FALSE) ==
+            OGRERR_NONE)
+            return OGRERR_NONE;
+    }
     if (iGeomField == 0)
         return OGRLayer::GetExtent(psExtent, bForce);
     else
@@ -565,14 +635,11 @@ OGRErr OGRDMLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
 /*                        RunGetExtentRequest()                         */
 /************************************************************************/
 
-OGRErr OGRDMLayer::RunGetExtentRequest(OGREnvelope *psExtent,
+OGRErr OGRDMLayer::RunGetExtentRequest(OGREnvelope &sExtent,
                                        CPL_UNUSED int bForce,
                                        CPLString osCommand,
                                        int bErrorAsDebug)
 {
-    if (psExtent == nullptr)
-        return OGRERR_FAILURE;
-
     OGRDMConn *hDMConn = poDS->GetDMConn();
     OGRDMStatement *hStmt = new OGRDMStatement(hDMConn);
     CPLErr eErr = hStmt->Execute(osCommand);
@@ -602,10 +669,10 @@ OGRErr OGRDMLayer::RunGetExtentRequest(OGREnvelope *psExtent,
 
     char **papszTokens = CSLTokenizeString2(szVals, " ,", CSLT_HONOURSTRINGS);
 
-    psExtent->MinX = CPLAtof(papszTokens[0]);
-    psExtent->MinY = CPLAtof(papszTokens[1]);
-    psExtent->MaxX = CPLAtof(papszTokens[2]);
-    psExtent->MaxY = CPLAtof(papszTokens[3]);
+    sExtent.MinX = CPLAtof(papszTokens[0]);
+    sExtent.MinY = CPLAtof(papszTokens[1]);
+    sExtent.MaxX = CPLAtof(papszTokens[2]);
+    sExtent.MaxY = CPLAtof(papszTokens[3]);
 
     CSLDestroy(papszTokens);
     hStmt->Clean();
@@ -888,9 +955,9 @@ void OGRDMCommonAppendFieldValue(CPLString &osCommand,
     {
         //Check for special values. They need to be quoted.
         double dfVal = poFeature->GetFieldAsDouble(i);
-        if (CPLIsNan(dfVal))
+        if (std::isnan(dfVal))
             pszStrValue = "'NaN'";
-        else if (CPLIsInf(dfVal))
+        else if (std::isinf(dfVal))
             pszStrValue = (dfVal > 0) ? "'Infinity'" : "'-Infinity'";
     }
     else if ((nOGRFieldType == OFTInteger || nOGRFieldType == OFTInteger64) &&
@@ -900,4 +967,13 @@ void OGRDMCommonAppendFieldValue(CPLString &osCommand,
     osCommand += "'";
     osCommand += pszStrValue;
     osCommand += "'";
+}
+
+/************************************************************************/
+/*                             GetDataset()                             */
+/************************************************************************/
+
+GDALDataset *OGRDMLayer::GetDataset()
+{
+    return poDS;
 }

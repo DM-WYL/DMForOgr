@@ -1,11 +1,11 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
- * Purpose:  Implements OGRDGNLayer class.
- * Author:   Frank Warmerdam, warmerdam@pobox.com
+ * Purpose:  Implements OGRDMConnection class.
+ * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
- * Copyright (c) 2000, Frank Warmerdam (warmerdam@pobox.com)
+ * Copyright (c) 2024, YiLun Wu
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),

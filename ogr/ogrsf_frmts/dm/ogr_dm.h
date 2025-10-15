@@ -1,7 +1,37 @@
+/******************************************************************************
+ * $Id$
+ *
+ * Project:  OpenGIS Simple Features Reference Implementation
+ * Purpose:  Private definitions for OGR/DaMeng driver.
+ * Author:   YiLun Wu, wuyilun@dameng.com
+ *
+ ******************************************************************************
+ * Copyright (c) 2024, YiLun Wu
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
+
 #ifndef OGR_DM_H_INCLUDED
 #define OGR_DM_H_INCLUDED
 
 #include "ogrsf_frmts.h"
+#include "cpl_port.h"
 #include "cpl_string.h"
 #include "DPI.h"
 #include "DPIext.h"
@@ -92,6 +122,8 @@ typedef struct
 
     slength display_size;
 } DmColDesc;
+
+CPLString OGRDMEscapeColumnName(const char *pszColumnName);
 
 class OGRDMGeomFieldDefn final : public OGRGeomFieldDefn
 {
@@ -240,7 +272,7 @@ class OGRDMLayer CPL_NON_FINAL : public OGRLayer
     int *m_panMapFieldNameToGeomIndex = nullptr;
 
     virtual CPLString GetFromClauseForGetExtent() = 0;
-    OGRErr RunGetExtentRequest(OGREnvelope *psExtent,
+    OGRErr RunGetExtentRequest(OGREnvelope &sExtent,
                                int bForce,
                                CPLString osCommand,
                                int bErrorAsDebug);
@@ -288,13 +320,14 @@ class OGRDMLayer CPL_NON_FINAL : public OGRLayer
 
     virtual const char *GetFIDColumn() override;
 
-    virtual OGRErr SetNextByIndex(GIntBig nIndex) override;
+    //virtual OGRErr SetNextByIndex(GIntBig nIndex) override;
 
     OGRDMDataSource *GetDS()
     {
         return poDS;
     }
 
+    GDALDataset *GetDataset() override;
     virtual void ResolveSRID(const OGRDMGeomFieldDefn *poGFldDefn) = 0;
 };
 
@@ -361,7 +394,6 @@ class OGRDMTableLayer final : public OGRDMLayer
 
     CPLString m_osFirstGeometryFieldName{};
 
-    std::vector<bool> m_abGeneratedColumns{};
     int checkINI;
 
     virtual CPLString GetFromClauseForGetExtent() override
@@ -585,7 +617,6 @@ class OGRDMDataSource final : public OGRDataSource
     CPLString osDebugLastTransactionCommand{};
 
   public:
-    int bUseBinaryCursor = false;
     int bBinaryTimeFormatIsInt8 = false;
     int bUseEscapeStringSyntax = false;
 
