@@ -1,3 +1,31 @@
+/******************************************************************************
+ *
+ * Project:  OpenGIS Simple Features Reference Implementation
+ * Purpose:  Implements OGRDMStatement class.
+ * Author:   YiLun Wu, wuyilun@dameng.com
+ *
+ ******************************************************************************
+ * Copyright (c) 2024, YiLun Wu
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
+
 #include "ogr_dm.h"
 #include "cpl_conv.h"
 #include <ogr_p.h>
@@ -40,7 +68,7 @@ void OGRDMStatement::Clean()
     if (insert_num > 0)
     {
         rt = dpi_set_stmt_attr(hStatement, DSQL_ATTR_PARAMSET_SIZE,
-                               (void *)insert_num, 0);
+                               (dpointer)insert_num, 0);
         rt = dpi_exec(hStatement);
         if (!DSQL_SUCCEEDED(rt))
         {
@@ -251,7 +279,7 @@ CPLErr OGRDMStatement::Execute_for_insert(OGRDMFeatureDefn *params,
             return CE_Failure;
         }
 
-        rt = dpi_number_params(hStatement, (sdint2 *)&param_nums);
+        rt = dpi_number_params(hStatement, (udint2 *)&param_nums);
         if (!DSQL_SUCCEEDED(rt))
         {
             CPLError(CE_Failure, CPLE_AppDefined,
@@ -448,7 +476,7 @@ CPLErr OGRDMStatement::Execute_for_insert(OGRDMFeatureDefn *params,
             {
                 //Check for special values. They need to be quoted.
                 double dfVal = poFeature->GetFieldAsDouble(i);
-                if (CPLIsNan(dfVal))
+                if (std::isnan(dfVal))
                     strncpy(insert_values[num][insert_num], "'NaN'", 8192);
             }
             if (bind_flag == 1)
@@ -566,6 +594,7 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
 
     sdint4 nStmtType;
     slength len;
+
     rt = dpi_get_diag_field(DSQL_HANDLE_STMT, hStatement, 0,
                             DSQL_DIAG_DYNAMIC_FUNCTION_CODE,
                             (dpointer)&nStmtType, 0, &len);
@@ -738,6 +767,8 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
                            (void *)fetchnum, 0);
     sdint4 nStmtType;
     slength len;
+    rt = dpi_set_stmt_attr(hStatement, DSQL_ATTR_CURSOR_TYPE,
+                           (dpointer)DSQL_CURSOR_DYNAMIC, 0);
     rt = dpi_get_diag_field(DSQL_HANDLE_STMT, hStatement, 0,
                             DSQL_DIAG_DYNAMIC_FUNCTION_CODE,
                             (dpointer)&nStmtType, 0, &len);
@@ -889,6 +920,7 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
             if (coldesc.prec > 0)
                 nbufwidth = (int)coldesc.display_size + 3;
             char *date = (char *)CPLMalloc((nbufwidth + 2) * fetchnum);
+            memset(date, 0, (nbufwidth + 2) * fetchnum);
             for (int i = 0; i < fetchnum; i++)
             {
                 //results[i][iParam] = (char*)CPLMalloc(nbufwidth + 2);
@@ -939,10 +971,10 @@ char ***OGRDMStatement::Fetchmany(ulength *rows)
     ulength row = 0;
 
     rt = dpi_fetch(hStatement, &row);
+    *rows = row;
     if (!DSQL_SUCCEEDED(rt))
         return nullptr;
 
-    *rows = row;
 
     if (papszCurImages == nullptr)
     {

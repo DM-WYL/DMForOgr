@@ -1,13 +1,11 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
- * Purpose:  Implements OGRDMResultLayer class, access the resultset from
- *           a particular select query done via ExecuteSQL().
- * Author:   Frank Warmerdam, warmerdam@pobox.com
+ * Purpose:  Implements OGRDMResultLayer class.
+ * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
- * Copyright (c) 2002, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
+ * Copyright (c) 2024, YiLun Wu
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -286,7 +284,8 @@ void OGRDMResultLayer::SetSpatialFilter(int iGeomField,
                                "DMGEO2.ST_BOXCONTAINS(dmgeo2.st_geomfromtext('"
                                "POLYGON(( %s, %s, %s, %s, %s))'), %s);",
                                szBox3D_1, szBox3D_2, szBox3D_3, szBox3D_4,
-                               szBox3D_1, poGeomFieldDefn->GetNameRef());
+                               szBox3D_1, OGRDMEscapeColumnName(poGeomFieldDefn->GetNameRef())
+                                    .c_str());
             }
             else
             {
@@ -353,11 +352,11 @@ void OGRDMResultLayer::ResolveSRID(const OGRDMGeomFieldDefn *poGFldDefn)
                 osGetSRID += "SELECT ";
                 osGetSRID += psGetSRIDFct;
                 osGetSRID += "(";
-                osGetSRID += poGFldDefn->GetNameRef();
+                osGetSRID += OGRDMEscapeColumnName(poGFldDefn->GetNameRef());
                 osGetSRID += ") FROM (";
                 osGetSRID += pszRawStatement;
                 osGetSRID += ") AS ogrdmgetsrid WHERE (";
-                osGetSRID += poGFldDefn->GetNameRef();
+                osGetSRID += OGRDMEscapeColumnName(poGFldDefn->GetNameRef());
                 osGetSRID += " IS NOT NULL) LIMIT 1";
 
                 CPLErr err = oCommand.Execute(osGetSRID.c_str());

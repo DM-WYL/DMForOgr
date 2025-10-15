@@ -1,3 +1,31 @@
+/******************************************************************************
+ *
+ * Project:  OpenGIS Simple Features Reference Implementation
+ * Purpose:  Implements OGRDMDataSource class.
+ * Author:   YiLun Wu, wuyilun@dameng.com
+ *
+ ******************************************************************************
+ * Copyright (c) 2024, YiLun Wu
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
+
 #include <string.h>
 #include "ogr_dm.h"
 #include "cpl_conv.h"
@@ -449,8 +477,9 @@ OGRErr OGRDMDataSource::DeleteLayer(int iLayer)
     CPLString osCommand;
     OGRDMStatement oCommand(poSession);
 
-    osCommand.Printf("DROP TABLE \"%s\".\"%s\"", (osSchemaName).c_str(),
-                     (osTableName).c_str());
+    osCommand.Printf("DROP TABLE %s.%s",
+                     OGRDMEscapeColumnName(osSchemaName).c_str(),
+                     OGRDMEscapeColumnName(osTableName).c_str());
     CPLErr rt = oCommand.Execute(osCommand.c_str());
     if (rt != CE_None)
         return OGRERR_FAILURE;
@@ -523,6 +552,7 @@ OGRLayer *OGRDMDataSource::ICreateLayer(const char *pszLayerName,
         else
             osFIDColumnName += pszFIDColumnNameIn;
     }
+    CPLString osFIDColumnNameEscaped = OGRDMEscapeColumnName(osFIDColumnName);
 
     if (STARTS_WITH(pszLayerName, "dm"))
     {
@@ -738,12 +768,14 @@ OGRLayer *OGRDMDataSource::ICreateLayer(const char *pszLayerName,
     {
         CPLFree(pszSchemaName);
         pszSchemaName = CPLStrdup("dm_temp_1");
-        osCreateTable.Printf("CREATE global TEMPORARY TABLE %s", pszTableName);
+        osCreateTable.Printf("CREATE global TEMPORARY TABLE %s",
+                             OGRDMEscapeColumnName(pszTableName).c_str());
     }
     else
     {
-        osCreateTable.Printf("CREATE TABLE \"%s\".\"%s\"", pszSchemaName,
-                             pszTableName);
+        osCreateTable.Printf("CREATE TABLE %s.%s",
+                             OGRDMEscapeColumnName(pszSchemaName).c_str(),
+                             OGRDMEscapeColumnName(pszTableName).c_str());
     }
 
     const char *suffix = nullptr;
@@ -763,28 +795,30 @@ OGRLayer *OGRDMDataSource::ICreateLayer(const char *pszLayerName,
     {
         osCommand.Printf("%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geography "
                          "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
-                         osCreateTable.c_str(), osFIDColumnName.c_str(),
-                         pszSerialType, pszGFldName, pszGeometryType, suffix,
-                         nSRSId, osFIDColumnName.c_str());
+                         osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
+                         pszSerialType, OGRDMEscapeColumnName(pszGFldName).c_str(),
+                         pszGeometryType, suffix,
+                         nSRSId, osFIDColumnNameEscaped.c_str());
     }
     else if (eType != wkbNone && !EQUAL(pszGeomType, "geography"))
     {
         osCommand.Printf("%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geometry "
                          "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
-                         osCreateTable.c_str(), osFIDColumnName.c_str(),
-                         pszSerialType, pszGFldName, pszGeometryType, suffix,
-                         nSRSId, osFIDColumnName.c_str());
+                         osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
+                         pszSerialType, OGRDMEscapeColumnName(pszGFldName).c_str(),
+                         pszGeometryType, suffix,
+                         nSRSId, osFIDColumnNameEscaped.c_str());
     }
     else
     {
         osCommand.Printf("%s ( %s %s identity(1,1), PRIMARY KEY (%s)",
-                         osCreateTable.c_str(), osFIDColumnName.c_str(),
-                         pszSerialType, osFIDColumnName.c_str());
+                         osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
+                         pszSerialType, osFIDColumnNameEscaped.c_str());
     }
     osCreateTable = osCommand;
 
-    bool bCreateSpatialIndex = FALSE;
-    const char *pszSpatialIndexType = "SPGIST";
+    //bool bCreateSpatialIndex = FALSE;
+    //const char *pszSpatialIndexType = "SPGIST";
     osCommand = osCreateTable;
     osCommand += " )";
 
@@ -811,7 +845,7 @@ OGRLayer *OGRDMDataSource::ICreateLayer(const char *pszLayerName,
     poLayer->SetPrecisionFlag(CPLFetchBool(papszOptions, "PRECISION", true));
     //poLayer->SetForcedSRSId(nForcedSRSId);
     poLayer->SetForcedGeometryTypeFlags(ForcedGeometryTypeFlags);
-    poLayer->SetCreateSpatialIndex(bCreateSpatialIndex, pszSpatialIndexType);
+    //poLayer->SetCreateSpatialIndex(bCreateSpatialIndex, pszSpatialIndexType);
     poLayer->SetDeferredCreation(osCreateTable);
 
     /* HSTORE_COLUMNS existed at a time during GDAL 1.10dev */
@@ -851,6 +885,12 @@ int OGRDMDataSource::TestCapability(const char *pszCap)
 {
     if (EQUAL(pszCap, ODsCCreateLayer) || EQUAL(pszCap, ODsCDeleteLayer) ||
         EQUAL(pszCap, ODsCCreateGeomFieldAfterCreateLayer))
+        return TRUE;
+    else if (EQUAL(pszCap, ODsCCurveGeometries))
+        return TRUE;
+    else if (EQUAL(pszCap, ODsCMeasuredGeometries))
+        return TRUE;
+    else if (EQUAL(pszCap, ODsCZGeometries))
         return TRUE;
     else if (EQUAL(pszCap, ODsCRandomLayerWrite))
         return TRUE;
@@ -1291,8 +1331,13 @@ OGRLayer *OGRDMDataSource::ExecuteSQL(const char *pszSQLCommand,
         CPLErr rt = oCommand.Execute(pszSQLCommand);
         if (rt == CE_None)
         {
-            CPLDebug("DM", "Error Results Tuples");
-            return nullptr;
+            OGRDMResultLayer *poLayer =
+                new OGRDMResultLayer(this, pszSQLCommand, &oCommand);
+
+            if (poSpatialFilter != nullptr)
+                poLayer->SetSpatialFilter(poSpatialFilter);
+
+            return poLayer;
         }
         return nullptr;
     }
