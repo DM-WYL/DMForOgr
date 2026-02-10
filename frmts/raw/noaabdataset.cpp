@@ -13,6 +13,7 @@
 #include "cpl_conv.h"
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "rawdataset.h"
 #include "ogr_srs_api.h"
 
@@ -41,7 +42,7 @@ class NOAA_B_Dataset final : public RawDataset
 
     static int IdentifyEx(GDALOpenInfo *poOpenInfo, bool &bBigEndianOut);
 
-    CPLErr Close() override
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override
     {
         return GDALPamDataset::Close();
     }
@@ -70,7 +71,7 @@ class NOAA_B_Dataset final : public RawDataset
 /************************************************************************/
 
 /************************************************************************/
-/*                           GetHeaderValues()                          */
+/*                          GetHeaderValues()                           */
 /************************************************************************/
 
 static void GetHeaderValues(const GDALOpenInfo *poOpenInfo, double &dfSWLat,

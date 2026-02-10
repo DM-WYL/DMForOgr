@@ -64,7 +64,7 @@
 #endif
 
 /************************************************************************/
-/*                        GDALWarpAppOptions                            */
+/*                          GDALWarpAppOptions                          */
 /************************************************************************/
 
 /** Options for use with GDALWarp(). GDALWarpAppOptions* must be allocated and
@@ -323,7 +323,7 @@ static double GetAverageSegmentLength(const OGRGeometry *poGeom)
 }
 
 /************************************************************************/
-/*                          FetchSrcMethod()                            */
+/*                           FetchSrcMethod()                           */
 /************************************************************************/
 
 static const char *FetchSrcMethod(CSLConstList papszTO,
@@ -361,7 +361,7 @@ static CPLString GetSrcDSProjection(GDALDatasetH hDS, CSLConstList papszTO)
     }
 
     const char *pszMethod = FetchSrcMethod(papszTO);
-    char **papszMD = nullptr;
+    CSLConstList papszMD = nullptr;
     const OGRSpatialReferenceH hSRS = GDALGetSpatialRef(hDS);
     const char *pszGeolocationDataset =
         CSLFetchNameValueDef(papszTO, "SRC_GEOLOC_ARRAY",
@@ -414,7 +414,7 @@ static CPLString GetSrcDSProjection(GDALDatasetH hDS, CSLConstList papszTO)
 }
 
 /************************************************************************/
-/*                      CreateCTCutlineToSrc()                          */
+/*                        CreateCTCutlineToSrc()                        */
 /************************************************************************/
 
 static std::unique_ptr<OGRCoordinateTransformation> CreateCTCutlineToSrc(
@@ -694,7 +694,7 @@ static bool MustApplyVerticalShift(GDALDatasetH hWrkSrcDS,
 }
 
 /************************************************************************/
-/*                      ApplyVerticalShift()                            */
+/*                         ApplyVerticalShift()                         */
 /************************************************************************/
 
 static bool ApplyVerticalShift(GDALDatasetH hWrkSrcDS,
@@ -800,7 +800,7 @@ static bool ApplyVerticalShift(GDALDatasetH hWrkSrcDS,
 #else
 
 /************************************************************************/
-/*                      ApplyVerticalShiftGrid()                        */
+/*                       ApplyVerticalShiftGrid()                       */
 /************************************************************************/
 
 static GDALDatasetH ApplyVerticalShiftGrid(GDALDatasetH hWrkSrcDS,
@@ -1027,7 +1027,7 @@ static GDALDatasetH ApplyVerticalShiftGrid(GDALDatasetH hWrkSrcDS,
 #endif
 
 /************************************************************************/
-/*                        CanUseBuildVRT()                              */
+/*                           CanUseBuildVRT()                           */
 /************************************************************************/
 
 static bool CanUseBuildVRT(int nSrcCount, GDALDatasetH *pahSrcDS)
@@ -1134,7 +1134,7 @@ static bool CanUseBuildVRT(int nSrcCount, GDALDatasetH *pahSrcDS)
 #ifdef HAVE_TIFF
 
 /************************************************************************/
-/*                      DealWithCOGOptions()                            */
+/*                         DealWithCOGOptions()                         */
 /************************************************************************/
 
 static bool DealWithCOGOptions(CPLStringList &aosCreateOptions, int nSrcCount,
@@ -1179,11 +1179,19 @@ static bool DealWithCOGOptions(CPLStringList &aosCreateOptions, int nSrcCount,
     {
         if (!psOptions->bResampleAlgSpecifiedByUser && nSrcCount > 0)
         {
-            GDALGetWarpResampleAlg(
-                COGGetResampling(GDALDataset::FromHandle(pahSrcDS[0]),
-                                 aosCreateOptions.List())
-                    .c_str(),
-                psOptions->eResampleAlg);
+            try
+            {
+                GDALGetWarpResampleAlg(
+                    COGGetResampling(GDALDataset::FromHandle(pahSrcDS[0]),
+                                     aosCreateOptions.List())
+                        .c_str(),
+                    psOptions->eResampleAlg);
+            }
+            catch (const std::invalid_argument &)
+            {
+                // Cannot happen actually. Coverity Scan false positive...
+                CPLAssert(false);
+            }
         }
         return true;
     }
@@ -1222,7 +1230,18 @@ static bool DealWithCOGOptions(CPLStringList &aosCreateOptions, int nSrcCount,
                                      dfMinY, dfMaxX, dfMaxY))
     {
         if (!psOptions->bResampleAlgSpecifiedByUser)
-            GDALGetWarpResampleAlg(osResampling, psOptions->eResampleAlg);
+        {
+            try
+            {
+                GDALGetWarpResampleAlg(osResampling, psOptions->eResampleAlg);
+            }
+            catch (const std::invalid_argument &)
+            {
+                // Cannot happen actually. Coverity Scan false positive...
+                CPLAssert(false);
+            }
+        }
+
         psOptions->dfMinX = dfMinX;
         psOptions->dfMinY = dfMinY;
         psOptions->dfMaxX = dfMaxX;
@@ -1239,7 +1258,7 @@ static bool DealWithCOGOptions(CPLStringList &aosCreateOptions, int nSrcCount,
 #endif
 
 /************************************************************************/
-/*                      GDALWarpIndirect()                              */
+/*                          GDALWarpIndirect()                          */
 /************************************************************************/
 
 static GDALDatasetH
@@ -1380,7 +1399,7 @@ static GDALDatasetH GDALWarpIndirect(const char *pszDest, GDALDriverH hDriver,
 }
 
 /************************************************************************/
-/*                             GDALWarp()                               */
+/*                              GDALWarp()                              */
 /************************************************************************/
 
 /**
@@ -1444,10 +1463,11 @@ GDALDatasetH GDALWarp(const char *pszDest, GDALDatasetH hDstDS, int nSrcCount,
 
         auto hDriver = GDALGetDriverByName(psOptions->osFormat.c_str());
         if (hDriver != nullptr &&
-            GDALGetMetadataItem(hDriver, GDAL_DCAP_CREATE, nullptr) ==
-                nullptr &&
-            GDALGetMetadataItem(hDriver, GDAL_DCAP_CREATECOPY, nullptr) !=
-                nullptr)
+            (EQUAL(psOptions->osFormat.c_str(), "COG") ||
+             (GDALGetMetadataItem(hDriver, GDAL_DCAP_CREATE, nullptr) ==
+                  nullptr &&
+              GDALGetMetadataItem(hDriver, GDAL_DCAP_CREATECOPY, nullptr) !=
+                  nullptr)))
         {
             auto ret = GDALWarpIndirect(pszDest, hDriver, nSrcCount, pahSrcDS,
                                         psOptions, pbUsageError);
@@ -1824,7 +1844,7 @@ EditISIS3ForMetadataChanges(const char *pszJSON,
 }
 
 /************************************************************************/
-/*                           ProcessMetadata()                          */
+/*                          ProcessMetadata()                           */
 /************************************************************************/
 
 static void ProcessMetadata(int iSrc, GDALDatasetH hSrcDS, GDALDatasetH hDstDS,
@@ -1844,7 +1864,7 @@ static void ProcessMetadata(int iSrc, GDALDatasetH hSrcDS, GDALDatasetH hDstDS,
                 "WARP",
                 "Copying metadata from first source to destination dataset");
             /* copy dataset-level metadata */
-            char **papszMetadata = GDALGetMetadata(hSrcDS, nullptr);
+            CSLConstList papszMetadata = GDALGetMetadata(hSrcDS, nullptr);
 
             char **papszMetadataNew = nullptr;
             for (int i = 0;
@@ -1883,7 +1903,8 @@ static void ProcessMetadata(int iSrc, GDALDatasetH hSrcDS, GDALDatasetH hDstDS,
                 EQUAL(psOptions->osFormat.c_str(), "GTIFF") ||
                 EQUAL(psOptions->osFormat.c_str(), "COG"))
             {
-                char **papszMD_ISIS3 = GDALGetMetadata(hSrcDS, "json:ISIS3");
+                CSLConstList papszMD_ISIS3 =
+                    GDALGetMetadata(hSrcDS, "json:ISIS3");
                 if (papszMD_ISIS3 != nullptr && papszMD_ISIS3[0])
                 {
                     std::string osJSON = papszMD_ISIS3[0];
@@ -1898,13 +1919,14 @@ static void ProcessMetadata(int iSrc, GDALDatasetH hSrcDS, GDALDatasetH hDstDS,
             }
             else if (EQUAL(psOptions->osFormat.c_str(), "PDS4"))
             {
-                char **papszMD_PDS4 = GDALGetMetadata(hSrcDS, "xml:PDS4");
+                CSLConstList papszMD_PDS4 = GDALGetMetadata(hSrcDS, "xml:PDS4");
                 if (papszMD_PDS4 != nullptr)
                     GDALSetMetadata(hDstDS, papszMD_PDS4, "xml:PDS4");
             }
             else if (EQUAL(psOptions->osFormat.c_str(), "VICAR"))
             {
-                char **papszMD_VICAR = GDALGetMetadata(hSrcDS, "json:VICAR");
+                CSLConstList papszMD_VICAR =
+                    GDALGetMetadata(hSrcDS, "json:VICAR");
                 if (papszMD_VICAR != nullptr)
                     GDALSetMetadata(hDstDS, papszMD_VICAR, "json:VICAR");
             }
@@ -1991,7 +2013,7 @@ static void ProcessMetadata(int iSrc, GDALDatasetH hSrcDS, GDALDatasetH hDstDS,
 }
 
 /************************************************************************/
-/*                             SetupNoData()                            */
+/*                            SetupNoData()                             */
 /************************************************************************/
 
 static CPLErr SetupNoData(const char *pszDest, int iSrc, GDALDatasetH hSrcDS,
@@ -2431,7 +2453,7 @@ static void SetupSkipNoSource(int iSrc, GDALDatasetH hDstDS,
 }
 
 /************************************************************************/
-/*                     AdjustOutputExtentForRPC()                       */
+/*                      AdjustOutputExtentForRPC()                      */
 /************************************************************************/
 
 /** Returns false if there's no intersection between source extent defined
@@ -2540,7 +2562,7 @@ GDALWarpDirect(const char *pszDest, GDALDatasetH hDstDS, int nSrcCount,
 #if defined(USE_PROJ_BASED_VERTICAL_SHIFT_METHOD)
     if (psOptions->bNoVShift)
     {
-        psOptions->aosTransformerOptions.SetNameValue("STRIP_VERT_CS", "YES");
+        psOptions->aosTransformerOptions.SetNameValue("@STRIP_VERT_CS", "YES");
     }
     else if (nSrcCount)
     {
@@ -2557,7 +2579,7 @@ GDALWarpDirect(const char *pszDest, GDALDatasetH hDstDS, int nSrcCount,
         }
     }
 #else
-    psOptions->aosTransformerOptions.SetNameValue("STRIP_VERT_CS", "YES");
+    psOptions->aosTransformerOptions.SetNameValue("@STRIP_VERT_CS", "YES");
 #endif
 
     bool bVRT = false;
@@ -2791,6 +2813,10 @@ GDALWarpDirect(const char *pszDest, GDALDatasetH hDstDS, int nSrcCount,
                     "Set SOURCE_EXTRA=5 warping options due to TPS warping");
             }
         }
+
+        if (iSrc > 0)
+            psOptions->aosWarpOptions.SetNameValue("RESET_DEST_PIXELS",
+                                                   nullptr);
 
         /* --------------------------------------------------------------------
          */
@@ -5152,17 +5178,17 @@ class CutlineTransformer : public OGRCoordinateTransformation
     {
     }
 
-    virtual const OGRSpatialReference *GetSourceCS() const override
+    const OGRSpatialReference *GetSourceCS() const override
     {
         return nullptr;
     }
 
-    virtual const OGRSpatialReference *GetTargetCS() const override
+    const OGRSpatialReference *GetTargetCS() const override
     {
         return nullptr;
     }
 
-    virtual ~CutlineTransformer() override;
+    ~CutlineTransformer() override;
 
     virtual int Transform(size_t nCount, double *x, double *y, double *z,
                           double * /* t */, int *pabSuccess) override
@@ -5174,13 +5200,13 @@ class CutlineTransformer : public OGRCoordinateTransformation
                                        pabSuccess);
     }
 
-    virtual OGRCoordinateTransformation *Clone() const override
+    OGRCoordinateTransformation *Clone() const override
     {
         return new CutlineTransformer(
             GDALCloneTransformer(hSrcImageTransformer));
     }
 
-    virtual OGRCoordinateTransformation *GetInverse() const override
+    OGRCoordinateTransformation *GetInverse() const override
     {
         return nullptr;
     }
@@ -5724,7 +5750,7 @@ static void RemoveConflictingMetadata(GDALMajorObjectH hObj,
 }
 
 /************************************************************************/
-/*                             IsValidSRS                               */
+/*                              IsValidSRS                              */
 /************************************************************************/
 
 static bool IsValidSRS(const char *pszUserInput)
@@ -5745,7 +5771,7 @@ static bool IsValidSRS(const char *pszUserInput)
 }
 
 /************************************************************************/
-/*                     GDALWarpAppOptionsGetParser()                    */
+/*                    GDALWarpAppOptionsGetParser()                     */
 /************************************************************************/
 
 static std::unique_ptr<GDALArgumentParser>
@@ -6312,7 +6338,7 @@ GDALWarpAppOptionsGetParser(GDALWarpAppOptions *psOptions,
 }
 
 /************************************************************************/
-/*                       GDALWarpAppGetParserUsage()                    */
+/*                     GDALWarpAppGetParserUsage()                      */
 /************************************************************************/
 
 std::string GDALWarpAppGetParserUsage()
@@ -6334,7 +6360,7 @@ std::string GDALWarpAppGetParserUsage()
 }
 
 /************************************************************************/
-/*                             GDALWarpAppOptionsNew()                  */
+/*                       GDALWarpAppOptionsNew()                        */
 /************************************************************************/
 
 #ifndef CheckHasEnoughAdditionalArgs_defined
@@ -6522,7 +6548,7 @@ GDALWarpAppOptionsNew(char **papszArgv,
 }
 
 /************************************************************************/
-/*                        GDALWarpAppOptionsFree()                    */
+/*                       GDALWarpAppOptionsFree()                       */
 /************************************************************************/
 
 /**
@@ -6539,7 +6565,7 @@ void GDALWarpAppOptionsFree(GDALWarpAppOptions *psOptions)
 }
 
 /************************************************************************/
-/*                 GDALWarpAppOptionsSetProgress()                    */
+/*                   GDALWarpAppOptionsSetProgress()                    */
 /************************************************************************/
 
 /**
@@ -6563,7 +6589,7 @@ void GDALWarpAppOptionsSetProgress(GDALWarpAppOptions *psOptions,
 }
 
 /************************************************************************/
-/*                    GDALWarpAppOptionsSetQuiet()                      */
+/*                     GDALWarpAppOptionsSetQuiet()                     */
 /************************************************************************/
 
 /**
@@ -6581,7 +6607,7 @@ void GDALWarpAppOptionsSetQuiet(GDALWarpAppOptions *psOptions, int bQuiet)
 }
 
 /************************************************************************/
-/*                 GDALWarpAppOptionsSetWarpOption()                    */
+/*                  GDALWarpAppOptionsSetWarpOption()                   */
 /************************************************************************/
 
 /**

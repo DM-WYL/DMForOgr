@@ -27,7 +27,7 @@
 #endif
 
 /************************************************************************/
-/*          GDALRasterContourAlgorithm::GDALRasterContourAlgorithm()    */
+/*       GDALRasterContourAlgorithm::GDALRasterContourAlgorithm()       */
 /************************************************************************/
 
 GDALRasterContourAlgorithm::GDALRasterContourAlgorithm(bool standaloneStep)
@@ -35,6 +35,11 @@ GDALRasterContourAlgorithm::GDALRasterContourAlgorithm(bool standaloneStep)
           NAME, DESCRIPTION, HELP_URL,
           ConstructorOptions()
               .SetStandaloneStep(standaloneStep)
+              .SetAddAppendLayerArgument(false)
+              .SetAddOverwriteLayerArgument(false)
+              .SetAddUpdateArgument(false)
+              .SetAddUpsertArgument(false)
+              .SetAddSkipErrorsArgument(false)
               .SetOutputFormatCreateCapability(GDAL_DCAP_CREATE))
 {
     m_outputLayerName = "contour";
@@ -42,18 +47,13 @@ GDALRasterContourAlgorithm::GDALRasterContourAlgorithm(bool standaloneStep)
     AddProgressArg();
     if (standaloneStep)
     {
-        AddOutputFormatArg(&m_format).AddMetadataItem(
-            GAAMDI_REQUIRED_CAPABILITIES, {GDAL_DCAP_VECTOR, GDAL_DCAP_CREATE});
-        AddOpenOptionsArg(&m_openOptions);
-        AddInputFormatsArg(&m_inputFormats)
-            .AddMetadataItem(GAAMDI_REQUIRED_CAPABILITIES, {GDAL_DCAP_RASTER});
-        AddInputDatasetArg(&m_inputDataset, GDAL_OF_RASTER);
-        AddOutputDatasetArg(&m_outputDataset, GDAL_OF_VECTOR);
-        AddCreationOptionsArg(&m_creationOptions);
-        AddLayerCreationOptionsArg(&m_layerCreationOptions);
-        AddOutputLayerNameArg(&m_outputLayerName)
-            .AddAlias("nln");  // For ogr2ogr nostalgic people
-        AddOverwriteArg(&m_overwrite);
+        AddRasterInputArgs(false, false);
+        AddVectorOutputArgs(false, false);
+    }
+    else
+    {
+        AddOutputLayerNameArg(/* hiddenForCLI = */ false,
+                              /* shortNameOutputLayerAllowed = */ false);
     }
 
     // gdal_contour specific options
@@ -86,7 +86,7 @@ GDALRasterContourAlgorithm::GDALRasterContourAlgorithm(bool standaloneStep)
 }
 
 /************************************************************************/
-/*                  GDALRasterContourAlgorithm::RunImpl()               */
+/*                GDALRasterContourAlgorithm::RunImpl()                 */
 /************************************************************************/
 
 bool GDALRasterContourAlgorithm::RunImpl(GDALProgressFunc pfnProgress,
@@ -99,7 +99,7 @@ bool GDALRasterContourAlgorithm::RunImpl(GDALProgressFunc pfnProgress,
 }
 
 /************************************************************************/
-/*                  GDALRasterContourAlgorithm::RunStep()               */
+/*                GDALRasterContourAlgorithm::RunStep()                 */
 /************************************************************************/
 
 bool GDALRasterContourAlgorithm::RunStep(GDALPipelineStepRunContext &ctxt)
@@ -269,7 +269,11 @@ bool GDALRasterContourAlgorithm::RunStep(GDALPipelineStepRunContext &ctxt)
             poDstDS->MarkSuppressOnClose();
             if (bRet)
                 bRet = poDstDS->FlushCache() == CE_None;
+#if !defined(__APPLE__)
+            // For some unknown reason, unlinking the file on MacOSX
+            // leads to later "disk I/O error". See https://github.com/OSGeo/gdal/issues/13794
             VSIUnlink(outputFilename.c_str());
+#endif
         }
         m_outputDataset.Set(std::unique_ptr<GDALDataset>(poDstDS));
     }

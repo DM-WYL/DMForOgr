@@ -23,7 +23,7 @@
 #include <geoheif.h>
 
 /************************************************************************/
-/*                        GDALHEIFDataset                               */
+/*                           GDALHEIFDataset                            */
 /************************************************************************/
 
 class GDALHEIFDataset final : public GDALPamDataset
@@ -80,7 +80,9 @@ class GDALHEIFDataset final : public GDALPamDataset
 
   public:
     GDALHEIFDataset();
-    ~GDALHEIFDataset();
+    ~GDALHEIFDataset() override;
+
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
     static GDALDataset *OpenHEIF(GDALOpenInfo *poOpenInfo);
 #if LIBHEIF_NUMERIC_VERSION >= BUILD_LIBHEIF_VERSION(1, 12, 0)
@@ -99,7 +101,7 @@ class GDALHEIFDataset final : public GDALPamDataset
 #ifdef HAS_CUSTOM_FILE_WRITER
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 #endif

@@ -16,9 +16,9 @@ Raster drivers
 
     The following drivers have been removed in GDAL 3.5: BPG, E00GRID, EPSILON, IGNFHeightASCIIGrid, NTv1
 
-    The following drivers have been removed in GDAL 3.11: BLX, CTable2, FIT, JP2Lura, OZI, Rasterlite (v1), R object data store (.rda), RDB, SDTS, SGI, XPM
+    The following drivers have been removed in GDAL 3.11: BLX, CTable2, ELAS, FIT, JP2Lura, OZI, Rasterlite (v1), R object data store (.rda), RDB, SDTS, SGI, XPM
 
-    Write support for the following formats has been removed in GDAL 3.11: ADRG, BYN, ELAS, LAN, MFF, MFF2/HKV, ISIS2, PAux, USGSDEM
+    Write support for the following formats has been removed in GDAL 3.11: ADRG, BYN, LAN, MFF, MFF2/HKV, ISIS2, PAux, USGSDEM
 
 .. toctree::
    :maxdepth: 1
@@ -51,6 +51,7 @@ Raster drivers
    doq1
    doq2
    dted
+   e57
    ecrgtoc
    ecw
    eedai
@@ -85,7 +86,7 @@ Raster drivers
    heif
    hf2
    hfa
-   Idrisi
+   idrisi
    ilwis
    iris
    isce

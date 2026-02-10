@@ -10,12 +10,15 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "ogrsf_frmts.h"
 
 #include "ogrcartodrivercore.h"
 
 /************************************************************************/
-/*                    OGRCartoDriverIdentify()                            */
+/*                       OGRCartoDriverIdentify()                       */
 /************************************************************************/
 
 int OGRCartoDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -26,7 +29,7 @@ int OGRCartoDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                  OGRCartoDriverSetCommonMetadata()                  */
+/*                  OGRCartoDriverSetCommonMetadata()                   */
 /************************************************************************/
 
 void OGRCartoDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -88,7 +91,7 @@ void OGRCartoDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredOGRCartoPlugin()                      */
+/*                   DeclareDeferredOGRCartoPlugin()                    */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

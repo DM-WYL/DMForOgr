@@ -35,9 +35,9 @@ class OGRGPSBabelDataSource final : public GDALDataset
 
   public:
     OGRGPSBabelDataSource();
-    virtual ~OGRGPSBabelDataSource();
+    ~OGRGPSBabelDataSource() override;
 
-    virtual int CloseDependentDatasets() override;
+    int CloseDependentDatasets() override;
 
     int GetLayerCount() const override
     {
@@ -54,7 +54,7 @@ class OGRGPSBabelDataSource final : public GDALDataset
 };
 
 /************************************************************************/
-/*                   OGRGPSBabelWriteDataSource                         */
+/*                      OGRGPSBabelWriteDataSource                      */
 /************************************************************************/
 
 class OGRGPSBabelWriteDataSource final : public GDALDataset
@@ -70,7 +70,7 @@ class OGRGPSBabelWriteDataSource final : public GDALDataset
 
   public:
     OGRGPSBabelWriteDataSource();
-    virtual ~OGRGPSBabelWriteDataSource();
+    ~OGRGPSBabelWriteDataSource() override;
 
     int GetLayerCount() const override;
     const OGRLayer *GetLayer(int) const override;
@@ -81,7 +81,7 @@ class OGRGPSBabelWriteDataSource final : public GDALDataset
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
-    int Create(const char *pszFilename, char **papszOptions);
+    int Create(const char *pszFilename, CSLConstList papszOptions);
 };
 
 #endif /* ndef OGR_GPSBABEL_H_INCLUDED */

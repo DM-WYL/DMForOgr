@@ -12,7 +12,7 @@ GDALRasterBand C++ API
 Include file
 ------------
 
-:source_file:`gcore/gdal_priv.h`
+:source_file:`gcore/gdal_rasterband.h`
 
 GDALRasterBand class
 --------------------
@@ -71,3 +71,9 @@ GDALRasterWindow class
 .. doxygenclass:: GDALRasterWindow
    :project: api
    :members:
+
+
+.. below is an allow-list for spelling checker.
+
+.. spelling:word-list::
+    posDetailMessage

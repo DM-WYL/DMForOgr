@@ -20,13 +20,19 @@ perform various processing steps that accept raster and generate raster.
 
 For pipelines mixing raster and vector, consult :ref:`gdal_pipeline`.
 
+Most steps proceed in on-demand evaluation of raster blocks,
+unless otherwise stated in their documentation, without "materializing" the
+resulting dataset of the operation of each step. It may be desirable sometimes
+for performance purposes to proceed to materializing an intermediate dataset
+to disk using :ref:`gdal_raster_materialize`.
+
 Synopsis
 --------
 
 .. program-output:: gdal raster pipeline --help-doc=main
 
 A pipeline chains several steps, separated with the `!` (exclamation mark) character.
-The first step must be ``read``, ``calc``, ``mosaic`` or ``stack``,
+The first step must be ``read``, ``calc``, ``create``, ``mosaic`` or ``stack``,
 and the last one ``write``, ``info`` or ``tile``.
 Each step has its own positional or non-positional arguments.
 Apart from ``read``, ``calc``, ``mosaic``, ``stack``, ``compare``, ``info``, ``tile`` and ``write``,
@@ -43,6 +49,12 @@ Potential steps are:
 .. program-output:: gdal raster pipeline --help-doc=calc
 
 Details for options can be found in :ref:`gdal_raster_calc`.
+
+* create
+
+.. program-output:: gdal raster pipeline --help-doc=create
+
+Details for options can be found in :ref:`gdal_raster_create`.
 
 * mosaic
 
@@ -62,6 +74,12 @@ Details for options can be found in :ref:`gdal_raster_stack`.
 
 Details for options can be found in :ref:`gdal_raster_aspect`.
 
+* blend
+
+.. program-output:: gdal raster pipeline --help-doc=blend
+
+Details for options can be found in :ref:`gdal_raster_blend`.
+
 * clip
 
 .. program-output:: gdal raster pipeline --help-doc=clip
@@ -73,12 +91,6 @@ Details for options can be found in :ref:`gdal_raster_clip`.
 .. program-output:: gdal raster pipeline --help-doc=color-map
 
 Details for options can be found in :ref:`gdal_raster_color_map`.
-
-* color-merge
-
-.. program-output:: gdal raster pipeline --help-doc=color-merge
-
-Details for options can be found in :ref:`gdal_raster_color_merge`.
 
 * edit
 
@@ -98,11 +110,29 @@ Details for options can be found in :ref:`gdal_raster_fill_nodata`.
 
 Details for options can be found in :ref:`gdal_raster_hillshade`.
 
+* materialize
+
+.. program-output:: gdal raster pipeline --help-doc=materialize
+
+Details for options can be found in :ref:`gdal_raster_materialize`.
+
+* neighbors
+
+.. program-output:: gdal raster pipeline --help-doc=neighbors
+
+Details for options can be found in :ref:`gdal_raster_neighbors`.
+
 * nodata-to-alpha
 
 .. program-output:: gdal raster pipeline --help-doc=nodata-to-alpha
 
 Details for options can be found in :ref:`gdal_raster_nodata_to_alpha`.
+
+* overview
+
+.. program-output:: gdal raster pipeline --help-doc=overview
+
+Details for options can be found in :ref:`gdal_raster_overview`.
 
 * pansharpen
 
@@ -115,6 +145,12 @@ Details for options can be found in :ref:`gdal_raster_pansharpen`.
 .. program-output:: gdal raster pipeline --help-doc=proximity
 
 Details for options can be found in :ref:`gdal_raster_proximity`.
+
+* reclassify
+
+.. program-output:: gdal raster pipeline --help-doc=reclassify
+
+Details for options can be found in :ref:`gdal_raster_reclassify`.
 
 * reproject
 
@@ -188,11 +224,23 @@ Details for options can be found in :ref:`gdal_raster_tri`.
 
 Details for options can be found in :ref:`gdal_raster_unscale`.
 
+* update
+
+.. program-output:: gdal raster pipeline --help-doc=update
+
+Details for options can be found in :ref:`gdal_raster_update`.
+
 * viewshed
 
 .. program-output:: gdal raster pipeline --help-doc=viewshed
 
 Details for options can be found in :ref:`gdal_raster_viewshed`.
+
+* tee
+
+.. program-output:: gdal raster pipeline --help-doc=tee
+
+Details for options can be found in :ref:`gdal_output_nested_pipeline`.
 
 * info
 
@@ -265,6 +313,16 @@ of steps.
 See :ref:`gdal_pipeline_substitutions`.
 
 
+Nested pipeline
+---------------
+
+.. versionadded:: 3.12
+
+.. include:: gdal_cli_include/gdal_nested_pipeline_intro.rst
+
+See :ref:`gdal_nested_pipeline`.
+
+
 Examples
 --------
 
@@ -290,7 +348,12 @@ Examples
 
       gdal raster pipeline ! mosaic input*.tif ! tile output_folder
 
+.. example::
+   :title: Reclassify GeoTIFF and render it as RGB image.
 
+   .. code-block:: bash
+
+      $ gdal raster pipeline ! read in.tif ! reclassify -m "[1,10]=1; [11,20]=2; [21,30]=3; DEFAULT=NO_DATA" --ot=Byte ! color-map --color-map=color_map.txt --color-selection=exact --add-alpha ! write -f WEBP rendered.webp
 
 .. below is an allow-list for spelling checker.
 

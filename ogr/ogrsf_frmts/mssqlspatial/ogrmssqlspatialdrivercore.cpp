@@ -10,6 +10,9 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "ogrsf_frmts.h"
 #include "ogrmssqlspatialdrivercore.h"
 
@@ -24,7 +27,7 @@ int OGRMSSQLSPATIALDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                OGRMSSQLSPATIALDriverSetCommonMetadata()              */
+/*               OGRMSSQLSPATIALDriverSetCommonMetadata()               */
 /************************************************************************/
 
 void OGRMSSQLSPATIALDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -119,7 +122,7 @@ void OGRMSSQLSPATIALDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                 DeclareDeferredOGRMSSQLSpatialPlugin()               */
+/*                DeclareDeferredOGRMSSQLSpatialPlugin()                */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

@@ -12,10 +12,13 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "fitsdrivercore.h"
 
 /************************************************************************/
-/*                     FITSDriverIdentify()                             */
+/*                         FITSDriverIdentify()                         */
 /************************************************************************/
 
 int FITSDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -35,7 +38,7 @@ int FITSDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                      FITSDriverSetCommonMetadata()                   */
+/*                    FITSDriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void FITSDriverSetCommonMetadata(GDALDriver *poDriver)

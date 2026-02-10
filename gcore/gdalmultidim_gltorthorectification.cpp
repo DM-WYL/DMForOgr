@@ -11,7 +11,7 @@
  ****************************************************************************/
 
 #include "gdal_priv.h"
-#include "gdal_pam.h"
+#include "gdal_pam_multidim.h"
 
 #include <algorithm>
 #include <limits>
@@ -133,7 +133,7 @@ class GLTOrthoRectifiedArray final : public GDALPamMDArray
                 newAr->m_abyBandValidity.resize(count[0], 1);
                 CPL_IGNORE_RET_VAL(poGoodWaveLengths->Read(
                     arrayStartIdx, count, arrayStep, bufferStride,
-                    GDALExtendedDataType::Create(GDT_Byte),
+                    GDALExtendedDataType::Create(GDT_UInt8),
                     newAr->m_abyBandValidity.data()));
             }
         }
@@ -207,7 +207,7 @@ class GLTOrthoRectifiedArray final : public GDALPamMDArray
 };
 
 /************************************************************************/
-/*                   GDALMDArrayResampled::IRead()                      */
+/*                    GDALMDArrayResampled::IRead()                     */
 /************************************************************************/
 
 bool GLTOrthoRectifiedArray::IRead(const GUInt64 *arrayStartIdx,
@@ -435,7 +435,7 @@ bool GLTOrthoRectifiedArray::IRead(const GUInt64 *arrayStartIdx,
 }
 
 /************************************************************************/
-/*                     CreateGLTOrthorectified()                        */
+/*                      CreateGLTOrthorectified()                       */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress

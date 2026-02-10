@@ -76,15 +76,15 @@ class ECRGTOCDataset final : public GDALPamDataset
         m_oSRS.SetFromUserInput(SRS_WKT_WGS84_LAT_LONG);
     }
 
-    virtual ~ECRGTOCDataset()
+    ~ECRGTOCDataset() override
     {
         CSLDestroy(papszSubDatasets);
         CSLDestroy(papszFileList);
     }
 
-    virtual char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
 
-    virtual char **GetFileList() override
+    char **GetFileList() override
     {
         return CSLDuplicate(papszFileList);
     }
@@ -92,7 +92,7 @@ class ECRGTOCDataset final : public GDALPamDataset
     void AddSubDataset(const char *pszFilename, const char *pszProductTitle,
                        const char *pszDiscId, const char *pszScale);
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override
     {
         gt = m_gt;
         return CE_None;
@@ -136,7 +136,7 @@ class ECRGTOCSubDataset final : public VRTDataset
 
     ~ECRGTOCSubDataset() override;
 
-    virtual char **GetFileList() override
+    char **GetFileList() override
     {
         return CSLDuplicate(papszFileList);
     }
@@ -200,7 +200,7 @@ void ECRGTOCDataset::AddSubDataset(const char *pszFilename,
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **ECRGTOCDataset::GetMetadata(const char *pszDomain)
+CSLConstList ECRGTOCDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "SUBDATASETS"))
@@ -241,7 +241,7 @@ static int GetScaleFromString(const char *pszScale)
 }
 
 /************************************************************************/
-/*                            GetFromBase34()                           */
+/*                           GetFromBase34()                            */
 /************************************************************************/
 
 static GIntBig GetFromBase34(const char *pszVal, int nMaxSize)
@@ -394,7 +394,7 @@ static void GetExtent(const char *pszFrameName, int nScale, int nZone,
 }
 
 /************************************************************************/
-/*                          ECRGTOCSource                               */
+/*                            ECRGTOCSource                             */
 /************************************************************************/
 
 class ECRGTOCSource final : public VRTSimpleSource
@@ -424,7 +424,7 @@ class ECRGTOCSource final : public VRTSimpleSource
 };
 
 /************************************************************************/
-/*                       ValidateOpenedBand()                           */
+/*                         ValidateOpenedBand()                         */
 /************************************************************************/
 
 #define WARN_CHECK_DS(x)                                                       \
@@ -458,7 +458,7 @@ bool ECRGTOCSource::ValidateOpenedBand(GDALRasterBand *poBand) const
     WARN_CHECK_DS(
         EQUAL(poSourceDS->GetProjectionRef(), SRS_WKT_WGS84_LAT_LONG));
     WARN_CHECK_DS(poSourceDS->GetRasterBand(1)->GetRasterDataType() ==
-                  GDT_Byte);
+                  GDT_UInt8);
     return checkOK;
 }
 
@@ -503,7 +503,7 @@ static std::string BuildFullName(const char *pszTOCFilename,
 }
 
 /************************************************************************/
-/*                              Build()                                 */
+/*                               Build()                                */
 /************************************************************************/
 
 /* Builds a ECRGTOCSubDataset from the set of files of the toc entry */
@@ -537,7 +537,7 @@ GDALDataset *ECRGTOCSubDataset::Build(
 
     for (int i = 0; i < 3; i++)
     {
-        poVirtualDS->AddBand(GDT_Byte, nullptr);
+        poVirtualDS->AddBand(GDT_UInt8, nullptr);
         GDALRasterBand *poBand = poVirtualDS->GetRasterBand(i + 1);
         poBand->SetColorInterpretation(
             static_cast<GDALColorInterp>(GCI_RedBand + i));
@@ -620,7 +620,7 @@ GDALDataset *ECRGTOCSubDataset::Build(
 }
 
 /************************************************************************/
-/*                             Build()                                  */
+/*                               Build()                                */
 /************************************************************************/
 
 GDALDataset *ECRGTOCDataset::Build(const char *pszTOCFilename,
@@ -1050,7 +1050,7 @@ GDALDataset *ECRGTOCDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                         GDALRegister_ECRGTOC()                       */
+/*                        GDALRegister_ECRGTOC()                        */
 /************************************************************************/
 
 void GDALRegister_ECRGTOC()

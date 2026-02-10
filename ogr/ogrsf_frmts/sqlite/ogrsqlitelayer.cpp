@@ -72,7 +72,7 @@ OGRSQLiteLayer::~OGRSQLiteLayer()
 }
 
 /************************************************************************/
-/*                               Finalize()                             */
+/*                              Finalize()                              */
 /************************************************************************/
 
 void OGRSQLiteLayer::Finalize()
@@ -155,7 +155,7 @@ static bool OGRGetDateTimeFieldType(const char *pszValue,
 }
 
 /************************************************************************/
-/*                          OGRIsBinaryGeomCol()                        */
+/*                         OGRIsBinaryGeomCol()                         */
 /************************************************************************/
 
 static int OGRIsBinaryGeomCol(sqlite3_stmt *hStmt, int iCol,
@@ -1069,7 +1069,7 @@ OGRFeature *OGRSQLiteLayer::GetFeature(GIntBig nFeatureId)
 }
 
 /************************************************************************/
-/*                     createFromSpatialiteInternal()                   */
+/*                    createFromSpatialiteInternal()                    */
 /************************************************************************/
 
 /* See http://www.gaia-gis.it/spatialite/spatialite-manual-2.3.0.html#t3.3 */
@@ -2585,7 +2585,7 @@ OGRErr OGRSQLiteLayer::createFromSpatialiteInternal(
 }
 
 /************************************************************************/
-/*                     GetSpatialiteGeometryHeader()                    */
+/*                    GetSpatialiteGeometryHeader()                     */
 /************************************************************************/
 typedef struct
 {
@@ -2819,7 +2819,7 @@ OGRErr OGRSQLiteLayer::ImportSpatiaLiteGeometry(const GByte *pabyData,
 }
 
 /************************************************************************/
-/*                CanBeCompressedSpatialiteGeometry()                   */
+/*                 CanBeCompressedSpatialiteGeometry()                  */
 /************************************************************************/
 
 int OGRSQLiteLayer::CanBeCompressedSpatialiteGeometry(
@@ -2877,7 +2877,7 @@ int OGRSQLiteLayer::CanBeCompressedSpatialiteGeometry(
 }
 
 /************************************************************************/
-/*                        collectSimpleGeometries()                     */
+/*                      collectSimpleGeometries()                       */
 /************************************************************************/
 
 static void
@@ -2899,7 +2899,7 @@ collectSimpleGeometries(const OGRGeometryCollection *poGeomCollection,
 }
 
 /************************************************************************/
-/*                  ComputeSpatiaLiteGeometrySize()                     */
+/*                   ComputeSpatiaLiteGeometrySize()                    */
 /************************************************************************/
 
 int OGRSQLiteLayer::ComputeSpatiaLiteGeometrySize(const OGRGeometry *poGeometry,
@@ -2990,7 +2990,7 @@ int OGRSQLiteLayer::ComputeSpatiaLiteGeometrySize(const OGRGeometry *poGeometry,
 }
 
 /************************************************************************/
-/*                    GetSpatialiteGeometryCode()                       */
+/*                     GetSpatialiteGeometryCode()                      */
 /************************************************************************/
 
 int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
@@ -3015,10 +3015,8 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
             {
                 if (poGeometry->IsMeasured())
                     return OGRSplitePointXYM;
-                else
-                    return OGRSplitePointXY;
             }
-            break;
+            return OGRSplitePointXY;
 
         case wkbLineString:
         case wkbLinearRing:
@@ -3038,11 +3036,9 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
                 if (poGeometry->IsMeasured())
                     return (bUseComprGeom) ? OGRSpliteComprLineStringXYM
                                            : OGRSpliteLineStringXYM;
-                else
-                    return (bUseComprGeom) ? OGRSpliteComprLineStringXY
-                                           : OGRSpliteLineStringXY;
             }
-            break;
+            return (bUseComprGeom) ? OGRSpliteComprLineStringXY
+                                   : OGRSpliteLineStringXY;
 
         case wkbPolygon:
             if (bSpatialite2D == true)
@@ -3061,11 +3057,9 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
                 if (poGeometry->IsMeasured())
                     return (bUseComprGeom) ? OGRSpliteComprPolygonXYM
                                            : OGRSplitePolygonXYM;
-                else
-                    return (bUseComprGeom) ? OGRSpliteComprPolygonXY
-                                           : OGRSplitePolygonXY;
             }
-            break;
+            return (bUseComprGeom) ? OGRSpliteComprPolygonXY
+                                   : OGRSplitePolygonXY;
 
         default:
             break;
@@ -3092,10 +3086,8 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
             {
                 if (poGeometry->IsMeasured())
                     return OGRSpliteMultiPointXYM;
-                else
-                    return OGRSpliteMultiPointXY;
             }
-            break;
+            return OGRSpliteMultiPointXY;
 
         case wkbMultiLineString:
             if (bSpatialite2D == true)
@@ -3117,12 +3109,10 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
                     return /*(bUseComprGeom) ? OGRSpliteComprMultiLineStringXYM
                               :*/
                         OGRSpliteMultiLineStringXYM;
-                else
-                    return /*(bUseComprGeom) ? OGRSpliteComprMultiLineStringXY
-                              :*/
-                        OGRSpliteMultiLineStringXY;
             }
-            break;
+            return /*(bUseComprGeom) ? OGRSpliteComprMultiLineStringXY
+                              :*/
+                OGRSpliteMultiLineStringXY;
 
         case wkbMultiPolygon:
             if (bSpatialite2D == true)
@@ -3142,11 +3132,9 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
                 if (poGeometry->IsMeasured())
                     return /*(bUseComprGeom) ? OGRSpliteComprMultiPolygonXYM :*/
                         OGRSpliteMultiPolygonXYM;
-                else
-                    return /*(bUseComprGeom) ? OGRSpliteComprMultiPolygonXY :*/
-                        OGRSpliteMultiPolygonXY;
             }
-            break;
+            return /*(bUseComprGeom) ? OGRSpliteComprMultiPolygonXY :*/
+                OGRSpliteMultiPolygonXY;
 
         case wkbGeometryCollection:
             if (bSpatialite2D == true)
@@ -3168,12 +3156,10 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
                     return /*(bUseComprGeom) ?
                               OGRSpliteComprGeometryCollectionXYM :*/
                         OGRSpliteGeometryCollectionXYM;
-                else
-                    return /*(bUseComprGeom) ?
-                              OGRSpliteComprGeometryCollectionXY :*/
-                        OGRSpliteGeometryCollectionXY;
             }
-            break;
+            return /*(bUseComprGeom) ?
+                              OGRSpliteComprGeometryCollectionXY :*/
+                OGRSpliteGeometryCollectionXY;
 
         default:
             CPLError(CE_Failure, CPLE_AppDefined, "Unexpected geometry type");
@@ -3182,7 +3168,7 @@ int OGRSQLiteLayer::GetSpatialiteGeometryCode(const OGRGeometry *poGeometry,
 }
 
 /************************************************************************/
-/*                    ExportSpatiaLiteGeometryInternal()                */
+/*                  ExportSpatiaLiteGeometryInternal()                  */
 /************************************************************************/
 
 int OGRSQLiteLayer::ExportSpatiaLiteGeometryInternal(
@@ -3584,7 +3570,7 @@ void OGRSQLiteLayer::ClearStatement()
 }
 
 /************************************************************************/
-/*                     FormatSpatialFilterFromRTree()                   */
+/*                    FormatSpatialFilterFromRTree()                    */
 /************************************************************************/
 
 CPLString OGRSQLiteLayer::FormatSpatialFilterFromRTree(
@@ -3644,7 +3630,7 @@ OGRSQLiteLayer::FormatSpatialFilterFromMBR(OGRGeometry *poFilterGeom,
 }
 
 /************************************************************************/
-/*                 OGRSQLiteGetSpatialiteGeometryHeader()               */
+/*                OGRSQLiteGetSpatialiteGeometryHeader()                */
 /************************************************************************/
 
 OGRErr OGRSQLiteGetSpatialiteGeometryHeader(const GByte *pabyData, int nBytes,
@@ -3660,7 +3646,7 @@ OGRErr OGRSQLiteGetSpatialiteGeometryHeader(const GByte *pabyData, int nBytes,
 }
 
 /************************************************************************/
-/*                   OGRSQLiteImportSpatiaLiteGeometry()                */
+/*                 OGRSQLiteImportSpatiaLiteGeometry()                  */
 /************************************************************************/
 
 OGRErr OGRSQLiteImportSpatiaLiteGeometry(const GByte *pabyData, int nBytes,
@@ -3671,7 +3657,7 @@ OGRErr OGRSQLiteImportSpatiaLiteGeometry(const GByte *pabyData, int nBytes,
 }
 
 /************************************************************************/
-/*                   OGRSQLiteExportSpatiaLiteGeometry()                */
+/*                 OGRSQLiteExportSpatiaLiteGeometry()                  */
 /************************************************************************/
 
 OGRErr OGRSQLiteExportSpatiaLiteGeometry(const OGRGeometry *poGeometry,

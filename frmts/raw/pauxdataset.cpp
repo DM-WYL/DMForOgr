@@ -13,6 +13,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_spatialref.h"
 #include "rawdataset.h"
 
@@ -44,7 +45,7 @@ class PAuxDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(PAuxDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     PAuxDataset();
@@ -242,10 +243,10 @@ PAuxDataset::~PAuxDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr PAuxDataset::Close()
+CPLErr PAuxDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -466,8 +467,12 @@ CPLErr PAuxDataset::GetGeoTransform(GDALGeoTransform &gt) const
 GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
 
 {
-    if (poOpenInfo->nHeaderBytes < 1)
+    if (poOpenInfo->nHeaderBytes < 1 ||
+        (!poOpenInfo->IsSingleAllowedDriver("PAux") &&
+         poOpenInfo->IsExtensionEqualToCI("zarr")))
+    {
         return nullptr;
+    }
 
     /* -------------------------------------------------------------------- */
     /*      If this is an .aux file, fetch out and form the name of the     */
@@ -511,7 +516,7 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Do we have a .aux file?                                         */
     /* -------------------------------------------------------------------- */
-    char **papszSiblingFiles = poOpenInfo->GetSiblingFiles();
+    CSLConstList papszSiblingFiles = poOpenInfo->GetSiblingFiles();
     if (papszSiblingFiles != nullptr &&
         CSLFindString(papszSiblingFiles, CPLGetFilename(osAuxFilename)) == -1)
     {
@@ -650,7 +655,7 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
         else if (EQUAL(aosTokensBand[0], "32R"))
             eType = GDT_Float32;
         else
-            eType = GDT_Byte;
+            eType = GDT_UInt8;
 
         bool bNative = true;
         if (CSLCount(aosTokensBand) > 4)

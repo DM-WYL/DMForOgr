@@ -460,7 +460,7 @@ class CPL_DLL GDALWarpKernel
     /*! @endcond */
 
     GDALWarpKernel();
-    virtual ~GDALWarpKernel();
+    ~GDALWarpKernel();
 
     CPLErr Validate();
     CPLErr PerformWarp();
@@ -625,7 +625,7 @@ CPLErr CPL_DLL GDALWarpRegionToBuffer(GDALWarpOperationH, int, int, int, int,
                                       void *, GDALDataType, int, int, int, int);
 
 /************************************************************************/
-/*      Warping kernel functions                                        */
+/*                       Warping kernel functions                       */
 /************************************************************************/
 
 /*! @cond Doxygen_Suppress */

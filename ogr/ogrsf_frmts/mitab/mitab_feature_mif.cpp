@@ -665,7 +665,6 @@ int TABPolyline::ReadGeometryFromMIFFile(MIDDATAFile *fp)
                         return -1;
                     }
                     nNumPoints = atoi(pszLine);
-                    break;
                 }
                 else
                 {
@@ -679,7 +678,6 @@ int TABPolyline::ReadGeometryFromMIFFile(MIDDATAFile *fp)
                     bMultiple = TRUE;
                     nNumSec = atoi(papszToken[2]);
                     nNumPoints = atoi(papszToken[3]);
-                    break;
                 }
                 else
                 {
@@ -690,7 +688,6 @@ int TABPolyline::ReadGeometryFromMIFFile(MIDDATAFile *fp)
             default:
                 CSLDestroy(papszToken);
                 return -1;
-                break;
         }
 
         if (bMultiple)
@@ -709,7 +706,7 @@ int TABPolyline::ReadGeometryFromMIFFile(MIDDATAFile *fp)
                     }
                     nNumPoints = atoi(pszLine);
                 }
-                if (nNumPoints < 2)
+                if (nNumPoints < 0)
                 {
                     CPLError(CE_Failure, CPLE_FileIO,
                              "Invalid number of vertices (%d) in PLINE "
@@ -774,7 +771,7 @@ int TABPolyline::ReadGeometryFromMIFFile(MIDDATAFile *fp)
         }
         else
         {
-            if (nNumPoints < 2)
+            if (nNumPoints < 0)
             {
                 CPLError(CE_Failure, CPLE_FileIO,
                          "Invalid number of vertices (%d) in PLINE "
@@ -974,42 +971,17 @@ int TABRegion::ReadGeometryFromMIFFile(MIDDATAFile *fp)
         return -1;
     }
 
-    OGRPolygon **tabPolygons = nullptr;
-    const int MAX_INITIAL_SECTIONS = 100000;
-    const int numInitialLineSections = (numLineSections < MAX_INITIAL_SECTIONS)
-                                           ? numLineSections
-                                           : MAX_INITIAL_SECTIONS;
-    if (numLineSections > 0)
-    {
-        tabPolygons = static_cast<OGRPolygon **>(
-            VSI_MALLOC2_VERBOSE(numInitialLineSections, sizeof(OGRPolygon *)));
-        if (tabPolygons == nullptr)
-            return -1;
-    }
+    std::vector<std::unique_ptr<OGRGeometry>> apoPolys;
+    constexpr int MAX_INITIAL_SECTIONS = 100000;
+    const int numInitialLineSections =
+        std::min(numLineSections, MAX_INITIAL_SECTIONS);
+    apoPolys.reserve(numInitialLineSections);
 
     const char *pszLine = nullptr;
 
     for (int iSection = 0; iSection < numLineSections; iSection++)
     {
-        if (iSection == MAX_INITIAL_SECTIONS)
-        {
-            OGRPolygon **newTabPolygons =
-                static_cast<OGRPolygon **>(VSI_REALLOC_VERBOSE(
-                    tabPolygons, numLineSections * sizeof(OGRPolygon *)));
-            if (newTabPolygons == nullptr)
-            {
-                iSection--;
-                for (; iSection >= 0; --iSection)
-                    delete tabPolygons[iSection];
-                VSIFree(tabPolygons);
-                return -1;
-            }
-            tabPolygons = newTabPolygons;
-        }
-
         int numSectionVertices = 0;
-
-        tabPolygons[iSection] = new OGRPolygon();
 
         if ((pszLine = fp->GetLine()) != nullptr)
         {
@@ -1021,25 +993,18 @@ int TABRegion::ReadGeometryFromMIFFile(MIDDATAFile *fp)
                      "Invalid number of points (%d) in REGION "
                      "segment.",
                      numSectionVertices);
-            for (; iSection >= 0; --iSection)
-                delete tabPolygons[iSection];
-            VSIFree(tabPolygons);
             return -1;
         }
 
         auto poRing = std::make_unique<OGRLinearRing>();
 
-        const int MAX_INITIAL_POINTS = 100000;
-        const int nInitialNumPoints = (numSectionVertices < MAX_INITIAL_POINTS)
-                                          ? numSectionVertices
-                                          : MAX_INITIAL_POINTS;
+        constexpr int MAX_INITIAL_POINTS = 100000;
+        const int nInitialNumPoints =
+            std::min(numSectionVertices, MAX_INITIAL_POINTS);
         /* Do not allocate too much memory to begin with */
         poRing->setNumPoints(nInitialNumPoints);
         if (poRing->getNumPoints() != nInitialNumPoints)
         {
-            for (; iSection >= 0; --iSection)
-                delete tabPolygons[iSection];
-            VSIFree(tabPolygons);
             return -1;
         }
         for (int i = 0; i < numSectionVertices; i++)
@@ -1049,9 +1014,6 @@ int TABRegion::ReadGeometryFromMIFFile(MIDDATAFile *fp)
                 poRing->setNumPoints(numSectionVertices);
                 if (poRing->getNumPoints() != numSectionVertices)
                 {
-                    for (; iSection >= 0; --iSection)
-                        delete tabPolygons[iSection];
-                    VSIFree(tabPolygons);
                     return -1;
                 }
             }
@@ -1060,9 +1022,6 @@ int TABRegion::ReadGeometryFromMIFFile(MIDDATAFile *fp)
                 CSLTokenizeStringComplex(fp->GetLine(), " ,\t", TRUE, FALSE);
             if (aosTokens.size() < 2)
             {
-                for (; iSection >= 0; --iSection)
-                    delete tabPolygons[iSection];
-                VSIFree(tabPolygons);
                 return -1;
             }
 
@@ -1074,22 +1033,22 @@ int TABRegion::ReadGeometryFromMIFFile(MIDDATAFile *fp)
 
         poRing->closeRings();
 
-        tabPolygons[iSection]->addRingDirectly(poRing.release());
+        auto poPoly = std::make_unique<OGRPolygon>();
+        poPoly->addRing(std::move(poRing));
+        apoPolys.push_back(std::move(poPoly));
     }
 
     std::unique_ptr<OGRGeometry> poGeometry;
-    if (numLineSections == 1)
+    if (apoPolys.size() == 1)
     {
-        poGeometry.reset(tabPolygons[0]);
-        tabPolygons[0] = nullptr;
+        poGeometry = std::move(apoPolys[0]);
     }
-    else if (numLineSections > 1)
+    else if (apoPolys.size() > 1)
     {
-        int isValidGeometry = FALSE;
-        const char *papszOptions[] = {"METHOD=DEFAULT", nullptr};
-        poGeometry.reset(OGRGeometryFactory::organizePolygons(
-            reinterpret_cast<OGRGeometry **>(tabPolygons), numLineSections,
-            &isValidGeometry, papszOptions));
+        bool isValidGeometry = false;
+        const char *const apszOptions[] = {"METHOD=DEFAULT", nullptr};
+        poGeometry = OGRGeometryFactory::organizePolygons(
+            apoPolys, &isValidGeometry, apszOptions);
 
         if (!isValidGeometry)
         {
@@ -1100,13 +1059,11 @@ int TABRegion::ReadGeometryFromMIFFile(MIDDATAFile *fp)
         }
     }
 
-    VSIFree(tabPolygons);
-
     if (poGeometry)
     {
         OGREnvelope sEnvelope;
         poGeometry->getEnvelope(&sEnvelope);
-        SetGeometryDirectly(poGeometry.release());
+        SetGeometry(std::move(poGeometry));
 
         SetMBR(sEnvelope.MinX, sEnvelope.MinY, sEnvelope.MaxX, sEnvelope.MaxY);
     }

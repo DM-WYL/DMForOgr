@@ -59,17 +59,16 @@ struct DWG2000Cehd
     CADHandle hplotstyle;
 };
 
-class DWGFileR2000 : public CADFile
+class DWGFileR2000 final : public CADFile
 {
 public:
     explicit             DWGFileR2000( CADFileIO * poFileIO );
-    virtual             ~DWGFileR2000() = default;
 
 protected:
-    virtual int ReadSectionLocators() override;
-    virtual int ReadHeader( enum OpenOptions eOptions ) override;
-    virtual int ReadClasses( enum OpenOptions eOptions ) override;
-    virtual int CreateFileMap() override;
+    int ReadSectionLocators() override;
+    int ReadHeader( enum OpenOptions eOptions ) override;
+    int ReadClasses( enum OpenOptions eOptions ) override;
+    int CreateFileMap() override;
 
     CADObject   * GetObject( long dHandle, bool bHandlesOnly = false ) override;
     CADGeometry * GetGeometry( size_t iLayerIndex, long dHandle,
@@ -181,7 +180,7 @@ protected:
                                      CADBuffer &buffer );
     CADImageDefReactorObject * getImageDefReactor( unsigned int dObjectSize,
                                                    CADBuffer &buffer );
-    void fillCommonEntityHandleData(CADEntityObject * pEnt, CADBuffer &buffer);
+    static void fillCommonEntityHandleData(CADEntityObject * pEnt, CADBuffer &buffer);
     unsigned short validateEntityCRC(CADBuffer& buffer, unsigned int dObjectSize,
                                      const char * entityName = "ENTITY",
                                      bool bSwapEndianness = false );

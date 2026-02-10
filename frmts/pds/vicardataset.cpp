@@ -126,7 +126,7 @@ class OGRVICARBinaryPrefixesLayer final : public OGRLayer
                                 vsi_l_offset nFileOffset, vsi_l_offset nStride,
                                 RawRasterBand::ByteOrder eBINTByteOrder,
                                 RawRasterBand::ByteOrder eBREALByteOrder);
-    ~OGRVICARBinaryPrefixesLayer();
+    ~OGRVICARBinaryPrefixesLayer() override;
 
     bool HasError() const
     {
@@ -152,7 +152,7 @@ class OGRVICARBinaryPrefixesLayer final : public OGRLayer
 };
 
 /************************************************************************/
-/*                       GetTypeFromString()                            */
+/*                         GetTypeFromString()                          */
 /************************************************************************/
 
 OGRVICARBinaryPrefixesLayer::Type
@@ -176,7 +176,7 @@ OGRVICARBinaryPrefixesLayer::GetTypeFromString(const char *pszStr)
 }
 
 /************************************************************************/
-/*                     OGRVICARBinaryPrefixesLayer()                    */
+/*                    OGRVICARBinaryPrefixesLayer()                     */
 /************************************************************************/
 
 OGRVICARBinaryPrefixesLayer::OGRVICARBinaryPrefixesLayer(
@@ -449,7 +449,7 @@ OGRFeature *OGRVICARBinaryPrefixesLayer::GetNextFeature()
 }
 
 /************************************************************************/
-/*                         VICARRawRasterBand                           */
+/*                          VICARRawRasterBand                          */
 /************************************************************************/
 
 class VICARRawRasterBand final : public RawRasterBand
@@ -463,17 +463,16 @@ class VICARRawRasterBand final : public RawRasterBand
                        int nLineOffsetIn, GDALDataType eDataTypeIn,
                        ByteOrder eByteOrderIn);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IWriteBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
 
-    virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, GSpacing nPixelSpace,
-                             GSpacing nLineSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
+                     GDALDataType, GSpacing nPixelSpace, GSpacing nLineSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
 
 /************************************************************************/
-/*                        VICARRawRasterBand()                          */
+/*                         VICARRawRasterBand()                         */
 /************************************************************************/
 
 VICARRawRasterBand::VICARRawRasterBand(VICARDataset *poDSIn, int nBandIn,
@@ -535,7 +534,7 @@ CPLErr VICARRawRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                        VICARBASICRasterBand                          */
+/*                         VICARBASICRasterBand                         */
 /************************************************************************/
 
 class VICARBASICRasterBand final : public GDALPamRasterBand
@@ -543,8 +542,8 @@ class VICARBASICRasterBand final : public GDALPamRasterBand
   public:
     VICARBASICRasterBand(VICARDataset *poDSIn, int nBandIn, GDALDataType eType);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IWriteBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
 };
 
 /************************************************************************/
@@ -563,7 +562,7 @@ VICARBASICRasterBand::VICARBASICRasterBand(VICARDataset *poDSIn, int nBandIn,
 
 namespace
 {
-class DecodeEncodeException : public std::exception
+class DecodeEncodeException final : public std::exception
 {
   public:
     DecodeEncodeException() = default;
@@ -1171,10 +1170,10 @@ VICARDataset::~VICARDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr VICARDataset::Close()
+CPLErr VICARDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -1261,7 +1260,7 @@ CPLErr VICARDataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                        GetRawBinaryLayout()                          */
+/*                         GetRawBinaryLayout()                         */
 /************************************************************************/
 
 bool VICARDataset::GetRawBinaryLayout(GDALDataset::RawBinaryLayout &sLayout)
@@ -1273,7 +1272,7 @@ bool VICARDataset::GetRawBinaryLayout(GDALDataset::RawBinaryLayout &sLayout)
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **VICARDataset::GetMetadataDomainList()
@@ -1282,10 +1281,10 @@ char **VICARDataset::GetMetadataDomainList()
 }
 
 /************************************************************************/
-/*                             GetMetadata()                            */
+/*                            GetMetadata()                             */
 /************************************************************************/
 
-char **VICARDataset::GetMetadata(const char *pszDomain)
+CSLConstList VICARDataset::GetMetadata(const char *pszDomain)
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "json:VICAR"))
     {
@@ -1306,7 +1305,7 @@ char **VICARDataset::GetMetadata(const char *pszDomain)
 }
 
 /************************************************************************/
-/*                           InvalidateLabel()                          */
+/*                          InvalidateLabel()                           */
 /************************************************************************/
 
 void VICARDataset::InvalidateLabel()
@@ -1316,10 +1315,10 @@ void VICARDataset::InvalidateLabel()
 }
 
 /************************************************************************/
-/*                             SetMetadata()                            */
+/*                            SetMetadata()                             */
 /************************************************************************/
 
-CPLErr VICARDataset::SetMetadata(char **papszMD, const char *pszDomain)
+CPLErr VICARDataset::SetMetadata(CSLConstList papszMD, const char *pszDomain)
 {
     if (m_bUseSrcLabel && eAccess == GA_Update && pszDomain != nullptr &&
         EQUAL(pszDomain, "json:VICAR"))
@@ -1347,7 +1346,7 @@ CPLErr VICARDataset::SetMetadata(char **papszMD, const char *pszDomain)
 }
 
 /************************************************************************/
-/*                         SerializeString()                            */
+/*                          SerializeString()                           */
 /************************************************************************/
 
 static std::string SerializeString(const std::string &s)
@@ -1424,7 +1423,7 @@ static void WriteLabelItemValue(std::string &osLabel, const CPLJSONObject &obj)
 }
 
 /************************************************************************/
-/*                      SanitizeItemName()                              */
+/*                          SanitizeItemName()                          */
 /************************************************************************/
 
 static std::string SanitizeItemName(const std::string &osItemName)
@@ -1457,7 +1456,7 @@ static std::string SanitizeItemName(const std::string &osItemName)
 }
 
 /************************************************************************/
-/*                        WriteLabelItem()                              */
+/*                           WriteLabelItem()                           */
 /************************************************************************/
 
 static void WriteLabelItem(std::string &osLabel, const CPLJSONObject &obj,
@@ -1471,7 +1470,7 @@ static void WriteLabelItem(std::string &osLabel, const CPLJSONObject &obj,
 }
 
 /************************************************************************/
-/*                           WriteLabel()                               */
+/*                             WriteLabel()                             */
 /************************************************************************/
 
 void VICARDataset::WriteLabel()
@@ -1595,7 +1594,7 @@ void VICARDataset::WriteLabel()
 }
 
 /************************************************************************/
-/*                           PatchLabel()                               */
+/*                             PatchLabel()                             */
 /************************************************************************/
 
 void VICARDataset::PatchLabel()
@@ -1634,7 +1633,7 @@ void VICARDataset::PatchLabel()
 }
 
 /************************************************************************/
-/*                           BuildLabel()                               */
+/*                             BuildLabel()                             */
 /************************************************************************/
 
 void VICARDataset::BuildLabel()
@@ -1655,7 +1654,7 @@ void VICARDataset::BuildLabel()
     CPL_IGNORE_RET_VAL(pszFormat);  // Make CSA happy
     switch (eType)
     {
-        case GDT_Byte:
+        case GDT_UInt8:
             pszFormat = "BYTE";
             break;
         case GDT_Int16:
@@ -1764,7 +1763,7 @@ void VICARDataset::BuildLabel()
 }
 
 /************************************************************************/
-/*                        BuildLabelPropertyMap()                       */
+/*                       BuildLabelPropertyMap()                        */
 /************************************************************************/
 
 void VICARDataset::BuildLabelPropertyMap(CPLJSONObject &oLabel)
@@ -1887,7 +1886,7 @@ void VICARDataset::BuildLabelPropertyMap(CPLJSONObject &oLabel)
 }
 
 /************************************************************************/
-/*                    BuildLabelPropertyGeoTIFF()                       */
+/*                     BuildLabelPropertyGeoTIFF()                      */
 /************************************************************************/
 
 #if defined(HAVE_TIFF) && defined(HAVE_GEOTIFF)
@@ -1915,7 +1914,7 @@ void VICARDataset::BuildLabelPropertyGeoTIFF(CPLJSONObject &oLabel)
     }
     const char *const apszOptions[] = {"GEOTIFF_VERSION=1.0", nullptr};
     auto poDS = std::unique_ptr<GDALDataset>(poGTiffDriver->Create(
-        osTmpFilename.c_str(), 1, 1, 1, GDT_Byte, apszOptions));
+        osTmpFilename.c_str(), 1, 1, 1, GDT_UInt8, apszOptions));
     if (!poDS)
         return;
     poDS->SetSpatialRef(&m_oSRS);
@@ -2004,7 +2003,7 @@ void VICARDataset::BuildLabelPropertyGeoTIFF(CPLJSONObject &oLabel)
 #endif
 
 /************************************************************************/
-/*                       ReadProjectionFromMapGroup()                   */
+/*                     ReadProjectionFromMapGroup()                     */
 /************************************************************************/
 
 void VICARDataset::ReadProjectionFromMapGroup()
@@ -2302,7 +2301,7 @@ void VICARDataset::ReadProjectionFromMapGroup()
 }
 
 /************************************************************************/
-/*                    ReadProjectionFromGeoTIFFGroup()                  */
+/*                   ReadProjectionFromGeoTIFFGroup()                   */
 /************************************************************************/
 
 #if defined(HAVE_TIFF) && defined(HAVE_GEOTIFF)
@@ -2538,7 +2537,7 @@ GDALDataset *VICARDataset::Open(GDALOpenInfo *poOpenInfo)
         return nullptr;
     }
     double dfNoData = 0.0;
-    if (eDataType == GDT_Byte)
+    if (eDataType == GDT_UInt8)
     {
         dfNoData = VICAR_NULL1;
     }
@@ -3040,13 +3039,13 @@ const char *VICARDataset::GetKeyword(const char *pszPath,
 }
 
 /************************************************************************/
-/*                        GetDataTypeFromFormat()                       */
+/*                       GetDataTypeFromFormat()                        */
 /************************************************************************/
 
 GDALDataType VICARDataset::GetDataTypeFromFormat(const char *pszFormat)
 {
     if (EQUAL(pszFormat, "BYTE"))
-        return GDT_Byte;
+        return GDT_UInt8;
 
     if (EQUAL(pszFormat, "HALF") || EQUAL(pszFormat, "WORD"))
         return GDT_Int16;
@@ -3067,7 +3066,7 @@ GDALDataType VICARDataset::GetDataTypeFromFormat(const char *pszFormat)
 }
 
 /************************************************************************/
-/*                             GetSpacings()                            */
+/*                            GetSpacings()                             */
 /************************************************************************/
 
 bool VICARDataset::GetSpacings(const VICARKeywordHandler &keywords,
@@ -3143,12 +3142,12 @@ bool VICARDataset::GetSpacings(const VICARKeywordHandler &keywords,
 }
 
 /************************************************************************/
-/*                           Create()                                   */
+/*                               Create()                               */
 /************************************************************************/
 
 GDALDataset *VICARDataset::Create(const char *pszFilename, int nXSize,
                                   int nYSize, int nBandsIn, GDALDataType eType,
-                                  char **papszOptions)
+                                  CSLConstList papszOptions)
 {
     return CreateInternal(pszFilename, nXSize, nYSize, nBandsIn, eType,
                           papszOptions);
@@ -3157,9 +3156,9 @@ GDALDataset *VICARDataset::Create(const char *pszFilename, int nXSize,
 VICARDataset *VICARDataset::CreateInternal(const char *pszFilename, int nXSize,
                                            int nYSize, int nBandsIn,
                                            GDALDataType eType,
-                                           char **papszOptions)
+                                           CSLConstList papszOptions)
 {
-    if (eType != GDT_Byte && eType != GDT_Int16 && eType != GDT_Int32 &&
+    if (eType != GDT_UInt8 && eType != GDT_Int16 && eType != GDT_Int32 &&
         eType != GDT_Float32 && eType != GDT_Float64 && eType != GDT_CFloat32)
     {
         CPLError(CE_Failure, CPLE_NotSupported, "Unsupported data type");
@@ -3328,12 +3327,12 @@ VICARDataset *VICARDataset::CreateInternal(const char *pszFilename, int nXSize,
 }
 
 /************************************************************************/
-/*                            CreateCopy()                              */
+/*                             CreateCopy()                             */
 /************************************************************************/
 
 GDALDataset *VICARDataset::CreateCopy(const char *pszFilename,
                                       GDALDataset *poSrcDS, int /*bStrict*/,
-                                      char **papszOptions,
+                                      CSLConstList papszOptions,
                                       GDALProgressFunc pfnProgress,
                                       void *pProgressData)
 {
@@ -3366,7 +3365,7 @@ GDALDataset *VICARDataset::CreateCopy(const char *pszFilename,
 
     if (poDS->m_bUseSrcLabel && !poDS->m_oSrcJSonLabel.IsValid())
     {
-        char **papszMD_VICAR = poSrcDS->GetMetadata("json:VICAR");
+        CSLConstList papszMD_VICAR = poSrcDS->GetMetadata("json:VICAR");
         if (papszMD_VICAR != nullptr)
         {
             poDS->SetMetadata(papszMD_VICAR, "json:VICAR");

@@ -14,6 +14,7 @@
 #include "ogr_ngw.h"
 
 #include "cpl_http.h"
+#include "cpl_multiproc.h"  // CPLSleep()
 
 #include <limits>
 
@@ -567,11 +568,11 @@ std::string GetResmetaSuffix(CPLJSONObject::Type eType)
     }
 }
 
-void FillResmeta(const CPLJSONObject &oRoot, char **papszMetadata)
+void FillResmeta(const CPLJSONObject &oRoot, CSLConstList papszMetadata)
 {
     CPLJSONObject oResMeta("resmeta", oRoot);
     CPLJSONObject oResMetaItems("items", oResMeta);
-    CPLStringList oaMetadata(papszMetadata, FALSE);
+    CPLStringList oaMetadata(papszMetadata);
     for (int i = 0; i < oaMetadata.size(); ++i)
     {
         std::string osItem = oaMetadata[i];
@@ -606,7 +607,8 @@ void FillResmeta(const CPLJSONObject &oRoot, char **papszMetadata)
 }
 
 bool FlushMetadata(const std::string &osUrl, const std::string &osResourceId,
-                   char **papszMetadata, const CPLStringList &aosHTTPOptions)
+                   CSLConstList papszMetadata,
+                   const CPLStringList &aosHTTPOptions)
 {
     if (nullptr == papszMetadata)
     {
@@ -861,7 +863,7 @@ bool GetExtent(const std::string &osUrl, const std::string &osResourceId,
 
         if (nRetryCount >= nMaxRetries)
         {
-            return false;
+            break;
         }
 
         CPLSleep(dfRetryDelaySecs);

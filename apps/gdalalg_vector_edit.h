@@ -42,10 +42,11 @@ class GDALVectorEditAlgorithm /* non final */
     std::vector<std::string> m_unsetMetadata{};
     std::vector<std::string> m_layerMetadata{};
     std::vector<std::string> m_unsetLayerMetadata{};
+    bool m_unsetFID = false;
 };
 
 /************************************************************************/
-/*                   GDALVectorEditAlgorithmStandalone                  */
+/*                  GDALVectorEditAlgorithmStandalone                   */
 /************************************************************************/
 
 class GDALVectorEditAlgorithmStandalone final : public GDALVectorEditAlgorithm

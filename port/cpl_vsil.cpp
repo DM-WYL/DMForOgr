@@ -75,7 +75,7 @@ char **VSIReadDir(const char *pszPath)
 }
 
 /************************************************************************/
-/*                             VSIReadDirEx()                           */
+/*                            VSIReadDirEx()                            */
 /************************************************************************/
 
 /**
@@ -100,7 +100,6 @@ char **VSIReadDir(const char *pszPath)
  * limit.
  * @return The list of entries in the directory, or NULL if the directory
  * doesn't exist.  Filenames are returned in UTF-8 encoding.
- * @since GDAL 2.1
  */
 
 char **VSIReadDirEx(const char *pszPath, int nMaxFiles)
@@ -111,7 +110,7 @@ char **VSIReadDirEx(const char *pszPath, int nMaxFiles)
 }
 
 /************************************************************************/
-/*                             VSISiblingFiles()                        */
+/*                          VSISiblingFiles()                           */
 /************************************************************************/
 
 /**
@@ -139,7 +138,7 @@ char **VSISiblingFiles(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                           VSIFnMatch()                               */
+/*                             VSIFnMatch()                             */
 /************************************************************************/
 
 static bool VSIFnMatch(const char *pszPattern, const char *pszStr)
@@ -224,7 +223,7 @@ static bool VSIFnMatch(const char *pszPattern, const char *pszStr)
 }
 
 /************************************************************************/
-/*                             VSIGlob()                                */
+/*                              VSIGlob()                               */
 /************************************************************************/
 
 /**
@@ -347,6 +346,8 @@ char **VSIGlob(const char *pszPattern, const char *const *papszOptions,
                 }
                 else if (osCurPath.find_first_of("*?[") != std::string::npos)
                 {
+                    if (osPath.empty())
+                        osPath = ".";
                     std::unique_ptr<VSIDIR, VSIDirCloser> psDir(
                         VSIOpenDir(osPath.c_str(), 0, nullptr));
                     if (!psDir)
@@ -361,7 +362,9 @@ char **VSIGlob(const char *pszPattern, const char *const *papszOptions,
                         }
                         if (VSIFnMatch(osCurPath.c_str(), psEntry->pszName))
                         {
-                            std::string osCandidate(osPath);
+                            std::string osCandidate;
+                            if (osPath != ".")
+                                osCandidate = osPath;
                             osCandidate += psEntry->pszName;
                             nPosStart = osCandidate.size();
                             if (*pszPattern)
@@ -425,7 +428,7 @@ const char *VSIGetDirectorySeparator(const char *pszPath)
 }
 
 /************************************************************************/
-/*                             VSIReadRecursive()                       */
+/*                          VSIReadRecursive()                          */
 /************************************************************************/
 
 /**
@@ -451,7 +454,6 @@ const char *VSIGetDirectorySeparator(const char *pszPath)
  * @return The list of entries in the directory and subdirectories
  * or NULL if the directory doesn't exist.  Filenames are returned in UTF-8
  * encoding.
- * @since GDAL 1.10.0
  *
  */
 
@@ -534,7 +536,6 @@ char **CPLReadDir(const char *pszPath)
  * </ul>
  *
  * @return a handle, or NULL in case of error
- * @since GDAL 2.4
  *
  */
 
@@ -547,7 +548,7 @@ VSIDIR *VSIOpenDir(const char *pszPath, int nRecurseDepth,
 }
 
 /************************************************************************/
-/*                          VSIGetNextDirEntry()                        */
+/*                         VSIGetNextDirEntry()                         */
 /************************************************************************/
 
 /**
@@ -574,7 +575,6 @@ VSIDIR *VSIOpenDir(const char *pszPath, int nRecurseDepth,
  *
  * @return a entry, or NULL if there is no more entry in the directory. This
  * return value must not be freed.
- * @since GDAL 2.4
  *
  */
 
@@ -584,7 +584,7 @@ const VSIDIREntry *VSIGetNextDirEntry(VSIDIR *dir)
 }
 
 /************************************************************************/
-/*                             VSICloseDir()                            */
+/*                            VSICloseDir()                             */
 /************************************************************************/
 
 /**
@@ -594,7 +594,6 @@ const VSIDIREntry *VSIGetNextDirEntry(VSIDIR *dir)
  *
  * @param dir Directory handled returned by VSIOpenDir().
  *
- * @since GDAL 2.4
  */
 
 void VSICloseDir(VSIDIR *dir)
@@ -631,7 +630,7 @@ int VSIMkdir(const char *pszPathname, long mode)
 }
 
 /************************************************************************/
-/*                       VSIMkdirRecursive()                            */
+/*                         VSIMkdirRecursive()                          */
 /************************************************************************/
 
 /**
@@ -641,39 +640,54 @@ int VSIMkdir(const char *pszPathname, long mode)
  * @param mode the permissions mode.
  *
  * @return 0 on success or -1 on an error.
- * @since GDAL 2.3
  */
 
 int VSIMkdirRecursive(const char *pszPathname, long mode)
 {
-    if (pszPathname == nullptr || pszPathname[0] == '\0' ||
-        strncmp("/", pszPathname, 2) == 0)
-    {
+    if (!pszPathname)
         return -1;
-    }
 
-    const CPLString osPathname(pszPathname);
+    const std::string osPathnameOri(pszPathname);
+    if (osPathnameOri.empty() || osPathnameOri == "/")
+        return -1;
+
     VSIStatBufL sStat;
-    if (VSIStatL(osPathname, &sStat) == 0)
+    if (VSIStatL(osPathnameOri.c_str(), &sStat) == 0)
     {
         return VSI_ISDIR(sStat.st_mode) ? 0 : -1;
     }
-    const std::string osParentPath(CPLGetPathSafe(osPathname));
 
-    // Prevent crazy paths from recursing forever.
-    if (osParentPath == osPathname ||
-        osParentPath.length() >= osPathname.length())
+    std::string osCurrentPath(osPathnameOri);
+    std::vector<std::string> aosQueue;
+    while (true)
     {
-        return -1;
+        std::string osParentPath(CPLGetPathSafe(osCurrentPath.c_str()));
+
+        // Prevent crazy paths from recursing forever.
+        if (osParentPath.length() >= osCurrentPath.length())
+        {
+            break;
+        }
+
+        if (!osParentPath.empty() &&
+            VSIStatL(osParentPath.c_str(), &sStat) != 0)
+        {
+            osCurrentPath = std::move(osParentPath);
+            aosQueue.push_back(osCurrentPath);
+        }
+        else
+        {
+            break;
+        }
     }
 
-    if (!osParentPath.empty() && VSIStatL(osParentPath.c_str(), &sStat) != 0)
+    for (auto oIter = aosQueue.rbegin(); oIter != aosQueue.rend(); ++oIter)
     {
-        if (VSIMkdirRecursive(osParentPath.c_str(), mode) != 0)
+        if (VSIMkdir(oIter->c_str(), mode) != 0)
             return -1;
     }
 
-    return VSIMkdir(osPathname, mode);
+    return VSIMkdir(osPathnameOri.c_str(), mode);
 }
 
 /************************************************************************/
@@ -785,7 +799,7 @@ int VSIRename(const char *oldpath, const char *newpath)
 }
 
 /************************************************************************/
-/*                             VSIMove()                                */
+/*                              VSIMove()                               */
 /************************************************************************/
 
 /**
@@ -892,7 +906,7 @@ int VSIMove(const char *oldpath, const char *newpath,
 }
 
 /************************************************************************/
-/*                             VSICopyFile()                            */
+/*                            VSICopyFile()                             */
 /************************************************************************/
 
 /**
@@ -1046,7 +1060,7 @@ int VSICopyFileRestartable(const char *pszSource, const char *pszTarget,
 }
 
 /************************************************************************/
-/*                             VSISync()                                */
+/*                              VSISync()                               */
 /************************************************************************/
 
 /**
@@ -1122,7 +1136,6 @@ int VSICopyFileRestartable(const char *pszSource, const char *pszTarget,
  * @param ppapszOutputs Unused. Should be set to NULL for now.
  *
  * @return TRUE on success or FALSE on an error.
- * @since GDAL 2.4
  */
 
 int VSISync(const char *pszSource, const char *pszTarget,
@@ -1156,7 +1169,7 @@ int VSISync(const char *pszSource, const char *pszTarget,
 }
 
 /************************************************************************/
-/*                    VSIMultipartUploadGetCapabilities()               */
+/*                 VSIMultipartUploadGetCapabilities()                  */
 /************************************************************************/
 
 /**
@@ -1195,7 +1208,7 @@ int VSIMultipartUploadGetCapabilities(
 }
 
 /************************************************************************/
-/*                     VSIMultipartUploadStart()                        */
+/*                      VSIMultipartUploadStart()                       */
 /************************************************************************/
 
 /**
@@ -1294,7 +1307,7 @@ char *VSIMultipartUploadAddPart(const char *pszFilename,
  *                    Should be the same as the one used for
  *                    VSIMultipartUploadStart()
  * @param pszUploadId Value returned by VSIMultipartUploadStart()
- * @param nPartIdsCount Number of parts,  andsize of apszPartIds
+ * @param nPartIdsCount Number of parts, and size of apszPartIds
  * @param apszPartIds Array of part identifiers (as returned by
  *                    VSIMultipartUploadAddPart()), that must be ordered in
  *                    the sequential order of parts, and of size nPartIdsCount.
@@ -1318,7 +1331,7 @@ int VSIMultipartUploadEnd(const char *pszFilename, const char *pszUploadId,
 }
 
 /************************************************************************/
-/*                       VSIMultipartUploadAbort()                      */
+/*                      VSIMultipartUploadAbort()                       */
 /************************************************************************/
 
 /**
@@ -1353,7 +1366,7 @@ int VSIMultipartUploadAbort(const char *pszFilename, const char *pszUploadId,
 #ifndef DOXYGEN_SKIP
 
 /************************************************************************/
-/*                     MultipartUploadGetCapabilities()                 */
+/*                   MultipartUploadGetCapabilities()                   */
 /************************************************************************/
 
 bool VSIFilesystemHandler::MultipartUploadGetCapabilities(int *, int *, int *,
@@ -1367,7 +1380,7 @@ bool VSIFilesystemHandler::MultipartUploadGetCapabilities(int *, int *, int *,
 }
 
 /************************************************************************/
-/*                         MultipartUploadStart()                       */
+/*                        MultipartUploadStart()                        */
 /************************************************************************/
 
 char *VSIFilesystemHandler::MultipartUploadStart(const char *, CSLConstList)
@@ -1405,7 +1418,7 @@ bool VSIFilesystemHandler::MultipartUploadEnd(const char *, const char *,
 }
 
 /************************************************************************/
-/*                         MultipartUploadAbort()                       */
+/*                        MultipartUploadAbort()                        */
 /************************************************************************/
 
 bool VSIFilesystemHandler::MultipartUploadAbort(const char *, const char *,
@@ -1419,7 +1432,7 @@ bool VSIFilesystemHandler::MultipartUploadAbort(const char *, const char *,
 #endif
 
 /************************************************************************/
-/*                         VSIAbortPendingUploads()                     */
+/*                       VSIAbortPendingUploads()                       */
 /************************************************************************/
 
 /**
@@ -1493,7 +1506,6 @@ int VSIRmdir(const char *pszDirname)
  * function, provided that OAuth2 authentication is used.
  *
  * @return 0 on success or -1 on an error.
- * @since GDAL 2.3
  */
 
 int VSIRmdirRecursive(const char *pszDirname)
@@ -1539,7 +1551,7 @@ int VSIStatL(const char *pszFilename, VSIStatBufL *psStatBuf)
 }
 
 /************************************************************************/
-/*                            VSIStatExL()                              */
+/*                             VSIStatExL()                             */
 /************************************************************************/
 
 /**
@@ -1569,7 +1581,6 @@ int VSIStatL(const char *pszFilename, VSIStatBufL *psStatBuf)
  *
  * @return 0 on success or -1 on an error.
  *
- * @since GDAL 1.8.0
  */
 
 int VSIStatExL(const char *pszFilename, VSIStatBufL *psStatBuf, int nFlags)
@@ -1599,7 +1610,7 @@ int VSIStatExL(const char *pszFilename, VSIStatBufL *psStatBuf, int nFlags)
 }
 
 /************************************************************************/
-/*                       VSIGetFileMetadata()                           */
+/*                         VSIGetFileMetadata()                         */
 /************************************************************************/
 
 /**
@@ -1658,7 +1669,7 @@ char **VSIGetFileMetadata(const char *pszFilename, const char *pszDomain,
 }
 
 /************************************************************************/
-/*                       VSISetFileMetadata()                           */
+/*                         VSISetFileMetadata()                         */
 /************************************************************************/
 
 /**
@@ -1731,7 +1742,7 @@ int VSISetFileMetadata(const char *pszFilename, CSLConstList papszMetadata,
 }
 
 /************************************************************************/
-/*                       VSIIsCaseSensitiveFS()                         */
+/*                        VSIIsCaseSensitiveFS()                        */
 /************************************************************************/
 
 /**
@@ -1751,7 +1762,6 @@ int VSISetFileMetadata(const char *pszFilename, CSLConstList papszMetadata,
  *
  * @return TRUE if the filenames of the filesystem are case sensitive.
  *
- * @since GDAL 1.8.0
  */
 
 int VSIIsCaseSensitiveFS(const char *pszFilename)
@@ -1780,7 +1790,6 @@ int VSIIsCaseSensitiveFS(const char *pszFilename)
  *              be returned both in cases where it is known to not support them,
  *              or when it is unknown.
  *
- * @since GDAL 2.2
  */
 
 int VSISupportsSparseFiles(const char *pszPath)
@@ -1791,7 +1800,7 @@ int VSISupportsSparseFiles(const char *pszPath)
 }
 
 /************************************************************************/
-/*                           VSIIsLocal()                               */
+/*                             VSIIsLocal()                             */
 /************************************************************************/
 
 /**
@@ -1819,7 +1828,7 @@ bool VSIIsLocal(const char *pszPath)
 }
 
 /************************************************************************/
-/*                       VSIGetCanonicalFilename()                      */
+/*                      VSIGetCanonicalFilename()                       */
 /************************************************************************/
 
 /**
@@ -1844,7 +1853,7 @@ char *VSIGetCanonicalFilename(const char *pszPath)
 }
 
 /************************************************************************/
-/*                      VSISupportsSequentialWrite()                    */
+/*                     VSISupportsSequentialWrite()                     */
 /************************************************************************/
 
 /**
@@ -1868,7 +1877,7 @@ bool VSISupportsSequentialWrite(const char *pszPath, bool bAllowLocalTempFile)
 }
 
 /************************************************************************/
-/*                      VSISupportsRandomWrite()                        */
+/*                       VSISupportsRandomWrite()                       */
 /************************************************************************/
 
 /**
@@ -1892,7 +1901,7 @@ bool VSISupportsRandomWrite(const char *pszPath, bool bAllowLocalTempFile)
 }
 
 /************************************************************************/
-/*                     VSIHasOptimizedReadMultiRange()                  */
+/*                   VSIHasOptimizedReadMultiRange()                    */
 /************************************************************************/
 
 /**
@@ -1906,7 +1915,6 @@ bool VSISupportsRandomWrite(const char *pszPath, bool bAllowLocalTempFile)
  * @return TRUE if the file system is known to have an efficient multi-range
  * reading.
  *
- * @since GDAL 2.3
  */
 
 int VSIHasOptimizedReadMultiRange(const char *pszPath)
@@ -1917,7 +1925,7 @@ int VSIHasOptimizedReadMultiRange(const char *pszPath)
 }
 
 /************************************************************************/
-/*                        VSIGetActualURL()                             */
+/*                          VSIGetActualURL()                           */
 /************************************************************************/
 
 /**
@@ -1935,7 +1943,6 @@ int VSIHasOptimizedReadMultiRange(const char *pszPath)
  * @return the actual URL corresponding to the supplied filename, or NULL.
  * Should not be freed.
  *
- * @since GDAL 2.3
  */
 
 const char *VSIGetActualURL(const char *pszFilename)
@@ -1946,7 +1953,7 @@ const char *VSIGetActualURL(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                        VSIGetSignedURL()                             */
+/*                          VSIGetSignedURL()                           */
 /************************************************************************/
 
 /**
@@ -1979,7 +1986,6 @@ const char *VSIGetActualURL(const char *pszFilename)
  * </ul>
  *
  * @return a signed URL, or NULL. Should be freed with CPLFree().
- * @since GDAL 2.3
  */
 
 char *VSIGetSignedURL(const char *pszFilename, CSLConstList papszOptions)
@@ -2000,7 +2006,6 @@ char *VSIGetSignedURL(const char *pszFilename, CSLConstList papszOptions)
  * than 2GB) should be supported.  Binary access is always implied and
  * the "b" does not need to be included in the pszAccess string.
  *
- * Note that the "VSILFILE *" returned since GDAL 1.8.0 by this function is
  * *NOT* a standard C library FILE *, and cannot be used with any functions
  * other than the "VSI*L" family of functions.  They aren't "real" FILE objects.
  *
@@ -2026,7 +2031,7 @@ VSILFILE *VSIFOpenL(const char *pszFilename, const char *pszAccess)
 }
 
 /************************************************************************/
-/*                               Open()                                 */
+/*                                Open()                                */
 /************************************************************************/
 
 #ifndef DOXYGEN_SKIP
@@ -2041,7 +2046,7 @@ VSIFilesystemHandler::OpenStatic(const char *pszFilename, const char *pszAccess,
 }
 
 /************************************************************************/
-/*                             CopyFile()                               */
+/*                              CopyFile()                              */
 /************************************************************************/
 
 int VSIFilesystemHandler::CopyFile(const char *pszSource, const char *pszTarget,
@@ -2155,7 +2160,7 @@ int VSIFilesystemHandler::CopyFile(const char *pszSource, const char *pszTarget,
 }
 
 /************************************************************************/
-/*                       CopyFileRestartable()                          */
+/*                        CopyFileRestartable()                         */
 /************************************************************************/
 
 int VSIFilesystemHandler::CopyFileRestartable(
@@ -2171,7 +2176,7 @@ int VSIFilesystemHandler::CopyFileRestartable(
 }
 
 /************************************************************************/
-/*                               Sync()                                 */
+/*                                Sync()                                */
 /************************************************************************/
 
 bool VSIFilesystemHandler::Sync(const char *pszSource, const char *pszTarget,
@@ -2349,7 +2354,7 @@ bool VSIFilesystemHandler::Sync(const char *pszSource, const char *pszTarget,
 }
 
 /************************************************************************/
-/*                  VSIVirtualHandleOnlyVisibleAtCloseTime()            */
+/*               VSIVirtualHandleOnlyVisibleAtCloseTime()               */
 /************************************************************************/
 
 class VSIVirtualHandleOnlyVisibleAtCloseTime final : public VSIProxyFileHandle
@@ -2368,7 +2373,7 @@ class VSIVirtualHandleOnlyVisibleAtCloseTime final : public VSIProxyFileHandle
     {
     }
 
-    ~VSIVirtualHandleOnlyVisibleAtCloseTime()
+    ~VSIVirtualHandleOnlyVisibleAtCloseTime() override
     {
         VSIVirtualHandleOnlyVisibleAtCloseTime::Close();
     }
@@ -2388,15 +2393,25 @@ int VSIVirtualHandleOnlyVisibleAtCloseTime::Close()
         return 0;
     m_bAlreadyClosed = true;
     int ret = VSIProxyFileHandle::Close();
-    if (ret != 0)
-        return ret;
-    return m_bCancelCreation
-               ? VSIUnlink(m_osTmpName.c_str())
-               : VSIRename(m_osTmpName.c_str(), m_osTargetName.c_str());
+    if (ret == 0)
+    {
+        if (m_bCancelCreation)
+        {
+            ret = VSIUnlink(m_osTmpName.c_str());
+            VSIStatBufL sStatBuf;
+            if (ret != 0 && VSIStatL(m_osTmpName.c_str(), &sStatBuf) != 0)
+                ret = 0;
+        }
+        else
+        {
+            ret = VSIRename(m_osTmpName.c_str(), m_osTargetName.c_str());
+        }
+    }
+    return ret;
 }
 
 /************************************************************************/
-/*                       CreateOnlyVisibleAtCloseTime()                 */
+/*                    CreateOnlyVisibleAtCloseTime()                    */
 /************************************************************************/
 
 VSIVirtualHandleUniquePtr VSIFilesystemHandler::CreateOnlyVisibleAtCloseTime(
@@ -2439,7 +2454,7 @@ VSIDIREntry::VSIDIREntry(const VSIDIREntry &other)
 }
 
 /************************************************************************/
-/*                           ~VSIDIREntry()                             */
+/*                            ~VSIDIREntry()                            */
 /************************************************************************/
 
 VSIDIREntry::~VSIDIREntry()
@@ -2478,7 +2493,7 @@ struct VSIDIRGeneric : public VSIDIR
     {
     }
 
-    ~VSIDIRGeneric();
+    ~VSIDIRGeneric() override;
 
     const VSIDIREntry *NextDirEntry() override;
 
@@ -2487,7 +2502,7 @@ struct VSIDIRGeneric : public VSIDIR
 };
 
 /************************************************************************/
-/*                         ~VSIDIRGeneric()                             */
+/*                           ~VSIDIRGeneric()                           */
 /************************************************************************/
 
 VSIDIRGeneric::~VSIDIRGeneric()
@@ -2503,7 +2518,7 @@ VSIDIRGeneric::~VSIDIRGeneric()
 }  // namespace
 
 /************************************************************************/
-/*                            OpenDir()                                 */
+/*                              OpenDir()                               */
 /************************************************************************/
 
 VSIDIR *VSIFilesystemHandler::OpenDir(const char *pszPath, int nRecurseDepth,
@@ -2528,7 +2543,7 @@ VSIDIR *VSIFilesystemHandler::OpenDir(const char *pszPath, int nRecurseDepth,
 }
 
 /************************************************************************/
-/*                           NextDirEntry()                             */
+/*                            NextDirEntry()                            */
 /************************************************************************/
 
 const VSIDIREntry *VSIDIRGeneric::NextDirEntry()
@@ -2653,7 +2668,7 @@ begin:
 }
 
 /************************************************************************/
-/*                           UnlinkBatch()                              */
+/*                            UnlinkBatch()                             */
 /************************************************************************/
 
 int *VSIFilesystemHandler::UnlinkBatch(CSLConstList papszFiles)
@@ -2668,7 +2683,7 @@ int *VSIFilesystemHandler::UnlinkBatch(CSLConstList papszFiles)
 }
 
 /************************************************************************/
-/*                          RmdirRecursive()                            */
+/*                           RmdirRecursive()                           */
 /************************************************************************/
 
 int VSIFilesystemHandler::RmdirRecursive(const char *pszDirname)
@@ -2747,7 +2762,7 @@ bool VSIFilesystemHandler::SetFileMetadata(const char * /* pszFilename*/,
 #endif
 
 /************************************************************************/
-/*                             VSIFOpenExL()                            */
+/*                            VSIFOpenExL()                             */
 /************************************************************************/
 
 /**
@@ -2777,7 +2792,6 @@ bool VSIFilesystemHandler::SetFileMetadata(const char * /* pszFilename*/,
  *
  * @return NULL on failure, or the file handle.
  *
- * @since GDAL 2.1
  */
 
 VSILFILE *VSIFOpenExL(const char *pszFilename, const char *pszAccess,
@@ -2822,9 +2836,13 @@ VSILFILE *VSIFOpenExL(const char *pszFilename, const char *pszAccess,
  * delay.</li>
  * </ul>
  *
- * Options specifics to /vsis3/, /vsigs/, /vsioss/ and /vsiaz/ in "w" mode:
+ * Options specifics to /vsis3/, /vsigs/, /vsioss/ and /vsiaz/:
  * <ul>
- * <li>CHUNK_SIZE=val in MiB. (GDAL >= 3.10) Size of a block. Default is 50 MiB.
+ * <li>CACHE=YES/NO. (GDAL >= 3.10) Whether file metadata and content that is
+ * read from the network should be kept cached in memory, after file handle
+ * closing. Default is YES, unless the filename is set in CPL_VSIL_CURL_NON_CACHED.
+ * </li>
+ * <li>CHUNK_SIZE=val in MiB. (GDAL >= 3.10) For "w" mode. Size of a block. Default is 50 MiB.
  * For /vsis3/, /vsigz/, /vsioss/, it can be up to 5000 MiB.
  * For /vsiaz/, only taken into account when BLOB_TYPE=BLOCK. It can be up to 4000 MiB.
  * </li>
@@ -2956,7 +2974,7 @@ int VSIFCloseL(VSILFILE *fp)
  *
  * Analog of the POSIX fseek() call.
  *
- * Caution: vsi_l_offset is a unsigned type, so SEEK_CUR can only be used
+ * Caution: vsi_l_offset is an unsigned type, so SEEK_CUR can only be used
  * for positive seek. If negative seek is needed, use
  * VSIFSeekL( fp, VSIFTellL(fp) + negative_offset, SEEK_SET ).
  *
@@ -2964,7 +2982,7 @@ int VSIFCloseL(VSILFILE *fp)
  * @param nOffset offset in bytes.
  * @param nWhence one of SEEK_SET, SEEK_CUR or SEEK_END.
  *
- * @return 0 on success or -1 one failure.
+ * @return 0 on success or -1 on failure.
  */
 
 int VSIFSeekL(VSILFILE *fp, vsi_l_offset nOffset, int nWhence)
@@ -3088,28 +3106,6 @@ int VSIFFlushL(VSILFILE *fp)
 /************************************************************************/
 
 /**
- * \fn VSIVirtualHandle::Read( void *pBuffer, size_t nSize, size_t nCount )
- * \brief Read bytes from file.
- *
- * Reads nCount objects of nSize bytes from the indicated file at the
- * current offset into the indicated buffer.
- *
- * This method goes through the VSIFileHandler virtualization and may
- * work on unusual filesystems such as in memory.
- *
- * Analog of the POSIX fread() call.
- *
- * @param pBuffer the buffer into which the data should be read (at least
- * nCount * nSize bytes in size.
- * @param nSize size of objects to read in bytes.
- * @param nCount number of objects to read.
- *
- * @return number of objects successfully read. If that number is less than
- * nCount, VSIFEofL() or VSIFErrorL() can be used to determine the reason for
- * the short read.
- */
-
-/**
  * \brief Read bytes from file.
  *
  * Reads nCount objects of nSize bytes from the indicated file at the
@@ -3138,7 +3134,7 @@ size_t VSIFReadL(void *pBuffer, size_t nSize, size_t nCount, VSILFILE *fp)
 }
 
 /************************************************************************/
-/*                       VSIFReadMultiRangeL()                          */
+/*                        VSIFReadMultiRangeL()                         */
 /************************************************************************/
 
 /**
@@ -3163,7 +3159,6 @@ size_t VSIFReadL(void *pBuffer, size_t nSize, size_t nCount, VSILFILE *fp)
  * @param panSizes array of nRanges sizes of objects to read (in bytes).
  *
  * @return 0 in case of success, -1 otherwise.
- * @since GDAL 1.9.0
  */
 
 /**
@@ -3186,7 +3181,6 @@ size_t VSIFReadL(void *pBuffer, size_t nSize, size_t nCount, VSILFILE *fp)
  * @param fp file handle opened with VSIFOpenL().
  *
  * @return 0 in case of success, -1 otherwise.
- * @since GDAL 1.9.0
  */
 
 int VSIFReadMultiRangeL(int nRanges, void **ppData,
@@ -3199,27 +3193,6 @@ int VSIFReadMultiRangeL(int nRanges, void **ppData,
 /************************************************************************/
 /*                             VSIFWriteL()                             */
 /************************************************************************/
-
-/**
- * \fn VSIVirtualHandle::Write( const void *pBuffer,
- *                              size_t nSize, size_t nCount )
- * \brief Write bytes to file.
- *
- * Writes nCount objects of nSize bytes to the indicated file at the
- * current offset into the indicated buffer.
- *
- * This method goes through the VSIFileHandler virtualization and may
- * work on unusual filesystems such as in memory.
- *
- * Analog of the POSIX fwrite() call.
- *
- * @param pBuffer the buffer from which the data should be written (at least
- * nCount * nSize bytes in size.
- * @param nSize size of objects to write in bytes.
- * @param nCount number of objects to write.
- *
- * @return number of objects successfully written.
- */
 
 /**
  * \brief Write bytes to file.
@@ -3292,7 +3265,7 @@ int VSIFEofL(VSILFILE *fp)
 }
 
 /************************************************************************/
-/*                            VSIFErrorL()                              */
+/*                             VSIFErrorL()                             */
 /************************************************************************/
 
 /**
@@ -3374,7 +3347,7 @@ void VSIFClearErrL(VSILFILE *fp)
 }
 
 /************************************************************************/
-/*                            VSIFTruncateL()                           */
+/*                           VSIFTruncateL()                            */
 /************************************************************************/
 
 /**
@@ -3389,7 +3362,6 @@ void VSIFClearErrL(VSILFILE *fp)
  * @param nNewSize new size in bytes.
  *
  * @return 0 on success
- * @since GDAL 1.9.0
  */
 
 /**
@@ -3404,7 +3376,6 @@ void VSIFClearErrL(VSILFILE *fp)
  * @param nNewSize new size in bytes.
  *
  * @return 0 on success
- * @since GDAL 1.9.0
  */
 
 int VSIFTruncateL(VSILFILE *fp, vsi_l_offset nNewSize)
@@ -3446,7 +3417,124 @@ int VSIFPrintfL(VSILFILE *fp, CPL_FORMAT_STRING(const char *pszFormat), ...)
 }
 
 /************************************************************************/
-/*                 VSIVirtualHandle::Printf()                           */
+/*                       VSIVirtualHandle::Read()                       */
+/************************************************************************/
+
+/**
+ * \fn VSIVirtualHandle::Read( void *pBuffer, size_t nBytes )
+ * \brief Read bytes from file.
+ *
+ * Reads nBytes bytes from the indicated file at the current offset into the
+ * indicated buffer.
+ *
+ * This method goes through the VSIFileHandler virtualization and may
+ * work on unusual filesystems such as in memory.
+ *
+ * Similar to the POSIX read() call, except it returns a size_t unsigned value.
+ *
+ * @param pBuffer the buffer into which the data should be read (at least
+ * nCount * nSize bytes in size.
+ * @param nBytes number of bytes to read.
+ *
+ * @return number of bytes successfully read. If that number is less than
+ * nCount, Eof() or Error() can be used to determine the reason for
+ * the short read.
+ *
+ * @since 3.13
+ */
+
+/************************************************************************/
+/*                       VSIVirtualHandle::Read()                       */
+/************************************************************************/
+
+/**
+ * \brief Read bytes from file.
+ *
+ * Reads nCount objects of nSize bytes from the indicated file at the
+ * current offset into the indicated buffer.
+ *
+ * This method goes through the VSIFileHandler virtualization and may
+ * work on unusual filesystems such as in memory.
+ *
+ * Analog of the POSIX fread() call.
+ *
+ * @param pBuffer the buffer into which the data should be read (at least
+ * nCount * nSize bytes in size.
+ * @param nSize size of objects to read in bytes.
+ * @param nCount number of objects to read.
+ *
+ * @return number of objects successfully read. If that number is less than
+ * nCount, VSIFEofL() or VSIFErrorL() can be used to determine the reason for
+ * the short read.
+ */
+size_t VSIVirtualHandle::Read(void *pBuffer, size_t nSize, size_t nCount)
+{
+    const size_t nBytes = nSize * nCount;
+    if (nSize == 0)
+        return 0;
+    const size_t nBytesRead = Read(pBuffer, nBytes);
+    return nBytesRead / nSize;
+}
+
+/************************************************************************/
+/*                      VSIVirtualHandle::Write()                       */
+/************************************************************************/
+
+/**
+ * \fn VSIVirtualHandle::Write( const void *pBuffer, size_t nBytes )
+ * \brief Write bytes to file.
+ *
+ * Writes nBytes bytes to the indicated file at the current offset into the
+ * indicated buffer.
+ *
+ * This method goes through the VSIFileHandler virtualization and may
+ * work on unusual filesystems such as in memory.
+ *
+ * Analog of the POSIX write() call, except it returns a size_t unsigned value.
+ *
+ * @param pBuffer the buffer from which the data should be written (at least
+ * nCount * nSize bytes in size.
+ * @param nBytes number of bytes to write.
+ *
+ * @return number of bytes successfully written.
+ *
+ * @since 3.13
+ */
+
+/************************************************************************/
+/*                      VSIVirtualHandle::Write()                       */
+/************************************************************************/
+
+/**
+ * \brief Write bytes to file.
+ *
+ * Writes nCount objects of nSize bytes to the indicated file at the
+ * current offset into the indicated buffer.
+ *
+ * This method goes through the VSIFileHandler virtualization and may
+ * work on unusual filesystems such as in memory.
+ *
+ * Analog of the POSIX fwrite() call.
+ *
+ * @param pBuffer the buffer from which the data should be written (at least
+ * nCount * nSize bytes in size.
+ * @param nSize size of objects to write in bytes.
+ * @param nCount number of objects to write.
+ *
+ * @return number of objects successfully written.
+ */
+
+size_t VSIVirtualHandle::Write(const void *pBuffer, size_t nSize, size_t nCount)
+{
+    const size_t nBytes = nSize * nCount;
+    if (nSize == 0)
+        return 0;
+    const size_t nBytesWritten = Write(pBuffer, nBytes);
+    return nBytesWritten / nSize;
+}
+
+/************************************************************************/
+/*                      VSIVirtualHandle::Printf()                      */
 /************************************************************************/
 
 /**
@@ -3475,7 +3563,7 @@ int VSIVirtualHandle::Printf(CPL_FORMAT_STRING(const char *pszFormat), ...)
 }
 
 /************************************************************************/
-/*                              VSIFPutcL()                              */
+/*                             VSIFPutcL()                              */
 /************************************************************************/
 
 // TODO: should we put in conformance with POSIX regarding the return
@@ -3505,7 +3593,7 @@ int VSIFPutcL(int nChar, VSILFILE *fp)
 }
 
 /************************************************************************/
-/*                        VSIFGetRangeStatusL()                        */
+/*                        VSIFGetRangeStatusL()                         */
 /************************************************************************/
 
 /**
@@ -3526,7 +3614,6 @@ int VSIFPutcL(int nChar, VSILFILE *fp)
  *
  * @return extent status: VSI_RANGE_STATUS_UNKNOWN, VSI_RANGE_STATUS_DATA or
  *         VSI_RANGE_STATUS_HOLE
- * @since GDAL 2.2
  */
 
 /**
@@ -3546,7 +3633,6 @@ int VSIFPutcL(int nChar, VSILFILE *fp)
  *
  * @return extent status: VSI_RANGE_STATUS_UNKNOWN, VSI_RANGE_STATUS_DATA or
  *         VSI_RANGE_STATUS_HOLE
- * @since GDAL 2.2
  */
 
 VSIRangeStatus VSIFGetRangeStatusL(VSILFILE *fp, vsi_l_offset nOffset,
@@ -3581,7 +3667,6 @@ VSIRangeStatus VSIFGetRangeStatusL(VSILFILE *fp, vsi_l_offset nOffset,
  *
  * @return TRUE in case of success.
  *
- * @since GDAL 1.11
  */
 
 int VSIIngestFile(VSILFILE *fp, const char *pszFilename, GByte **ppabyRet,
@@ -3625,11 +3710,12 @@ int VSIIngestFile(VSILFILE *fp, const char *pszFilename, GByte **ppabyRet,
                 CPL_IGNORE_RET_VAL(VSIFCloseL(fp));
             return FALSE;
         }
+        constexpr size_t CHUNK_SIZE = 32768;
         while (true)
         {
-            if (nDataLen + 8192 + 1 > nDataAlloc)
+            if (nDataLen + CHUNK_SIZE + 1 > nDataAlloc)
             {
-                nDataAlloc = (nDataAlloc * 4) / 3 + 8192 + 1;
+                nDataAlloc = (nDataAlloc * 4) / 3 + CHUNK_SIZE + 1;
                 if (nDataAlloc >
                     static_cast<vsi_l_offset>(static_cast<size_t>(nDataAlloc)))
                 {
@@ -3656,8 +3742,8 @@ int VSIIngestFile(VSILFILE *fp, const char *pszFilename, GByte **ppabyRet,
                 }
                 *ppabyRet = pabyNew;
             }
-            const int nRead =
-                static_cast<int>(VSIFReadL(*ppabyRet + nDataLen, 1, 8192, fp));
+            const int nRead = static_cast<int>(
+                VSIFReadL(*ppabyRet + nDataLen, 1, CHUNK_SIZE, fp));
             nDataLen += nRead;
 
             if (nMaxSize >= 0 && nDataLen > static_cast<vsi_l_offset>(nMaxSize))
@@ -3692,12 +3778,9 @@ int VSIIngestFile(VSILFILE *fp, const char *pszFilename, GByte **ppabyRet,
 
         // With "large" VSI I/O API we can read data chunks larger than
         // VSIMalloc could allocate. Catch it here.
-        if (nDataLen !=
-                static_cast<vsi_l_offset>(static_cast<size_t>(nDataLen)) ||
-            nDataLen + 1 < nDataLen
-            // opening a directory returns nDataLen = INT_MAX (on 32bit) or
-            // INT64_MAX (on 64bit)
-            || nDataLen + 1 > std::numeric_limits<size_t>::max() / 2 ||
+        // Opening a directory returns nDataLen = INT_MAX (on 32bit) or
+        // INT64_MAX (on 64bit)
+        if (nDataLen > std::numeric_limits<size_t>::max() / 2 - 1 ||
             (nMaxSize >= 0 && nDataLen > static_cast<vsi_l_offset>(nMaxSize)))
         {
             CPLError(CE_Failure, CPLE_AppDefined,
@@ -3746,7 +3829,7 @@ int VSIIngestFile(VSILFILE *fp, const char *pszFilename, GByte **ppabyRet,
 }
 
 /************************************************************************/
-/*                         VSIOverwriteFile()                           */
+/*                          VSIOverwriteFile()                          */
 /************************************************************************/
 
 /**
@@ -3801,7 +3884,7 @@ int VSIOverwriteFile(VSILFILE *fpTarget, const char *pszSourceFilename)
 }
 
 /************************************************************************/
-/*                        VSIFGetNativeFileDescriptorL()                */
+/*                    VSIFGetNativeFileDescriptorL()                    */
 /************************************************************************/
 
 /**
@@ -3837,7 +3920,7 @@ void *VSIFGetNativeFileDescriptorL(VSILFILE *fp)
 }
 
 /************************************************************************/
-/*                      VSIGetDiskFreeSpace()                           */
+/*                        VSIGetDiskFreeSpace()                         */
 /************************************************************************/
 
 /**
@@ -3847,7 +3930,6 @@ void *VSIFGetNativeFileDescriptorL(VSILFILE *fp)
  *
  * @param pszDirname a directory of the filesystem to query.
  * @return The free space in bytes. Or -1 in case of error.
- * @since GDAL 2.1
  */
 
 GIntBig VSIGetDiskFreeSpace(const char *pszDirname)
@@ -3858,7 +3940,7 @@ GIntBig VSIGetDiskFreeSpace(const char *pszDirname)
 }
 
 /************************************************************************/
-/*                    VSIGetFileSystemsPrefixes()                       */
+/*                     VSIGetFileSystemsPrefixes()                      */
 /************************************************************************/
 
 /**
@@ -3868,7 +3950,6 @@ GIntBig VSIGetDiskFreeSpace(const char *pszDirname)
  * Typically: "", "/vsimem/", "/vsicurl/", etc
  *
  * @return a NULL terminated list of prefixes. Must be freed with CSLDestroy()
- * @since GDAL 2.3
  */
 
 char **VSIGetFileSystemsPrefixes(void)
@@ -3877,7 +3958,7 @@ char **VSIGetFileSystemsPrefixes(void)
 }
 
 /************************************************************************/
-/*                     VSIGetFileSystemOptions()                        */
+/*                      VSIGetFileSystemOptions()                       */
 /************************************************************************/
 
 /**
@@ -3888,7 +3969,6 @@ char **VSIGetFileSystemsPrefixes(void)
  *
  * @param pszFilename a filename, or prefix of a virtual file system handler.
  * @return a string, which must not be freed, or NULL if no options is declared.
- * @since GDAL 2.3
  */
 
 const char *VSIGetFileSystemOptions(const char *pszFilename)
@@ -3899,7 +3979,7 @@ const char *VSIGetFileSystemOptions(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                       VSISetPathSpecificOption()                     */
+/*                      VSISetPathSpecificOption()                      */
 /************************************************************************/
 
 static std::mutex oMutexPathSpecificOptions;
@@ -3971,7 +4051,7 @@ void VSISetPathSpecificOption(const char *pszPathPrefix, const char *pszKey,
 }
 
 /************************************************************************/
-/*                       VSIClearPathSpecificOptions()                  */
+/*                    VSIClearPathSpecificOptions()                     */
 /************************************************************************/
 
 /**
@@ -4011,7 +4091,7 @@ void VSIClearPathSpecificOptions(const char *pszPathPrefix)
 }
 
 /************************************************************************/
-/*                        VSIGetPathSpecificOption()                    */
+/*                      VSIGetPathSpecificOption()                      */
 /************************************************************************/
 
 /**
@@ -4059,7 +4139,7 @@ const char *VSIGetPathSpecificOption(const char *pszPath, const char *pszKey,
 }
 
 /************************************************************************/
-/*                      VSIDuplicateFileSystemHandler()                 */
+/*                   VSIDuplicateFileSystemHandler()                    */
 /************************************************************************/
 
 /**
@@ -4100,11 +4180,12 @@ bool VSIDuplicateFileSystemHandler(const char *pszSourceFSName,
         return false;
     }
 
-    poTargetFSHandler = poSourceFSHandler->Duplicate(pszNewFSName);
-    if (!poTargetFSHandler)
+    auto poClonedFSHandler = std::shared_ptr<VSIFilesystemHandler>(
+        poSourceFSHandler->Duplicate(pszNewFSName));
+    if (!poClonedFSHandler)
         return false;
 
-    VSIFileManager::InstallHandler(pszNewFSName, poTargetFSHandler);
+    VSIFileManager::InstallHandler(pszNewFSName, poClonedFSHandler);
     return true;
 }
 
@@ -4127,30 +4208,13 @@ bool VSIDuplicateFileSystemHandler(const char *pszSourceFSName,
 /*                           VSIFileManager()                           */
 /************************************************************************/
 
-VSIFileManager::VSIFileManager() : poDefaultHandler(nullptr)
-{
-}
+VSIFileManager::VSIFileManager() = default;
 
 /************************************************************************/
 /*                          ~VSIFileManager()                           */
 /************************************************************************/
 
-VSIFileManager::~VSIFileManager()
-{
-    std::set<VSIFilesystemHandler *> oSetAlreadyDeleted;
-    for (std::map<std::string, VSIFilesystemHandler *>::const_iterator iter =
-             oHandlers.begin();
-         iter != oHandlers.end(); ++iter)
-    {
-        if (oSetAlreadyDeleted.find(iter->second) == oSetAlreadyDeleted.end())
-        {
-            oSetAlreadyDeleted.insert(iter->second);
-            delete iter->second;
-        }
-    }
-
-    delete poDefaultHandler;
-}
+VSIFileManager::~VSIFileManager() = default;
 
 /************************************************************************/
 /*                                Get()                                 */
@@ -4207,14 +4271,14 @@ VSIFileManager *VSIFileManager::Get()
 }
 
 /************************************************************************/
-/*                           GetPrefixes()                              */
+/*                            GetPrefixes()                             */
 /************************************************************************/
 
 char **VSIFileManager::GetPrefixes()
 {
     CPLMutexHolder oHolder(&hVSIFileManagerMutex);
     CPLStringList aosList;
-    for (const auto &oIter : Get()->oHandlers)
+    for (const auto &oIter : Get()->m_apoHandlers)
     {
         if (oIter.first != "/vsicurl?")
         {
@@ -4234,29 +4298,27 @@ VSIFilesystemHandler *VSIFileManager::GetHandler(const char *pszPath)
     VSIFileManager *poThis = Get();
     const size_t nPathLen = strlen(pszPath);
 
-    for (std::map<std::string, VSIFilesystemHandler *>::const_iterator iter =
-             poThis->oHandlers.begin();
-         iter != poThis->oHandlers.end(); ++iter)
+    for (auto &[key, handler] : poThis->m_apoHandlers)
     {
-        const char *pszIterKey = iter->first.c_str();
-        const size_t nIterKeyLen = iter->first.size();
+        const char *pszIterKey = key.c_str();
+        const size_t nIterKeyLen = key.size();
         if (strncmp(pszPath, pszIterKey, nIterKeyLen) == 0)
-            return iter->second;
+            return handler.get();
 
         // "/vsimem\foo" should be handled as "/vsimem/foo".
         if (nIterKeyLen && nPathLen > nIterKeyLen &&
             pszIterKey[nIterKeyLen - 1] == '/' &&
             pszPath[nIterKeyLen - 1] == '\\' &&
             strncmp(pszPath, pszIterKey, nIterKeyLen - 1) == 0)
-            return iter->second;
+            return handler.get();
 
         // /vsimem should be treated as a match for /vsimem/.
         if (nPathLen + 1 == nIterKeyLen &&
             strncmp(pszPath, pszIterKey, nPathLen) == 0)
-            return iter->second;
+            return handler.get();
     }
 
-    return poThis->poDefaultHandler;
+    return poThis->m_poDefaultHandler.get();
 }
 
 /************************************************************************/
@@ -4267,22 +4329,34 @@ void VSIFileManager::InstallHandler(const std::string &osPrefix,
                                     VSIFilesystemHandler *poHandler)
 
 {
-    if (osPrefix == "")
-        Get()->poDefaultHandler = poHandler;
-    else
-        Get()->oHandlers[osPrefix] = poHandler;
+    InstallHandler(osPrefix, std::shared_ptr<VSIFilesystemHandler>(poHandler));
 }
 
 /************************************************************************/
-/*                          RemoveHandler()                             */
+/*                           InstallHandler()                           */
+/************************************************************************/
+
+void VSIFileManager::InstallHandler(
+    const std::string &osPrefix,
+    const std::shared_ptr<VSIFilesystemHandler> &poHandler)
+
+{
+    if (osPrefix == "")
+        Get()->m_poDefaultHandler = poHandler;
+    else
+        Get()->m_apoHandlers[osPrefix] = poHandler;
+}
+
+/************************************************************************/
+/*                           RemoveHandler()                            */
 /************************************************************************/
 
 void VSIFileManager::RemoveHandler(const std::string &osPrefix)
 {
     if (osPrefix == "")
-        Get()->poDefaultHandler = nullptr;
+        Get()->m_poDefaultHandler.reset();
     else
-        Get()->oHandlers.erase(osPrefix);
+        Get()->m_apoHandlers.erase(osPrefix);
 }
 
 /************************************************************************/
@@ -4310,7 +4384,7 @@ void VSICleanupFileManager()
 }
 
 /************************************************************************/
-/*                            Truncate()                                */
+/*                              Truncate()                              */
 /************************************************************************/
 
 int VSIVirtualHandle::Truncate(vsi_l_offset nNewSize)
@@ -4376,7 +4450,7 @@ int VSIVirtualHandle::ReadMultiRange(int nRanges, void **ppData,
 #endif  // #ifndef DOXYGEN_SKIP
 
 /************************************************************************/
-/*                            HasPRead()                                */
+/*                              HasPRead()                              */
 /************************************************************************/
 
 /** Returns whether this file handle supports the PRead() method.
@@ -4389,7 +4463,7 @@ bool VSIVirtualHandle::HasPRead() const
 }
 
 /************************************************************************/
-/*                             PRead()                                  */
+/*                               PRead()                                */
 /************************************************************************/
 
 /** Do a parallel-compatible read operation.
@@ -4418,7 +4492,7 @@ size_t VSIVirtualHandle::PRead(CPL_UNUSED void *pBuffer,
 
 #ifndef DOXYGEN_SKIP
 /************************************************************************/
-/*                  VSIProxyFileHandle::CancelCreation()                */
+/*                 VSIProxyFileHandle::CancelCreation()                 */
 /************************************************************************/
 
 void VSIProxyFileHandle::CancelCreation()
@@ -4428,7 +4502,7 @@ void VSIProxyFileHandle::CancelCreation()
 #endif
 
 /************************************************************************/
-/*                         VSIURIToVSIPath()                            */
+/*                          VSIURIToVSIPath()                           */
 /************************************************************************/
 
 /** Return a VSI compatible path from a URI / URL

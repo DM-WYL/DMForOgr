@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "gdal.h"
+#include "gdalantirecursion.h"
 #include "gdal_pam.h"
 #include "gdal_priv.h"
 #include "cpl_conv.h"
@@ -61,7 +62,7 @@ void VRTRasterBand::Initialize(int nXSize, int nYSize)
     poDS = nullptr;
     nBand = 0;
     eAccess = GA_ReadOnly;
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     nRasterXSize = nXSize;
     nRasterYSize = nYSize;
@@ -90,7 +91,7 @@ CPLErr VRTRasterBand::CopyCommonInfoFrom(GDALRasterBand *poSrcBand)
     const char *pszNBits =
         poSrcBand->GetMetadataItem("NBITS", "IMAGE_STRUCTURE");
     SetMetadataItem("NBITS", pszNBits, "IMAGE_STRUCTURE");
-    if (poSrcBand->GetRasterDataType() == GDT_Byte)
+    if (poSrcBand->GetRasterDataType() == GDT_UInt8)
     {
         poSrcBand->EnablePixelTypeSignedByteWarning(false);
         const char *pszPixelType =
@@ -125,7 +126,8 @@ CPLErr VRTRasterBand::CopyCommonInfoFrom(GDALRasterBand *poSrcBand)
 /*                            SetMetadata()                             */
 /************************************************************************/
 
-CPLErr VRTRasterBand::SetMetadata(char **papszMetadata, const char *pszDomain)
+CPLErr VRTRasterBand::SetMetadata(CSLConstList papszMetadata,
+                                  const char *pszDomain)
 
 {
     cpl::down_cast<VRTDataset *>(poDS)->SetNeedsFlush();
@@ -253,7 +255,7 @@ CPLErr VRTRasterBand::SetCategoryNames(char **papszNewNames)
 }
 
 /************************************************************************/
-/*                        VRTParseCategoryNames()                       */
+/*                       VRTParseCategoryNames()                        */
 /************************************************************************/
 
 CPLStringList VRTParseCategoryNames(const CPLXMLNode *psCategoryNames)
@@ -277,7 +279,7 @@ CPLStringList VRTParseCategoryNames(const CPLXMLNode *psCategoryNames)
 }
 
 /************************************************************************/
-/*                          VRTParseColorTable()                        */
+/*                         VRTParseColorTable()                         */
 /************************************************************************/
 
 std::unique_ptr<GDALColorTable>
@@ -592,7 +594,7 @@ CPLErr VRTRasterBand::XMLInit(const CPLXMLNode *psTree, const char *pszVRTPath,
 }
 
 /************************************************************************/
-/*                        VRTSerializeNoData()                          */
+/*                         VRTSerializeNoData()                         */
 /************************************************************************/
 
 CPLString VRTSerializeNoData(double dfVal, GDALDataType eDataType,
@@ -613,13 +615,13 @@ CPLString VRTSerializeNoData(double dfVal, GDALDataType eDataType,
         return "6.55e4";
     }
     else if (eDataType == GDT_Float32 &&
-             dfVal == -std::numeric_limits<float>::max())
+             dfVal == -static_cast<double>(std::numeric_limits<float>::max()))
     {
         // To avoid rounding out of the range of float
         return "-3.4028234663852886e+38";
     }
     else if (eDataType == GDT_Float32 &&
-             dfVal == std::numeric_limits<float>::max())
+             dfVal == static_cast<double>(std::numeric_limits<float>::max()))
     {
         // To avoid rounding out of the range of float
         return "3.4028234663852886e+38";
@@ -878,7 +880,7 @@ CPLErr VRTRasterBand::SetNoDataValue(double dfNewValue)
 }
 
 /************************************************************************/
-/*                     IsNoDataValueInDataTypeRange()                   */
+/*                    IsNoDataValueInDataTypeRange()                    */
 /************************************************************************/
 
 bool VRTRasterBand::IsNoDataValueInDataTypeRange() const
@@ -921,7 +923,7 @@ CPLErr VRTRasterBand::SetNoDataValueAsInt64(int64_t nNewValue)
 }
 
 /************************************************************************/
-/*                      SetNoDataValueAsUInt64()                        */
+/*                       SetNoDataValueAsUInt64()                       */
 /************************************************************************/
 
 CPLErr VRTRasterBand::SetNoDataValueAsUInt64(uint64_t nNewValue)
@@ -951,7 +953,7 @@ CPLErr VRTRasterBand::DeleteNoDataValue()
 }
 
 /************************************************************************/
-/*                         UnsetNoDataValue()                           */
+/*                          UnsetNoDataValue()                          */
 /************************************************************************/
 
 CPLErr VRTRasterBand::UnsetNoDataValue()
@@ -987,7 +989,7 @@ double VRTRasterBand::GetNoDataValue(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                        GetNoDataValueAsInt64()                       */
+/*                       GetNoDataValueAsInt64()                        */
 /************************************************************************/
 
 int64_t VRTRasterBand::GetNoDataValueAsInt64(int *pbSuccess)
@@ -1100,7 +1102,7 @@ GDALRasterAttributeTable *VRTRasterBand::GetDefaultRAT()
 }
 
 /************************************************************************/
-/*                            SetDefaultRAT()                           */
+/*                           SetDefaultRAT()                            */
 /************************************************************************/
 
 CPLErr VRTRasterBand::SetDefaultRAT(const GDALRasterAttributeTable *poRAT)
@@ -1266,7 +1268,7 @@ CPLErr VRTRasterBand::GetDefaultHistogram(double *pdfMin, double *pdfMax,
 }
 
 /************************************************************************/
-/*                             GetFileList()                            */
+/*                            GetFileList()                             */
 /************************************************************************/
 
 void VRTRasterBand::GetFileList(char ***ppapszFileList, int *pnSize,
@@ -1434,7 +1436,7 @@ GDALRasterBand *VRTRasterBand::GetOverview(int iOverview)
 }
 
 /************************************************************************/
-/*                          SetDescription()                            */
+/*                           SetDescription()                           */
 /************************************************************************/
 
 void VRTRasterBand::SetDescription(const char *pszDescription)
@@ -1446,7 +1448,7 @@ void VRTRasterBand::SetDescription(const char *pszDescription)
 }
 
 /************************************************************************/
-/*                          CreateMaskBand()                            */
+/*                           CreateMaskBand()                           */
 /************************************************************************/
 
 CPLErr VRTRasterBand::CreateMaskBand(int nFlagsIn)
@@ -1477,7 +1479,7 @@ CPLErr VRTRasterBand::CreateMaskBand(int nFlagsIn)
 }
 
 /************************************************************************/
-/*                           GetMaskBand()                              */
+/*                            GetMaskBand()                             */
 /************************************************************************/
 
 GDALRasterBand *VRTRasterBand::GetMaskBand()
@@ -1509,7 +1511,7 @@ int VRTRasterBand::GetMaskFlags()
 }
 
 /************************************************************************/
-/*                           SetMaskBand()                              */
+/*                            SetMaskBand()                             */
 /************************************************************************/
 
 void VRTRasterBand::SetMaskBand(std::unique_ptr<VRTRasterBand> poMaskBand)
@@ -1519,7 +1521,7 @@ void VRTRasterBand::SetMaskBand(std::unique_ptr<VRTRasterBand> poMaskBand)
 }
 
 /************************************************************************/
-/*                          SetIsMaskBand()                             */
+/*                           SetIsMaskBand()                            */
 /************************************************************************/
 
 void VRTRasterBand::SetIsMaskBand()
@@ -1529,7 +1531,7 @@ void VRTRasterBand::SetIsMaskBand()
 }
 
 /************************************************************************/
-/*                            IsMaskBand()                              */
+/*                             IsMaskBand()                             */
 /************************************************************************/
 
 bool VRTRasterBand::IsMaskBand() const
@@ -1538,7 +1540,7 @@ bool VRTRasterBand::IsMaskBand() const
 }
 
 /************************************************************************/
-/*                        CloseDependentDatasets()                      */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int VRTRasterBand::CloseDependentDatasets()

@@ -17,6 +17,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_spatialref.h"
 #include "ogr_srs_api.h"
 
@@ -38,7 +39,7 @@ const static BYNEllipsoids EllipsoidTable[] = {
     {"CLARKE 1866", 6378206.4, 294.9786982}};
 
 /************************************************************************/
-/*                            BYNRasterBand()                           */
+/*                           BYNRasterBand()                            */
 /************************************************************************/
 
 BYNRasterBand::BYNRasterBand(GDALDataset *poDSIn, int nBandIn,
@@ -115,10 +116,10 @@ BYNDataset::~BYNDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr BYNDataset::Close()
+CPLErr BYNDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -369,7 +370,7 @@ CPLErr BYNDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *BYNDataset::GetSpatialRef() const

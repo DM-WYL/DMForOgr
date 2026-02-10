@@ -10,6 +10,7 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "cpl_multiproc.h"
 #include "gdal_frmts.h"
 #include "common.h"
 #include "include_basisu_sdk.h"
@@ -18,7 +19,7 @@
 #include <mutex>
 
 /************************************************************************/
-/*                        GDALInitBasisUTranscoder()                    */
+/*                      GDALInitBasisUTranscoder()                      */
 /************************************************************************/
 
 void GDALInitBasisUTranscoder()
@@ -28,7 +29,7 @@ void GDALInitBasisUTranscoder()
 }
 
 /************************************************************************/
-/*                        GDALInitBasisUEncoder()                       */
+/*                       GDALInitBasisUEncoder()                        */
 /************************************************************************/
 
 void GDALInitBasisUEncoder()
@@ -51,7 +52,7 @@ void GDALRegister_BASISU_KTX2()
 }
 
 /************************************************************************/
-/*                     GDAL_KTX2_BASISU_CreateCopy()                    */
+/*                    GDAL_KTX2_BASISU_CreateCopy()                     */
 /************************************************************************/
 
 bool GDAL_KTX2_BASISU_CreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
@@ -66,7 +67,7 @@ bool GDAL_KTX2_BASISU_CreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
                  "Only band count >= 1 and <= 4 is supported");
         return false;
     }
-    if (poSrcDS->GetRasterBand(1)->GetRasterDataType() != GDT_Byte)
+    if (poSrcDS->GetRasterBand(1)->GetRasterDataType() != GDT_UInt8)
     {
         CPLError(CE_Failure, CPLE_NotSupported,
                  "Only Byte data type supported");
@@ -80,7 +81,7 @@ bool GDAL_KTX2_BASISU_CreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         return false;
 
     if (poSrcDS->RasterIO(GF_Read, 0, 0, nXSize, nYSize, pSrcData, nXSize,
-                          nYSize, GDT_Byte, nBands, nullptr, nBands,
+                          nYSize, GDT_UInt8, nBands, nullptr, nBands,
                           static_cast<GSpacing>(nBands) * nXSize, 1,
                           nullptr) != CE_None)
     {

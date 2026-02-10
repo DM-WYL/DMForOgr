@@ -10,6 +10,7 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
 #include "gdal_pam.h"
 #include "common.h"
 #include "include_basisu_sdk.h"
@@ -20,7 +21,7 @@
 #include <limits>
 
 /************************************************************************/
-/*                           BASISUDataset                              */
+/*                            BASISUDataset                             */
 /************************************************************************/
 
 class BASISUDataset final : public GDALPamDataset
@@ -52,13 +53,13 @@ class BASISUDataset final : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
 
 /************************************************************************/
-/*                          BASISURasterBand                            */
+/*                           BASISURasterBand                           */
 /************************************************************************/
 
 class BASISURasterBand final : public GDALPamRasterBand
@@ -111,7 +112,7 @@ BASISUDataset::~BASISUDataset()
 }
 
 /************************************************************************/
-/*                        GetDecodedData()                              */
+/*                           GetDecodedData()                           */
 /************************************************************************/
 
 void *BASISUDataset::GetDecodedData(uint32_t &nLineStride)
@@ -165,7 +166,7 @@ void *BASISUDataset::GetDecodedData(uint32_t &nLineStride)
 }
 
 /************************************************************************/
-/*                           BASISURasterBand()                         */
+/*                          BASISURasterBand()                          */
 /************************************************************************/
 
 BASISURasterBand::BASISURasterBand(BASISUDataset *poDSIn, int nBandIn)
@@ -176,7 +177,7 @@ BASISURasterBand::BASISURasterBand(BASISUDataset *poDSIn, int nBandIn)
     nRasterYSize = poDSIn->GetRasterYSize();
     nBlockXSize = nRasterXSize;
     nBlockYSize = 1;
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
     SetColorInterpretation(
         static_cast<GDALColorInterp>(GCI_RedBand + nBandIn - 1));
 }
@@ -196,12 +197,12 @@ CPLErr BASISURasterBand::IReadBlock(int /*nBlockXOff*/, int nBlockYOff,
 
     GDALCopyWords(static_cast<GByte *>(decoded_data) +
                       nBlockYOff * nLineStride + nBand - 1,
-                  GDT_Byte, 4, pImage, GDT_Byte, 1, nBlockXSize);
+                  GDT_UInt8, 4, pImage, GDT_UInt8, 1, nBlockXSize);
     return CE_None;
 }
 
 /************************************************************************/
-/*                           GetOverviewCount()                         */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int BASISURasterBand::GetOverviewCount()
@@ -211,7 +212,7 @@ int BASISURasterBand::GetOverviewCount()
 }
 
 /************************************************************************/
-/*                             GetOverview()                            */
+/*                            GetOverview()                             */
 /************************************************************************/
 
 GDALRasterBand *BASISURasterBand::GetOverview(int nIdx)
@@ -354,12 +355,12 @@ GDALDataset *BASISUDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            CreateCopy()                              */
+/*                             CreateCopy()                             */
 /************************************************************************/
 
 GDALDataset *BASISUDataset::CreateCopy(const char *pszFilename,
                                        GDALDataset *poSrcDS, int /*bStrict*/,
-                                       char **papszOptions,
+                                       CSLConstList papszOptions,
                                        GDALProgressFunc pfnProgress,
                                        void *pProgressData)
 {

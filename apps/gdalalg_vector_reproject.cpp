@@ -24,7 +24,7 @@
 #endif
 
 /************************************************************************/
-/*      GDALVectorReprojectAlgorithm::GDALVectorReprojectAlgorithm()    */
+/*     GDALVectorReprojectAlgorithm::GDALVectorReprojectAlgorithm()     */
 /************************************************************************/
 
 GDALVectorReprojectAlgorithm::GDALVectorReprojectAlgorithm(bool standaloneStep)
@@ -42,7 +42,7 @@ GDALVectorReprojectAlgorithm::GDALVectorReprojectAlgorithm(bool standaloneStep)
 }
 
 /************************************************************************/
-/*            GDALVectorReprojectAlgorithm::RunStep()                   */
+/*               GDALVectorReprojectAlgorithm::RunStep()                */
 /************************************************************************/
 
 bool GDALVectorReprojectAlgorithm::RunStep(GDALPipelineStepRunContext &)
@@ -104,8 +104,8 @@ bool GDALVectorReprojectAlgorithm::RunStep(GDALPipelineStepRunContext &)
                         *poSrcLayer,
                         std::make_unique<OGRWarpedLayer>(
                             poSrcLayer, /* iGeomField = */ 0,
-                            /*bTakeOwnership = */ false, poCT.release(),
-                            poReversedCT.release()));
+                            /*bTakeOwnership = */ false, std::move(poCT),
+                            std::move(poReversedCT)));
                 }
             }
             else

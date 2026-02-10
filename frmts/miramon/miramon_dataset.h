@@ -40,7 +40,7 @@ class MMRDataset final : public GDALPamDataset
         delete;  // I don't want to construct a MMRDataset from another MMRDataset (effc++)
     MMRDataset &operator=(const MMRDataset &) =
         delete;  // I don't want to assign a MMRDataset to another MMRDataset (effc++)
-    ~MMRDataset();
+    ~MMRDataset() override;
 
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
@@ -55,7 +55,7 @@ class MMRDataset final : public GDALPamDataset
     void AssignBandsToSubdataSets();
     void CreateSubdatasetsFromBands();
     bool CreateRasterBands();
-    bool IsNextBandInANewDataSet(int nIBand) const;
+    bool BandInTheSameDataset(int nIBand1, int nIBan2) const;
 
     int UpdateGeoTransform();
     const OGRSpatialReference *GetSpatialRef() const override;

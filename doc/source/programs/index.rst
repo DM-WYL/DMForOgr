@@ -39,6 +39,8 @@ General
    gdal_syntax
    migration_guide_to_gdal_cli
    gdal_bash_completion
+   gdal_cli_from_c
+   gdal_cli_from_cpp
    gdal_cli_from_python
    gdal_cli_gdalg
 
@@ -48,6 +50,8 @@ General
     - :ref:`gdal_syntax`: Syntax for commands of ``gdal`` program
     - :ref:`migration_guide_to_gdal_cli`: Migration guide to ``gdal`` command line interface
     - :ref:`gdal_bash_completion`: Bash completion for ``gdal``
+    - :ref:`gdal_cli_from_c`: How to use ``gdal`` CLI algorithms from C
+    - :ref:`gdal_cli_from_cpp`: How to use ``gdal`` CLI algorithms from C++
     - :ref:`gdal_cli_from_python`: How to use ``gdal`` CLI algorithms from Python
     - :ref:`gdal_cli_gdalg`: .gdalg files to replay serialized ``gdal`` commands
 
@@ -79,11 +83,11 @@ Raster commands
    gdal_raster_info
    gdal_raster_as_features
    gdal_raster_aspect
+   gdal_raster_blend
    gdal_raster_calc
    gdal_raster_clean_collar
    gdal_raster_clip
    gdal_raster_color_map
-   gdal_raster_color_merge
    gdal_raster_contour
    gdal_raster_compare
    gdal_raster_convert
@@ -93,7 +97,9 @@ Raster commands
    gdal_raster_fill_nodata
    gdal_raster_hillshade
    gdal_raster_index
+   gdal_raster_materialize
    gdal_raster_mosaic
+   gdal_raster_neighbors
    gdal_raster_nodata_to_alpha
    gdal_raster_overview
    gdal_raster_overview_add
@@ -121,6 +127,7 @@ Raster commands
    gdal_raster_unscale
    gdal_raster_update
    gdal_raster_viewshed
+   gdal_raster_zonal_stats
 
 .. only:: html
 
@@ -130,11 +137,11 @@ Raster commands
     - :ref:`gdal_raster_info`: Get information on a raster dataset
     - :reF:`gdal_raster_as_features`: Create features representing raster pixels
     - :ref:`gdal_raster_aspect`: Generate an aspect map.
+    - :ref:`gdal_raster_blend`: Blend/compose two raster datasets
     - :ref:`gdal_raster_calc`: Perform raster algebra
     - :ref:`gdal_raster_clean_collar`: Clean the collar of a raster dataset, removing noise
     - :ref:`gdal_raster_clip`: Clip a raster dataset
     - :ref:`gdal_raster_color_map`: Use a grayscale raster to replace the intensity of a RGB/RGBA dataset
-    - :ref:`gdal_raster_color_merge`: Replace the color value of a RGB/RGBA dataset by the one of a grayscale raster
     - :ref:`gdal_raster_compare`: Compare two raster datasets
     - :ref:`gdal_raster_convert`: Convert a raster dataset
     - :ref:`gdal_raster_contour`: Builds vector contour lines from a raster elevation model
@@ -144,7 +151,9 @@ Raster commands
     - :ref:`gdal_raster_fill_nodata`: Fill raster regions by interpolation from edges.
     - :ref:`gdal_raster_hillshade`: Generate a shaded relief map
     - :ref:`gdal_raster_index`: Create a vector index of raster datasets
+    - :ref:`gdal_raster_materialize`: Materialize a piped dataset on disk to increase the efficiency of the following steps
     - :ref:`gdal_raster_mosaic`: Build a mosaic, either virtual (VRT) or materialized.
+    - :ref:`gdal_raster_neighbors`: Compute the value of each pixel from its neighbors (focal statistics).
     - :ref:`gdal_raster_nodata_to_alpha`: Replace nodata value(s) with an alpha band
     - :ref:`gdal_raster_overview`: Manage overviews of a raster dataset
     - :ref:`gdal_raster_overview_add`: Add overviews to a raster dataset
@@ -170,6 +179,7 @@ Raster commands
     - :ref:`gdal_raster_unscale`: Convert scaled values of a raster dataset into unscaled values.
     - :ref:`gdal_raster_update`: Update the destination raster with the content of the input one.
     - :ref:`gdal_raster_viewshed`: Compute the viewshed of a raster dataset.
+    - :ref:`gdal_raster_zonal_stats`: Compute raster zonal statistics
 
     Pipelines:
 
@@ -197,17 +207,23 @@ Vector commands
    gdal_vector_grid
    gdal_vector_index
    gdal_vector_layer_algebra
+   gdal_vector_make_point
    gdal_vector_make_valid
+   gdal_vector_materialize
+   gdal_vector_partition
    gdal_vector_pipeline
    gdal_vector_rasterize
    gdal_vector_reproject
    gdal_vector_select
    gdal_vector_segmentize
+   gdal_vector_set_field_type
    gdal_vector_set_geom_type
+   gdal_vector_sort
    gdal_vector_simplify
    gdal_vector_simplify_coverage
    gdal_vector_sql
    gdal_vector_swap_xy
+   gdal_vector_update
 
 .. only:: html
 
@@ -228,16 +244,22 @@ Vector commands
     - :ref:`gdal_vector_info`: Get information on a vector dataset
     - :ref:`gdal_vector_index`: Create a vector index of vector datasets
     - :ref:`gdal_vector_layer_algebra`: Perform algebraic operation between 2 layers.
+    - :ref:`gdal_vector_make_point`: Create point geometries from coordinate fields
     - :ref:`gdal_vector_make_valid`: Fix validity of geometries of a vector dataset
+    - :ref:`gdal_vector_materialize`: Materialize a piped dataset on disk to increase the efficiency of the following steps
+    - :ref:`gdal_vector_partition`: Partition a vector dataset into multiple files
     - :ref:`gdal_vector_rasterize`: Burns vector geometries into a raster
     - :ref:`gdal_vector_reproject`: Reproject a vector dataset
     - :ref:`gdal_vector_segmentize`: Segmentize geometries of a vector dataset
     - :ref:`gdal_vector_select`: Select a subset of fields from a vector dataset.
+    - :ref:`gdal_vector_set_field_type`: Modify the type of a field of a vector dataset
     - :ref:`gdal_vector_set_geom_type`: Modify the geometry type of a vector dataset
     - :ref:`gdal_vector_simplify`: Simplify geometries of a vector dataset
     - :ref:`gdal_vector_simplify_coverage`: Simplify shared boundaries of a polygonal vector dataset
+    - :ref:`gdal_vector_sort`: Spatially sort a vector dataset
     - :ref:`gdal_vector_sql`: Apply SQL statement(s) to a dataset
     - :ref:`gdal_vector_swap_xy`: Swap X and Y coordinates of geometries of a vector dataset
+    - :ref:`gdal_vector_update`: Update an existing vector dataset with an input vector dataset
 
     Pipelines:
 
@@ -253,12 +275,14 @@ Multidimensional raster commands
    gdal_mdim
    gdal_mdim_info
    gdal_mdim_convert
+   gdal_mdim_mosaic
 
 .. only:: html
 
     - :ref:`gdal_mdim`: Entry point for multidimensional commands
     - :ref:`gdal_mdim_info`: Get information on a multidimensional dataset
     - :ref:`gdal_mdim_convert`: Convert a multidimensional dataset
+    - :ref:`gdal_mdim_mosaic`: Build a mosaic, either virtual (VRT) or materialized, from multidimensional datasets.
 
 Dataset management commands
 +++++++++++++++++++++++++++
@@ -269,6 +293,7 @@ Dataset management commands
 
    gdal_dataset
    gdal_dataset_identify
+   gdal_dataset_check
    gdal_dataset_copy
    gdal_dataset_rename
    gdal_dataset_delete
@@ -277,6 +302,7 @@ Dataset management commands
 
     - :ref:`gdal_dataset`: Entry point for dataset management commands
     - :ref:`gdal_dataset_identify`: Identify driver opening dataset(s)
+    - :ref:`gdal_dataset_check`: Check whether there are errors when reading the content of a dataset.
     - :ref:`gdal_dataset_copy`: Copy files of a dataset.
     - :ref:`gdal_dataset_rename`: Rename files of a dataset.
     - :ref:`gdal_dataset_delete`: Delete dataset(s)
@@ -316,6 +342,7 @@ Driver specific commands
    gdal_driver_gpkg_repack
    gdal_driver_gti_create
    gdal_driver_openfilegdb_repack
+   gdal_driver_parquet_create_metadata_file
    gdal_driver_pdf_list_layers
 
 .. only:: html
@@ -323,6 +350,7 @@ Driver specific commands
     - :ref:`gdal_driver_gpkg_repack`: Repack/vacuum in-place a GeoPackage dataset
     - :ref:`gdal_driver_gti_create`: Create an index of raster datasets compatible of the GDAL Tile Index (GTI) driver
     - :ref:`gdal_driver_openfilegdb_repack`: Repack in-place a FileGeodabase dataset
+    - :ref:`gdal_driver_parquet_create_metadata_file`:  Create the _metadata file for a partitioned Parquet dataset
     - :ref:`gdal_driver_pdf_list_layers`: Return the list of layers of a PDF file.
 
 

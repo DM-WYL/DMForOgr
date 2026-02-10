@@ -44,7 +44,7 @@ static bool kakadu_initialized = false;
 /* ==================================================================== */
 /************************************************************************/
 
-class jpipkak_kdu_cpl_error_message : public kdu_message
+class jpipkak_kdu_cpl_error_message final : public kdu_message
 {
   public:  // Member classes
     using kdu_message::put_text;
@@ -186,7 +186,7 @@ JPIPKAKRasterBand::JPIPKAKRasterBand(int nBandIn, int nDiscardLevelsIn,
 }
 
 /************************************************************************/
-/*                         ~JPIPKAKRasterBand()                          */
+/*                         ~JPIPKAKRasterBand()                         */
 /************************************************************************/
 
 JPIPKAKRasterBand::~JPIPKAKRasterBand()
@@ -633,7 +633,7 @@ int JPIPKAKDataset::Initialize(const char *pszDatasetName, int bReinitializing)
             eDT = GDT_UInt16;
         }
         else
-            eDT = GDT_Byte;
+            eDT = GDT_UInt8;
 
         if ((poCodestream->get_bit_depth(0) % 8) != 0 &&
             poCodestream->get_bit_depth(0) < 16)
@@ -1050,7 +1050,7 @@ int JPIPKAKDataset::ReadFromInput(GByte *pabyData, int nLen, int &bError)
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *JPIPKAKDataset::GetSpatialRef() const
@@ -1090,7 +1090,7 @@ int JPIPKAKDataset::GetGCPCount()
 }
 
 /************************************************************************/
-/*                           GetGCPSpatialRef()                         */
+/*                          GetGCPSpatialRef()                          */
 /************************************************************************/
 
 const OGRSpatialReference *JPIPKAKDataset::GetGCPSpatialRef() const
@@ -1208,14 +1208,14 @@ int JPIPKAKDataset::TestUseBlockIO(CPL_UNUSED int nXOff, CPL_UNUSED int nYOff,
     return bUseBlockedIO;
 }
 
-/*************************************************************************/
-/*                     BeginAsyncReader()                              */
-/*************************************************************************/
+/************************************************************************/
+/*                          BeginAsyncReader()                          */
+/************************************************************************/
 
 GDALAsyncReader *JPIPKAKDataset::BeginAsyncReader(
     int xOff, int yOff, int xSize, int ySize, void *pBuf, int bufXSize,
     int bufYSize, GDALDataType bufType, int nBandCount, int *pBandMap,
-    int nPixelSpace, int nLineSpace, int nBandSpace, char **papszOptions)
+    int nPixelSpace, int nLineSpace, int nBandSpace, CSLConstList papszOptions)
 {
     CPLDebug("JPIP", "BeginAsyncReadeR(%d,%d,%d,%d -> %dx%d)", xOff, yOff,
              xSize, ySize, bufXSize, bufYSize);
@@ -1299,6 +1299,8 @@ GDALAsyncReader *JPIPKAKDataset::BeginAsyncReader(
                                          ario->nPixelSpace * nBandCount);
         if (ario->pBuf == nullptr)
         {
+            delete[] ario->panBandMap;
+            ario->panBandMap = nullptr;
             delete ario;
             return nullptr;
         }
@@ -1371,7 +1373,7 @@ GDALAsyncReader *JPIPKAKDataset::BeginAsyncReader(
 }
 
 /************************************************************************/
-/*                  EndAsyncReader()                                  */
+/*                           EndAsyncReader()                           */
 /************************************************************************/
 
 void JPIPKAKDataset::EndAsyncReader(GDALAsyncReader *poARIO)
@@ -1438,7 +1440,7 @@ void GDALRegister_JPIPKAK()
 }
 
 /************************************************************************/
-/*                         JPIPKAKAsyncReader                         */
+/*                          JPIPKAKAsyncReader                          */
 /************************************************************************/
 JPIPKAKAsyncReader::JPIPKAKAsyncReader()
 {
@@ -1456,7 +1458,7 @@ JPIPKAKAsyncReader::JPIPKAKAsyncReader()
 }
 
 /************************************************************************/
-/*                        ~JPIPKAKAsyncReader                         */
+/*                         ~JPIPKAKAsyncReader                          */
 /************************************************************************/
 JPIPKAKAsyncReader::~JPIPKAKAsyncReader()
 {

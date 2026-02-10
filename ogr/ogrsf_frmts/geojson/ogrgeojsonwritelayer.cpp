@@ -19,7 +19,7 @@
 #include <algorithm>
 
 /************************************************************************/
-/*                         OGRGeoJSONWriteLayer()                       */
+/*                        OGRGeoJSONWriteLayer()                        */
 /************************************************************************/
 
 OGRGeoJSONWriteLayer::OGRGeoJSONWriteLayer(const char *pszName,
@@ -81,7 +81,7 @@ OGRGeoJSONWriteLayer::OGRGeoJSONWriteLayer(const char *pszName,
 }
 
 /************************************************************************/
-/*                        ~OGRGeoJSONWriteLayer()                       */
+/*                       ~OGRGeoJSONWriteLayer()                        */
 /************************************************************************/
 
 OGRGeoJSONWriteLayer::~OGRGeoJSONWriteLayer()
@@ -158,7 +158,7 @@ void OGRGeoJSONWriteLayer::FinishWriting()
 }
 
 /************************************************************************/
-/*                           SyncToDisk()                               */
+/*                             SyncToDisk()                             */
 /************************************************************************/
 
 OGRErr OGRGeoJSONWriteLayer::SyncToDisk()
@@ -172,7 +172,7 @@ OGRErr OGRGeoJSONWriteLayer::SyncToDisk()
 }
 
 /************************************************************************/
-/*                           ICreateFeature()                            */
+/*                           ICreateFeature()                           */
 /************************************************************************/
 
 OGRErr OGRGeoJSONWriteLayer::ICreateFeature(OGRFeature *poFeature)
@@ -313,7 +313,7 @@ OGRErr OGRGeoJSONWriteLayer::ICreateFeature(OGRFeature *poFeature)
         VSIFPrintfL(fp, ",\n");
     }
     const char *pszJson = json_object_to_json_string_ext(
-        poObj, JSON_C_TO_STRING_SPACED
+        poObj, JSON_C_TO_STRING_PLAIN
 #ifdef JSON_C_TO_STRING_NOSLASHESCAPE
                    | JSON_C_TO_STRING_NOSLASHESCAPE
 #endif
@@ -323,9 +323,9 @@ OGRErr OGRGeoJSONWriteLayer::ICreateFeature(OGRFeature *poFeature)
     size_t nLen = strlen(pszJson);
     if (!osForeignMembers_.empty())
     {
-        if (nLen > 2 && pszJson[nLen - 2] == ' ' && pszJson[nLen - 1] == '}')
+        if (nLen > 1 && pszJson[nLen - 1] == '}')
         {
-            nLen -= 2;
+            nLen -= 1;
         }
         else
         {
@@ -342,7 +342,7 @@ OGRErr OGRGeoJSONWriteLayer::ICreateFeature(OGRFeature *poFeature)
         eErr = OGRERR_FAILURE;
     }
     else if (!osForeignMembers_.empty() &&
-             (VSIFWriteL(", ", 2, 1, fp) != 1 ||
+             (VSIFWriteL(",", 1, 1, fp) != 1 ||
               VSIFWriteL(osForeignMembers_.c_str(), osForeignMembers_.size(), 1,
                          fp) != 1 ||
               VSIFWriteL("}", 1, 1, fp) != 1))
@@ -443,7 +443,7 @@ OGRErr OGRGeoJSONWriteLayer::ICreateFeature(OGRFeature *poFeature)
 }
 
 /************************************************************************/
-/*                           CreateField()                              */
+/*                            CreateField()                             */
 /************************************************************************/
 
 OGRErr OGRGeoJSONWriteLayer::CreateField(const OGRFieldDefn *poField,
@@ -479,7 +479,7 @@ int OGRGeoJSONWriteLayer::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                           IGetExtent()                               */
+/*                             IGetExtent()                             */
 /************************************************************************/
 
 OGRErr OGRGeoJSONWriteLayer::IGetExtent(int /*iGeomField*/,

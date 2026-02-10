@@ -15,6 +15,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 #if defined(_WIN32)
 #define SEP_STRING "\\"
@@ -172,7 +176,7 @@ class PALSARJaxaDataset final : public GDALPamDataset
 
   public:
     PALSARJaxaDataset();
-    ~PALSARJaxaDataset();
+    ~PALSARJaxaDataset() override;
 
     int GetGCPCount() override;
     const GDAL_GCP *GetGCPs() override;
@@ -213,13 +217,13 @@ class PALSARJaxaRasterBand final : public GDALRasterBand
 
   public:
     PALSARJaxaRasterBand(PALSARJaxaDataset *poDS, int nBand, VSILFILE *fp);
-    ~PALSARJaxaRasterBand();
+    ~PALSARJaxaRasterBand() override;
 
     CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage) override;
 };
 
 /************************************************************************/
-/*                         PALSARJaxaRasterBand()                       */
+/*                        PALSARJaxaRasterBand()                        */
 /************************************************************************/
 
 PALSARJaxaRasterBand::PALSARJaxaRasterBand(PALSARJaxaDataset *poDSIn,
@@ -299,7 +303,7 @@ PALSARJaxaRasterBand::PALSARJaxaRasterBand(PALSARJaxaDataset *poDSIn,
 }
 
 /************************************************************************/
-/*                        ~PALSARJaxaRasterBand()                       */
+/*                       ~PALSARJaxaRasterBand()                        */
 /************************************************************************/
 
 PALSARJaxaRasterBand::~PALSARJaxaRasterBand()
@@ -325,8 +329,9 @@ CPLErr PALSARJaxaRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff,
         nNumBytes = 2;
     }
 
-    int nOffset =
-        IMAGE_OPT_DESC_LENGTH + ((nBlockYOff - 1) * nRecordSize) +
+    const vsi_l_offset nOffset =
+        IMAGE_OPT_DESC_LENGTH +
+        (static_cast<vsi_l_offset>(nBlockYOff - 1) * nRecordSize) +
         (nFileType == level_11 ? SIG_DAT_REC_OFFSET : PROC_DAT_REC_OFFSET);
 
     VSIFSeekL(fp, nOffset, SEEK_SET);
@@ -349,7 +354,7 @@ CPLErr PALSARJaxaRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff,
 /************************************************************************/
 
 /************************************************************************/
-/*                          ReadMetadata()                              */
+/*                            ReadMetadata()                            */
 /************************************************************************/
 
 int PALSARJaxaDataset::GetGCPCount()
@@ -358,7 +363,7 @@ int PALSARJaxaDataset::GetGCPCount()
 }
 
 /************************************************************************/
-/*                             GetGCPs()                                */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *PALSARJaxaDataset::GetGCPs()

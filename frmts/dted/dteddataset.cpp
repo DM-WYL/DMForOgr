@@ -14,6 +14,10 @@
 #include "dted_api.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #include <cstdlib>
@@ -82,7 +86,7 @@ class DTEDRasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                           DTEDRasterBand()                            */
+/*                           DTEDRasterBand()                           */
 /************************************************************************/
 
 DTEDRasterBand::DTEDRasterBand(DTEDDataset *poDSIn, int nBandIn)
@@ -538,7 +542,7 @@ CPLErr DTEDDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *DTEDDataset::GetSpatialRef() const
@@ -655,7 +659,7 @@ const OGRSpatialReference *DTEDDataset::GetSpatialRef() const
 
 static GDALDataset *DTEDCreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char ** /* papszOptions */,
+                                   CSLConstList /* papszOptions */,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData)
 

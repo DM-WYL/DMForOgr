@@ -15,6 +15,10 @@
 
 #include "wmsdriver.h"
 
+#include "gdal_colortable.h"
+#include "gdal_rasterblock.h"
+#include "gdal_cpp_functions.h"
+
 #include <algorithm>
 
 GDALWMSRasterBand::GDALWMSRasterBand(GDALWMSDataset *parent_dataset, int band,
@@ -484,7 +488,7 @@ void GDALWMSRasterBand::ComputeRequestInfo(GDALWMSImageRequestInfo &iri,
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **GDALWMSRasterBand::GetMetadataDomainList()
@@ -599,7 +603,7 @@ const char *GDALWMSRasterBand::GetMetadataItem(const char *pszName,
     osMetadataItemURL = url;
 
     // This is OK, CPLHTTPFetch does not touch the options
-    char **papszOptions =
+    CSLConstList papszOptions =
         const_cast<char **>(m_parent_dataset->GetHTTPRequestOpts());
     CPLHTTPResult *psResult = CPLHTTPFetch(url, papszOptions);
 
@@ -727,10 +731,10 @@ CPLErr GDALWMSRasterBand::ReadBlockFromDataset(GDALDataset *ds, int x, int y,
         if (nDSRasterCount != m_parent_dataset->nBands)
         {
             /* Maybe its an image with color table */
-            if ((eDataType == GDT_Byte) && (ds->GetRasterCount() == 1))
+            if ((eDataType == GDT_UInt8) && (ds->GetRasterCount() == 1))
             {
                 GDALRasterBand *rb = ds->GetRasterBand(1);
-                if (rb->GetRasterDataType() == GDT_Byte)
+                if (rb->GetRasterDataType() == GDT_UInt8)
                 {
                     GDALColorTable *ct = rb->GetColorTable();
                     if (ct != nullptr)
@@ -1100,7 +1104,8 @@ CPLErr GDALWMSRasterBand::ReportWMSException(const char *file_name)
 
 CPLErr GDALWMSRasterBand::AdviseRead(int nXOff, int nYOff, int nXSize,
                                      int nYSize, int nBufXSize, int nBufYSize,
-                                     GDALDataType eDT, char **papszOptions)
+                                     GDALDataType eDT,
+                                     CSLConstList papszOptions)
 {
     //    printf("AdviseRead(%d, %d, %d, %d)\n", nXOff, nYOff, nXSize, nYSize);
     if (m_parent_dataset->m_offline_mode ||

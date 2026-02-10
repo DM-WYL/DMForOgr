@@ -29,7 +29,8 @@ CPL_C_END
 
 void GTIFFSetThreadLocalInExternalOvr(bool b);
 void GTIFFGetOverviewBlockSize(GDALRasterBandH hBand, int *pnBlockXSize,
-                               int *pnBlockYSize);
+                               int *pnBlockYSize, CSLConstList papszOptions,
+                               const char *pszOptionKey);
 void GTIFFSetJpegQuality(GDALDatasetH hGTIFFDS, int nJpegQuality);
 void GTIFFSetWebPLevel(GDALDatasetH hGTIFFDS, int nWebPLevel);
 void GTIFFSetJpegTablesMode(GDALDatasetH hGTIFFDS, int nJpegTablesMode);
@@ -52,7 +53,7 @@ bool GTIFFUpdatePhotometric(const char *pszPhotometric,
                             const char *pszInterleave, int nBands,
                             uint16_t &nPhotometric, uint16_t &nPlanarConfig);
 
-void GTiffDatasetWriteRPCTag(TIFF *hTIFF, char **papszRPCMD);
+void GTiffDatasetWriteRPCTag(TIFF *hTIFF, CSLConstList papszRPCMD);
 char **GTiffDatasetReadRPCTag(TIFF *hTIFF);
 
 void GTiffWriteJPEGTables(TIFF *hTIFF, const char *pszPhotometric,

@@ -267,7 +267,7 @@ static const char *StateNames[] = {
     {                                                                          \
         if (pa >= thisrun + sp->nruns)                                         \
         {                                                                      \
-            TIFFErrorExtR(tif, module, "Buffer overflow at line %u of %s %u",  \
+            TIFFErrorExtR(tif, module, "Buffer overflow at line %d of %s %u",  \
                           sp->line, isTiled(tif) ? "tile" : "strip",           \
                           isTiled(tif) ? tif->tif_curtile                      \
                                        : tif->tif_curstrip);                   \
@@ -289,30 +289,39 @@ static const char *StateNames[] = {
  * is non-zero then we still need to scan for the final flag
  * bit that is part of the EOL code.
  */
-#define SYNC_EOL(eoflab)                                                       \
+#define SYNC_EOL(eoflab, retrywithouteol)                                      \
     do                                                                         \
     {                                                                          \
-        if (EOLcnt == 0)                                                       \
+        if (!(sp->b.mode & FAXMODE_NOEOL)) /* skip EOL, if not present */      \
         {                                                                      \
+            if (EOLcnt == 0)                                                   \
+            {                                                                  \
+                for (;;)                                                       \
+                {                                                              \
+                    NeedBits16(11, eoflab);                                    \
+                    if (GetBits(11) == 0)                                      \
+                        break; /* EOL found */                                 \
+                    ClrBits(1);                                                \
+                }                                                              \
+            }                                                                  \
+            /* Now move after EOL or detect missing EOL. */                    \
             for (;;)                                                           \
             {                                                                  \
-                NeedBits16(11, eoflab);                                        \
-                if (GetBits(11) == 0)                                          \
+                NeedBits8(8, noEOLFound);                                      \
+                if (GetBits(8))                                                \
                     break;                                                     \
-                ClrBits(1);                                                    \
+                ClrBits(8);                                                    \
             }                                                                  \
+            while (GetBits(1) == 0)                                            \
+                ClrBits(1);                                                    \
+            ClrBits(1); /* EOL bit */                                          \
+            EOLcnt = 0; /* reset EOL counter/flag */                           \
+            break;      /* existing EOL skipped, leave macro */                \
+        noEOLFound:                                                            \
+            sp->b.mode |= FAXMODE_NOEOL;                                       \
+            tryG3WithoutEOL(a0);                                               \
+            goto retrywithouteol;                                              \
         }                                                                      \
-        for (;;)                                                               \
-        {                                                                      \
-            NeedBits8(8, eoflab);                                              \
-            if (GetBits(8))                                                    \
-                break;                                                         \
-            ClrBits(8);                                                        \
-        }                                                                      \
-        while (GetBits(1) == 0)                                                \
-            ClrBits(1);                                                        \
-        ClrBits(1); /* EOL bit */                                              \
-        EOLcnt = 0; /* reset EOL counter/flag */                               \
     } while (0)
 
 /*
@@ -435,7 +444,7 @@ static const char *StateNames[] = {
                 if (pb + 1 >= sp->refruns + sp->nruns)                         \
                 {                                                              \
                     TIFFErrorExtR(                                             \
-                        tif, module, "Buffer overflow at line %u of %s %u",    \
+                        tif, module, "Buffer overflow at line %d of %s %u",    \
                         sp->line, isTiled(tif) ? "tile" : "strip",             \
                         isTiled(tif) ? tif->tif_curtile : tif->tif_curstrip);  \
                     return (-1);                                               \
@@ -456,7 +465,7 @@ static const char *StateNames[] = {
             if (pa >= thisrun + sp->nruns)                                     \
             {                                                                  \
                 TIFFErrorExtR(                                                 \
-                    tif, module, "Buffer overflow at line %u of %s %u",        \
+                    tif, module, "Buffer overflow at line %d of %s %u",        \
                     sp->line, isTiled(tif) ? "tile" : "strip",                 \
                     isTiled(tif) ? tif->tif_curtile : tif->tif_curstrip);      \
                 return (-1);                                                   \
@@ -469,7 +478,7 @@ static const char *StateNames[] = {
                     if (pb + 1 >= sp->refruns + sp->nruns)                     \
                     {                                                          \
                         TIFFErrorExtR(tif, module,                             \
-                                      "Buffer overflow at line %u of %s %u",   \
+                                      "Buffer overflow at line %d of %s %u",   \
                                       sp->line,                                \
                                       isTiled(tif) ? "tile" : "strip",         \
                                       isTiled(tif) ? tif->tif_curtile          \
@@ -568,7 +577,7 @@ static const char *StateNames[] = {
                     if (pb >= sp->refruns + sp->nruns)                         \
                     {                                                          \
                         TIFFErrorExtR(tif, module,                             \
-                                      "Buffer overflow at line %u of %s %u",   \
+                                      "Buffer overflow at line %d of %s %u",   \
                                       sp->line,                                \
                                       isTiled(tif) ? "tile" : "strip",         \
                                       isTiled(tif) ? tif->tif_curtile          \
@@ -583,7 +592,7 @@ static const char *StateNames[] = {
                     if (pb >= sp->refruns + sp->nruns)                         \
                     {                                                          \
                         TIFFErrorExtR(tif, module,                             \
-                                      "Buffer overflow at line %u of %s %u",   \
+                                      "Buffer overflow at line %d of %s %u",   \
                                       sp->line,                                \
                                       isTiled(tif) ? "tile" : "strip",         \
                                       isTiled(tif) ? tif->tif_curtile          \

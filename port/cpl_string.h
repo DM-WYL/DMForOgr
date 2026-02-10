@@ -76,7 +76,7 @@ char CPL_DLL **CSLTokenizeString2(const char *pszString,
 #define CSLT_PRESERVEESCAPES 0x0008
 /** Flag for CSLTokenizeString2() to strip leading spaces */
 #define CSLT_STRIPLEADSPACES 0x0010
-/** Flag for CSLTokenizeString2() to strip trailaing spaces */
+/** Flag for CSLTokenizeString2() to strip trailing spaces */
 #define CSLT_STRIPENDSPACES 0x0020
 
 int CPL_DLL CSLPrint(CSLConstList papszStrList, FILE *fpOut);
@@ -110,7 +110,22 @@ int CPL_DLL CPLTestBoolean(const char *pszValue);
 bool CPL_DLL CPLTestBool(const char *pszValue);
 bool CPL_DLL CPLFetchBool(CSLConstList papszStrList, const char *pszKey,
                           bool bDefault);
+#ifdef __cplusplus
+CPL_C_END
 
+/*! @cond Doxygen_Suppress */
+inline bool CPLFetchBool(CSLConstList papszStrList, const char *pszKey,
+                         int bDefault)
+{
+    return CPLFetchBool(papszStrList, pszKey, bDefault != 0);
+}
+
+bool CPLFetchBool(CSLConstList papszStrList, const char *pszKey,
+                  const char *) = delete;
+
+/*! @endcond */
+CPL_C_START
+#endif
 CPLErr CPL_DLL CPLParseMemorySize(const char *pszValue, GIntBig *pnValue,
                                   bool *pbUnitSpecified);
 
@@ -423,6 +438,12 @@ extern "C++"
 
         CPLSTRING_METHOD_DLL bool endsWith(const std::string &osStr) const;
 
+        CPLSTRING_METHOD_DLL CPLString URLEncode() const;
+
+        CPLSTRING_METHOD_DLL CPLString SQLQuotedIdentifier() const;
+
+        CPLSTRING_METHOD_DLL CPLString SQLQuotedLiteral() const;
+
       private:
         operator void *(void) = delete;
     };
@@ -519,8 +540,10 @@ extern "C++"
                                             char *pszNewLine);
 
         // CPLStringList &InsertStrings( int nInsertAtLineNo, char
-        // **papszNewLines ); CPLStringList &RemoveStrings( int
-        // nFirstLineToDelete, int nNumToRemove=1 );
+        // **papszNewLines );
+
+        CPLStringList &RemoveStrings(int nFirstLineToDelete,
+                                     int nNumToRemove = 1);
 
         /** Return index of pszTarget in the list, or -1 */
         int FindString(const char *pszTarget) const
@@ -544,6 +567,10 @@ extern "C++"
                                       const char *pszDefault) const;
         CPLStringList &AddNameValue(const char *pszKey, const char *pszValue);
         CPLStringList &SetNameValue(const char *pszKey, const char *pszValue);
+
+        CPLStringList &SetString(int pos, const char *pszString);
+        CPLStringList &SetString(int pos, const std::string &osString);
+        CPLStringList &SetStringDirectly(int pos, char *pszString);
 
         CPLStringList &Assign(char **papszListIn, int bTakeOwnership = TRUE);
 

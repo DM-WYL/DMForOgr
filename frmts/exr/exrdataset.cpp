@@ -9,7 +9,9 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "cpl_multiproc.h"
 #include "gdal_pam.h"
+#include "gdal_frmts.h"
 #include "ogr_spatialref.h"
 
 #include <algorithm>
@@ -22,14 +24,12 @@
 using namespace OPENEXR_IMF_NAMESPACE;
 using namespace IMATH_NAMESPACE;
 
-extern "C" CPL_DLL void GDALRegister_EXR();
-
 static const char *const apszCompressions[] = {
     "NONE", "RLE", "ZIPS", "ZIP", "PIZ", "PXR24", "B44", "B44A", "DWAA", "DWAB",
 };
 
 /************************************************************************/
-/*                       GDALEXRDataset()                               */
+/*                           GDALEXRDataset()                           */
 /************************************************************************/
 
 class GDALEXRDataset final : public GDALPamDataset
@@ -69,7 +69,7 @@ class GDALEXRDataset final : public GDALPamDataset
 
   public:
     GDALEXRDataset() = default;
-    ~GDALEXRDataset();
+    ~GDALEXRDataset() override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
@@ -77,16 +77,16 @@ class GDALEXRDataset final : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
 
 /************************************************************************/
-/*                       GDALEXRRasterBand()                            */
+/*                         GDALEXRRasterBand()                          */
 /************************************************************************/
 
 class GDALEXRRasterBand final : public GDALPamRasterBand
@@ -133,7 +133,7 @@ GDALEXRRasterBand::GDALEXRRasterBand(GDALEXRDataset *poDSIn, int nBandIn,
 }
 
 /************************************************************************/
-/*                          IReadBlock()                                */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr GDALEXRRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -210,7 +210,7 @@ GDALRasterBand *GDALEXRRasterBand::GetOverview(int iOvr)
 }
 
 /************************************************************************/
-/*                      GDALEXRPreviewRasterBand                        */
+/*                       GDALEXRPreviewRasterBand                       */
 /************************************************************************/
 
 class GDALEXRPreviewRasterBand final : public GDALPamRasterBand
@@ -242,11 +242,11 @@ GDALEXRPreviewRasterBand::GDALEXRPreviewRasterBand(GDALEXRDataset *poDSIn,
     nRasterYSize = poDSIn->GetRasterYSize();
     nBlockXSize = nRasterXSize;
     nBlockYSize = 1;
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 }
 
 /************************************************************************/
-/*                          IReadBlock()                                */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr GDALEXRPreviewRasterBand::IReadBlock(int, int nBlockYOff, void *pImage)
@@ -259,7 +259,7 @@ CPLErr GDALEXRPreviewRasterBand::IReadBlock(int, int nBlockYOff, void *pImage)
         GDALCopyWords(reinterpret_cast<const GByte *>(
                           preview.pixels() + nBlockYOff * nRasterXSize) +
                           nBand - 1,
-                      GDT_Byte, 4, pImage, GDT_Byte, 1, nRasterXSize);
+                      GDT_UInt8, 4, pImage, GDT_UInt8, 1, nRasterXSize);
         return CE_None;
     }
     catch (const std::exception &e)
@@ -271,7 +271,7 @@ CPLErr GDALEXRPreviewRasterBand::IReadBlock(int, int nBlockYOff, void *pImage)
 }
 
 /************************************************************************/
-/*                      GDALEXRRGBARasterBand                        */
+/*                        GDALEXRRGBARasterBand                         */
 /************************************************************************/
 
 class GDALEXRRGBARasterBand final : public GDALPamRasterBand
@@ -291,7 +291,7 @@ class GDALEXRRGBARasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                      GDALEXRRGBARasterBand()                      */
+/*                       GDALEXRRGBARasterBand()                        */
 /************************************************************************/
 
 GDALEXRRGBARasterBand::GDALEXRRGBARasterBand(GDALEXRDataset *poDSIn,
@@ -307,7 +307,7 @@ GDALEXRRGBARasterBand::GDALEXRRGBARasterBand(GDALEXRDataset *poDSIn,
 }
 
 /************************************************************************/
-/*                          IReadBlock()                                */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr GDALEXRRGBARasterBand::IReadBlock(int, int nBlockYOff, void *pImage)
@@ -376,13 +376,13 @@ CPLErr GDALEXRRGBARasterBand::IReadBlock(int, int nBlockYOff, void *pImage)
 }
 
 /************************************************************************/
-/*                         ~GDALEXRDataset()                            */
+/*                          ~GDALEXRDataset()                           */
 /************************************************************************/
 
 GDALEXRDataset::~GDALEXRDataset() = default;
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *GDALEXRDataset::GetSpatialRef() const
@@ -394,7 +394,7 @@ const OGRSpatialReference *GDALEXRDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                         GetGeoTransform()                            */
+/*                          GetGeoTransform()                           */
 /************************************************************************/
 
 CPLErr GDALEXRDataset::GetGeoTransform(GDALGeoTransform &gt) const
@@ -442,23 +442,23 @@ class GDALEXRIOStream final : public IStream, public OStream
     {
     }
 
-    ~GDALEXRIOStream()
+    ~GDALEXRIOStream() override
     {
         VSIFCloseL(m_fp);
     }
 
-    virtual bool read(char c[/*n*/], int n) override;
-    virtual void write(const char c[/*n*/], int n) override;
-    virtual IoInt64Type tellg() override;
+    bool read(char c[/*n*/], int n) override;
+    void write(const char c[/*n*/], int n) override;
+    IoInt64Type tellg() override;
 
-    virtual IoInt64Type tellp() override
+    IoInt64Type tellp() override
     {
         return tellg();
     }
 
-    virtual void seekg(IoInt64Type pos) override;
+    void seekg(IoInt64Type pos) override;
 
-    virtual void seekp(IoInt64Type pos) override
+    void seekp(IoInt64Type pos) override
     {
         return seekg(pos);
     }
@@ -522,7 +522,7 @@ static void setNumThreads()
 }
 
 /************************************************************************/
-/*                               Open()                                 */
+/*                                Open()                                */
 /************************************************************************/
 
 GDALDataset *GDALEXRDataset::Open(GDALOpenInfo *poOpenInfo)
@@ -840,13 +840,13 @@ GDALDataset *GDALEXRDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          getPixelType()                              */
+/*                            getPixelType()                            */
 /************************************************************************/
 
-static PixelType getPixelType(GDALDataType eSrcDT, char **papszOptions)
+static PixelType getPixelType(GDALDataType eSrcDT, CSLConstList papszOptions)
 {
     PixelType pixelType =
-        (eSrcDT == GDT_Byte) ? HALF
+        (eSrcDT == GDT_UInt8) ? HALF
         : (eSrcDT == GDT_Int16 || eSrcDT == GDT_UInt16 || eSrcDT == GDT_UInt32)
             ? UINT
             : FLOAT;
@@ -939,7 +939,7 @@ static void FillHeaderFromOptions(Header &header, CSLConstList papszOptions)
 
 GDALDataset *GDALEXRDataset::CreateCopy(const char *pszFilename,
                                         GDALDataset *poSrcDS, int,
-                                        char **papszOptions,
+                                        CSLConstList papszOptions,
                                         GDALProgressFunc pfnProgress,
                                         void *pProgressData)
 {
@@ -965,7 +965,7 @@ GDALDataset *GDALEXRDataset::CreateCopy(const char *pszFilename,
         CPLTestBool(CSLFetchNameValueDef(papszOptions, "PREVIEW", "NO")) &&
         (nXSize > 100 || nYSize > 100);
     const GDALDataType eSrcDT = poSrcDS->GetRasterBand(1)->GetRasterDataType();
-    if (bPreview && !(bRGB_or_RGBA && eSrcDT == GDT_Byte))
+    if (bPreview && !(bRGB_or_RGBA && eSrcDT == GDT_UInt8))
     {
         CPLError(
             CE_Failure, CPLE_NotSupported,
@@ -974,7 +974,7 @@ GDALDataset *GDALEXRDataset::CreateCopy(const char *pszFilename,
     }
     const PixelType pixelType = getPixelType(eSrcDT, papszOptions);
     const bool bRescaleDiv255 =
-        pixelType == HALF && bRGB_or_RGBA && eSrcDT == GDT_Byte &&
+        pixelType == HALF && bRGB_or_RGBA && eSrcDT == GDT_UInt8 &&
         CPLTestBool(CSLFetchNameValueDef(papszOptions, "AUTO_RESCALE", "YES"));
 
     setNumThreads();
@@ -1019,8 +1019,8 @@ GDALDataset *GDALEXRDataset::CreateCopy(const char *pszFilename,
                                     nYSize / nXSize));
             std::vector<PreviewRgba> pixels(previewWidth * previewHeight);
             if (poSrcDS->RasterIO(GF_Read, 0, 0, nXSize, nYSize, &pixels[0],
-                                  previewWidth, previewHeight, GDT_Byte, nBands,
-                                  nullptr, 4, 4 * previewWidth, 1,
+                                  previewWidth, previewHeight, GDT_UInt8,
+                                  nBands, nullptr, 4, 4 * previewWidth, 1,
                                   nullptr) == CE_None)
             {
                 header.setPreviewImage(
@@ -1410,7 +1410,7 @@ GDALDataset *GDALEXRDataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                         GDALEXRWritableDataset                       */
+/*                        GDALEXRWritableDataset                        */
 /************************************************************************/
 
 class GDALEXRWritableDataset final : public GDALPamDataset
@@ -1469,17 +1469,17 @@ class GDALEXRWritableDataset final : public GDALPamDataset
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
-    CPLErr SetMetadata(char **, const char * = "") override;
+    CPLErr SetMetadata(CSLConstList, const char * = "") override;
     CPLErr SetMetadataItem(const char *, const char *,
                            const char * = "") override;
 
-    char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain = "") override;
 };
 
 /************************************************************************/
-/*                       ~GDALEXRWritableDataset()                      */
+/*                      ~GDALEXRWritableDataset()                       */
 /************************************************************************/
 
 GDALEXRWritableDataset::~GDALEXRWritableDataset()
@@ -1489,7 +1489,7 @@ GDALEXRWritableDataset::~GDALEXRWritableDataset()
 }
 
 /************************************************************************/
-/*                            SetGeoTransform()                         */
+/*                          SetGeoTransform()                           */
 /************************************************************************/
 
 CPLErr GDALEXRWritableDataset::SetGeoTransform(const GDALGeoTransform &gt)
@@ -1507,7 +1507,7 @@ CPLErr GDALEXRWritableDataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                            SetSpatialRef()                           */
+/*                           SetSpatialRef()                            */
 /************************************************************************/
 
 CPLErr GDALEXRWritableDataset::SetSpatialRef(const OGRSpatialReference *poSRS)
@@ -1526,10 +1526,10 @@ CPLErr GDALEXRWritableDataset::SetSpatialRef(const OGRSpatialReference *poSRS)
 }
 
 /************************************************************************/
-/*                             SetMetadata()                            */
+/*                            SetMetadata()                             */
 /************************************************************************/
 
-CPLErr GDALEXRWritableDataset::SetMetadata(char **papszMD,
+CPLErr GDALEXRWritableDataset::SetMetadata(CSLConstList papszMD,
                                            const char *pszDomain)
 {
     if (pszDomain == nullptr || pszDomain[0] == 0)
@@ -1550,7 +1550,7 @@ CPLErr GDALEXRWritableDataset::SetMetadata(char **papszMD,
 }
 
 /************************************************************************/
-/*                           SetMetadataItem()                          */
+/*                          SetMetadataItem()                           */
 /************************************************************************/
 
 CPLErr GDALEXRWritableDataset::SetMetadataItem(const char *pszName,
@@ -1575,10 +1575,10 @@ CPLErr GDALEXRWritableDataset::SetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                             GetMetadata()                            */
+/*                            GetMetadata()                             */
 /************************************************************************/
 
-char **GDALEXRWritableDataset::GetMetadata(const char *pszDomain)
+CSLConstList GDALEXRWritableDataset::GetMetadata(const char *pszDomain)
 {
     if (pszDomain == nullptr || pszDomain[0] == 0)
     {
@@ -1588,7 +1588,7 @@ char **GDALEXRWritableDataset::GetMetadata(const char *pszDomain)
 }
 
 /************************************************************************/
-/*                           GetMetadataItem()                          */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *GDALEXRWritableDataset::GetMetadataItem(const char *pszName,
@@ -1602,7 +1602,7 @@ const char *GDALEXRWritableDataset::GetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *GDALEXRWritableDataset::GetSpatialRef() const
@@ -1614,7 +1614,7 @@ const OGRSpatialReference *GDALEXRWritableDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                         GetGeoTransform()                            */
+/*                          GetGeoTransform()                           */
 /************************************************************************/
 
 CPLErr GDALEXRWritableDataset::GetGeoTransform(GDALGeoTransform &gt) const
@@ -1628,7 +1628,7 @@ CPLErr GDALEXRWritableDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                             WriteHeader()                            */
+/*                            WriteHeader()                             */
 /************************************************************************/
 
 void GDALEXRWritableDataset::WriteHeader()
@@ -1653,7 +1653,7 @@ void GDALEXRWritableDataset::WriteHeader()
             }
         }
         m_bRescaleDiv255 &= m_pixelType == HALF && bRGB_or_RGBA &&
-                            GetRasterBand(1)->GetRasterDataType() == GDT_Byte;
+                            GetRasterBand(1)->GetRasterDataType() == GDT_UInt8;
 
         if (bRGB_or_RGBA)
         {
@@ -1712,7 +1712,7 @@ void GDALEXRWritableDataset::WriteHeader()
 }
 
 /************************************************************************/
-/*                       GDALEXRWritableRasterBand                      */
+/*                      GDALEXRWritableRasterBand                       */
 /************************************************************************/
 
 class GDALEXRWritableRasterBand final : public GDALPamRasterBand
@@ -1740,7 +1740,7 @@ class GDALEXRWritableRasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                       GDALEXRWritableRasterBand()                    */
+/*                     GDALEXRWritableRasterBand()                      */
 /************************************************************************/
 
 GDALEXRWritableRasterBand::GDALEXRWritableRasterBand(
@@ -1756,7 +1756,7 @@ GDALEXRWritableRasterBand::GDALEXRWritableRasterBand(
 }
 
 /************************************************************************/
-/*                           IReadBlock()                               */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr GDALEXRWritableRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -1777,7 +1777,7 @@ CPLErr GDALEXRWritableRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                           IWriteBlock()                              */
+/*                            IWriteBlock()                             */
 /************************************************************************/
 
 CPLErr GDALEXRWritableRasterBand::IWriteBlock(int nBlockXOff, int nBlockYOff,
@@ -1914,12 +1914,13 @@ CPLErr GDALEXRWritableRasterBand::IWriteBlock(int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                            Create()                                  */
+/*                               Create()                               */
 /************************************************************************/
 
 GDALDataset *GDALEXRDataset::Create(const char *pszFilename, int nXSize,
                                     int nYSize, int nBandsIn,
-                                    GDALDataType eType, char **papszOptions)
+                                    GDALDataType eType,
+                                    CSLConstList papszOptions)
 {
     if (nBandsIn == 0)
         return nullptr;

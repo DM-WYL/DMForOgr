@@ -68,7 +68,7 @@ class ERSDataset final : public RawDataset
   protected:
     int CloseDependentDatasets() override;
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     ERSDataset();
@@ -90,17 +90,17 @@ class ERSDataset final : public RawDataset
     char **GetMetadataDomainList() override;
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain = "") override;
-    char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszOptions);
 };
 
 /************************************************************************/
-/*                            ERSDataset()                             */
+/*                             ERSDataset()                             */
 /************************************************************************/
 
 ERSDataset::ERSDataset()
@@ -110,7 +110,7 @@ ERSDataset::ERSDataset()
 }
 
 /************************************************************************/
-/*                            ~ERSDataset()                            */
+/*                            ~ERSDataset()                             */
 /************************************************************************/
 
 ERSDataset::~ERSDataset()
@@ -120,10 +120,10 @@ ERSDataset::~ERSDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr ERSDataset::Close()
+CPLErr ERSDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -154,7 +154,7 @@ CPLErr ERSDataset::Close()
 }
 
 /************************************************************************/
-/*                      CloseDependentDatasets()                        */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int ERSDataset::CloseDependentDatasets()
@@ -214,7 +214,7 @@ CPLErr ERSDataset::FlushCache(bool bAtClosing)
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **ERSDataset::GetMetadataDomainList()
@@ -224,7 +224,7 @@ char **ERSDataset::GetMetadataDomainList()
 }
 
 /************************************************************************/
-/*                           GetMetadataItem()                          */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *ERSDataset::GetMetadataItem(const char *pszName,
@@ -246,7 +246,7 @@ const char *ERSDataset::GetMetadataItem(const char *pszName,
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **ERSDataset::GetMetadata(const char *pszDomain)
+CSLConstList ERSDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "ERS"))
@@ -288,7 +288,7 @@ const OGRSpatialReference *ERSDataset::GetGCPSpatialRef() const
 }
 
 /************************************************************************/
-/*                               GetGCPs()                              */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *ERSDataset::GetGCPs()
@@ -392,7 +392,7 @@ CPLErr ERSDataset::SetGCPs(int nGCPCountIn, const GDAL_GCP *pasGCPListIn,
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *ERSDataset::GetSpatialRef() const
@@ -447,7 +447,7 @@ CPLErr ERSDataset::SetSpatialRef(const OGRSpatialReference *poSRS)
 }
 
 /************************************************************************/
-/*                         WriteProjectionInfo()                        */
+/*                        WriteProjectionInfo()                         */
 /************************************************************************/
 
 void ERSDataset::WriteProjectionInfo(const char *pszProj, const char *pszDatum,
@@ -807,7 +807,7 @@ int ERSDataset::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                         ERSProxyRasterBand                           */
+/*                          ERSProxyRasterBand                          */
 /************************************************************************/
 
 namespace
@@ -950,7 +950,7 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
         poHeader->Find("RasterInfo.CellType", "Unsigned8BitInteger");
     GDALDataType eType;
     if (EQUAL(osCellType, "Unsigned8BitInteger"))
-        eType = GDT_Byte;
+        eType = GDT_UInt8;
     else if (EQUAL(osCellType, "Signed8BitInteger"))
         eType = GDT_Int8;
     else if (EQUAL(osCellType, "Unsigned16BitInteger"))
@@ -968,7 +968,7 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
     else
     {
         CPLDebug("ERS", "Unknown CellType '%s'", osCellType.c_str());
-        eType = GDT_Byte;
+        eType = GDT_UInt8;
     }
 
     /* -------------------------------------------------------------------- */
@@ -1319,7 +1319,7 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
 
 GDALDataset *ERSDataset::Create(const char *pszFilename, int nXSize, int nYSize,
                                 int nBandsIn, GDALDataType eType,
-                                char **papszOptions)
+                                CSLConstList papszOptions)
 
 {
     /* -------------------------------------------------------------------- */
@@ -1332,7 +1332,7 @@ GDALDataset *ERSDataset::Create(const char *pszFilename, int nXSize, int nYSize,
         return nullptr;
     }
 
-    if (eType != GDT_Byte && eType != GDT_Int8 && eType != GDT_Int16 &&
+    if (eType != GDT_UInt8 && eType != GDT_Int8 && eType != GDT_Int16 &&
         eType != GDT_UInt16 && eType != GDT_Int32 && eType != GDT_UInt32 &&
         eType != GDT_Float32 && eType != GDT_Float64)
     {
@@ -1366,7 +1366,7 @@ GDALDataset *ERSDataset::Create(const char *pszFilename, int nXSize, int nYSize,
     const char *pszCellType = "Unsigned8BitInteger";
     CPL_IGNORE_RET_VAL(pszCellType);  // Make CSA happy
 
-    if (eType == GDT_Byte)
+    if (eType == GDT_UInt8)
         pszCellType = "Unsigned8BitInteger";
     else if (eType == GDT_Int8)
         pszCellType = "Signed8BitInteger";
@@ -1391,7 +1391,7 @@ GDALDataset *ERSDataset::Create(const char *pszFilename, int nXSize, int nYSize,
     /*      Handling for signed eight bit data.                             */
     /* -------------------------------------------------------------------- */
     const char *pszPixelType = CSLFetchNameValue(papszOptions, "PIXELTYPE");
-    if (pszPixelType && EQUAL(pszPixelType, "SIGNEDBYTE") && eType == GDT_Byte)
+    if (pszPixelType && EQUAL(pszPixelType, "SIGNEDBYTE") && eType == GDT_UInt8)
         pszCellType = "Signed8BitInteger";
 
     /* -------------------------------------------------------------------- */
@@ -1499,7 +1499,7 @@ GDALDataset *ERSDataset::Create(const char *pszFilename, int nXSize, int nYSize,
 }
 
 /************************************************************************/
-/*                         GDALRegister_ERS()                           */
+/*                          GDALRegister_ERS()                          */
 /************************************************************************/
 
 void GDALRegister_ERS()

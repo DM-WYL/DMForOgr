@@ -10,12 +10,16 @@
  ****************************************************************************/
 
 #include "gdal_pam.h"
+#include "gdal_frmts.h"
+#include "gdal_colortable.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 #include <algorithm>
 #include <cassert>
 #include <vector>
-
-extern "C" void CPL_DLL GDALRegister_TGA();
 
 enum ImageType
 {
@@ -42,7 +46,7 @@ struct ImageHeader
 };
 
 /************************************************************************/
-/*                         GDALTGADataset                               */
+/*                            GDALTGADataset                            */
 /************************************************************************/
 
 class GDALTGADataset final : public GDALPamDataset
@@ -83,7 +87,7 @@ class GDALTGADataset final : public GDALPamDataset
 };
 
 /************************************************************************/
-/*                        GDALTGARasterBand                             */
+/*                          GDALTGARasterBand                           */
 /************************************************************************/
 
 class GDALTGARasterBand final : public GDALPamRasterBand
@@ -125,7 +129,7 @@ class GDALTGARasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                            Identify()                                */
+/*                              Identify()                              */
 /************************************************************************/
 
 int GDALTGADataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -273,7 +277,7 @@ GDALTGARasterBand::GDALTGARasterBand(GDALTGADataset *poDSIn, int nBandIn,
 }
 
 /************************************************************************/
-/*                            IReadBlock()                              */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr GDALTGARasterBand::IReadBlock(int /* nBlockXOff */, int nBlockYOff,
@@ -386,7 +390,7 @@ CPLErr GDALTGARasterBand::IReadBlock(int /* nBlockXOff */, int nBlockYOff,
                 if (pImage == nullptr)
                 {
                     VSIFSeekL(poGDS->m_fpImage,
-                              static_cast<size_t>(nPixelsToFill) *
+                              static_cast<vsi_l_offset>(nPixelsToFill) *
                                   nBytesPerPixel,
                               SEEK_CUR);
                 }
@@ -529,7 +533,7 @@ CPLErr GDALTGARasterBand::IReadBlock(int /* nBlockXOff */, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                              Open()                                  */
+/*                                Open()                                */
 /************************************************************************/
 
 GDALDataset *GDALTGADataset::Open(GDALOpenInfo *poOpenInfo)
@@ -589,7 +593,7 @@ GDALDataset *GDALTGADataset::Open(GDALOpenInfo *poOpenInfo)
         VSIFReadL(abyTail, 1, 26, poOpenInfo->fpL);
         if (memcmp(abyTail + 8, "TRUEVISION-XFILE.\x00", 18) == 0)
         {
-            const unsigned nExtensionAreaOffset = CPL_LSBUINT32PTR(abyTail);
+            const vsi_l_offset nExtensionAreaOffset = CPL_LSBUINT32PTR(abyTail);
             if (nExtensionAreaOffset > 0)
             {
                 VSIFSeekL(poOpenInfo->fpL, nExtensionAreaOffset, SEEK_SET);
@@ -696,9 +700,10 @@ GDALDataset *GDALTGADataset::Open(GDALOpenInfo *poOpenInfo)
             delete poDS;
             return nullptr;
         }
-        poDS->SetBand(
-            1, new GDALTGARasterBand(
-                   poDS, 1, sHeader.nPixelDepth == 16 ? GDT_UInt16 : GDT_Byte));
+        poDS->SetBand(1, new GDALTGARasterBand(poDS, 1,
+                                               sHeader.nPixelDepth == 16
+                                                   ? GDT_UInt16
+                                                   : GDT_UInt8));
     }
     else
     {
@@ -714,7 +719,7 @@ GDALDataset *GDALTGADataset::Open(GDALOpenInfo *poOpenInfo)
             sHeader.nPixelDepth == 16 ? 3 : (3 + (hasFourthChannel ? 1 : 0));
         for (int iBand = 1; iBand <= l_nBands; iBand++)
         {
-            poDS->SetBand(iBand, new GDALTGARasterBand(poDS, iBand, GDT_Byte));
+            poDS->SetBand(iBand, new GDALTGARasterBand(poDS, iBand, GDT_UInt8));
         }
     }
 
@@ -735,7 +740,7 @@ GDALDataset *GDALTGADataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                       GDALRegister_TGA()                             */
+/*                          GDALRegister_TGA()                          */
 /************************************************************************/
 
 void GDALRegister_TGA()

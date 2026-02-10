@@ -112,8 +112,12 @@ set(CPL_SOURCES
     cpl_float.cpp)
 add_library(cpl OBJECT ${CPL_SOURCES})
 target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:cpl>)
-target_compile_options(cpl PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX})
+target_compile_options(cpl PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX} ${WFLAG_DOUBLE_PROMOTION})
 set_property(TARGET cpl PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
+
+if (HAVE_WFLAG_CAST_FUNCTION_TYPE)
+  target_compile_definitions(cpl PRIVATE -DHAVE_WFLAG_CAST_FUNCTION_TYPE)
+endif()
 
 set_property(SOURCE cpl_path.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 
@@ -140,6 +144,8 @@ if (WIN32)
   target_sources(cpl PRIVATE cpl_vsil_win32.cpp)
 else ()
   target_sources(cpl PRIVATE cpl_vsil_unix_stdio_64.cpp)
+  # to make sure that the _FILE_OFFSET_BITS=64 define is set before inclusion of system headers
+  set_property(SOURCE cpl_vsil_unix_stdio_64.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
   if ("${CMAKE_SYSTEM}" MATCHES "Linux")
       check_include_file("linux/fs.h" HAVE_LINUX_FS_H)
       if (NOT HAVE_LINUX_FS_H)

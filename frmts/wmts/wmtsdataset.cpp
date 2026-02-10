@@ -27,8 +27,6 @@
 #include <vector>
 #include <limits>
 
-extern "C" void GDALRegister_WMTS();
-
 // g++ -g -Wall -fPIC frmts/wmts/wmtsdataset.cpp -shared -o gdal_WMTS.so -Iport
 // -Igcore -Iogr -Iogr/ogrsf_frmts -L. -lgdal
 
@@ -167,9 +165,9 @@ class WMTSDataset final : public GDALPamDataset
 
   public:
     WMTSDataset();
-    virtual ~WMTSDataset();
+    ~WMTSDataset() override;
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
     virtual const char *GetMetadataItem(const char *pszName,
                                         const char *pszDomain) override;
@@ -177,20 +175,19 @@ class WMTSDataset final : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, CPL_UNUSED int bStrict,
-                                   CPL_UNUSED char **papszOptions,
+                                   CPL_UNUSED CSLConstList papszOptions,
                                    CPL_UNUSED GDALProgressFunc pfnProgress,
                                    CPL_UNUSED void *pProgressData);
 
   protected:
-    virtual int CloseDependentDatasets() override;
+    int CloseDependentDatasets() override;
 
-    virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                             int nXSize, int nYSize, void *pData, int nBufXSize,
-                             int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, BANDMAP_TYPE panBandMap,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GSpacing nBandSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, int nBandCount,
+                     BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
 
 /************************************************************************/
@@ -204,22 +201,21 @@ class WMTSBand final : public GDALPamRasterBand
   public:
     WMTSBand(WMTSDataset *poDS, int nBand, GDALDataType eDataType);
 
-    virtual GDALRasterBand *GetOverview(int nLevel) override;
-    virtual int GetOverviewCount() override;
-    virtual GDALColorInterp GetColorInterpretation() override;
+    GDALRasterBand *GetOverview(int nLevel) override;
+    int GetOverviewCount() override;
+    GDALColorInterp GetColorInterpretation() override;
     virtual const char *GetMetadataItem(const char *pszName,
                                         const char *pszDomain) override;
 
   protected:
-    virtual CPLErr IReadBlock(int nBlockXOff, int nBlockYOff,
-                              void *pImage) override;
-    virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, GSpacing, GSpacing,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage) override;
+    CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
+                     GDALDataType, GSpacing, GSpacing,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
 
 /************************************************************************/
-/*                            WMTSBand()                                */
+/*                              WMTSBand()                              */
 /************************************************************************/
 
 WMTSBand::WMTSBand(WMTSDataset *poDSIn, int nBandIn, GDALDataType eDataTypeIn)
@@ -232,7 +228,7 @@ WMTSBand::WMTSBand(WMTSDataset *poDSIn, int nBandIn, GDALDataType eDataTypeIn)
 }
 
 /************************************************************************/
-/*                            IReadBlock()                              */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr WMTSBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
@@ -271,7 +267,7 @@ CPLErr WMTSBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
 }
 
 /************************************************************************/
-/*                         GetOverviewCount()                           */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int WMTSBand::GetOverviewCount()
@@ -285,7 +281,7 @@ int WMTSBand::GetOverviewCount()
 }
 
 /************************************************************************/
-/*                              GetOverview()                           */
+/*                            GetOverview()                             */
 /************************************************************************/
 
 GDALRasterBand *WMTSBand::GetOverview(int nLevel)
@@ -303,7 +299,7 @@ GDALRasterBand *WMTSBand::GetOverview(int nLevel)
 }
 
 /************************************************************************/
-/*                   GetColorInterpretation()                           */
+/*                       GetColorInterpretation()                       */
 /************************************************************************/
 
 GDALColorInterp WMTSBand::GetColorInterpretation()
@@ -329,7 +325,7 @@ GDALColorInterp WMTSBand::GetColorInterpretation()
 }
 
 /************************************************************************/
-/*                         GetMetadataItem()                            */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *WMTSBand::GetMetadataItem(const char *pszName,
@@ -428,7 +424,7 @@ const char *WMTSBand::GetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                          WMTSDataset()                               */
+/*                            WMTSDataset()                             */
 /************************************************************************/
 
 WMTSDataset::WMTSDataset()
@@ -437,7 +433,7 @@ WMTSDataset::WMTSDataset()
 }
 
 /************************************************************************/
-/*                        ~WMTSDataset()                                */
+/*                            ~WMTSDataset()                            */
 /************************************************************************/
 
 WMTSDataset::~WMTSDataset()
@@ -446,7 +442,7 @@ WMTSDataset::~WMTSDataset()
 }
 
 /************************************************************************/
-/*                      CloseDependentDatasets()                        */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int WMTSDataset::CloseDependentDatasets()
@@ -503,7 +499,7 @@ CPLErr WMTSDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                         GetSpatialRef()                              */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *WMTSDataset::GetSpatialRef() const
@@ -512,7 +508,7 @@ const OGRSpatialReference *WMTSDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                          WMTSEscapeXML()                             */
+/*                           WMTSEscapeXML()                            */
 /************************************************************************/
 
 static CPLString WMTSEscapeXML(const char *pszUnescapedXML)
@@ -525,7 +521,7 @@ static CPLString WMTSEscapeXML(const char *pszUnescapedXML)
 }
 
 /************************************************************************/
-/*                         GetMetadataItem()                            */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *WMTSDataset::GetMetadataItem(const char *pszName,
@@ -827,7 +823,7 @@ int WMTSDataset::ReadTMS(CPLXMLNode *psContents, const CPLString &osIdentifier,
 }
 
 /************************************************************************/
-/*                              ReadTMLimits()                          */
+/*                            ReadTMLimits()                            */
 /************************************************************************/
 
 int WMTSDataset::ReadTMLimits(
@@ -870,7 +866,7 @@ int WMTSDataset::ReadTMLimits(
 }
 
 /************************************************************************/
-/*                               Replace()                              */
+/*                              Replace()                               */
 /************************************************************************/
 
 CPLString WMTSDataset::Replace(const CPLString &osStr, const char *pszOld,
@@ -886,7 +882,7 @@ CPLString WMTSDataset::Replace(const CPLString &osStr, const char *pszOld,
 }
 
 /************************************************************************/
-/*                       GetCapabilitiesResponse()                      */
+/*                      GetCapabilitiesResponse()                       */
 /************************************************************************/
 
 CPLXMLNode *WMTSDataset::GetCapabilitiesResponse(const CPLString &osFilename,
@@ -933,7 +929,7 @@ static void WMTSAddOtherXML(CPLXMLNode *psRoot, const char *pszElement,
 }
 
 /************************************************************************/
-/*                          GetOperationKVPURL()                        */
+/*                         GetOperationKVPURL()                         */
 /************************************************************************/
 
 CPLString WMTSDataset::GetOperationKVPURL(CPLXMLNode *psXML,
@@ -970,7 +966,7 @@ CPLString WMTSDataset::GetOperationKVPURL(CPLXMLNode *psXML,
 }
 
 /************************************************************************/
-/*                           BuildHTTPRequestOpts()                     */
+/*                        BuildHTTPRequestOpts()                        */
 /************************************************************************/
 
 CPLStringList WMTSDataset::BuildHTTPRequestOpts(CPLString osOtherXML)
@@ -1081,7 +1077,7 @@ GDALDataset *WMTSDataset::Open(GDALOpenInfo *poOpenInfo)
     int bHasAOI = FALSE;
     OGREnvelope sAOI;
     int nBands = 4;
-    GDALDataType eDataType = GDT_Byte;
+    GDALDataType eDataType = GDT_UInt8;
     CPLString osProjection;
     CPLString osExtraQueryParameters;
 
@@ -2494,7 +2490,7 @@ GDALDataset *WMTSDataset::Open(GDALOpenInfo *poOpenInfo)
 GDALDataset *WMTSDataset::CreateCopy(const char *pszFilename,
                                      GDALDataset *poSrcDS,
                                      CPL_UNUSED int bStrict,
-                                     CPL_UNUSED char **papszOptions,
+                                     CPL_UNUSED CSLConstList papszOptions,
                                      CPL_UNUSED GDALProgressFunc pfnProgress,
                                      CPL_UNUSED void *pProgressData)
 {
@@ -2526,7 +2522,7 @@ GDALDataset *WMTSDataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                       GDALRegister_WMTS()                            */
+/*                         GDALRegister_WMTS()                          */
 /************************************************************************/
 
 void GDALRegister_WMTS()

@@ -37,8 +37,8 @@ string(REPLACE "PyObject *resultobj = 0;"
                "PyObject *resultobj = 0; int bLocalUseExceptionsCode = GetUseExceptions();"
        _CONTENTS "${_CONTENTS}")
 
-string(REPLACE "#define SWIGPYTHON"
-               "#define SWIGPYTHON\n\#define SED_HACKS"
+string(REPLACE "#define SWIGPYTHON\n"
+               "#define SWIGPYTHON\n\#define SED_HACKS\n"
        _CONTENTS "${_CONTENTS}")
 
 # patch to avoid memory leaks on exception (see 594fe48)
@@ -69,4 +69,13 @@ string(REPLACE "# define SWIG_HEAPTYPES" "// Below is disabled because of https:
 string(REPLACE "#define SWIG_HEAPTYPES" "// Below is disabled because of https://github.com/swig/swig/issues/3061\n// # define SWIG_HEAPTYPES"
        _CONTENTS "${_CONTENTS}")
 
-file(WRITE ${FILE} "${_CONTENTS}")
+set(_TMP "${FILE}.tmp")
+
+# Write to a temporary file first (avoids "Permission denied" on Windows)
+file(WRITE ${_TMP} "${_CONTENTS}")
+
+# Remove the original file before rename
+file(REMOVE ${FILE})
+
+# Rename temp file back to the original name
+file(RENAME ${_TMP} ${FILE})

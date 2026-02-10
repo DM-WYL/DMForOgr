@@ -9,8 +9,10 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
 #include "gdal_pam.h"
 #include "cpl_minixml.h"
+#include "cpl_multiproc.h"
 #include "cpl_vsi_virtual.h"
 
 #include "avifdrivercore.h"
@@ -31,7 +33,7 @@ constexpr const char *DEFAULT_QUALITY_ALPHA_STR = "100";
 constexpr const char *DEFAULT_SPEED_STR = "6";
 
 /************************************************************************/
-/*                         GDALAVIFDataset                              */
+/*                           GDALAVIFDataset                            */
 /************************************************************************/
 
 class GDALAVIFDataset final : public GDALPamDataset
@@ -66,7 +68,9 @@ class GDALAVIFDataset final : public GDALPamDataset
         memset(&m_rgb, 0, sizeof(m_rgb));
     }
 
-    ~GDALAVIFDataset();
+    ~GDALAVIFDataset() override;
+
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
     static GDALPamDataset *OpenStaticPAM(GDALOpenInfo *poOpenInfo);
 
@@ -76,13 +80,13 @@ class GDALAVIFDataset final : public GDALPamDataset
     }
 
     static GDALDataset *CreateCopy(const char *, GDALDataset *, int,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 
 #ifdef AVIF_HAS_OPAQUE_PROPERTIES
     const OGRSpatialReference *GetSpatialRef() const override;
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     int GetGCPCount() override;
     const GDAL_GCP *GetGCPs() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
@@ -90,7 +94,7 @@ class GDALAVIFDataset final : public GDALPamDataset
 };
 
 /************************************************************************/
-/*                       GDALAVIFRasterBand                             */
+/*                          GDALAVIFRasterBand                          */
 /************************************************************************/
 
 class GDALAVIFRasterBand final : public MEMRasterBand
@@ -123,7 +127,7 @@ class GDALAVIFRasterBand final : public MEMRasterBand
 };
 
 /************************************************************************/
-/*                           GDALAVIFIO                                 */
+/*                              GDALAVIFIO                              */
 /************************************************************************/
 
 class GDALAVIFIO
@@ -146,20 +150,38 @@ class GDALAVIFIO
 };
 
 /************************************************************************/
-/*                         ~GDALAVIFDataset()                           */
+/*                          ~GDALAVIFDataset()                          */
 /************************************************************************/
 
 GDALAVIFDataset::~GDALAVIFDataset()
 {
-    if (m_decoder)
-    {
-        avifDecoderDestroy(m_decoder);
-        avifRGBImageFreePixels(&m_rgb);
-    }
+    GDALAVIFDataset::Close();
 }
 
 /************************************************************************/
-/*                        GDALAVIFDataset::Decode()                     */
+/*                               Close()                                */
+/************************************************************************/
+
+CPLErr GDALAVIFDataset::Close(GDALProgressFunc, void *)
+{
+    CPLErr eErr = CE_None;
+
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        if (m_decoder)
+        {
+            avifDecoderDestroy(m_decoder);
+            avifRGBImageFreePixels(&m_rgb);
+        }
+        m_decoder = nullptr;
+
+        eErr = GDALPamDataset::Close();
+    }
+    return eErr;
+}
+
+/************************************************************************/
+/*                      GDALAVIFDataset::Decode()                       */
 /************************************************************************/
 
 bool GDALAVIFDataset::Decode()
@@ -242,7 +264,7 @@ GDALAVIFRasterBand::GDALAVIFRasterBand(GDALAVIFDataset *poDSIn, int nBandIn,
 }
 
 /************************************************************************/
-/*                               SetData()                              */
+/*                              SetData()                               */
 /************************************************************************/
 
 void GDALAVIFRasterBand::SetData(GByte *pabyDataIn, int nPixelOffsetIn,
@@ -254,7 +276,7 @@ void GDALAVIFRasterBand::SetData(GByte *pabyDataIn, int nPixelOffsetIn,
 }
 
 /************************************************************************/
-/*                            IReadBlock()                              */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr GDALAVIFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -304,7 +326,7 @@ GDALAVIFIO::GDALAVIFIO(VSIVirtualHandleUniquePtr fpIn) : fp(std::move(fpIn))
 }
 
 /************************************************************************/
-/*                       GDALAVIFIO::Destroy()                          */
+/*                        GDALAVIFIO::Destroy()                         */
 /************************************************************************/
 
 /* static */ void GDALAVIFIO::Destroy(struct avifIO *io)
@@ -314,7 +336,7 @@ GDALAVIFIO::GDALAVIFIO(VSIVirtualHandleUniquePtr fpIn) : fp(std::move(fpIn))
 }
 
 /************************************************************************/
-/*                       GDALAVIFIO::Read()                             */
+/*                          GDALAVIFIO::Read()                          */
 /************************************************************************/
 
 /* static */ avifResult GDALAVIFIO::Read(struct avifIO *io, uint32_t readFlags,
@@ -365,7 +387,7 @@ GDALAVIFIO::GDALAVIFIO(VSIVirtualHandleUniquePtr fpIn) : fp(std::move(fpIn))
 
 #ifdef AVIF_HAS_OPAQUE_PROPERTIES
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 const OGRSpatialReference *GDALAVIFDataset::GetSpatialRef() const
 {
@@ -458,7 +480,7 @@ const OGRSpatialReference *GDALAVIFDataset::GetGCPSpatialRef() const
 #endif
 
 /************************************************************************/
-/*                              Init()                                  */
+/*                                Init()                                */
 /************************************************************************/
 
 bool GDALAVIFDataset::Init(GDALOpenInfo *poOpenInfo)
@@ -510,7 +532,7 @@ bool GDALAVIFDataset::Init(GDALOpenInfo *poOpenInfo)
     }
 
     const auto eDataType =
-        (m_decoder->image->depth <= 8) ? GDT_Byte : GDT_UInt16;
+        (m_decoder->image->depth <= 8) ? GDT_UInt8 : GDT_UInt16;
     const int l_nBands = m_decoder->image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400
                              ? (m_decoder->alphaPresent ? 2 : 1)
                          : m_decoder->alphaPresent ? 4
@@ -570,16 +592,16 @@ bool GDALAVIFDataset::Init(GDALOpenInfo *poOpenInfo)
         VSILFILE *fpEXIF =
             VSIFileFromMemBuffer(nullptr, m_decoder->image->exif.data,
                                  m_decoder->image->exif.size, false);
-        int nExifOffset = 0;
-        int nInterOffset = 0;
-        int nGPSOffset = 0;
+        uint32_t nExifOffset = 0;
+        uint32_t nInterOffset = 0;
+        uint32_t nGPSOffset = 0;
         char **papszEXIFMetadata = nullptr;
 #ifdef CPL_LSB
         const bool bSwab = m_decoder->image->exif.data[0] == 0x4d;
 #else
         const bool bSwab = m_decoder->image->exif.data[0] == 0x49;
 #endif
-        constexpr int nTIFFHEADER = 0;
+        constexpr uint32_t nTIFFHEADER = 0;
         uint32_t nTiffDirStart;
         memcpy(&nTiffDirStart, m_decoder->image->exif.data + 4,
                sizeof(uint32_t));
@@ -649,7 +671,7 @@ bool GDALAVIFDataset::Init(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          OpenStaticPAM()                             */
+/*                           OpenStaticPAM()                            */
 /************************************************************************/
 
 /* static */
@@ -677,11 +699,10 @@ GDALPamDataset *GDALAVIFDataset::OpenStaticPAM(GDALOpenInfo *poOpenInfo)
 /************************************************************************/
 
 /* static */
-GDALDataset *GDALAVIFDataset::CreateCopy(const char *pszFilename,
-                                         GDALDataset *poSrcDS,
-                                         int /* bStrict */, char **papszOptions,
-                                         GDALProgressFunc pfnProgress,
-                                         void *pProgressData)
+GDALDataset *
+GDALAVIFDataset::CreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
+                            int /* bStrict */, CSLConstList papszOptions,
+                            GDALProgressFunc pfnProgress, void *pProgressData)
 {
     auto poDrv = GetGDALDriverManager()->GetDriverByName(DRIVER_NAME);
     if (poDrv && poDrv->GetMetadataItem(GDAL_DMD_CREATIONOPTIONLIST) == nullptr)
@@ -721,7 +742,7 @@ GDALDataset *GDALAVIFDataset::CreateCopy(const char *pszFilename,
     }
 
     const auto eDT = poFirstBand->GetRasterDataType();
-    if (eDT != GDT_Byte && eDT != GDT_UInt16)
+    if (eDT != GDT_UInt8 && eDT != GDT_UInt16)
     {
         CPLError(
             CE_Failure, CPLE_NotSupported,
@@ -729,7 +750,7 @@ GDALDataset *GDALAVIFDataset::CreateCopy(const char *pszFilename,
         return nullptr;
     }
 
-    int nBits = eDT == GDT_Byte ? 8 : 12;
+    int nBits = eDT == GDT_UInt8 ? 8 : 12;
     const char *pszNBITS = CSLFetchNameValue(papszOptions, "NBITS");
     if (pszNBITS)
     {
@@ -743,7 +764,7 @@ GDALDataset *GDALAVIFDataset::CreateCopy(const char *pszFilename,
             nBits = atoi(pszNBITS);
         }
     }
-    if ((eDT == GDT_Byte && nBits != 8) ||
+    if ((eDT == GDT_UInt8 && nBits != 8) ||
         (eDT == GDT_UInt16 && nBits != 10 && nBits != 12))
     {
         CPLError(CE_Failure, CPLE_FileIO,
@@ -936,7 +957,7 @@ GDALDataset *GDALAVIFDataset::CreateCopy(const char *pszFilename,
     if (CPLTestBool(
             CSLFetchNameValueDef(papszOptions, "WRITE_EXIF_METADATA", "YES")))
     {
-        char **papszEXIFMD = poSrcDS->GetMetadata("EXIF");
+        CSLConstList papszEXIFMD = poSrcDS->GetMetadata("EXIF");
         if (papszEXIFMD)
         {
             GUInt32 nDataSize = 0;
@@ -1060,12 +1081,12 @@ GDALDataset *GDALAVIFDataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                         GDALAVIFDriver                               */
+/*                            GDALAVIFDriver                            */
 /************************************************************************/
 
 class GDALAVIFDriver final : public GDALDriver
 {
-    std::mutex m_oMutex{};
+    std::recursive_mutex m_oMutex{};
     bool m_bMetadataInitialized = false;
     void InitMetadata();
 
@@ -1073,7 +1094,7 @@ class GDALAVIFDriver final : public GDALDriver
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain = "") override;
 
-    char **GetMetadata(const char *pszDomain) override
+    CSLConstList GetMetadata(const char *pszDomain) override
     {
         std::lock_guard oLock(m_oMutex);
         InitMetadata();
@@ -1236,7 +1257,7 @@ void GDALAVIFDriver::InitMetadata()
 }
 
 /************************************************************************/
-/*                       GDALRegister_AVIF()                            */
+/*                         GDALRegister_AVIF()                          */
 /************************************************************************/
 
 void GDALRegister_AVIF()

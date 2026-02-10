@@ -108,17 +108,17 @@ class HDF5ImageDataset final : public HDF5Dataset
 
   public:
     HDF5ImageDataset();
-    virtual ~HDF5ImageDataset();
+    ~HDF5ImageDataset() override;
 
     CPLErr CreateProjections();
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
 
     const OGRSpatialReference *GetSpatialRef() const override;
-    virtual int GetGCPCount() override;
+    int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
-    virtual const GDAL_GCP *GetGCPs() override;
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    const GDAL_GCP *GetGCPs() override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                      int nYSize, void *pData, int nBufXSize, int nBufYSize,
@@ -195,7 +195,7 @@ class HDF5ImageDataset final : public HDF5Dataset
 /************************************************************************/
 
 /************************************************************************/
-/*                           HDF5ImageDataset()                         */
+/*                          HDF5ImageDataset()                          */
 /************************************************************************/
 HDF5ImageDataset::HDF5ImageDataset()
     : dims(nullptr), maxdims(nullptr), poH5Objects(nullptr), ndims(0),
@@ -208,7 +208,7 @@ HDF5ImageDataset::HDF5ImageDataset()
 }
 
 /************************************************************************/
-/*                            ~HDF5ImageDataset()                       */
+/*                         ~HDF5ImageDataset()                          */
 /************************************************************************/
 HDF5ImageDataset::~HDF5ImageDataset()
 {
@@ -246,12 +246,12 @@ class HDF5ImageRasterBand final : public GDALPamRasterBand
 
   public:
     HDF5ImageRasterBand(HDF5ImageDataset *, int, GDALDataType);
-    virtual ~HDF5ImageRasterBand();
+    ~HDF5ImageRasterBand() override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual double GetNoDataValue(int *) override;
-    virtual double GetOffset(int *) override;
-    virtual double GetScale(int *) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    double GetNoDataValue(int *) override;
+    double GetOffset(int *) override;
+    double GetScale(int *) override;
     // virtual CPLErr IWriteBlock( int, int, void * );
 
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
@@ -270,7 +270,7 @@ HDF5ImageRasterBand::~HDF5ImageRasterBand()
 }
 
 /************************************************************************/
-/*                           HDF5ImageRasterBand()                      */
+/*                        HDF5ImageRasterBand()                         */
 /************************************************************************/
 HDF5ImageRasterBand::HDF5ImageRasterBand(HDF5ImageDataset *poDSIn, int nBandIn,
                                          GDALDataType eType)
@@ -334,7 +334,7 @@ double HDF5ImageRasterBand::GetOffset(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                             GetScale()                               */
+/*                              GetScale()                              */
 /************************************************************************/
 
 double HDF5ImageRasterBand::GetScale(int *pbSuccess)
@@ -1114,7 +1114,7 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
         {
             CPLDebug("HDF5", "Successfully parsed HDFEOS metadata");
             HDF5EOSParser::GridDataFieldMetadata oGridDataFieldMetadata;
-            HDF5EOSParser::SwathDataFieldMetadata oSwathDataFieldMetadata;
+            HDF5EOSParser::SwathFieldMetadata oSwathFieldMetadata;
             if (oHDFEOSParser.GetDataModel() ==
                     HDF5EOSParser::DataModel::GRID &&
                 oHDFEOSParser.GetGridDataFieldMetadata(
@@ -1123,7 +1123,6 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
                     poDS->ndims)
             {
                 int iDim = 0;
-                std::shared_ptr<GDALMDArray> poXDim, poYDim;
                 for (const auto &oDim : oGridDataFieldMetadata.aoDimensions)
                 {
                     if (oDim.osName == "XDim")
@@ -1145,47 +1144,45 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
             }
             else if (oHDFEOSParser.GetDataModel() ==
                          HDF5EOSParser::DataModel::SWATH &&
-                     oHDFEOSParser.GetSwathDataFieldMetadata(
-                         osSubdatasetName.c_str(), oSwathDataFieldMetadata) &&
+                     oHDFEOSParser.GetSwathFieldMetadata(
+                         osSubdatasetName.c_str(), oSwathFieldMetadata) &&
                      static_cast<int>(
-                         oSwathDataFieldMetadata.aoDimensions.size()) ==
+                         oSwathFieldMetadata.aoDimensions.size()) ==
                          poDS->ndims &&
-                     oSwathDataFieldMetadata.iXDim >= 0 &&
-                     oSwathDataFieldMetadata.iYDim >= 0)
+                     oSwathFieldMetadata.iXDim >= 0 &&
+                     oSwathFieldMetadata.iYDim >= 0)
             {
-                poDS->m_nXIndex = oSwathDataFieldMetadata.iXDim;
-                poDS->m_nYIndex = oSwathDataFieldMetadata.iYDim;
-                poDS->m_nOtherDimIndex = oSwathDataFieldMetadata.iOtherDim;
-                if (!oSwathDataFieldMetadata.osLongitudeSubdataset.empty())
+                poDS->m_nXIndex = oSwathFieldMetadata.iXDim;
+                poDS->m_nYIndex = oSwathFieldMetadata.iYDim;
+                poDS->m_nOtherDimIndex = oSwathFieldMetadata.iOtherDim;
+                if (!oSwathFieldMetadata.osLongitudeSubdataset.empty())
                 {
                     CPLStringList aosGeolocation;
 
                     // Arbitrary
                     aosGeolocation.AddNameValue("SRS", SRS_WKT_WGS84_LAT_LONG);
                     aosGeolocation.AddNameValue(
-                        "X_DATASET",
-                        ("HDF5:\"" + osFilename +
-                         "\":" + oSwathDataFieldMetadata.osLongitudeSubdataset)
-                            .c_str());
+                        "X_DATASET", ("HDF5:\"" + osFilename + "\":" +
+                                      oSwathFieldMetadata.osLongitudeSubdataset)
+                                         .c_str());
                     aosGeolocation.AddNameValue("X_BAND", "1");
                     aosGeolocation.AddNameValue(
-                        "Y_DATASET",
-                        ("HDF5:\"" + osFilename +
-                         "\":" + oSwathDataFieldMetadata.osLatitudeSubdataset)
-                            .c_str());
+                        "Y_DATASET", ("HDF5:\"" + osFilename + "\":" +
+                                      oSwathFieldMetadata.osLatitudeSubdataset)
+                                         .c_str());
                     aosGeolocation.AddNameValue("Y_BAND", "1");
                     aosGeolocation.AddNameValue(
                         "PIXEL_OFFSET",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelOffset));
+                        CPLSPrintf("%d", oSwathFieldMetadata.nPixelOffset));
                     aosGeolocation.AddNameValue(
                         "PIXEL_STEP",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelStep));
+                        CPLSPrintf("%d", oSwathFieldMetadata.nPixelStep));
                     aosGeolocation.AddNameValue(
                         "LINE_OFFSET",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineOffset));
+                        CPLSPrintf("%d", oSwathFieldMetadata.nLineOffset));
                     aosGeolocation.AddNameValue(
                         "LINE_STEP",
-                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineStep));
+                        CPLSPrintf("%d", oSwathFieldMetadata.nLineStep));
                     // Not totally sure about that
                     aosGeolocation.AddNameValue("GEOREFERENCING_CONVENTION",
                                                 "PIXEL_CENTER");
@@ -1288,6 +1285,10 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
                 poDS->m_nBandChunkSize =
                     static_cast<int>(panChunkDims[poDS->m_nOtherDimIndex]);
 
+                if (poDS->m_nBandChunkSize > 1)
+                    poDS->SetMetadataItem("INTERLEAVE", "PIXEL",
+                                          "IMAGE_STRUCTURE");
+
                 poDS->SetMetadataItem("BAND_CHUNK_SIZE",
                                       CPLSPrintf("%d", poDS->m_nBandChunkSize),
                                       "IMAGE_STRUCTURE");
@@ -1387,7 +1388,7 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                   HDF5ImageDatasetDriverUnload()                     */
+/*                    HDF5ImageDatasetDriverUnload()                    */
 /************************************************************************/
 
 static void HDF5ImageDatasetDriverUnload(GDALDriver *)
@@ -1396,7 +1397,7 @@ static void HDF5ImageDatasetDriverUnload(GDALDriver *)
 }
 
 /************************************************************************/
-/*                        GDALRegister_HDF5Image()                      */
+/*                       GDALRegister_HDF5Image()                       */
 /************************************************************************/
 void GDALRegister_HDF5Image()
 
@@ -1691,7 +1692,7 @@ CPLErr HDF5ImageDataset::CreateProjections()
 }
 
 /************************************************************************/
-/*                         GetMetadataItem()                            */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *HDF5ImageDataset::GetMetadataItem(const char *pszName,
@@ -1714,7 +1715,7 @@ const char *HDF5ImageDataset::GetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                         GetSpatialRef()                              */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *HDF5ImageDataset::GetSpatialRef() const
@@ -1738,7 +1739,7 @@ int HDF5ImageDataset::GetGCPCount()
 }
 
 /************************************************************************/
-/*                        GetGCPSpatialRef()                            */
+/*                          GetGCPSpatialRef()                          */
 /************************************************************************/
 
 const OGRSpatialReference *HDF5ImageDataset::GetGCPSpatialRef() const
@@ -1751,7 +1752,7 @@ const OGRSpatialReference *HDF5ImageDataset::GetGCPSpatialRef() const
 }
 
 /************************************************************************/
-/*                               GetGCPs()                              */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *HDF5ImageDataset::GetGCPs()
@@ -1763,7 +1764,7 @@ const GDAL_GCP *HDF5ImageDataset::GetGCPs()
 }
 
 /************************************************************************/
-/*                         GetGeoTransform()                            */
+/*                          GetGeoTransform()                           */
 /************************************************************************/
 
 CPLErr HDF5ImageDataset::GetGeoTransform(GDALGeoTransform &gt) const
@@ -1778,7 +1779,7 @@ CPLErr HDF5ImageDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                       IdentifyProductType()                          */
+/*                        IdentifyProductType()                         */
 /************************************************************************/
 
 /**
@@ -1979,7 +1980,7 @@ void HDF5ImageDataset::CaptureCSKGeoTransform(int iProductType)
 }
 
 /************************************************************************/
-/*                          CaptureCSKGCPs()                            */
+/*                           CaptureCSKGCPs()                           */
 /************************************************************************/
 
 /**

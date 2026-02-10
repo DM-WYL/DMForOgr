@@ -98,23 +98,22 @@ class PLMosaicDataset final : public GDALPamDataset
 
   public:
     PLMosaicDataset();
-    virtual ~PLMosaicDataset();
+    ~PLMosaicDataset() override;
 
     static int Identify(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Open(GDALOpenInfo *);
 
-    virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                             int nXSize, int nYSize, void *pData, int nBufXSize,
-                             int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, BANDMAP_TYPE panBandMap,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GSpacing nBandSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, int nBandCount,
+                     BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 
-    virtual CPLErr FlushCache(bool bAtClosing) override;
+    CPLErr FlushCache(bool bAtClosing) override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     GDALDataset *GetMetaTile(int tile_x, int tile_y);
 };
@@ -133,24 +132,24 @@ class PLMosaicRasterBand final : public GDALRasterBand
     PLMosaicRasterBand(PLMosaicDataset *poDS, int nBand,
                        GDALDataType eDataType);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                             int nXSize, int nYSize, void *pData, int nBufXSize,
-                             int nBufYSize, GDALDataType eBufType,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, GSpacing nPixelSpace,
+                     GSpacing nLineSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 
     virtual const char *GetMetadataItem(const char *pszName,
                                         const char *pszDomain = "") override;
 
-    virtual GDALColorInterp GetColorInterpretation() override;
+    GDALColorInterp GetColorInterpretation() override;
 
-    virtual int GetOverviewCount() override;
-    virtual GDALRasterBand *GetOverview(int iOvrLevel) override;
+    int GetOverviewCount() override;
+    GDALRasterBand *GetOverview(int iOvrLevel) override;
 };
 
 /************************************************************************/
-/*                        PLMosaicRasterBand()                          */
+/*                         PLMosaicRasterBand()                         */
 /************************************************************************/
 
 PLMosaicRasterBand::PLMosaicRasterBand(PLMosaicDataset *poDSIn, int nBandIn,
@@ -237,7 +236,7 @@ CPLErr PLMosaicRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                         GetMetadataItem()                            */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *PLMosaicRasterBand::GetMetadataItem(const char *pszName,
@@ -256,7 +255,7 @@ const char *PLMosaicRasterBand::GetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                         GetOverviewCount()                           */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int PLMosaicRasterBand::GetOverviewCount()
@@ -310,7 +309,7 @@ GDALColorInterp PLMosaicRasterBand::GetColorInterpretation()
 /************************************************************************/
 
 /************************************************************************/
-/*                        PLMosaicDataset()                            */
+/*                          PLMosaicDataset()                           */
 /************************************************************************/
 
 PLMosaicDataset::PLMosaicDataset()
@@ -326,7 +325,7 @@ PLMosaicDataset::PLMosaicDataset()
 }
 
 /************************************************************************/
-/*                         ~PLMosaicDataset()                           */
+/*                          ~PLMosaicDataset()                          */
 /************************************************************************/
 
 PLMosaicDataset::~PLMosaicDataset()
@@ -347,7 +346,7 @@ PLMosaicDataset::~PLMosaicDataset()
 }
 
 /************************************************************************/
-/*                      FlushDatasetsCache()                            */
+/*                         FlushDatasetsCache()                         */
 /************************************************************************/
 
 void PLMosaicDataset::FlushDatasetsCache()
@@ -366,7 +365,7 @@ void PLMosaicDataset::FlushDatasetsCache()
 }
 
 /************************************************************************/
-/*                            FlushCache()                              */
+/*                             FlushCache()                             */
 /************************************************************************/
 
 CPLErr PLMosaicDataset::FlushCache(bool bAtClosing)
@@ -384,7 +383,7 @@ CPLErr PLMosaicDataset::FlushCache(bool bAtClosing)
 }
 
 /************************************************************************/
-/*                            Identify()                                */
+/*                              Identify()                              */
 /************************************************************************/
 
 int PLMosaicDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -394,7 +393,7 @@ int PLMosaicDataset::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          GetBaseHTTPOptions()                         */
+/*                         GetBaseHTTPOptions()                         */
 /************************************************************************/
 
 char **PLMosaicDataset::GetBaseHTTPOptions()
@@ -422,7 +421,7 @@ char **PLMosaicDataset::GetBaseHTTPOptions()
 }
 
 /************************************************************************/
-/*                               Download()                             */
+/*                              Download()                              */
 /************************************************************************/
 
 CPLHTTPResult *PLMosaicDataset::Download(const char *pszURL, int bQuiet404Error)
@@ -492,7 +491,7 @@ CPLHTTPResult *PLMosaicDataset::Download(const char *pszURL, int bQuiet404Error)
 }
 
 /************************************************************************/
-/*                               RunRequest()                           */
+/*                             RunRequest()                             */
 /************************************************************************/
 
 json_object *PLMosaicDataset::RunRequest(const char *pszURL, int bQuiet404Error)
@@ -525,11 +524,12 @@ json_object *PLMosaicDataset::RunRequest(const char *pszURL, int bQuiet404Error)
 }
 
 /************************************************************************/
-/*                           PLMosaicGetParameter()                     */
+/*                        PLMosaicGetParameter()                        */
 /************************************************************************/
 
 static CPLString PLMosaicGetParameter(GDALOpenInfo *poOpenInfo,
-                                      char **papszOptions, const char *pszName,
+                                      CSLConstList papszOptions,
+                                      const char *pszName,
                                       const char *pszDefaultVal)
 {
     return CSLFetchNameValueDef(
@@ -658,7 +658,7 @@ GDALDataset *PLMosaicDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                           ReplaceSubString()                         */
+/*                          ReplaceSubString()                          */
 /************************************************************************/
 
 static void ReplaceSubString(CPLString &osTarget, CPLString osPattern,
@@ -674,7 +674,7 @@ static void ReplaceSubString(CPLString &osTarget, CPLString osPattern,
 }
 
 /************************************************************************/
-/*                            GetMosaicCachePath()                      */
+/*                         GetMosaicCachePath()                         */
 /************************************************************************/
 
 CPLString PLMosaicDataset::GetMosaicCachePath()
@@ -689,7 +689,7 @@ CPLString PLMosaicDataset::GetMosaicCachePath()
 }
 
 /************************************************************************/
-/*                     CreateMosaicCachePathIfNecessary()               */
+/*                  CreateMosaicCachePathIfNecessary()                  */
 /************************************************************************/
 
 void PLMosaicDataset::CreateMosaicCachePathIfNecessary()
@@ -726,7 +726,7 @@ static void LongLatToSphericalMercator(double *x, double *y)
 }
 
 /************************************************************************/
-/*                               OpenMosaic()                           */
+/*                             OpenMosaic()                             */
 /************************************************************************/
 
 int PLMosaicDataset::OpenMosaic()
@@ -811,7 +811,7 @@ int PLMosaicDataset::OpenMosaic()
     GDALDataType eDT = GDT_Unknown;
     const char *pszDataType = json_object_get_string(poDataType);
     if (EQUAL(pszDataType, "byte"))
-        eDT = GDT_Byte;
+        eDT = GDT_UInt8;
     else if (EQUAL(pszDataType, "uint16"))
         eDT = GDT_UInt16;
     else if (EQUAL(pszDataType, "int16"))
@@ -824,10 +824,10 @@ int PLMosaicDataset::OpenMosaic()
         return FALSE;
     }
 
-    if (eDT == GDT_Byte && !bQuadDownload)
+    if (eDT == GDT_UInt8 && !bQuadDownload)
         bUseTMSForMain = true;
 
-    if (bUseTMSForMain && eDT != GDT_Byte)
+    if (bUseTMSForMain && eDT != GDT_UInt8)
     {
         CPLError(
             CE_Failure, CPLE_NotSupported,
@@ -908,7 +908,7 @@ int PLMosaicDataset::OpenMosaic()
     osQuadsURL += osId + "/quads/";
 
     // Use WMS/TMS driver for overviews (only for byte)
-    if (eDT == GDT_Byte && EQUAL(pszSRS, "EPSG:3857") &&
+    if (eDT == GDT_UInt8 && EQUAL(pszSRS, "EPSG:3857") &&
         poLinksTiles != nullptr &&
         json_object_get_type(poLinksTiles) == json_type_string)
     {
@@ -979,7 +979,7 @@ int PLMosaicDataset::OpenMosaic()
                     VRTDatasetH hVRTDS = VRTCreate(nOvrXSize, nOvrYSize);
                     for (int iBand = 1; iBand <= 4; iBand++)
                     {
-                        VRTAddBand(hVRTDS, GDT_Byte, nullptr);
+                        VRTAddBand(hVRTDS, GDT_UInt8, nullptr);
                     }
 
                     int nSrcXOff, nSrcYOff, nDstXOff, nDstYOff;
@@ -1146,7 +1146,7 @@ std::vector<CPLString> PLMosaicDataset::ListSubdatasets()
 }
 
 /************************************************************************/
-/*                            GetSpatialRef()                           */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *PLMosaicDataset::GetSpatialRef() const
@@ -1156,7 +1156,7 @@ const OGRSpatialReference *PLMosaicDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                            GetGeoTransform()                         */
+/*                          GetGeoTransform()                           */
 /************************************************************************/
 
 CPLErr PLMosaicDataset::GetGeoTransform(GDALGeoTransform &gt) const
@@ -1166,7 +1166,7 @@ CPLErr PLMosaicDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          formatTileName()                            */
+/*                           formatTileName()                           */
 /************************************************************************/
 
 CPLString PLMosaicDataset::formatTileName(int tile_x, int tile_y)
@@ -1208,7 +1208,7 @@ void PLMosaicDataset::InsertNewDataset(const CPLString &osKey,
 }
 
 /************************************************************************/
-/*                         OpenAndInsertNewDataset()                    */
+/*                      OpenAndInsertNewDataset()                       */
 /************************************************************************/
 
 GDALDataset *
@@ -1373,7 +1373,7 @@ GDALDataset *PLMosaicDataset::GetMetaTile(int tile_x, int tile_y)
 }
 
 /************************************************************************/
-/*                         GetLocationInfo()                            */
+/*                          GetLocationInfo()                           */
 /************************************************************************/
 
 const char *PLMosaicDataset::GetLocationInfo(int nPixel, int nLine)
@@ -1474,7 +1474,7 @@ CPLErr PLMosaicDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                      GDALRegister_PLMOSAIC()                         */
+/*                       GDALRegister_PLMOSAIC()                        */
 /************************************************************************/
 
 void GDALRegister_PLMOSAIC()

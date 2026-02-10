@@ -27,7 +27,7 @@
 #include "ogr_spatialref.h"
 
 /************************************************************************/
-/*                         GetEmptyNonEmptyFlag()                       */
+/*                        GetEmptyNonEmptyFlag()                        */
 /************************************************************************/
 
 static int GetEmptyNonEmptyFlag(double x, double y)
@@ -121,31 +121,21 @@ OGRPoint *OGRPoint::createXYM(double x, double y, double m)
 }
 
 /************************************************************************/
-/*                       OGRPoint( const OGRPoint& )                    */
+/*                     OGRPoint( const OGRPoint& )                      */
 /************************************************************************/
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRPoint::OGRPoint(const OGRPoint &) = default;
 
 /************************************************************************/
-/*                       operator=( const OGRPoint& )                   */
+/*                     operator=( const OGRPoint& )                     */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRPoint &OGRPoint::operator=(const OGRPoint &other)
@@ -745,7 +735,7 @@ OGRBoolean OGRPoint::Within(const OGRGeometry *poOtherGeom) const
 }
 
 /************************************************************************/
-/*                              Intersects()                            */
+/*                             Intersects()                             */
 /************************************************************************/
 
 OGRBoolean OGRPoint::Intersects(const OGRGeometry *poOtherGeom) const

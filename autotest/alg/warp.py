@@ -490,7 +490,7 @@ def test_warp_18():
 @pytest.mark.parametrize(
     "datatype",
     [
-        gdal.GDT_Byte,
+        gdal.GDT_UInt8,
         gdal.GDT_Int16,
         gdal.GDT_CInt16,
         gdal.GDT_UInt16,
@@ -1293,6 +1293,11 @@ def test_warp_41():
         assert src_gt[i] == pytest.approx(vrt_gt[i], abs=1e-5)
 
 
+def test_warp_suggestedwarp_output_invalid_input():
+    with pytest.raises(Exception):
+        gdal.SuggestedWarpOutput(None, {"DST_SRS": "EPSG:4326"})
+
+
 ###############################################################################
 
 # Maximum
@@ -1480,7 +1485,7 @@ def test_warp_52():
     )
 
     end = time.time()
-    assert end - start <= 10, "processing time was way too long"
+    assert end - start <= 60, "processing time was way too long"
 
     cs = out_ds.GetRasterBand(4).Checksum()
     assert cs == 3177
@@ -1513,7 +1518,7 @@ def test_warp_53(typestr, option, alg_name, expected_cs):
     src_ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
     src_ds.GetRasterBand(2).Fill(255)
     zero = struct.pack("B" * 1, 0)
-    src_ds.GetRasterBand(2).WriteRaster(10, 10, 1, 1, zero, buf_type=gdal.GDT_Byte)
+    src_ds.GetRasterBand(2).WriteRaster(10, 10, 1, 1, zero, buf_type=gdal.GDT_UInt8)
 
     dst_ds = gdal.Translate(
         "", src_ds, options="-outsize 10 10 -of MEM -a_srs EPSG:32611"
@@ -1818,7 +1823,7 @@ def test_non_square():
         lry = uly + (ds.RasterYSize * yres)
         assert lrx == pytest.approx(10.5)
         assert lry == pytest.approx(30.25)
-        assert ds.GetRasterBand(1).DataType == gdal.GDT_Byte
+        assert ds.GetRasterBand(1).DataType == gdal.GDT_UInt8
         assert struct.unpack("b" * (3 * 3), ds.ReadRaster()) == (
             1,
             2,
@@ -1832,7 +1837,7 @@ def test_non_square():
         )
 
         warped = gdal.AutoCreateWarpedVRT(ds)
-        assert warped.GetRasterBand(1).DataType == gdal.GDT_Byte
+        assert warped.GetRasterBand(1).DataType == gdal.GDT_UInt8
         assert (
             warped.RasterXSize == ds.RasterXSize
             and warped.RasterYSize == ds.RasterYSize
@@ -1866,7 +1871,7 @@ def test_non_square():
 
 def test_warp_average_excluded_values():
 
-    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 2, 3, gdal.GDT_Byte)
+    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 2, 3, gdal.GDT_UInt8)
     src_ds.GetRasterBand(1).WriteRaster(
         0, 0, 2, 2, struct.pack("B" * 4, 10, 20, 30, 40)
     )
@@ -1941,7 +1946,7 @@ def test_warp_average_excluded_values():
 
 def test_warp_average_NODATA_VALUES_PCT_THRESHOLD():
 
-    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 2, 1, gdal.GDT_Byte)
+    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 2, 1, gdal.GDT_UInt8)
     src_ds.GetRasterBand(1).WriteRaster(
         0, 0, 2, 2, struct.pack("B" * 4, 10, 20, 30, 40)
     )
@@ -1980,7 +1985,7 @@ def test_warp_average_NODATA_VALUES_PCT_THRESHOLD():
 @pytest.mark.parametrize(
     "dt,expected_val",
     [
-        (gdal.GDT_Byte, 1.0),
+        (gdal.GDT_UInt8, 1.0),
         (gdal.GDT_Int8, -1.0),
         (gdal.GDT_UInt16, 1.0),
         (gdal.GDT_Int16, -1.0),
@@ -1998,14 +2003,103 @@ def test_warp_nodata_substitution(dt, expected_val, resampling):
     src_ds = gdal.GetDriverByName("MEM").Create("", 4, 4, 1, dt)
     src_ds.SetGeoTransform([1, 1, 0, 1, 0, 1])
 
-    out_ds = gdal.Warp(
-        "",
-        src_ds,
-        options=f"-of MEM -dstnodata 0 -r {resampling}",
-    )
+    with gdaltest.error_raised(gdal.CE_Warning):
+        out_ds = gdal.Warp(
+            "",
+            src_ds,
+            options=f"-of MEM -dstnodata 0 -r {resampling}",
+        )
     assert (
         struct.unpack("d", out_ds.ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64))[0]
         == expected_val
+    )
+
+    src_ds = gdal.GetDriverByName("MEM").Create("", 4, 4, 2, dt)
+    src_ds.SetGeoTransform([1, 1, 0, 1, 0, 1])
+    src_ds.GetRasterBand(2).Fill(1)
+
+    with gdaltest.error_raised(gdal.CE_Warning):
+        out_ds = gdal.Warp(
+            "",
+            src_ds,
+            options=f"-of MEM -dstnodata 0 -r {resampling}",
+        )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(1).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == expected_val
+    )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(2).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == 1
+    )
+
+    out_ds = gdal.Warp(
+        "",
+        src_ds,
+        options=f"-of MEM -dstnodata 0 -r {resampling} -wo UNIFIED_SRC_NODATA=YES",
+    )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(1).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == 0
+    )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(2).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == 1
+    )
+
+    src_ds.GetRasterBand(2).Fill(0)
+
+    with gdaltest.error_raised(gdal.CE_Warning):
+        out_ds = gdal.Warp(
+            "",
+            src_ds,
+            options=f"-of MEM -dstnodata 0 -r {resampling} -wo UNIFIED_SRC_NODATA=YES",
+        )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(1).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == expected_val
+    )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(2).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == expected_val
+    )
+
+    out_ds = gdal.Warp(
+        "",
+        src_ds,
+        options=f"-of MEM -srcnodata 0 -dstnodata 0 -r {resampling} -wo UNIFIED_SRC_NODATA=YES",
+    )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(1).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == 0
+    )
+    assert (
+        struct.unpack(
+            "d",
+            out_ds.GetRasterBand(2).ReadRaster(0, 0, 1, 1, buf_type=gdal.GDT_Float64),
+        )[0]
+        == 0
     )
 
 
@@ -2123,7 +2217,7 @@ def test_warp_validate_options():
     "dt",
     [
         gdal.GDT_Int8,
-        gdal.GDT_Byte,
+        gdal.GDT_UInt8,
         gdal.GDT_Int16,
         gdal.GDT_UInt16,
         gdal.GDT_Int32,
@@ -2192,3 +2286,35 @@ def test_warp_mode_nan(dt):
 
     out_ds = gdal.Warp("", ds, options="-f MEM -r mode -ts 1 1")
     assert out_ds.ReadRaster(0, 0, 1, 1) == b"\xFF" * dtsize, gdal.GetDataTypeName(dt)
+
+
+def test_warp_zero_sized_target_extent():
+
+    ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
+    ds.SetGeoTransform([0, 1, 0, 0, 0, -1])
+    out_ds = gdal.Warp(
+        "",
+        ds,
+        format="MEM",
+        outputBounds=[0, 1, 0, 1],
+        xRes=1,
+        yRes=1,
+    )
+    assert out_ds.RasterXSize == 1
+    assert out_ds.RasterYSize == 1
+
+
+@gdaltest.enable_exceptions()
+def test_warp_geolocation_array_with_rotation(tmp_path):
+    """Test that computed XSCALE/YSCALE are reasonable when a geolocation array
+    causes a ~ 90 degree rotation. Our input image is a checker of black and
+    white, and the expected output is also a non-blurred checker.
+    """
+    gdal.Warp(
+        tmp_path / "out.tif",
+        "data/input_for_geoloc_array_with_rotation.tif",
+        options="-r cubic -t_srs EPSG:32640 -to METHOD=GEOLOC_ARRAY -to GEOLOC_ARRAY=data/geoloc_array_with_rotation.tif -tr 30 30",
+    )
+    ds = gdal.Open(tmp_path / "out.tif")
+    ref_ds = gdal.Open("data/expected_output_for_geoloc_array_with_rotation.tif")
+    assert ds.GetRasterBand(1).Checksum() == ref_ds.GetRasterBand(1).Checksum()

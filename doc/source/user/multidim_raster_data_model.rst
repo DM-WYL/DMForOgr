@@ -52,13 +52,18 @@ about that convention, except when passing a NULL array as the *stride* paramete
 for the :cpp:func:`GDALAbstractMDArray::Read` and  :cpp:func:`GDALAbstractMDArray::Write` methods.
 You can refer to `NumPy documentation about multidimensional array indexing order issues <https://docs.scipy.org/doc/numpy/reference/internals.html#multidimensional-array-indexing-order-issues>`_
 
-a GDALMDArray has also optional properties:
+A GDALMDArray has also optional properties:
 
     - Coordinate reference system: :cpp:class:`OGRSpatialReference`
     - No data value:
     - Unit
     - Offset, such that unscaled_value = offset + scale * raw_value
     - Scale, such that unscaled_value = offset + scale * raw_value
+
+A GDALMDArray may also have zero or more overviews . Each overview is represented
+as a :cpp:class:`GDALMDArray`, that may be "free standing" or attached to a group.
+Overview arrays have matching dimensions with the full resolution array, but
+with smaller size. The domain covered by overviews is the same as the full resolution array.
 
 Number of operations can be applied on an array to get modified views of it:
 :cpp:func:`GDALMDArray::Transpose()`, :cpp:func:`GDALMDArray::GetView()`, etc.
@@ -190,7 +195,7 @@ guaranteed to be serialized when all objects related to a dataset have been rele
           auto poDim = poRootGroup->CreateDimension(
               "my_dim", std::string(), std::string(), 10);
           auto poArray = poRootGroup->CreateMDArray(
-              "my_var", {poDim}, GDALExtendedDataType::Create(GDT_Byte), nullptr);
+              "my_var", {poDim}, GDALExtendedDataType::Create(GDT_UInt8), nullptr);
 
           // Can be closed in any order
           poArray.reset();
@@ -209,7 +214,7 @@ guaranteed to be serialized when all objects related to a dataset have been rele
       with gdal.GetDriverByName("netCDF").CreateMultiDimensional("new.nc") as ds:
           rg = ds.GetRootGroup()
           dim = rg.CreateDimension("my_dim", "", "", 10)
-          array = rg.CreateMDArray("my_var", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+          array = rg.CreateMDArray("my_var", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
 
           del array
           del dim

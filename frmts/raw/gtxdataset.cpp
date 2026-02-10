@@ -13,6 +13,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_srs_api.h"
 #include "rawdataset.h"
 
@@ -59,7 +60,7 @@ class GTXDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(GTXDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     GTXDataset()
@@ -82,7 +83,7 @@ class GTXDataset final : public RawDataset
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBands, GDALDataType eType,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
 };
 
 /************************************************************************/
@@ -106,7 +107,7 @@ class GTXRasterBand final : public RawRasterBand
 };
 
 /************************************************************************/
-/*                            GTXRasterBand()                           */
+/*                           GTXRasterBand()                            */
 /************************************************************************/
 
 GTXRasterBand::GTXRasterBand(GDALDataset *poDSIn, int nBandIn,
@@ -161,10 +162,10 @@ GTXDataset::~GTXDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr GTXDataset::Close()
+CPLErr GTXDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -372,7 +373,7 @@ CPLErr GTXDataset::SetGeoTransform(const GDALGeoTransform &gt)
 
 GDALDataset *GTXDataset::Create(const char *pszFilename, int nXSize, int nYSize,
                                 int /* nBands */, GDALDataType eType,
-                                char ** /* papszOptions */)
+                                CSLConstList /* papszOptions */)
 {
     if (eType != GDT_Float32)
     {

@@ -1663,7 +1663,7 @@ def test_netcdf_geolocation_array_no_srs(tmp_path, write_bottomup, read_bottomup
     ):
         ds = gdal.Open(f'NETCDF:"{ofile}":Band1')
         got_data = struct.unpack(
-            "B" * 6, ds.GetRasterBand(1).ReadRaster(0, 0, 3, 2, buf_type=gdal.GDT_Byte)
+            "B" * 6, ds.GetRasterBand(1).ReadRaster(0, 0, 3, 2, buf_type=gdal.GDT_UInt8)
         )
         if (write_bottomup and not read_bottomup) or (
             not write_bottomup and read_bottomup
@@ -1675,7 +1675,7 @@ def test_netcdf_geolocation_array_no_srs(tmp_path, write_bottomup, read_bottomup
 
         ds = gdal.Open(f'NETCDF:"{ofile}":lon')
         got_data = struct.unpack(
-            "B" * 6, ds.GetRasterBand(1).ReadRaster(0, 0, 3, 2, buf_type=gdal.GDT_Byte)
+            "B" * 6, ds.GetRasterBand(1).ReadRaster(0, 0, 3, 2, buf_type=gdal.GDT_UInt8)
         )
         if (write_bottomup and not read_bottomup) or (
             not write_bottomup and read_bottomup
@@ -1687,7 +1687,7 @@ def test_netcdf_geolocation_array_no_srs(tmp_path, write_bottomup, read_bottomup
 
         ds = gdal.Open(f'NETCDF:"{ofile}":lat')
         got_data = struct.unpack(
-            "B" * 6, ds.GetRasterBand(1).ReadRaster(0, 0, 3, 2, buf_type=gdal.GDT_Byte)
+            "B" * 6, ds.GetRasterBand(1).ReadRaster(0, 0, 3, 2, buf_type=gdal.GDT_UInt8)
         )
         if (write_bottomup and not read_bottomup) or (
             not write_bottomup and read_bottomup
@@ -6367,6 +6367,8 @@ def test_netcdf_NASA_EMIT_L2B_MIN():
 @pytest.mark.parametrize(
     "filename,path_component,subdataset_component",
     (
+        ("NETCDF:data/hdf4/hdifftst2.hdf", "data/hdf4/hdifftst2.hdf", ""),
+        ('NETCDF:"data/hdf4/hdifftst2.hdf"', "data/hdf4/hdifftst2.hdf", ""),
         (
             'NETCDF:"data/netcdf/SNPP_VIIRS.20230406T024200.L2.OC.NRT.nc":/navigation_data/longitude',
             "data/netcdf/SNPP_VIIRS.20230406T024200.L2.OC.NRT.nc",
@@ -6418,6 +6420,16 @@ def test_netcdf_NASA_EMIT_L2B_MIN():
             "",
         ),
         (
+            r"NETCDF:https://localhost:8080/data/sample.nc",
+            r"https://localhost:8080/data/sample.nc",
+            "",
+        ),
+        (
+            r"NETCDF:/vsicurl/https://www.ncei.noaa.gov:443/data/sample.nc:t2m",
+            r"/vsicurl/https://www.ncei.noaa.gov:443/data/sample.nc",
+            "t2m",
+        ),
+        (
             r'NETCDF:"data/netcdf/var_with_column.nc":"VAR:NAME"',
             r"data/netcdf/var_with_column.nc",
             "VAR:NAME",
@@ -6444,6 +6456,7 @@ def test_gdal_subdataset_get_filename(filename, path_component, subdataset_compo
 @pytest.mark.parametrize(
     "filename",
     (
+        "NETCDF:",
         'NETCDF:"data/netcdf/SNPP_VIIRS.20230406T024200.L2.OC.NRT.nc":/navigation_data/longitude',
         "NETCDF:data/netcdf/SNPP_VIIRS.20230406T024200.L2.OC.NRT.nc:/navigation_data/longitude",
         r'NETCDF:"C:\SNPP_VIIRS.20230406T024200.L2.OC.NRT.nc":/navigation_data/longitude',
@@ -6453,7 +6466,7 @@ def test_gdal_subdataset_get_filename(filename, path_component, subdataset_compo
 def test_gdal_subdataset_modify_filename(filename):
 
     info = gdal.GetSubdatasetInfo(filename)
-    if filename == "":
+    if filename == "" or filename == "NETCDF:":
         assert info is None
     else:
         assert (
@@ -6790,6 +6803,30 @@ def test_netcdf_geotransform_preserved_createcopy(tmp_path):
     dst = gdal.GetDriverByName("netCDF").CreateCopy(tmp_path / "test.nc", src)
 
     assert dst.GetGeoTransform() == src.GetGeoTransform()
+
+
+###############################################################################
+# Test that the GeoTransform attribute is ignored if it does not appear to
+# correspond with the dimension variables.
+# https://github.com/OSGeo/gdal/issues/13823
+
+
+def test_netcdf_geotranform_ignored_if_erroneous(tmp_path):
+
+    with gdaltest.error_raised(
+        gdal.CE_Warning,
+        "GeoTransform read from attribute of transverse_mercator variable differs from value calculated from dimension variables",
+    ):
+        ds = gdal.Open("data/netcdf/uint.nc")
+
+        assert (
+            ds.GetMetadataItem("transverse_mercator#GeoTransform")
+            == "440720 60 0 3751320 0 -60 "
+        )
+
+        gt = ds.GetGeoTransform()
+
+        assert gt == (440720.0, 60.0, 0.0, 3750240.0, 0.0, -60.0)
 
 
 ###############################################################################

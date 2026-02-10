@@ -83,19 +83,19 @@ class FITSDataset final : public GDALPamDataset
 
   public:
     FITSDataset();  // Others should not call this constructor explicitly
-    ~FITSDataset();
+    ~FITSDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
     static CPLErr Delete(const char *pszFilename);
 
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
-    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
-    char **GetMetadata(const char *papszDomain = nullptr) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
+    CSLConstList GetMetadata(const char *papszDomain = nullptr) override;
 
     int GetLayerCount() const override
     {
@@ -138,19 +138,19 @@ class FITSRasterBand final : public GDALPamRasterBand
 
   public:
     FITSRasterBand(FITSDataset *, int);
-    virtual ~FITSRasterBand();
+    ~FITSRasterBand() override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IWriteBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
 
-    virtual double GetNoDataValue(int *) override final;
-    virtual CPLErr SetNoDataValue(double) override final;
-    virtual CPLErr DeleteNoDataValue() override final;
+    double GetNoDataValue(int *) override final;
+    CPLErr SetNoDataValue(double) override final;
+    CPLErr DeleteNoDataValue() override final;
 
-    virtual double GetOffset(int *pbSuccess = nullptr) override final;
-    virtual CPLErr SetOffset(double dfNewValue) override final;
-    virtual double GetScale(int *pbSuccess = nullptr) override final;
-    virtual CPLErr SetScale(double dfNewValue) override final;
+    double GetOffset(int *pbSuccess = nullptr) override final;
+    CPLErr SetOffset(double dfNewValue) override final;
+    double GetScale(int *pbSuccess = nullptr) override final;
+    CPLErr SetScale(double dfNewValue) override final;
 };
 
 /************************************************************************/
@@ -202,7 +202,7 @@ class FITSLayer final : public OGRLayer,
 
   public:
     FITSLayer(FITSDataset *poDS, int hduNum, const char *pszExtName);
-    ~FITSLayer();
+    ~FITSLayer() override;
 
     const OGRFeatureDefn *GetLayerDefn() const override
     {
@@ -227,7 +227,7 @@ class FITSLayer final : public OGRLayer,
 };
 
 /************************************************************************/
-/*                            FITSLayer()                               */
+/*                             FITSLayer()                              */
 /************************************************************************/
 
 FITSLayer::FITSLayer(FITSDataset *poDS, int hduNum, const char *pszExtName)
@@ -552,7 +552,7 @@ FITSLayer::FITSLayer(FITSDataset *poDS, int hduNum, const char *pszExtName)
 }
 
 /************************************************************************/
-/*                           ~FITSLayer()                               */
+/*                             ~FITSLayer()                             */
 /************************************************************************/
 
 FITSLayer::~FITSLayer()
@@ -596,7 +596,7 @@ void FITSLayer::SetActiveHDU()
 }
 
 /************************************************************************/
-/*                        GetFeatureCount()                             */
+/*                          GetFeatureCount()                           */
 /************************************************************************/
 
 GIntBig FITSLayer::GetFeatureCount(int bForce)
@@ -607,7 +607,7 @@ GIntBig FITSLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                          ResetReading()                              */
+/*                            ResetReading()                            */
 /************************************************************************/
 
 void FITSLayer::ResetReading()
@@ -616,7 +616,7 @@ void FITSLayer::ResetReading()
 }
 
 /************************************************************************/
-/*                              ReadCol                                 */
+/*                               ReadCol                                */
 /************************************************************************/
 
 template <typename T_FITS, typename T_GDAL, int TYPECODE> struct ReadCol
@@ -660,7 +660,7 @@ template <typename T_FITS, typename T_GDAL, int TYPECODE> struct ReadCol
 };
 
 /************************************************************************/
-/*                        GetNextRawFeature()                           */
+/*                         GetNextRawFeature()                          */
 /************************************************************************/
 
 OGRFeature *FITSLayer::GetNextRawFeature()
@@ -672,7 +672,7 @@ OGRFeature *FITSLayer::GetNextRawFeature()
 }
 
 /************************************************************************/
-/*                           GetFeature()                               */
+/*                             GetFeature()                             */
 /************************************************************************/
 
 OGRFeature *FITSLayer::GetFeature(GIntBig nFID)
@@ -874,7 +874,7 @@ OGRFeature *FITSLayer::GetFeature(GIntBig nFID)
 }
 
 /************************************************************************/
-/*                         TestCapability()                             */
+/*                           TestCapability()                           */
 /************************************************************************/
 
 int FITSLayer::TestCapability(const char *pszCap) const
@@ -895,7 +895,7 @@ int FITSLayer::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                        RunDeferredFieldCreation()                    */
+/*                      RunDeferredFieldCreation()                      */
 /************************************************************************/
 
 void FITSLayer::RunDeferredFieldCreation(const OGRFeature *poFeature)
@@ -949,7 +949,7 @@ void FITSLayer::RunDeferredFieldCreation(const OGRFeature *poFeature)
                                                      "AT_FIELD_CREATION"),
               "AT_FIRST_FEATURE_CREATION");
 
-    char **papszMD = GetMetadata();
+    CSLConstList papszMD = GetMetadata();
     bool bFirstMD = true;
 
     std::map<CPLString, std::map<CPLString, CPLString>> oMapColNameToMetadata;
@@ -1254,7 +1254,7 @@ void FITSLayer::RunDeferredFieldCreation(const OGRFeature *poFeature)
 }
 
 /************************************************************************/
-/*                           CreateField()                              */
+/*                            CreateField()                             */
 /************************************************************************/
 
 OGRErr FITSLayer::CreateField(const OGRFieldDefn *poField, int /* bApproxOK */)
@@ -1279,7 +1279,7 @@ OGRErr FITSLayer::CreateField(const OGRFieldDefn *poField, int /* bApproxOK */)
 }
 
 /************************************************************************/
-/*                              WriteCol                                */
+/*                               WriteCol                               */
 /************************************************************************/
 
 template <class T> static T Round(double dfValue)
@@ -1391,7 +1391,7 @@ struct WriteCol
 };
 
 /************************************************************************/
-/*                            WriteComplex                              */
+/*                             WriteComplex                             */
 /************************************************************************/
 
 template <typename T, int TYPECODE> struct WriteComplex
@@ -1444,7 +1444,7 @@ template <typename T, int TYPECODE> struct WriteComplex
 };
 
 /************************************************************************/
-/*                        SetOrCreateFeature()                          */
+/*                         SetOrCreateFeature()                         */
 /************************************************************************/
 
 bool FITSLayer::SetOrCreateFeature(const OGRFeature *poFeature, LONGLONG nRow)
@@ -1660,7 +1660,7 @@ OGRErr FITSLayer::ICreateFeature(OGRFeature *poFeature)
 }
 
 /************************************************************************/
-/*                           ISetFeature()                              */
+/*                            ISetFeature()                             */
 /************************************************************************/
 
 OGRErr FITSLayer::ISetFeature(OGRFeature *poFeature)
@@ -1680,7 +1680,7 @@ OGRErr FITSLayer::ISetFeature(OGRFeature *poFeature)
 }
 
 /************************************************************************/
-/*                          DeleteFeature()                             */
+/*                           DeleteFeature()                            */
 /************************************************************************/
 
 OGRErr FITSLayer::DeleteFeature(GIntBig nFID)
@@ -1700,7 +1700,7 @@ OGRErr FITSLayer::DeleteFeature(GIntBig nFID)
 }
 
 /************************************************************************/
-/*                          FITSRasterBand()                           */
+/*                           FITSRasterBand()                           */
 /************************************************************************/
 
 FITSRasterBand::FITSRasterBand(FITSDataset *poDSIn, int nBandIn)
@@ -1854,7 +1854,7 @@ static bool isIgnorableFITSHeader(const char *name)
 }
 
 /************************************************************************/
-/*                            FITSDataset()                            */
+/*                            FITSDataset()                             */
 /************************************************************************/
 
 FITSDataset::FITSDataset()
@@ -1863,7 +1863,7 @@ FITSDataset::FITSDataset()
 }
 
 /************************************************************************/
-/*                           ~FITSDataset()                            */
+/*                            ~FITSDataset()                            */
 /************************************************************************/
 
 FITSDataset::~FITSDataset()
@@ -1887,7 +1887,7 @@ FITSDataset::~FITSDataset()
                          "Couldn't move to HDU %d in FITS file %s (%d).\n",
                          m_hduNum, GetDescription(), status);
             }
-            char **metaData = FITSDataset::GetMetadata();
+            CSLConstList metaData = FITSDataset::GetMetadata();
             int count = CSLCount(metaData);
             for (int i = 0; i < count; ++i)
             {
@@ -2015,7 +2015,7 @@ FITSDataset::~FITSDataset()
 }
 
 /************************************************************************/
-/*                        GetRawBinaryLayout()                          */
+/*                         GetRawBinaryLayout()                         */
 /************************************************************************/
 
 bool FITSDataset::GetRawBinaryLayout(GDALDataset::RawBinaryLayout &sLayout)
@@ -2047,7 +2047,7 @@ bool FITSDataset::GetRawBinaryLayout(GDALDataset::RawBinaryLayout &sLayout)
 }
 
 /************************************************************************/
-/*                           Init()                                     */
+/*                                Init()                                */
 /************************************************************************/
 
 CPLErr FITSDataset::Init(fitsfile *hFITS, bool isExistingFile, int hduNum)
@@ -2108,7 +2108,7 @@ CPLErr FITSDataset::Init(fitsfile *hFITS, bool isExistingFile, int hduNum)
     // Determine data type and nodata value if BLANK keyword is absent
     if (bitpix == BYTE_IMG)
     {
-        m_gdalDataType = GDT_Byte;
+        m_gdalDataType = GDT_UInt8;
         m_fitsDataType = TBYTE;
     }
     else if (bitpix == SHORT_IMG)
@@ -2184,7 +2184,7 @@ CPLErr FITSDataset::Init(fitsfile *hFITS, bool isExistingFile, int hduNum)
 }
 
 /************************************************************************/
-/*                         LoadMetadata()                               */
+/*                            LoadMetadata()                            */
 /************************************************************************/
 
 void FITSDataset::LoadMetadata(GDALMajorObject *poTarget)
@@ -2262,7 +2262,7 @@ void FITSDataset::LoadMetadata(GDALMajorObject *poTarget)
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **FITSDataset::GetMetadata(const char *pszDomain)
+CSLConstList FITSDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "SUBDATASETS"))
@@ -2673,7 +2673,7 @@ GDALDataset *FITSDataset::Open(GDALOpenInfo *poOpenInfo)
 
 GDALDataset *FITSDataset::Create(const char *pszFilename, int nXSize,
                                  int nYSize, int nBandsIn, GDALDataType eType,
-                                 CPL_UNUSED char **papszParamList)
+                                 CPL_UNUSED CSLConstList papszParamList)
 {
     int status = 0;
 
@@ -2720,7 +2720,7 @@ GDALDataset *FITSDataset::Create(const char *pszFilename, int nXSize,
 
     // Determine FITS type of image
     int bitpix;
-    if (eType == GDT_Byte)
+    if (eType == GDT_UInt8)
     {
         bitpix = BYTE_IMG;
     }
@@ -2797,7 +2797,7 @@ GDALDataset *FITSDataset::Create(const char *pszFilename, int nXSize,
 }
 
 /************************************************************************/
-/*                              Delete()                                */
+/*                               Delete()                               */
 /************************************************************************/
 
 CPLErr FITSDataset::Delete(const char *pszFilename)
@@ -2806,7 +2806,7 @@ CPLErr FITSDataset::Delete(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                          WriteFITSInfo()                          */
+/*                           WriteFITSInfo()                            */
 /************************************************************************/
 
 void FITSDataset::WriteFITSInfo()
@@ -3206,7 +3206,7 @@ void FITSDataset::WriteFITSInfo()
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *FITSDataset::GetSpatialRef() const
@@ -3370,7 +3370,7 @@ CPLErr FITSRasterBand::SetNoDataValue(double dfNoData)
 }
 
 /************************************************************************/
-/*                        DeleteNoDataValue()                           */
+/*                         DeleteNoDataValue()                          */
 /************************************************************************/
 
 CPLErr FITSRasterBand::DeleteNoDataValue()
@@ -3640,7 +3640,7 @@ void FITSDataset::LoadGeoreferencing()
 }
 
 /************************************************************************/
-/*                     LoadFITSInfo()                                   */
+/*                            LoadFITSInfo()                            */
 /************************************************************************/
 
 void FITSDataset::LoadFITSInfo()
@@ -3689,7 +3689,7 @@ void FITSDataset::LoadFITSInfo()
 }
 
 /************************************************************************/
-/*                          GDALRegister_FITS()                         */
+/*                         GDALRegister_FITS()                          */
 /************************************************************************/
 
 void GDALRegister_FITS()

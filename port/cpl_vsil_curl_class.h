@@ -136,7 +136,7 @@ struct PutData
 };
 
 /************************************************************************/
-/*                     VSICurlFilesystemHandler                         */
+/*                       VSICurlFilesystemHandler                       */
 /************************************************************************/
 
 class VSICurlHandle;
@@ -272,7 +272,7 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
     virtual std::string GetFSPrefix() const = 0;
     virtual bool AllowCachedDataFor(const char *pszFilename);
 
-    virtual bool IsLocal(const char * /* pszPath */) const override
+    bool IsLocal(const char * /* pszPath */) const override
     {
         return false;
     }
@@ -324,7 +324,7 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
     static std::set<std::string> GetS3IgnoredStorageClasses();
 };
 
-class VSICurlFilesystemHandler : public VSICurlFilesystemHandlerBase
+class VSICurlFilesystemHandler final : public VSICurlFilesystemHandlerBase
 {
     CPL_DISALLOW_COPY_ASSIGN(VSICurlFilesystemHandler)
 
@@ -346,10 +346,10 @@ class VSICurlFilesystemHandler : public VSICurlFilesystemHandlerBase
 };
 
 /************************************************************************/
-/*                           VSICurlHandle                              */
+/*                            VSICurlHandle                             */
 /************************************************************************/
 
-class VSICurlHandle : public VSIVirtualHandle
+class VSICurlHandle /* non final*/ : public VSIVirtualHandle
 {
     CPL_DISALLOW_COPY_ASSIGN(VSICurlHandle)
 
@@ -487,11 +487,11 @@ class VSICurlHandle : public VSIVirtualHandle
 
     int Seek(vsi_l_offset nOffset, int nWhence) override;
     vsi_l_offset Tell() override;
-    size_t Read(void *pBuffer, size_t nSize, size_t nMemb) override;
+    size_t Read(void *pBuffer, size_t nBytes) override;
     int ReadMultiRange(int nRanges, void **ppData,
                        const vsi_l_offset *panOffsets,
                        const size_t *panSizes) override;
-    size_t Write(const void *pBuffer, size_t nSize, size_t nMemb) override;
+    size_t Write(const void *pBuffer, size_t nBytes) override;
     void ClearErr() override;
     int Eof() override;
     int Error() override;
@@ -558,13 +558,20 @@ class VSICurlHandle : public VSIVirtualHandle
     {
         return m_pszURL;
     }
+
+    //! Whether caching of file content and metadata should persist after file closing
+    void SetCache(bool bCache)
+    {
+        m_bCached = bCache;
+    }
 };
 
 /************************************************************************/
-/*                  VSICurlFilesystemHandlerBaseWritable                */
+/*                 VSICurlFilesystemHandlerBaseWritable                 */
 /************************************************************************/
 
-class VSICurlFilesystemHandlerBaseWritable : public VSICurlFilesystemHandlerBase
+class VSICurlFilesystemHandlerBaseWritable /* non final */
+    : public VSICurlFilesystemHandlerBase
 {
     CPL_DISALLOW_COPY_ASSIGN(VSICurlFilesystemHandlerBaseWritable)
 
@@ -590,10 +597,11 @@ class VSICurlFilesystemHandlerBaseWritable : public VSICurlFilesystemHandlerBase
 };
 
 /************************************************************************/
-/*                        IVSIS3LikeFSHandler                           */
+/*                         IVSIS3LikeFSHandler                          */
 /************************************************************************/
 
-class IVSIS3LikeFSHandler : public VSICurlFilesystemHandlerBaseWritable
+class IVSIS3LikeFSHandler /* non final */
+    : public VSICurlFilesystemHandlerBaseWritable
 {
     CPL_DISALLOW_COPY_ASSIGN(IVSIS3LikeFSHandler)
 
@@ -648,10 +656,11 @@ class IVSIS3LikeFSHandler : public VSICurlFilesystemHandlerBaseWritable
 };
 
 /************************************************************************/
-/*                 IVSIS3LikeFSHandlerWithMultipartUpload               */
+/*                IVSIS3LikeFSHandlerWithMultipartUpload                */
 /************************************************************************/
 
-class IVSIS3LikeFSHandlerWithMultipartUpload : public IVSIS3LikeFSHandler
+class IVSIS3LikeFSHandlerWithMultipartUpload /* non final */
+    : public IVSIS3LikeFSHandler
 {
     CPL_DISALLOW_COPY_ASSIGN(IVSIS3LikeFSHandlerWithMultipartUpload)
 
@@ -775,10 +784,10 @@ class IVSIS3LikeFSHandlerWithMultipartUpload : public IVSIS3LikeFSHandler
 };
 
 /************************************************************************/
-/*                          IVSIS3LikeHandle                            */
+/*                           IVSIS3LikeHandle                           */
 /************************************************************************/
 
-class IVSIS3LikeHandle : public VSICurlHandle
+class IVSIS3LikeHandle /* non final */ : public VSICurlHandle
 {
     CPL_DISALLOW_COPY_ASSIGN(IVSIS3LikeHandle)
 
@@ -852,8 +861,8 @@ class VSIMultipartWriteHandle final : public VSIVirtualHandle
 
     int Seek(vsi_l_offset nOffset, int nWhence) override;
     vsi_l_offset Tell() override;
-    size_t Read(void *pBuffer, size_t nSize, size_t nMemb) override;
-    size_t Write(const void *pBuffer, size_t nSize, size_t nMemb) override;
+    size_t Read(void *pBuffer, size_t nBytes) override;
+    size_t Write(const void *pBuffer, size_t nBytes) override;
 
     void ClearErr() override
     {
@@ -878,7 +887,7 @@ class VSIMultipartWriteHandle final : public VSIVirtualHandle
 };
 
 /************************************************************************/
-/*                         VSIChunkedWriteHandle()                      */
+/*                       VSIChunkedWriteHandle()                        */
 /************************************************************************/
 
 /** Class with Write() append-only implementation using
@@ -922,12 +931,12 @@ class VSIChunkedWriteHandle final : public VSIVirtualHandle
     VSIChunkedWriteHandle(IVSIS3LikeFSHandler *poFS, const char *pszFilename,
                           IVSIS3LikeHandleHelper *poS3HandleHelper,
                           CSLConstList papszOptions);
-    virtual ~VSIChunkedWriteHandle();
+    ~VSIChunkedWriteHandle() override;
 
     int Seek(vsi_l_offset nOffset, int nWhence) override;
     vsi_l_offset Tell() override;
-    size_t Read(void *pBuffer, size_t nSize, size_t nMemb) override;
-    size_t Write(const void *pBuffer, size_t nSize, size_t nMemb) override;
+    size_t Read(void *pBuffer, size_t nBytes) override;
+    size_t Write(const void *pBuffer, size_t nBytes) override;
 
     void ClearErr() override
     {
@@ -947,7 +956,7 @@ class VSIChunkedWriteHandle final : public VSIVirtualHandle
 };
 
 /************************************************************************/
-/*                        VSIAppendWriteHandle                          */
+/*                         VSIAppendWriteHandle                         */
 /************************************************************************/
 
 class VSIAppendWriteHandle CPL_NON_FINAL : public VSIVirtualHandle
@@ -976,12 +985,12 @@ class VSIAppendWriteHandle CPL_NON_FINAL : public VSIVirtualHandle
     VSIAppendWriteHandle(VSICurlFilesystemHandlerBase *poFS,
                          const char *pszFSPrefix, const char *pszFilename,
                          int nChunkSize);
-    virtual ~VSIAppendWriteHandle();
+    ~VSIAppendWriteHandle() override;
 
     int Seek(vsi_l_offset nOffset, int nWhence) override;
     vsi_l_offset Tell() override;
-    size_t Read(void *pBuffer, size_t nSize, size_t nMemb) override;
-    size_t Write(const void *pBuffer, size_t nSize, size_t nMemb) override;
+    size_t Read(void *pBuffer, size_t nBytes) override;
+    size_t Write(const void *pBuffer, size_t nBytes) override;
 
     void ClearErr() override
     {
@@ -1006,10 +1015,10 @@ class VSIAppendWriteHandle CPL_NON_FINAL : public VSIVirtualHandle
 };
 
 /************************************************************************/
-/*                     VSIDIRWithMissingDirSynthesis                    */
+/*                    VSIDIRWithMissingDirSynthesis                     */
 /************************************************************************/
 
-struct VSIDIRWithMissingDirSynthesis : public VSIDIR
+struct VSIDIRWithMissingDirSynthesis /* non final */ : public VSIDIR
 {
     std::vector<std::unique_ptr<VSIDIREntry>> aoEntries{};
 
@@ -1023,10 +1032,10 @@ struct VSIDIRWithMissingDirSynthesis : public VSIDIR
 };
 
 /************************************************************************/
-/*                          VSIDIRS3Like                                */
+/*                             VSIDIRS3Like                             */
 /************************************************************************/
 
-struct VSIDIRS3Like : public VSIDIRWithMissingDirSynthesis
+struct VSIDIRS3Like /* non final */ : public VSIDIRWithMissingDirSynthesis
 {
     const std::string m_osDirName;
 
@@ -1070,7 +1079,7 @@ struct VSIDIRS3Like : public VSIDIRWithMissingDirSynthesis
 };
 
 /************************************************************************/
-/*                         CurlRequestHelper                            */
+/*                          CurlRequestHelper                           */
 /************************************************************************/
 
 struct CurlRequestHelper

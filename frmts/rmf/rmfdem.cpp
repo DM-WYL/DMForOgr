@@ -527,7 +527,7 @@ static CPLErr DEMWriteRecord(const DEMDiffT *paiRecord, RmfTypes eRecordType,
 }
 
 /************************************************************************/
-/*                             DEMDeltaType()                           */
+/*                            DEMDeltaType()                            */
 /************************************************************************/
 
 static RmfTypes DEMDeltaType(DEMDiffT delta)
@@ -578,7 +578,7 @@ static RmfTypes DEMDeltaType(DEMDiffT delta)
 }
 
 /************************************************************************/
-/*                             DEMCompress()                            */
+/*                            DEMCompress()                             */
 /************************************************************************/
 
 size_t RMFDataset::DEMCompress(const GByte *pabyIn, GUInt32 nSizeIn,
@@ -717,6 +717,4 @@ size_t RMFDataset::DEMCompress(const GByte *pabyIn, GUInt32 nSizeIn,
         nRecordSize = 0;
         nLessCount = 0;
     }
-
-    return 0;
 }

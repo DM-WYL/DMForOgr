@@ -19,6 +19,7 @@
 #include "gdal_shapelib_symbol_rename.h"
 #endif
 
+#include "cpl_multiproc.h"
 #include "ogrsf_frmts.h"
 #include "shapefil.h"
 #include "shp_vsi.h"
@@ -42,7 +43,7 @@ OGRFeature *SHPReadOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
 OGRGeometry *SHPReadOGRObject(SHPHandle hSHP, int iShape, SHPObject *psShape,
                               bool &bHasWarnedWrongWindingOrder);
 OGRFeatureDefn *SHPReadOGRFeatureDefn(const char *pszName, SHPHandle hSHP,
-                                      DBFHandle hDBF,
+                                      DBFHandle hDBF, VSILFILE *fpSHPXML,
                                       const char *pszSHPEncoding,
                                       int bAdjustType);
 OGRErr SHPWriteOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
@@ -51,7 +52,7 @@ OGRErr SHPWriteOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
                           bool *pbTruncationWarningEmitted, bool bRewind);
 
 /************************************************************************/
-/*                         OGRShapeGeomFieldDefn                        */
+/*                        OGRShapeGeomFieldDefn                         */
 /************************************************************************/
 
 class OGRShapeGeomFieldDefn final : public OGRGeomFieldDefn
@@ -111,6 +112,7 @@ class OGRShapeLayer final : public OGRAbstractProxiedLayer
     DBFHandle m_hDBF = nullptr;
 
     bool m_bUpdateAccess = false;
+    bool m_bHasShpXML = false;
 
     OGRwkbGeometryType m_eRequestedGeomType = wkbUnknown;
     int ResetGeomType(int nNewType);
@@ -220,7 +222,7 @@ class OGRShapeLayer final : public OGRAbstractProxiedLayer
                   const std::string &osPrjFilename, bool bUpdate,
                   OGRwkbGeometryType eReqType,
                   CSLConstList papszCreateOptions = nullptr);
-    virtual ~OGRShapeLayer();
+    ~OGRShapeLayer() override;
 
     GDALDataset *GetDataset() override;
 
@@ -323,7 +325,9 @@ class OGRShapeDataSource final : public GDALDataset
 
   public:
     OGRShapeDataSource();
-    virtual ~OGRShapeDataSource();
+    ~OGRShapeDataSource() override;
+
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
     OGRLayerPool *GetPool() const
     {

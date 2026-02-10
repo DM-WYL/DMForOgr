@@ -10,6 +10,12 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 #include "ogrsf_frmts.h"
 
 #include "ogrhanadrivercore.h"
@@ -66,7 +72,7 @@ const char* OGRHanaOpenOptionsConstants::GetList()
 // clang-format on
 
 /************************************************************************/
-/*                         OGRHanaDriverIdentify()                      */
+/*                       OGRHanaDriverIdentify()                        */
 /************************************************************************/
 
 int OGRHanaDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -76,7 +82,7 @@ int OGRHanaDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                  OGRHANADriverSetCommonMetadata()                     */
+/*                   OGRHANADriverSetCommonMetadata()                   */
 /************************************************************************/
 
 void OGRHANADriverSetCommonMetadata(GDALDriver *poDriver)
@@ -121,7 +127,7 @@ void OGRHANADriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredOGRHANAPlugin()                     */
+/*                    DeclareDeferredOGRHANAPlugin()                    */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

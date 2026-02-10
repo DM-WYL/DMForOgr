@@ -77,7 +77,7 @@
 #include "gtadrivercore.h"
 
 /************************************************************************/
-/* Helper functions                                                     */
+/*                           Helper functions                           */
 /************************************************************************/
 
 static void ScanDoubles(const char *pszString, double *padfDoubles, int nCount)
@@ -160,7 +160,7 @@ class GTAIO final : public gta::custom_io
         return VSIFTellL(fp);
     }
 
-    virtual size_t read(void *buffer, size_t size, bool *error) throw() override
+    size_t read(void *buffer, size_t size, bool *error) throw() override
     {
         size_t s;
         s = VSIFReadL(buffer, 1, size, fp);
@@ -185,15 +185,15 @@ class GTAIO final : public gta::custom_io
         return size;
     }
 
-    virtual bool seekable() throw() override
+    bool seekable() throw() override
     {
         return true;
     }
 
-    virtual void seek(intmax_t offset, int whence, bool *error) throw() override
+    void seek(intmax_t offset, int whence, bool *error) throw() override
     {
         int r;
-        r = VSIFSeekL(fp, offset, whence);
+        r = VSIFSeekL(fp, static_cast<vsi_l_offset>(offset), whence);
         if (r != 0)
         {
             errno = EIO;
@@ -243,7 +243,7 @@ class GTADataset final : public GDALPamDataset
 
   public:
     GTADataset();
-    ~GTADataset();
+    ~GTADataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
 
@@ -283,7 +283,7 @@ class GTARasterBand final : public GDALPamRasterBand
 
   public:
     GTARasterBand(GTADataset *, int);
-    ~GTARasterBand();
+    ~GTARasterBand() override;
 
     CPLErr IReadBlock(int, int, void *) override;
     CPLErr IWriteBlock(int, int, void *) override;
@@ -323,7 +323,7 @@ GTARasterBand::GTARasterBand(GTADataset *poDSIn, int nBandIn)
             eDataType = GDT_Int8;
             break;
         case gta::uint8:
-            eDataType = GDT_Byte;
+            eDataType = GDT_UInt8;
             break;
         case gta::int16:
             eDataType = GDT_Int16;
@@ -421,7 +421,7 @@ GTARasterBand::~GTARasterBand()
 }
 
 /************************************************************************/
-/*                             GetCategoryNames()                       */
+/*                          GetCategoryNames()                          */
 /************************************************************************/
 
 char **GTARasterBand::GetCategoryNames()
@@ -454,7 +454,7 @@ char **GTARasterBand::GetCategoryNames()
 }
 
 /************************************************************************/
-/*                             SetCategoryName()                        */
+/*                          SetCategoryName()                           */
 /************************************************************************/
 
 CPLErr GTARasterBand::SetCategoryNames(char **)
@@ -510,7 +510,7 @@ double GTARasterBand::GetMaximum(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                             GetNoDataValue()                         */
+/*                           GetNoDataValue()                           */
 /************************************************************************/
 
 double GTARasterBand::GetNoDataValue(int *pbSuccess)
@@ -532,7 +532,7 @@ double GTARasterBand::GetNoDataValue(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                             SetNoDataValue()                         */
+/*                           SetNoDataValue()                           */
 /************************************************************************/
 
 CPLErr GTARasterBand::SetNoDataValue(double)
@@ -578,7 +578,7 @@ CPLErr GTARasterBand::SetOffset(double)
 }
 
 /************************************************************************/
-/*                             GetScale()                               */
+/*                              GetScale()                              */
 /************************************************************************/
 
 double GTARasterBand::GetScale(int *pbSuccess)
@@ -600,7 +600,7 @@ double GTARasterBand::GetScale(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                             SetScale()                               */
+/*                              SetScale()                              */
 /************************************************************************/
 
 CPLErr GTARasterBand::SetScale(double)
@@ -612,7 +612,7 @@ CPLErr GTARasterBand::SetScale(double)
 }
 
 /************************************************************************/
-/*                             GetUnitType()                            */
+/*                            GetUnitType()                             */
 /************************************************************************/
 
 const char *GTARasterBand::GetUnitType()
@@ -625,7 +625,7 @@ const char *GTARasterBand::GetUnitType()
 }
 
 /************************************************************************/
-/*                             SetUnitType()                            */
+/*                            SetUnitType()                             */
 /************************************************************************/
 
 CPLErr GTARasterBand::SetUnitType(const char *)
@@ -637,7 +637,7 @@ CPLErr GTARasterBand::SetUnitType(const char *)
 }
 
 /************************************************************************/
-/*                             GetColorInterpretation()                 */
+/*                       GetColorInterpretation()                       */
 /************************************************************************/
 
 GDALColorInterp GTARasterBand::GetColorInterpretation()
@@ -683,7 +683,7 @@ GDALColorInterp GTARasterBand::GetColorInterpretation()
 }
 
 /************************************************************************/
-/*                             SetColorInterpretation()                 */
+/*                       SetColorInterpretation()                       */
 /************************************************************************/
 
 CPLErr GTARasterBand::SetColorInterpretation(GDALColorInterp)
@@ -731,7 +731,7 @@ CPLErr GTARasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
 }
 
 /************************************************************************/
-/*                             IWriteBlock()                            */
+/*                            IWriteBlock()                             */
 /************************************************************************/
 
 CPLErr GTARasterBand::IWriteBlock(int nBlockXOff, int nBlockYOff, void *pImage)
@@ -778,7 +778,7 @@ CPLErr GTARasterBand::IWriteBlock(int nBlockXOff, int nBlockYOff, void *pImage)
 /************************************************************************/
 
 /************************************************************************/
-/*                            GTADataset()                              */
+/*                             GTADataset()                             */
 /************************************************************************/
 
 GTADataset::GTADataset()
@@ -954,7 +954,7 @@ const OGRSpatialReference *GTADataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                          SetSpatialRef()                             */
+/*                           SetSpatialRef()                            */
 /************************************************************************/
 
 CPLErr GTADataset::SetSpatialRef(const OGRSpatialReference *)
@@ -966,7 +966,7 @@ CPLErr GTADataset::SetSpatialRef(const OGRSpatialReference *)
 }
 
 /************************************************************************/
-/*                          GetGCPCount()                               */
+/*                            GetGCPCount()                             */
 /************************************************************************/
 
 int GTADataset::GetGCPCount()
@@ -986,7 +986,7 @@ const OGRSpatialReference *GTADataset::GetGCPSpatialRef() const
 }
 
 /************************************************************************/
-/*                          GetGCPs()                                   */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *GTADataset::GetGCPs()
@@ -996,7 +996,7 @@ const GDAL_GCP *GTADataset::GetGCPs()
 }
 
 /************************************************************************/
-/*                          SetGCPs()                                   */
+/*                              SetGCPs()                               */
 /************************************************************************/
 
 CPLErr GTADataset::SetGCPs(int, const GDAL_GCP *, const OGRSpatialReference *)
@@ -1282,7 +1282,7 @@ GDALDataset *GTADataset::Open(GDALOpenInfo *poOpenInfo)
 /************************************************************************/
 
 static GDALDataset *GTACreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
-                                  int bStrict, char **papszOptions,
+                                  int bStrict, CSLConstList papszOptions,
                                   GDALProgressFunc pfnProgress,
                                   void *pProgressData)
 
@@ -1350,7 +1350,7 @@ static GDALDataset *GTACreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         GDALDataType eDT = poSrcBand->GetRasterDataType();
         switch (eDT)
         {
-            case GDT_Byte:
+            case GDT_UInt8:
             {
                 const char *pszPixelType =
                     poSrcBand->GetMetadataItem("PIXELTYPE", "IMAGE_STRUCTURE");
@@ -1441,24 +1441,25 @@ static GDALDataset *GTACreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
             sizeof(papszMetadataDomains) / sizeof(papszMetadataDomains[0]);
         for (size_t iDomain = 0; iDomain < nMetadataDomains; iDomain++)
         {
-            char **papszMetadata =
+            CSLConstList papszMetadata =
                 poSrcDS->GetMetadata(papszMetadataDomains[iDomain]);
             if (papszMetadata)
             {
                 for (int i = 0; papszMetadata[i]; i++)
                 {
-                    char *pEqualSign = strchr(papszMetadata[i], '=');
+                    const char *pEqualSign = strchr(papszMetadata[i], '=');
                     if (pEqualSign && pEqualSign - papszMetadata[i] > 0)
                     {
-                        *pEqualSign = '\0';
+                        const std::string osVal(
+                            papszMetadata[i],
+                            static_cast<size_t>(pEqualSign - papszMetadata[i]));
                         oHeader.global_taglist().set(
                             CPLSPrintf("GDAL/META/%s/%s",
                                        papszMetadataDomains[iDomain]
                                            ? papszMetadataDomains[iDomain]
                                            : "DEFAULT",
-                                       papszMetadata[i]),
+                                       osVal.c_str()),
                             pEqualSign + 1);
-                        *pEqualSign = '=';
                     }
                 }
             }
@@ -1518,24 +1519,27 @@ static GDALDataset *GTACreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
             }
             for (size_t iDomain = 0; iDomain < nMetadataDomains; iDomain++)
             {
-                char **papszBandMetadata =
+                CSLConstList papszBandMetadata =
                     poSrcBand->GetMetadata(papszMetadataDomains[iDomain]);
                 if (papszBandMetadata)
                 {
                     for (int i = 0; papszBandMetadata[i]; i++)
                     {
-                        char *pEqualSign = strchr(papszBandMetadata[i], '=');
+                        const char *pEqualSign =
+                            strchr(papszBandMetadata[i], '=');
                         if (pEqualSign && pEqualSign - papszBandMetadata[i] > 0)
                         {
-                            *pEqualSign = '\0';
+                            const std::string osVal(
+                                papszBandMetadata[i],
+                                static_cast<size_t>(pEqualSign -
+                                                    papszBandMetadata[i]));
                             oHeader.component_taglist(iBand).set(
                                 CPLSPrintf("GDAL/META/%s/%s",
                                            papszMetadataDomains[iDomain]
                                                ? papszMetadataDomains[iDomain]
                                                : "DEFAULT",
-                                           papszBandMetadata[i]),
+                                           osVal.c_str()),
                                 pEqualSign + 1);
-                            *pEqualSign = '=';
                         }
                     }
                 }

@@ -22,6 +22,7 @@
 #include "cpl_config.h"
 #include "cpl_error.h"
 #include "cpl_multiproc.h"
+#include "gdal_abstractbandblockcache.h"
 
 //! @cond Doxygen_Suppress
 
@@ -68,7 +69,7 @@ class GDALHashSetBandBlockCache final : public GDALAbstractBandBlockCache
 };
 
 /************************************************************************/
-/*                     GDALHashSetBandBlockCacheCreate()                */
+/*                  GDALHashSetBandBlockCacheCreate()                   */
 /************************************************************************/
 
 GDALAbstractBandBlockCache *
@@ -78,7 +79,7 @@ GDALHashSetBandBlockCacheCreate(GDALRasterBand *poBand)
 }
 
 /************************************************************************/
-/*                       GDALHashSetBandBlockCache()                    */
+/*                     GDALHashSetBandBlockCache()                      */
 /************************************************************************/
 
 GDALHashSetBandBlockCache::GDALHashSetBandBlockCache(GDALRasterBand *poBandIn)
@@ -89,7 +90,7 @@ GDALHashSetBandBlockCache::GDALHashSetBandBlockCache(GDALRasterBand *poBandIn)
 }
 
 /************************************************************************/
-/*                      ~GDALHashSetBandBlockCache()                    */
+/*                     ~GDALHashSetBandBlockCache()                     */
 /************************************************************************/
 
 GDALHashSetBandBlockCache::~GDALHashSetBandBlockCache()
@@ -99,7 +100,7 @@ GDALHashSetBandBlockCache::~GDALHashSetBandBlockCache()
 }
 
 /************************************************************************/
-/*                                  Init()                              */
+/*                                Init()                                */
 /************************************************************************/
 
 bool GDALHashSetBandBlockCache::Init()
@@ -108,7 +109,7 @@ bool GDALHashSetBandBlockCache::Init()
 }
 
 /************************************************************************/
-/*                             IsInitOK()                               */
+/*                              IsInitOK()                              */
 /************************************************************************/
 
 bool GDALHashSetBandBlockCache::IsInitOK()
@@ -117,7 +118,7 @@ bool GDALHashSetBandBlockCache::IsInitOK()
 }
 
 /************************************************************************/
-/*                            AdoptBlock()                              */
+/*                             AdoptBlock()                             */
 /************************************************************************/
 
 CPLErr GDALHashSetBandBlockCache::AdoptBlock(GDALRasterBlock *poBlock)
@@ -132,7 +133,7 @@ CPLErr GDALHashSetBandBlockCache::AdoptBlock(GDALRasterBlock *poBlock)
 }
 
 /************************************************************************/
-/*                            FlushCache()                              */
+/*                             FlushCache()                             */
 /************************************************************************/
 
 CPLErr GDALHashSetBandBlockCache::FlushCache()
@@ -175,7 +176,7 @@ CPLErr GDALHashSetBandBlockCache::FlushCache()
 }
 
 /************************************************************************/
-/*                        UnreferenceBlock()                            */
+/*                          UnreferenceBlock()                          */
 /************************************************************************/
 
 CPLErr GDALHashSetBandBlockCache::UnreferenceBlock(GDALRasterBlock *poBlock)
@@ -188,7 +189,7 @@ CPLErr GDALHashSetBandBlockCache::UnreferenceBlock(GDALRasterBlock *poBlock)
 }
 
 /************************************************************************/
-/*                            FlushBlock()                              */
+/*                             FlushBlock()                             */
 /************************************************************************/
 
 CPLErr GDALHashSetBandBlockCache::FlushBlock(int nXBlockOff, int nYBlockOff,

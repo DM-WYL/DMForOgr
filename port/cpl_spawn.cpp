@@ -58,7 +58,7 @@ constexpr int OUT_FOR_PARENT = 1;
 static void FillFileFromPipe(CPL_FILE_HANDLE pipe_fd, VSILFILE *fout);
 
 /************************************************************************/
-/*                        FillPipeFromFile()                            */
+/*                          FillPipeFromFile()                          */
 /************************************************************************/
 
 static void FillPipeFromFile(VSILFILE *fin, CPL_FILE_HANDLE pipe_fd)
@@ -76,7 +76,7 @@ static void FillPipeFromFile(VSILFILE *fin, CPL_FILE_HANDLE pipe_fd)
 }
 
 /************************************************************************/
-/*                            CPLSpawn()                                */
+/*                              CPLSpawn()                              */
 /************************************************************************/
 
 /**
@@ -99,7 +99,6 @@ static void FillPipeFromFile(VSILFILE *fin, CPL_FILE_HANDLE pipe_fd)
  *
  * @return the exit code of the spawned process, or -1 in case of error.
  *
- * @since GDAL 1.10.0
  */
 
 int CPLSpawn(const char *const papszArgv[], VSILFILE *fin, VSILFILE *fout,
@@ -148,7 +147,7 @@ int CPLSpawn(const char *const papszArgv[], VSILFILE *fin, VSILFILE *fout,
 #if defined(_WIN32)
 
 /************************************************************************/
-/*                          CPLPipeRead()                               */
+/*                            CPLPipeRead()                             */
 /************************************************************************/
 
 int CPLPipeRead(CPL_FILE_HANDLE fin, void *data, int length)
@@ -167,7 +166,7 @@ int CPLPipeRead(CPL_FILE_HANDLE fin, void *data, int length)
 }
 
 /************************************************************************/
-/*                         CPLPipeWrite()                               */
+/*                            CPLPipeWrite()                            */
 /************************************************************************/
 
 int CPLPipeWrite(CPL_FILE_HANDLE fout, const void *data, int length)
@@ -186,7 +185,7 @@ int CPLPipeWrite(CPL_FILE_HANDLE fout, const void *data, int length)
 }
 
 /************************************************************************/
-/*                        FillFileFromPipe()                            */
+/*                          FillFileFromPipe()                          */
 /************************************************************************/
 
 static void FillFileFromPipe(CPL_FILE_HANDLE pipe_fd, VSILFILE *fout)
@@ -216,7 +215,7 @@ struct _CPLSpawnedProcess
 };
 
 /************************************************************************/
-/*                            CPLSpawnAsync()                           */
+/*                           CPLSpawnAsync()                            */
 /************************************************************************/
 
 CPLSpawnedProcess *
@@ -364,7 +363,7 @@ err:
 }
 
 /************************************************************************/
-/*                  CPLSpawnAsyncGetChildProcessId()                    */
+/*                   CPLSpawnAsyncGetChildProcessId()                   */
 /************************************************************************/
 
 CPL_PID CPLSpawnAsyncGetChildProcessId(CPLSpawnedProcess *p)
@@ -438,7 +437,7 @@ void CPLSpawnAsyncCloseErrorFileHandle(CPLSpawnedProcess *p)
 #else  // Not WIN32
 
 /************************************************************************/
-/*                          CPLPipeRead()                               */
+/*                            CPLPipeRead()                             */
 /************************************************************************/
 
 /**
@@ -450,7 +449,6 @@ void CPLSpawnAsyncCloseErrorFileHandle(CPLSpawnedProcess *p)
  *
  * @return TRUE in case of success.
  *
- * @since GDAL 1.10.0
  */
 int CPLPipeRead(CPL_FILE_HANDLE fin, void *data, int length)
 {
@@ -490,7 +488,7 @@ int CPLPipeRead(CPL_FILE_HANDLE fin, void *data, int length)
 }
 
 /************************************************************************/
-/*                          CPLPipeWrite()                              */
+/*                            CPLPipeWrite()                            */
 /************************************************************************/
 
 /**
@@ -502,7 +500,6 @@ int CPLPipeRead(CPL_FILE_HANDLE fin, void *data, int length)
  *
  * @return TRUE in case of success.
  *
- * @since GDAL 1.10.0
  */
 int CPLPipeWrite(CPL_FILE_HANDLE fout, const void *data, int length)
 {
@@ -540,7 +537,7 @@ int CPLPipeWrite(CPL_FILE_HANDLE fout, const void *data, int length)
 }
 
 /************************************************************************/
-/*                          FillFileFromPipe()                              */
+/*                          FillFileFromPipe()                          */
 /************************************************************************/
 
 static void FillFileFromPipe(CPL_FILE_HANDLE pipe_fd, VSILFILE *fout)
@@ -559,7 +556,7 @@ static void FillFileFromPipe(CPL_FILE_HANDLE pipe_fd, VSILFILE *fout)
 }
 
 /************************************************************************/
-/*                            CPLSpawnAsync()                           */
+/*                           CPLSpawnAsync()                            */
 /************************************************************************/
 
 struct _CPLSpawnedProcess
@@ -600,7 +597,6 @@ struct _CPLSpawnedProcess
  *
  * @return a handle, that must be freed with CPLSpawnAsyncFinish()
  *
- * @since GDAL 1.10.0
  */
 CPLSpawnedProcess *
 CPLSpawnAsync(int (*pfnMain)(CPL_FILE_HANDLE, CPL_FILE_HANDLE),
@@ -845,7 +841,7 @@ CPLSpawnAsync(int (*pfnMain)(CPL_FILE_HANDLE, CPL_FILE_HANDLE),
 }
 
 /************************************************************************/
-/*                  CPLSpawnAsyncGetChildProcessId()                    */
+/*                   CPLSpawnAsyncGetChildProcessId()                   */
 /************************************************************************/
 
 CPL_PID CPLSpawnAsyncGetChildProcessId(CPLSpawnedProcess *p)
@@ -869,7 +865,6 @@ CPL_PID CPLSpawnAsyncGetChildProcessId(CPLSpawnedProcess *p)
  *
  * @return the return code of the forked process if bWait == TRUE, 0 otherwise
  *
- * @since GDAL 1.10.0
  */
 
 int CPLSpawnAsyncFinish(CPLSpawnedProcess *p, int bWait, CPL_UNUSED int bKill)
@@ -951,7 +946,7 @@ void CPLSpawnAsyncCloseErrorFileHandle(CPLSpawnedProcess *p)
 #endif
 
 /************************************************************************/
-/*                    CPLSpawnAsyncGetInputFileHandle()                 */
+/*                  CPLSpawnAsyncGetInputFileHandle()                   */
 /************************************************************************/
 
 /**
@@ -962,7 +957,6 @@ void CPLSpawnAsyncCloseErrorFileHandle(CPLSpawnedProcess *p)
  *
  * @return the file handle.
  *
- * @since GDAL 1.10.0
  */
 CPL_FILE_HANDLE CPLSpawnAsyncGetInputFileHandle(CPLSpawnedProcess *p)
 {
@@ -970,7 +964,7 @@ CPL_FILE_HANDLE CPLSpawnAsyncGetInputFileHandle(CPLSpawnedProcess *p)
 }
 
 /************************************************************************/
-/*                   CPLSpawnAsyncGetOutputFileHandle()                 */
+/*                  CPLSpawnAsyncGetOutputFileHandle()                  */
 /************************************************************************/
 
 /**
@@ -981,7 +975,6 @@ CPL_FILE_HANDLE CPLSpawnAsyncGetInputFileHandle(CPLSpawnedProcess *p)
  *
  * @return the file handle.
  *
- * @since GDAL 1.10.0
  */
 CPL_FILE_HANDLE CPLSpawnAsyncGetOutputFileHandle(CPLSpawnedProcess *p)
 {
@@ -989,7 +982,7 @@ CPL_FILE_HANDLE CPLSpawnAsyncGetOutputFileHandle(CPLSpawnedProcess *p)
 }
 
 /************************************************************************/
-/*                    CPLSpawnAsyncGetErrorFileHandle()                 */
+/*                  CPLSpawnAsyncGetErrorFileHandle()                   */
 /************************************************************************/
 
 /**
@@ -1000,7 +993,6 @@ CPL_FILE_HANDLE CPLSpawnAsyncGetOutputFileHandle(CPLSpawnedProcess *p)
  *
  * @return the file handle
  *
- * @since GDAL 1.10.0
  */
 CPL_FILE_HANDLE CPLSpawnAsyncGetErrorFileHandle(CPLSpawnedProcess *p)
 {

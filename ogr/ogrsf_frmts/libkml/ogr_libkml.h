@@ -75,6 +75,7 @@ class OGRLIBKMLLayer final : public OGRLayer,
     bool m_bAllReadAtLeastOnce = false;
     std::map<GIntBig, std::string> m_oMapOGRIdToKmlId{};
     std::map<std::string, GIntBig> m_oMapKmlIdToOGRId{};
+    std::map<std::string, int> m_oMapSimpleFieldNameToOgrFieldIx{};
 
     void ScanAllFeatures();
     OGRFeature *GetNextRawFeature();
@@ -86,7 +87,7 @@ class OGRLIBKMLLayer final : public OGRLayer,
                    kmldom::ContainerPtr poKmlContainer,
                    kmldom::UpdatePtr poKmlUpdate, const char *pszFileName,
                    bool bNew, bool bUpdate);
-    virtual ~OGRLIBKMLLayer();
+    ~OGRLIBKMLLayer() override;
 
     void ResetReading() override
     {
@@ -242,7 +243,7 @@ class OGRLIBKMLDataSource final : public GDALDataset
 
   public:
     explicit OGRLIBKMLDataSource(kmldom::KmlFactory *poKmlFactory);
-    ~OGRLIBKMLDataSource();
+    ~OGRLIBKMLDataSource() override;
 
     int GetLayerCount() const override
     {
@@ -262,7 +263,7 @@ class OGRLIBKMLDataSource final : public GDALDataset
     void SetStyleTable(OGRStyleTable *poStyleTable) override;
 
     int Open(const char *pszFilename, bool bUpdate);
-    int Create(const char *pszFilename, char **papszOptions);
+    int Create(const char *pszFilename, CSLConstList papszOptions);
 
     CPLErr FlushCache(bool bAtClosing) override;
     int TestCapability(const char *) const override;
@@ -327,9 +328,9 @@ class OGRLIBKMLDataSource final : public GDALDataset
     int OpenDir(const char *pszFilename, int bUpdate);
 
     /***** methods to create various datasource types *****/
-    int CreateKml(const char *pszFilename, char **papszOptions);
-    int CreateKmz(const char *pszFilename, char **papszOptions);
-    int CreateDir(const char *pszFilename, char **papszOptions);
+    int CreateKml(const char *pszFilename, CSLConstList papszOptions);
+    int CreateKmz(const char *pszFilename, CSLConstList papszOptions);
+    int CreateDir(const char *pszFilename, CSLConstList papszOptions);
 
     /***** methods to create layers on various datasource types *****/
     OGRLIBKMLLayer *CreateLayerKml(const char *pszLayerName,

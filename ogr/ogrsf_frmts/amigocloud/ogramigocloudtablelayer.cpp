@@ -10,6 +10,8 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "cpl_multiproc.h"  // CPLSleep()
+
 #include "ogr_amigocloud.h"
 #include "ogr_p.h"
 #include "ogr_pgdump.h"
@@ -18,7 +20,7 @@
 #include <iomanip>
 
 /************************************************************************/
-/*                    OGRAMIGOCLOUDEscapeIdentifier( )                     */
+/*                   OGRAMIGOCLOUDEscapeIdentifier( )                   */
 /************************************************************************/
 
 CPLString OGRAMIGOCLOUDEscapeIdentifier(const char *pszStr)
@@ -84,7 +86,7 @@ std::string OGRAMIGOCLOUDJsonEncode(const std::string &s)
 }
 
 /************************************************************************/
-/*                        OGRAmigoCloudTableLayer()                        */
+/*                      OGRAmigoCloudTableLayer()                       */
 /************************************************************************/
 
 OGRAmigoCloudTableLayer::OGRAmigoCloudTableLayer(
@@ -101,7 +103,7 @@ OGRAmigoCloudTableLayer::OGRAmigoCloudTableLayer(
 }
 
 /************************************************************************/
-/*                    ~OGRAmigoCloudTableLayer()                           */
+/*                      ~OGRAmigoCloudTableLayer()                      */
 /************************************************************************/
 
 OGRAmigoCloudTableLayer::~OGRAmigoCloudTableLayer()
@@ -207,7 +209,7 @@ OGRAmigoCloudTableLayer::GetLayerDefnInternal(CPL_UNUSED json_object *poObjIn)
 }
 
 /************************************************************************/
-/*                        FetchNewFeatures()                            */
+/*                          FetchNewFeatures()                          */
 /************************************************************************/
 
 json_object *OGRAmigoCloudTableLayer::FetchNewFeatures(GIntBig iNextIn)
@@ -242,7 +244,7 @@ json_object *OGRAmigoCloudTableLayer::FetchNewFeatures(GIntBig iNextIn)
 }
 
 /************************************************************************/
-/*                           GetNextRawFeature()                        */
+/*                         GetNextRawFeature()                          */
 /************************************************************************/
 
 OGRFeature *OGRAmigoCloudTableLayer::GetNextRawFeature()
@@ -279,7 +281,7 @@ OGRErr OGRAmigoCloudTableLayer::SetAttributeFilter(const char *pszQuery)
 }
 
 /************************************************************************/
-/*                          ISetSpatialFilter()                          */
+/*                         ISetSpatialFilter()                          */
 /************************************************************************/
 
 OGRErr OGRAmigoCloudTableLayer::ISetSpatialFilter(int iGeomField,
@@ -298,7 +300,7 @@ OGRErr OGRAmigoCloudTableLayer::ISetSpatialFilter(int iGeomField,
 }
 
 /************************************************************************/
-/*                         FlushDeferredInsert()                          */
+/*                        FlushDeferredInsert()                         */
 /************************************************************************/
 
 void OGRAmigoCloudTableLayer::FlushDeferredInsert()
@@ -388,7 +390,7 @@ OGRErr OGRAmigoCloudTableLayer::CreateField(const OGRFieldDefn *poFieldIn,
 }
 
 /************************************************************************/
-/*                           ICreateFeature()                            */
+/*                           ICreateFeature()                           */
 /************************************************************************/
 
 OGRErr OGRAmigoCloudTableLayer::ICreateFeature(OGRFeature *poFeature)
@@ -418,17 +420,14 @@ OGRErr OGRAmigoCloudTableLayer::ICreateFeature(OGRFeature *poFeature)
     // Add geometry field
     for (int i = 0; i < poFeatureDefn->GetGeomFieldCount(); i++)
     {
-        if (poFeature->GetGeomFieldRef(i) == nullptr)
+        const OGRGeometry *poGeom = poFeature->GetGeomFieldRef(i);
+        if (poGeom == nullptr)
             continue;
 
         record << "\""
                << OGRAMIGOCLOUDJsonEncode(
                       poFeatureDefn->GetGeomFieldDefn(i)->GetNameRef())
                << "\":";
-
-        OGRGeometry *poGeom = poFeature->GetGeomFieldRef(i);
-        if (poGeom == nullptr)
-            continue;
 
         OGRAmigoCloudGeomFieldDefn *poGeomFieldDefn =
             cpl::down_cast<OGRAmigoCloudGeomFieldDefn *>(
@@ -512,7 +511,7 @@ OGRErr OGRAmigoCloudTableLayer::ICreateFeature(OGRFeature *poFeature)
 }
 
 /************************************************************************/
-/*                            ISetFeature()                              */
+/*                            ISetFeature()                             */
 /************************************************************************/
 
 OGRErr OGRAmigoCloudTableLayer::ISetFeature(OGRFeature *poFeature)
@@ -660,7 +659,7 @@ OGRErr OGRAmigoCloudTableLayer::ISetFeature(OGRFeature *poFeature)
 }
 
 /************************************************************************/
-/*                          DeleteFeature()                             */
+/*                           DeleteFeature()                            */
 /************************************************************************/
 
 OGRErr OGRAmigoCloudTableLayer::DeleteFeature(GIntBig nFID)
@@ -788,7 +787,7 @@ void OGRAmigoCloudTableLayer::BuildWhere()
 }
 
 /************************************************************************/
-/*                              GetFeature()                            */
+/*                             GetFeature()                             */
 /************************************************************************/
 
 OGRFeature *OGRAmigoCloudTableLayer::GetFeature(GIntBig nFeatureId)
@@ -998,7 +997,7 @@ int OGRAmigoCloudTableLayer::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                        SetDeferredCreation()                          */
+/*                        SetDeferredCreation()                         */
 /************************************************************************/
 
 void OGRAmigoCloudTableLayer::SetDeferredCreation(OGRwkbGeometryType eGType,
@@ -1110,7 +1109,7 @@ bool OGRAmigoCloudTableLayer::IsDatasetExists()
 }
 
 /************************************************************************/
-/*                      RunDeferredCreationIfNecessary()                 */
+/*                   RunDeferredCreationIfNecessary()                   */
 /************************************************************************/
 
 OGRErr OGRAmigoCloudTableLayer::RunDeferredCreationIfNecessary()

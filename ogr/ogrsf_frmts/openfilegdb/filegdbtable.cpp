@@ -77,7 +77,7 @@ static double SanitizeScale(double dfVal)
 }
 
 /************************************************************************/
-/*                      FileGDBTablePrintError()                        */
+/*                       FileGDBTablePrintError()                       */
 /************************************************************************/
 
 void FileGDBTablePrintError(const char *pszFile, int nLineNumber)
@@ -105,7 +105,7 @@ FileGDBTable::~FileGDBTable()
 }
 
 /************************************************************************/
-/*                                Close()                               */
+/*                               Close()                                */
 /************************************************************************/
 
 void FileGDBTable::Close()
@@ -122,7 +122,7 @@ void FileGDBTable::Close()
 }
 
 /************************************************************************/
-/*                              GetFieldIdx()                           */
+/*                            GetFieldIdx()                             */
 /************************************************************************/
 
 int FileGDBTable::GetFieldIdx(const std::string &osName) const
@@ -136,7 +136,7 @@ int FileGDBTable::GetFieldIdx(const std::string &osName) const
 }
 
 /************************************************************************/
-/*                          ReadVarUInt()                               */
+/*                            ReadVarUInt()                             */
 /************************************************************************/
 
 template <class OutType, class ControlType>
@@ -521,7 +521,7 @@ int FileGDBTable::IsLikelyFeatureAtOffset(vsi_l_offset nOffset, GUInt32 *pnSize,
 }
 
 /************************************************************************/
-/*                      GuessFeatureLocations()                         */
+/*                       GuessFeatureLocations()                        */
 /************************************************************************/
 
 #define MARK_DELETED(x) ((x) | (static_cast<GUIntBig>(1) << 63))
@@ -620,7 +620,7 @@ bool FileGDBTable::GuessFeatureLocations()
 }
 
 /************************************************************************/
-/*                           ReadTableXHeaderV3()                       */
+/*                         ReadTableXHeaderV3()                         */
 /************************************************************************/
 
 bool FileGDBTable::ReadTableXHeaderV3()
@@ -712,7 +712,7 @@ bool FileGDBTable::ReadTableXHeaderV3()
 }
 
 /************************************************************************/
-/*                           ReadTableXHeaderV4()                       */
+/*                         ReadTableXHeaderV4()                         */
 /************************************************************************/
 
 bool FileGDBTable::ReadTableXHeaderV4()
@@ -809,7 +809,7 @@ bool FileGDBTable::ReadTableXHeaderV4()
 }
 
 /************************************************************************/
-/*                                 Open()                               */
+/*                                Open()                                */
 /************************************************************************/
 
 bool FileGDBTable::Open(const char *pszFilename, bool bUpdate,
@@ -1439,7 +1439,7 @@ bool FileGDBTable::Open(const char *pszFilename, bool bUpdate,
 }
 
 /************************************************************************/
-/*                          SkipVarUInt()                               */
+/*                            SkipVarUInt()                             */
 /************************************************************************/
 
 /* Bound check only valid if nIter <= 4 */
@@ -1595,7 +1595,7 @@ FileGDBTable::GetOffsetInTableForRow(int64_t iRow,
 }
 
 /************************************************************************/
-/*                        ReadFeatureOffset()                           */
+/*                         ReadFeatureOffset()                          */
 /************************************************************************/
 
 uint64_t FileGDBTable::ReadFeatureOffset(const GByte *pabyBuffer)
@@ -1607,7 +1607,7 @@ uint64_t FileGDBTable::ReadFeatureOffset(const GByte *pabyBuffer)
 }
 
 /************************************************************************/
-/*                      GetAndSelectNextNonEmptyRow()                   */
+/*                    GetAndSelectNextNonEmptyRow()                     */
 /************************************************************************/
 
 int64_t FileGDBTable::GetAndSelectNextNonEmptyRow(int64_t iRow)
@@ -1648,7 +1648,7 @@ int64_t FileGDBTable::GetAndSelectNextNonEmptyRow(int64_t iRow)
 }
 
 /************************************************************************/
-/*                            SelectRow()                               */
+/*                             SelectRow()                              */
 /************************************************************************/
 
 bool FileGDBTable::SelectRow(int64_t iRow)
@@ -1830,7 +1830,7 @@ bool FileGDBTable::SelectRow(int64_t iRow)
 }
 
 /************************************************************************/
-/*                      FileGDBDoubleDateToOGRDate()                    */
+/*                     FileGDBDoubleDateToOGRDate()                     */
 /************************************************************************/
 
 int FileGDBDoubleDateToOGRDate(double dfVal, bool bHighPrecision,
@@ -1874,7 +1874,7 @@ int FileGDBDoubleDateToOGRDate(double dfVal, bool bHighPrecision,
 }
 
 /************************************************************************/
-/*                      FileGDBDoubleTimeToOGRTime()                    */
+/*                     FileGDBDoubleTimeToOGRTime()                     */
 /************************************************************************/
 
 int FileGDBDoubleTimeToOGRTime(double dfVal, OGRField *psField)
@@ -1901,7 +1901,7 @@ int FileGDBDoubleTimeToOGRTime(double dfVal, OGRField *psField)
 }
 
 /************************************************************************/
-/*                  FileGDBDateTimeWithOffsetToOGRDate()                */
+/*                 FileGDBDateTimeWithOffsetToOGRDate()                 */
 /************************************************************************/
 
 int FileGDBDateTimeWithOffsetToOGRDate(double dfVal, int16_t nUTCOffset,
@@ -1957,7 +1957,7 @@ std::vector<OGRField> FileGDBTable::GetAllFieldValues()
 }
 
 /************************************************************************/
-/*                        FreeAllFieldValues()                          */
+/*                         FreeAllFieldValues()                         */
 /************************************************************************/
 
 void FileGDBTable::FreeAllFieldValues(std::vector<OGRField> &asFields)
@@ -1986,7 +1986,7 @@ void FileGDBTable::FreeAllFieldValues(std::vector<OGRField> &asFields)
 }
 
 /************************************************************************/
-/*                          GetFieldValue()                             */
+/*                           GetFieldValue()                            */
 /************************************************************************/
 
 const OGRField *FileGDBTable::GetFieldValue(int iCol)
@@ -2667,7 +2667,7 @@ int FileGDBTable::GetIndexCount()
 }
 
 /************************************************************************/
-/*                           HasSpatialIndex()                          */
+/*                          HasSpatialIndex()                           */
 /************************************************************************/
 
 bool FileGDBTable::HasSpatialIndex()
@@ -2737,7 +2737,7 @@ void FileGDBTable::InstallFilterEnvelope(const OGREnvelope *psFilterEnvelope)
 }
 
 /************************************************************************/
-/*                  GetMinMaxProjYForSpatialIndex()                     */
+/*                   GetMinMaxProjYForSpatialIndex()                    */
 /************************************************************************/
 
 // ESRI software seems to have an extremely weird behavior regarding spatial
@@ -2807,7 +2807,7 @@ void FileGDBTable::GetMinMaxProjYForSpatialIndex(double &dfYMin,
 }
 
 /************************************************************************/
-/*                         GetFeatureExtent()                           */
+/*                          GetFeatureExtent()                          */
 /************************************************************************/
 
 int FileGDBTable::GetFeatureExtent(const OGRField *psField,
@@ -2918,7 +2918,7 @@ int FileGDBTable::GetFeatureExtent(const OGRField *psField,
 }
 
 /************************************************************************/
-/*                 DoesGeometryIntersectsFilterEnvelope()               */
+/*                DoesGeometryIntersectsFilterEnvelope()                */
 /************************************************************************/
 
 int FileGDBTable::DoesGeometryIntersectsFilterEnvelope(const OGRField *psField)
@@ -3030,7 +3030,7 @@ static OGRField GetUnsetField()
 const OGRField FileGDBField::UNSET_FIELD = GetUnsetField();
 
 /************************************************************************/
-/*                           FileGDBField()                             */
+/*                            FileGDBField()                            */
 /************************************************************************/
 
 FileGDBField::FileGDBField(FileGDBTable *poParentIn) : m_poParent(poParentIn)
@@ -3039,7 +3039,7 @@ FileGDBField::FileGDBField(FileGDBTable *poParentIn) : m_poParent(poParentIn)
 }
 
 /************************************************************************/
-/*                           FileGDBField()                             */
+/*                            FileGDBField()                            */
 /************************************************************************/
 
 FileGDBField::FileGDBField(const std::string &osName,
@@ -3069,7 +3069,7 @@ FileGDBField::FileGDBField(const std::string &osName,
 }
 
 /************************************************************************/
-/*                          ~FileGDBField()                             */
+/*                           ~FileGDBField()                            */
 /************************************************************************/
 
 FileGDBField::~FileGDBField()
@@ -3080,7 +3080,7 @@ FileGDBField::~FileGDBField()
 }
 
 /************************************************************************/
-/*                            HasIndex()                                */
+/*                              HasIndex()                              */
 /************************************************************************/
 
 int FileGDBField::HasIndex()
@@ -3090,7 +3090,7 @@ int FileGDBField::HasIndex()
 }
 
 /************************************************************************/
-/*                            GetIndex()                                */
+/*                              GetIndex()                              */
 /************************************************************************/
 
 FileGDBIndex *FileGDBField::GetIndex()
@@ -3100,7 +3100,7 @@ FileGDBIndex *FileGDBField::GetIndex()
 }
 
 /************************************************************************/
-/*                              getESRI_NAN()                           */
+/*                            getESRI_NAN()                             */
 /************************************************************************/
 
 static double getESRI_NAN()
@@ -3119,7 +3119,7 @@ static double getESRI_NAN()
 const double FileGDBGeomField::ESRI_NAN = getESRI_NAN();
 
 /************************************************************************/
-/*                           FileGDBGeomField()                         */
+/*                          FileGDBGeomField()                          */
 /************************************************************************/
 
 FileGDBGeomField::FileGDBGeomField(FileGDBTable *poParentIn)
@@ -3128,7 +3128,7 @@ FileGDBGeomField::FileGDBGeomField(FileGDBTable *poParentIn)
 }
 
 /************************************************************************/
-/*                           FileGDBGeomField()                         */
+/*                          FileGDBGeomField()                          */
 /************************************************************************/
 
 FileGDBGeomField::FileGDBGeomField(
@@ -3146,7 +3146,7 @@ FileGDBGeomField::FileGDBGeomField(
 }
 
 /************************************************************************/
-/*                                SetXYMinMax()                         */
+/*                            SetXYMinMax()                             */
 /************************************************************************/
 
 void FileGDBGeomField::SetXYMinMax(double dfXMin, double dfYMin, double dfXMax,
@@ -3159,7 +3159,7 @@ void FileGDBGeomField::SetXYMinMax(double dfXMin, double dfYMin, double dfXMax,
 }
 
 /************************************************************************/
-/*                                SetZMinMax()                          */
+/*                             SetZMinMax()                             */
 /************************************************************************/
 
 void FileGDBGeomField::SetZMinMax(double dfZMin, double dfZMax)
@@ -3169,7 +3169,7 @@ void FileGDBGeomField::SetZMinMax(double dfZMin, double dfZMax)
 }
 
 /************************************************************************/
-/*                                SetMMinMax()                          */
+/*                             SetMMinMax()                             */
 /************************************************************************/
 
 void FileGDBGeomField::SetMMinMax(double dfMMin, double dfMMax)
@@ -3209,7 +3209,7 @@ void FileGDBGeomField::SetMOriginScaleTolerance(double dfMOrigin,
 FileGDBOGRGeometryConverter::~FileGDBOGRGeometryConverter() = default;
 
 /************************************************************************/
-/*                      FileGDBOGRGeometryConverterImpl                 */
+/*                   FileGDBOGRGeometryConverterImpl                    */
 /************************************************************************/
 
 class FileGDBOGRGeometryConverterImpl final : public FileGDBOGRGeometryConverter
@@ -3247,9 +3247,9 @@ class FileGDBOGRGeometryConverterImpl final : public FileGDBOGRGeometryConverter
   public:
     explicit FileGDBOGRGeometryConverterImpl(
         const FileGDBGeomField *poGeomField);
-    virtual ~FileGDBOGRGeometryConverterImpl();
+    ~FileGDBOGRGeometryConverterImpl() override;
 
-    virtual OGRGeometry *GetAsGeometry(const OGRField *psField) override;
+    OGRGeometry *GetAsGeometry(const OGRField *psField) override;
 };
 
 /************************************************************************/
@@ -3267,7 +3267,7 @@ FileGDBOGRGeometryConverterImpl::FileGDBOGRGeometryConverterImpl(
 }
 
 /************************************************************************/
-/*                 ~FileGDBOGRGeometryConverter()                       */
+/*                    ~FileGDBOGRGeometryConverter()                    */
 /************************************************************************/
 
 FileGDBOGRGeometryConverterImpl::~FileGDBOGRGeometryConverterImpl()
@@ -3276,7 +3276,7 @@ FileGDBOGRGeometryConverterImpl::~FileGDBOGRGeometryConverterImpl()
 }
 
 /************************************************************************/
-/*                          ReadPartDefs()                              */
+/*                            ReadPartDefs()                            */
 /************************************************************************/
 
 bool FileGDBOGRGeometryConverterImpl::ReadPartDefs(
@@ -3332,10 +3332,10 @@ bool FileGDBOGRGeometryConverterImpl::ReadPartDefs(
 }
 
 /************************************************************************/
-/*                         XYLineStringSetter                           */
+/*                          XYLineStringSetter                          */
 /************************************************************************/
 
-class FileGDBOGRLineString : public OGRLineString
+class FileGDBOGRLineString final : public OGRLineString
 {
   public:
     FileGDBOGRLineString() = default;
@@ -3350,7 +3350,7 @@ class FileGDBOGRLineString : public OGRLineString
 
 FileGDBOGRLineString::~FileGDBOGRLineString() = default;
 
-class FileGDBOGRLinearRing : public OGRLinearRing
+class FileGDBOGRLinearRing final : public OGRLinearRing
 {
   public:
     FileGDBOGRLinearRing() = default;
@@ -3383,7 +3383,7 @@ class XYLineStringSetter
 };
 
 /************************************************************************/
-/*                         XYMultiPointSetter                           */
+/*                          XYMultiPointSetter                          */
 /************************************************************************/
 
 class XYMultiPointSetter
@@ -3404,7 +3404,7 @@ class XYMultiPointSetter
 };
 
 /************************************************************************/
-/*                             XYArraySetter                            */
+/*                            XYArraySetter                             */
 /************************************************************************/
 
 class XYArraySetter
@@ -3426,7 +3426,7 @@ class XYArraySetter
 };
 
 /************************************************************************/
-/*                          ReadXYArray()                               */
+/*                            ReadXYArray()                             */
 /************************************************************************/
 
 template <class XYSetter>
@@ -3479,7 +3479,7 @@ class ZLineStringSetter
 };
 
 /************************************************************************/
-/*                         ZMultiPointSetter                           */
+/*                          ZMultiPointSetter                           */
 /************************************************************************/
 
 class ZMultiPointSetter
@@ -3498,7 +3498,7 @@ class ZMultiPointSetter
 };
 
 /************************************************************************/
-/*                             FileGDBArraySetter                            */
+/*                          FileGDBArraySetter                          */
 /************************************************************************/
 
 class FileGDBArraySetter
@@ -3517,7 +3517,7 @@ class FileGDBArraySetter
 };
 
 /************************************************************************/
-/*                          ReadZArray()                                */
+/*                             ReadZArray()                             */
 /************************************************************************/
 
 template <class ZSetter>
@@ -3558,7 +3558,7 @@ class MLineStringSetter
 };
 
 /************************************************************************/
-/*                         MMultiPointSetter                           */
+/*                          MMultiPointSetter                           */
 /************************************************************************/
 
 class MMultiPointSetter
@@ -3577,7 +3577,7 @@ class MMultiPointSetter
 };
 
 /************************************************************************/
-/*                          ReadMArray()                                */
+/*                             ReadMArray()                             */
 /************************************************************************/
 
 template <class MSetter>
@@ -3599,7 +3599,7 @@ int FileGDBOGRGeometryConverterImpl::ReadMArray(MSetter &setter,
 }
 
 /************************************************************************/
-/*                          CreateCurveGeometry()                       */
+/*                        CreateCurveGeometry()                         */
 /************************************************************************/
 
 class XYBufferSetter
@@ -3802,7 +3802,7 @@ OGRGeometry *FileGDBOGRGeometryConverterImpl::CreateCurveGeometry(
 }
 
 /************************************************************************/
-/*                          GetAsGeometry()                             */
+/*                           GetAsGeometry()                            */
 /************************************************************************/
 
 OGRGeometry *
@@ -3885,11 +3885,7 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
                 poPoint->setM(dfM);
                 return poPoint;
             }
-            else
-            {
-                return new OGRPoint(dfX, dfY);
-            }
-            break;
+            return new OGRPoint(dfX, dfY);
         }
 
         case SHPT_MULTIPOINTZM:
@@ -3956,8 +3952,6 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
             }
 
             return poMP;
-            // cppcheck-suppress duplicateBreak
-            break;
         }
 
         case SHPT_ARCZ:
@@ -4082,12 +4076,8 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
                 }
             }
 
-            if (poMLS)
-                return poMLS;
-            else
-                return poLS;
-
-            break;
+            return poMLS ? static_cast<OGRGeometry *>(poMLS)
+                         : static_cast<OGRGeometry *>(poLS);
         }
 
         case SHPT_POLYGONZ:
@@ -4127,46 +4117,36 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
                 pabyCur = pabyCurBackup;
             }
 
-            OGRLinearRing **papoRings = new OGRLinearRing *[nParts];
+            std::vector<std::unique_ptr<OGRLinearRing>> apoRings;
+            apoRings.reserve(nParts);
 
             dx = dy = dz = 0;
             for (i = 0; i < nParts; i++)
             {
-                FileGDBOGRLinearRing *poRing = new FileGDBOGRLinearRing();
-                papoRings[i] = poRing;
+                auto poRing = std::make_unique<FileGDBOGRLinearRing>();
                 poRing->setNumPoints(panPointCount[i], FALSE);
 
                 XYLineStringSetter lsSetter(poRing->GetPoints());
                 if (!ReadXYArray<XYLineStringSetter>(lsSetter, pabyCur, pabyEnd,
                                                      panPointCount[i], dx, dy))
                 {
-                    while (true)
-                    {
-                        delete papoRings[i];
-                        if (i == 0)
-                            break;
-                        i--;
-                    }
-                    delete[] papoRings;
                     // For some reason things that papoRings is leaking
                     // cppcheck-suppress memleak
                     returnError();
                 }
+                apoRings.push_back(std::move(poRing));
             }
 
             if (bHasZ)
             {
                 for (i = 0; i < nParts; i++)
                 {
-                    papoRings[i]->setCoordinateDimension(3);
+                    apoRings[i]->setCoordinateDimension(3);
 
-                    ZLineStringSetter lszSetter(papoRings[i]);
+                    ZLineStringSetter lszSetter(apoRings[i].get());
                     if (!ReadZArray<ZLineStringSetter>(
                             lszSetter, pabyCur, pabyEnd, panPointCount[i], dz))
                     {
-                        for (i = 0; i < nParts; i++)
-                            delete papoRings[i];
-                        delete[] papoRings;
                         returnError();
                     }
                 }
@@ -4186,36 +4166,33 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
                         while (i != 0)
                         {
                             --i;
-                            papoRings[i]->setMeasured(FALSE);
+                            apoRings[i]->setMeasured(FALSE);
                         }
                         break;
                     }
 
-                    papoRings[i]->setMeasured(TRUE);
+                    apoRings[i]->setMeasured(TRUE);
 
-                    MLineStringSetter lsmSetter(papoRings[i]);
+                    MLineStringSetter lsmSetter(apoRings[i].get());
                     if (!ReadMArray<MLineStringSetter>(
                             lsmSetter, pabyCur, pabyEnd, panPointCount[i], dm))
                     {
-                        for (i = 0; i < nParts; i++)
-                            delete papoRings[i];
-                        delete[] papoRings;
                         returnError();
                     }
                 }
             }
 
-            OGRGeometry *poRet = nullptr;
+            std::unique_ptr<OGRGeometry> poRet;
             if (nParts == 1)
             {
-                OGRPolygon *poPoly = new OGRPolygon();
-                poRet = poPoly;
-                poPoly->addRingDirectly(papoRings[0]);
+                auto poPoly = std::make_unique<OGRPolygon>();
+                poPoly->addRing(std::move(apoRings[0]));
+                poRet = std::move(poPoly);
             }
             else
             // Note: ASSUME_INNER_RINGS_IMMEDIATELY_AFTER_OUTER_RING is *not* defined
 #ifdef ASSUME_INNER_RINGS_IMMEDIATELY_AFTER_OUTER_RING
-                if (bUseOrganize || !(papoRings[0]->isClockwise()))
+                if (bUseOrganize || !(apoRings[0]->isClockwise()))
 #endif
             {
                 /* Slow method: we do a rather expensive topological analysis of
@@ -4234,18 +4211,15 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
                  * rings has its exterior ring with wrong orientation, hence
                  * we use the slowest but bullet-proof method.
                  */
-                OGRPolygon **papoPolygons = new OGRPolygon *[nParts];
+                std::vector<std::unique_ptr<OGRGeometry>> apoPolys;
+                apoPolys.reserve(nParts);
                 for (i = 0; i < nParts; i++)
                 {
-                    papoPolygons[i] = new OGRPolygon();
-                    papoPolygons[i]->addRingDirectly(papoRings[i]);
+                    auto poPoly = std::make_unique<OGRPolygon>();
+                    poPoly->addRing(std::move(apoRings[i]));
+                    apoPolys.push_back(std::move(poPoly));
                 }
-                delete[] papoRings;
-                papoRings = nullptr;
-                poRet = OGRGeometryFactory::organizePolygons(
-                    reinterpret_cast<OGRGeometry **>(papoPolygons), nParts,
-                    nullptr, nullptr);
-                delete[] papoPolygons;
+                poRet = OGRGeometryFactory::organizePolygons(apoPolys);
             }
 #ifdef ASSUME_INNER_RINGS_IMMEDIATELY_AFTER_OUTER_RING
             else
@@ -4253,47 +4227,56 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
                 /* Inner rings are CCW oriented and follow immediately the outer
                  */
                 /* ring (that is CW oriented) in which they are included */
-                OGRMultiPolygon *poMulti = NULL;
-                OGRPolygon *poCur = new OGRPolygon();
-                poRet = poCur;
+                std::unique_ptr<OGRMultiPolygon> poMulti;
+                auto poCur = std::make_unique<OGRPolygon>();
                 /* We have already checked that the first ring is CW */
-                poCur->addRingDirectly(papoRings[0]);
                 OGREnvelope sEnvelope;
-                papoRings[0]->getEnvelope(&sEnvelope);
+                apoRings[0]->getEnvelope(&sEnvelope);
+                poCur->addRing(std::move(apoRings[0]));
                 for (i = 1; i < nParts; i++)
                 {
-                    int bIsCW = papoRings[i]->isClockwise();
+                    const int bIsCW = apoRings[i]->isClockwise();
                     if (bIsCW)
                     {
-                        if (poMulti == NULL)
+                        if (poMulti == nullptr)
                         {
-                            poMulti = new OGRMultiPolygon();
-                            poRet = poMulti;
-                            poMulti->addGeometryDirectly(poCur);
+                            poMulti = std::make_unique<OGRMultiPolygon>();
+                            poMulti->addGeometry(std::move(poCur));
                         }
-                        poCur = new OGRPolygon();
-                        poMulti->addGeometryDirectly(poCur);
-                        poCur->addRingDirectly(papoRings[i]);
-                        papoRings[i]->getEnvelope(&sEnvelope);
+                        poCur = std::make_unique<OGRPolygon>();
+                        apoRings[i]->getEnvelope(&sEnvelope);
+                        poCur->addRing(std::move(apoRings[i]));
+                        poMulti->addGeometry(std::move(poCur));
                     }
                     else
                     {
-                        poCur->addRingDirectly(papoRings[i]);
                         OGRPoint oPoint;
-                        papoRings[i]->getPoint(0, &oPoint);
+                        apoRings[i]->getPoint(0, &oPoint);
+                        if (poCur)
+                        {
+                            poCur->addRing(std::move(apoRings[i]));
+                        }
+                        else
+                        {
+                            poMulti
+                                ->getGeometryRef(poMulti->getNumGeometries() -
+                                                 1)
+                                ->addRing(std::move(apoRings[i]));
+                        }
                         CPLAssert(oPoint.getX() >= sEnvelope.MinX &&
                                   oPoint.getX() <= sEnvelope.MaxX &&
                                   oPoint.getY() >= sEnvelope.MinY &&
                                   oPoint.getY() <= sEnvelope.MaxY);
                     }
                 }
+                if (poCur)
+                    poRet = std::move(poCur);
+                else
+                    poRet = std::move(poMulti);
             }
 #endif
 
-            delete[] papoRings;
-            return poRet;
-            // cppcheck-suppress duplicateBreak
-            break;
+            return poRet.release();
         }
 
         case SHPT_MULTIPATCHM:
@@ -4386,8 +4369,6 @@ FileGDBOGRGeometryConverterImpl::GetAsGeometry(const OGRField *psField)
             VSIFree(padfXYZ);
 
             return poRet;
-            // cppcheck-suppress duplicateBreak
-            break;
         }
 
         default:

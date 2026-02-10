@@ -277,7 +277,7 @@ char **CSLMerge(char **papszOrig, CSLConstList papszOverride)
 }
 
 /************************************************************************/
-/*                             CSLLoad2()                               */
+/*                              CSLLoad2()                              */
 /************************************************************************/
 
 /**
@@ -300,7 +300,6 @@ char **CSLMerge(char **papszOrig, CSLConstList papszOverride)
  * @return a string list with the files lines, now owned by caller. To be freed
  * with CSLDestroy()
  *
- * @since GDAL 1.7.0
  */
 
 char **CSLLoad2(const char *pszFname, int nMaxLines, int nMaxCols,
@@ -683,7 +682,6 @@ int CSLFindString(CSLConstList papszList, const char *pszTarget)
  *
  * @return the index of the string within the list or -1 on failure.
  *
- * @since GDAL 2.0
  */
 
 int CSLFindStringCaseSensitive(CSLConstList papszList, const char *pszTarget)
@@ -702,7 +700,7 @@ int CSLFindStringCaseSensitive(CSLConstList papszList, const char *pszTarget)
 }
 
 /************************************************************************/
-/*                           CSLPartialFindString()                     */
+/*                        CSLPartialFindString()                        */
 /************************************************************************/
 
 /**
@@ -1050,7 +1048,7 @@ int CPLVASPrintf(char **buf, CPL_FORMAT_STRING(const char *fmt), va_list ap)
 }
 
 /************************************************************************/
-/*                  CPLvsnprintf_get_end_of_formatting()                */
+/*                 CPLvsnprintf_get_end_of_formatting()                 */
 /************************************************************************/
 
 static const char *CPLvsnprintf_get_end_of_formatting(const char *fmt)
@@ -1106,7 +1104,7 @@ static const char *CPLvsnprintf_get_end_of_formatting(const char *fmt)
 }
 
 /************************************************************************/
-/*                           CPLvsnprintf()                             */
+/*                            CPLvsnprintf()                            */
 /************************************************************************/
 
 #define call_native_snprintf(type)                                             \
@@ -1126,7 +1124,6 @@ static const char *CPLvsnprintf_get_end_of_formatting(const char *fmt)
  * @return the number of characters (excluding terminating nul) that would be
  * written if size is big enough. Or potentially -1 with Microsoft C runtime
  * for Visual Studio < 2015.
- * @since GDAL 2.0
  */
 int CPLvsnprintf(char *str, size_t size, CPL_FORMAT_STRING(const char *fmt),
                  va_list args)
@@ -1321,7 +1318,7 @@ int CPLvsnprintf(char *str, size_t size, CPL_FORMAT_STRING(const char *fmt),
 }
 
 /************************************************************************/
-/*                           CPLsnprintf()                              */
+/*                            CPLsnprintf()                             */
 /************************************************************************/
 
 #if !defined(ALIAS_CPLSNPRINTF_AS_SNPRINTF)
@@ -1345,7 +1342,6 @@ int CPLvsnprintf(char *str, size_t size, CPL_FORMAT_STRING(const char *fmt),
  * @return the number of characters (excluding terminating nul) that would be
  * written if size is big enough. Or potentially -1 with Microsoft C runtime
  * for Visual Studio < 2015.
- * @since GDAL 2.0
  */
 
 int CPLsnprintf(char *str, size_t size, CPL_FORMAT_STRING(const char *fmt), ...)
@@ -1361,7 +1357,7 @@ int CPLsnprintf(char *str, size_t size, CPL_FORMAT_STRING(const char *fmt), ...)
 #endif  //  !defined(ALIAS_CPLSNPRINTF_AS_SNPRINTF)
 
 /************************************************************************/
-/*                           CPLsprintf()                               */
+/*                             CPLsprintf()                             */
 /************************************************************************/
 
 /** sprintf() wrapper that is not sensitive to LC_NUMERIC settings.
@@ -1375,7 +1371,6 @@ int CPLsnprintf(char *str, size_t size, CPL_FORMAT_STRING(const char *fmt), ...)
   * @param ... arguments
   * @return the number of characters (excluding terminating nul) written in
 ` * output buffer.
-  * @since GDAL 2.0
   */
 int CPLsprintf(char *str, CPL_FORMAT_STRING(const char *fmt), ...)
 {
@@ -1388,7 +1383,7 @@ int CPLsprintf(char *str, CPL_FORMAT_STRING(const char *fmt), ...)
 }
 
 /************************************************************************/
-/*                           CPLprintf()                                */
+/*                             CPLprintf()                              */
 /************************************************************************/
 
 /** printf() wrapper that is not sensitive to LC_NUMERIC settings.
@@ -1401,7 +1396,6 @@ int CPLsprintf(char *str, CPL_FORMAT_STRING(const char *fmt), ...)
  * @param ... arguments
  * @return the number of characters (excluding terminating nul) written in
  * output buffer.
- * @since GDAL 2.0
  */
 int CPLprintf(CPL_FORMAT_STRING(const char *fmt), ...)
 {
@@ -1446,7 +1440,7 @@ int CPLprintf(CPL_FORMAT_STRING(const char *fmt), ...)
 }
 
 /************************************************************************/
-/*                           CPLsscanf()                                */
+/*                             CPLsscanf()                              */
 /************************************************************************/
 
 /** \brief sscanf() wrapper that is not sensitive to LC_NUMERIC settings.
@@ -1462,7 +1456,6 @@ int CPLprintf(CPL_FORMAT_STRING(const char *fmt), ...)
  * @param fmt formatting string
  * @param ... arguments
  * @return the number of matched patterns;
- * @since GDAL 2.0
  */
 #ifdef DOXYGEN_XML
 int CPLsscanf(const char *str, const char *fmt, ...)
@@ -1525,7 +1518,7 @@ int CPLsscanf(const char *str, CPL_SCANF_FORMAT_STRING(const char *fmt), ...)
 #endif
 
 /************************************************************************/
-/*                         CPLTestBool()                                */
+/*                            CPLTestBool()                             */
 /************************************************************************/
 
 /**
@@ -1546,7 +1539,7 @@ bool CPLTestBool(const char *pszValue)
 }
 
 /************************************************************************/
-/*                         CSLTestBoolean()                             */
+/*                           CSLTestBoolean()                           */
 /************************************************************************/
 
 /**
@@ -1570,7 +1563,7 @@ int CSLTestBoolean(const char *pszValue)
 }
 
 /************************************************************************/
-/*                         CPLTestBoolean()                             */
+/*                           CPLTestBoolean()                           */
 /************************************************************************/
 
 /**
@@ -1735,7 +1728,7 @@ int CSLFindName(CSLConstList papszStrList, const char *pszName)
 }
 
 /************************************************************************/
-/*                     CPLParseMemorySize()                             */
+/*                         CPLParseMemorySize()                         */
 /************************************************************************/
 
 /** Parse a memory size from a string.
@@ -1831,7 +1824,7 @@ CPLErr CPLParseMemorySize(const char *pszValue, GIntBig *pnValue,
                         break;
                     default:
                         CPLError(CE_Failure, CPLE_IllegalArg,
-                                 "Unexpected value: %s", pszValue);
+                                 "Failed to parse memory size: %s", pszValue);
                         return CE_Failure;
                 }
             }
@@ -1843,10 +1836,18 @@ CPLErr CPLParseMemorySize(const char *pszValue, GIntBig *pnValue,
         }
         else if (*c != ' ')
         {
-            CPLError(CE_Failure, CPLE_IllegalArg, "Unexpected value: %s",
-                     pszValue);
+            CPLError(CE_Failure, CPLE_IllegalArg,
+                     "Failed to parse memory size: %s", pszValue);
             return CE_Failure;
         }
+    }
+
+    if (value > static_cast<double>(std::numeric_limits<GIntBig>::max()) ||
+        value > static_cast<double>(std::numeric_limits<size_t>::max()))
+    {
+        CPLError(CE_Failure, CPLE_IllegalArg, "Memory size is too large: %s",
+                 pszValue);
+        return CE_Failure;
     }
 
     *pnValue = static_cast<GIntBig>(value);
@@ -2185,7 +2186,8 @@ void CSLSetNameValueSeparator(char **papszList, const char *pszSeparator)
  * '$', '-', '_', '.', '+', '!', '*', ''', '(', ')' and ',' (see RFC1738) are
  * converted to a percent followed by a two digit hex encoding of the character
  * (leading zero supplied if needed).  This is the mechanism used for encoding
- * values to be passed in URLs.
+ * values to be passed in URLs. Note that this is different from what
+ * CPLString::URLEncode() does.
  *
  * CPLES_SQL(3): All single quotes are replaced with two single quotes.
  * Suitable for use when constructing literal values for SQL commands where
@@ -2867,7 +2869,7 @@ GByte *CPLHexToBinary(const char *pszHex, int *pnBytes)
 }
 
 /************************************************************************/
-/*                         CPLGetValueType()                            */
+/*                          CPLGetValueType()                           */
 /************************************************************************/
 
 /**
@@ -2990,7 +2992,7 @@ CPLValueType CPLGetValueType(const char *pszValue)
 }
 
 /************************************************************************/
-/*                              CPLStrlcpy()                            */
+/*                             CPLStrlcpy()                             */
 /************************************************************************/
 
 /**
@@ -3018,7 +3020,6 @@ if( CPLStrlcpy(szDest, "abcde", sizeof(szDest)) >= sizeof(szDest) )
  *
  * @return the length of the source string (=strlen(pszSrc))
  *
- * @since GDAL 1.7.0
  */
 size_t CPLStrlcpy(char *pszDest, const char *pszSrc, size_t nDestSize)
 {
@@ -3041,7 +3042,7 @@ size_t CPLStrlcpy(char *pszDest, const char *pszSrc, size_t nDestSize)
 }
 
 /************************************************************************/
-/*                              CPLStrlcat()                            */
+/*                             CPLStrlcat()                             */
 /************************************************************************/
 
 /**
@@ -3075,7 +3076,6 @@ if( CPLStrlcat(szDest, "cde", sizeof(szDest)) >= sizeof(szDest) )
  *         If strlen(pszDest_before) >= nDestSize, then it returns
  *         nDestSize + strlen(pszSrc)
  *
- * @since GDAL 1.7.0
  */
 size_t CPLStrlcat(char *pszDest, const char *pszSrc, size_t nDestSize)
 {
@@ -3091,7 +3091,7 @@ size_t CPLStrlcat(char *pszDest, const char *pszSrc, size_t nDestSize)
 }
 
 /************************************************************************/
-/*                              CPLStrnlen()                            */
+/*                             CPLStrnlen()                             */
 /************************************************************************/
 
 /**
@@ -3109,7 +3109,6 @@ size_t CPLStrlcat(char *pszDest, const char *pszSrc, size_t nDestSize)
  * @return strlen(pszStr) if the length is lesser than nMaxLen, otherwise
  * nMaxLen if the NUL character has not been found in the first nMaxLen bytes.
  *
- * @since GDAL 1.7.0
  */
 
 size_t CPLStrnlen(const char *pszStr, size_t nMaxLen)
@@ -3124,7 +3123,7 @@ size_t CPLStrnlen(const char *pszStr, size_t nMaxLen)
 }
 
 /************************************************************************/
-/*                            CSLParseCommandLine()                     */
+/*                        CSLParseCommandLine()                         */
 /************************************************************************/
 
 /**
@@ -3134,7 +3133,6 @@ size_t CPLStrnlen(const char *pszStr, size_t nMaxLen)
  *
  * @return NULL terminated list of strings to free with CSLDestroy()
  *
- * @since GDAL 2.1
  */
 char **CSLParseCommandLine(const char *pszCommandLine)
 {
@@ -3142,7 +3140,7 @@ char **CSLParseCommandLine(const char *pszCommandLine)
 }
 
 /************************************************************************/
-/*                              CPLToupper()                            */
+/*                             CPLToupper()                             */
 /************************************************************************/
 
 /** Converts a (ASCII) lowercase character to uppercase.
@@ -3157,7 +3155,7 @@ int CPLToupper(int c)
 }
 
 /************************************************************************/
-/*                              CPLTolower()                            */
+/*                             CPLTolower()                             */
 /************************************************************************/
 
 /** Converts a (ASCII) uppercase character to lowercase.
@@ -3172,7 +3170,7 @@ int CPLTolower(int c)
 }
 
 /************************************************************************/
-/*                      CPLRemoveSQLComments()                          */
+/*                        CPLRemoveSQLComments()                        */
 /************************************************************************/
 
 /** Remove SQL comments from a string

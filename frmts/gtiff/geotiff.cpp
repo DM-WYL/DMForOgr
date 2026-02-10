@@ -20,7 +20,9 @@
 #include "cpl_conv.h"
 #include "cpl_error.h"
 #include "gdal.h"
+#include "gdal_frmts.h"
 #include "gdal_mdreader.h"  // RPC_xxx
+#include "gdalsubdatasetinfo.h"
 #include "gtiffdataset.h"
 #include "tiffio.h"
 #include "tif_jxl.h"
@@ -50,7 +52,7 @@ int &GTIFFGetThreadLocalLibtiffError()
 }
 
 /************************************************************************/
-/*                         GTIFFSupportsPredictor()                     */
+/*                       GTIFFSupportsPredictor()                       */
 /************************************************************************/
 
 bool GTIFFSupportsPredictor(int nCompression)
@@ -61,7 +63,7 @@ bool GTIFFSupportsPredictor(int nCompression)
 }
 
 /************************************************************************/
-/*                     GTIFFSetThreadLocalInExternalOvr()               */
+/*                  GTIFFSetThreadLocalInExternalOvr()                  */
 /************************************************************************/
 
 void GTIFFSetThreadLocalInExternalOvr(bool b)
@@ -74,9 +76,23 @@ void GTIFFSetThreadLocalInExternalOvr(bool b)
 /************************************************************************/
 
 void GTIFFGetOverviewBlockSize(GDALRasterBandH hBand, int *pnBlockXSize,
-                               int *pnBlockYSize)
+                               int *pnBlockYSize, CSLConstList papszOptions,
+                               const char *pszOptionKey)
 {
-    const char *pszVal = CPLGetConfigOption("GDAL_TIFF_OVR_BLOCKSIZE", nullptr);
+    const char *pszVal = nullptr;
+    const char *pszValItem = nullptr;
+    if (papszOptions && pszOptionKey)
+    {
+        pszVal = CSLFetchNameValue(papszOptions, pszOptionKey);
+        if (pszVal)
+            pszValItem = pszOptionKey;
+    }
+    if (!pszVal)
+    {
+        pszVal = CPLGetConfigOption("GDAL_TIFF_OVR_BLOCKSIZE", nullptr);
+        if (pszVal)
+            pszValItem = "GDAL_TIFF_OVR_BLOCKSIZE";
+    }
     if (!pszVal)
     {
         GDALRasterBand *const poBand = GDALRasterBand::FromHandle(hBand);
@@ -94,10 +110,10 @@ void GTIFFGetOverviewBlockSize(GDALRasterBandH hBand, int *pnBlockXSize,
             !CPLIsPowerOfTwo(nOvrBlockSize))
         {
             CPLErrorOnce(CE_Warning, CPLE_NotSupported,
-                         "Wrong value for GDAL_TIFF_OVR_BLOCKSIZE : %s. "
+                         "Wrong value for %s : %s. "
                          "Should be a power of 2 between 64 and 4096. "
                          "Defaulting to 128",
-                         pszVal);
+                         pszValItem, pszVal);
             nOvrBlockSize = 128;
         }
 
@@ -122,8 +138,8 @@ void GTIFFSetJpegQuality(GDALDatasetH hGTIFFDS, int nJpegQuality)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-        poDS->m_papoOverviewDS[i]->m_nJpegQuality = poDS->m_nJpegQuality;
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_nJpegQuality = poDS->m_nJpegQuality;
 }
 
 /************************************************************************/
@@ -142,8 +158,8 @@ void GTIFFSetWebPLevel(GDALDatasetH hGTIFFDS, int nWebpLevel)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-        poDS->m_papoOverviewDS[i]->m_nWebPLevel = poDS->m_nWebPLevel;
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_nWebPLevel = poDS->m_nWebPLevel;
 }
 
 /************************************************************************/
@@ -162,8 +178,8 @@ void GTIFFSetWebPLossless(GDALDatasetH hGTIFFDS, bool bWebpLossless)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-        poDS->m_papoOverviewDS[i]->m_bWebPLossless = poDS->m_bWebPLossless;
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_bWebPLossless = poDS->m_bWebPLossless;
 }
 
 /************************************************************************/
@@ -182,8 +198,8 @@ void GTIFFSetJpegTablesMode(GDALDatasetH hGTIFFDS, int nJpegTablesMode)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-        poDS->m_papoOverviewDS[i]->m_nJpegTablesMode = poDS->m_nJpegTablesMode;
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_nJpegTablesMode = poDS->m_nJpegTablesMode;
 }
 
 /************************************************************************/
@@ -202,8 +218,8 @@ void GTIFFSetZLevel(GDALDatasetH hGTIFFDS, int nZLevel)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-        poDS->m_papoOverviewDS[i]->m_nZLevel = poDS->m_nZLevel;
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_nZLevel = poDS->m_nZLevel;
 }
 
 /************************************************************************/
@@ -222,8 +238,8 @@ void GTIFFSetZSTDLevel(GDALDatasetH hGTIFFDS, int nZSTDLevel)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-        poDS->m_papoOverviewDS[i]->m_nZSTDLevel = poDS->m_nZSTDLevel;
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_nZSTDLevel = poDS->m_nZSTDLevel;
 }
 
 /************************************************************************/
@@ -243,11 +259,10 @@ void GTIFFSetMaxZError(GDALDatasetH hGTIFFDS, double dfMaxZError)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
     {
-        poDS->m_papoOverviewDS[i]->m_dfMaxZError = poDS->m_dfMaxZError;
-        poDS->m_papoOverviewDS[i]->m_dfMaxZErrorOverview =
-            poDS->m_dfMaxZErrorOverview;
+        poOvrDS->m_dfMaxZError = poDS->m_dfMaxZError;
+        poOvrDS->m_dfMaxZErrorOverview = poDS->m_dfMaxZErrorOverview;
     }
 }
 
@@ -269,10 +284,8 @@ void GTIFFSetJXLLossless(GDALDatasetH hGTIFFDS, bool bIsLossless)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-    {
-        poDS->m_papoOverviewDS[i]->m_bJXLLossless = poDS->m_bJXLLossless;
-    }
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_bJXLLossless = poDS->m_bJXLLossless;
 }
 
 /************************************************************************/
@@ -291,10 +304,8 @@ void GTIFFSetJXLEffort(GDALDatasetH hGTIFFDS, int nEffort)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-    {
-        poDS->m_papoOverviewDS[i]->m_nJXLEffort = poDS->m_nJXLEffort;
-    }
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_nJXLEffort = poDS->m_nJXLEffort;
 }
 
 /************************************************************************/
@@ -313,10 +324,8 @@ void GTIFFSetJXLDistance(GDALDatasetH hGTIFFDS, float fDistance)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-    {
-        poDS->m_papoOverviewDS[i]->m_fJXLDistance = poDS->m_fJXLDistance;
-    }
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_fJXLDistance = poDS->m_fJXLDistance;
 }
 
 /************************************************************************/
@@ -335,11 +344,8 @@ void GTIFFSetJXLAlphaDistance(GDALDatasetH hGTIFFDS, float fAlphaDistance)
 
     poDS->ScanDirectories();
 
-    for (int i = 0; i < poDS->m_nOverviewCount; ++i)
-    {
-        poDS->m_papoOverviewDS[i]->m_fJXLAlphaDistance =
-            poDS->m_fJXLAlphaDistance;
-    }
+    for (auto &poOvrDS : poDS->m_apoOverviewDS)
+        poOvrDS->m_fJXLAlphaDistance = poDS->m_fJXLAlphaDistance;
 }
 
 #endif  // HAVE_JXL
@@ -442,7 +448,7 @@ bool GTIFFIsStandardColorInterpretation(GDALDatasetH hSrcDS,
 /*      http://geotiff.maptools.org/rpc_prop.html                       */
 /************************************************************************/
 
-void GTiffDatasetWriteRPCTag(TIFF *hTIFF, char **papszRPCMD)
+void GTiffDatasetWriteRPCTag(TIFF *hTIFF, CSLConstList papszRPCMD)
 
 {
     GDALRPCInfoV2 sRPC;
@@ -495,7 +501,7 @@ char **GTiffDatasetReadRPCTag(TIFF *hTIFF)
 }
 
 /************************************************************************/
-/*                  GTiffFormatGDALNoDataTagValue()                     */
+/*                   GTiffFormatGDALNoDataTagValue()                    */
 /************************************************************************/
 
 CPLString GTiffFormatGDALNoDataTagValue(double dfNoData)
@@ -509,7 +515,7 @@ CPLString GTiffFormatGDALNoDataTagValue(double dfNoData)
 }
 
 /************************************************************************/
-/*                       GTIFFUpdatePhotometric()                      */
+/*                       GTIFFUpdatePhotometric()                       */
 /************************************************************************/
 
 bool GTIFFUpdatePhotometric(const char *pszPhotometric,
@@ -650,7 +656,7 @@ void GTiffWriteJPEGTables(TIFF *hTIFF, const char *pszPhotometric,
     TIFF *hTIFFTmp =
         GTiffDataset::CreateLL(osTmpFilenameIn, nInMemImageWidth,
                                nInMemImageHeight, (nBands <= 4) ? nBands : 1,
-                               (l_nBitsPerSample <= 8) ? GDT_Byte : GDT_UInt16,
+                               (l_nBitsPerSample <= 8) ? GDT_UInt8 : GDT_UInt16,
                                0.0, 0, papszLocalParameters, &fpTmp, osTmp,
                                /* bCreateCopy=*/false, bTileInterleaving);
     CSLDestroy(papszLocalParameters);
@@ -761,7 +767,7 @@ static void GTiffErrorHandler(const char *module, const char *fmt, va_list ap)
 #else
 
 /************************************************************************/
-/*                      GTiffWarningHandlerExt()                        */
+/*                       GTiffWarningHandlerExt()                       */
 /************************************************************************/
 extern int GTiffWarningHandlerExt(TIFF *tif, void *user_data,
                                   const char *module, const char *fmt,
@@ -801,7 +807,7 @@ int GTiffWarningHandlerExt(TIFF *tif, void *user_data, const char *module,
 }
 
 /************************************************************************/
-/*                       GTiffErrorHandlerExt()                         */
+/*                        GTiffErrorHandlerExt()                        */
 /************************************************************************/
 extern int GTiffErrorHandlerExt(TIFF *tif, void *user_data, const char *module,
                                 const char *fmt, va_list ap);
@@ -983,7 +989,7 @@ static const struct
 };
 
 /************************************************************************/
-/*                    GTIFFGetCompressionMethodName()                   */
+/*                   GTIFFGetCompressionMethodName()                    */
 /************************************************************************/
 
 const char *GTIFFGetCompressionMethodName(int nCompressionCode)
@@ -999,7 +1005,7 @@ const char *GTIFFGetCompressionMethodName(int nCompressionCode)
 }
 
 /************************************************************************/
-/*                   GTIFFGetCompressionMethod()                        */
+/*                     GTIFFGetCompressionMethod()                      */
 /************************************************************************/
 
 int GTIFFGetCompressionMethod(const char *pszValue, const char *pszVariableName)
@@ -1036,7 +1042,7 @@ int GTIFFGetCompressionMethod(const char *pszValue, const char *pszVariableName)
 }
 
 /************************************************************************/
-/*                     GTiffGetCompressValues()                         */
+/*                       GTiffGetCompressValues()                       */
 /************************************************************************/
 
 CPLString GTiffGetCompressValues(bool &bHasLZW, bool &bHasDEFLATE,
@@ -1131,10 +1137,10 @@ CPLString GTiffGetCompressValues(bool &bHasLZW, bool &bHasDEFLATE,
 }
 
 /************************************************************************/
-/*                    OGRGTiffDriverGetSubdatasetInfo()                 */
+/*                  OGRGTiffDriverGetSubdatasetInfo()                   */
 /************************************************************************/
 
-struct GTiffDriverSubdatasetInfo : public GDALSubdatasetInfo
+struct GTiffDriverSubdatasetInfo final : public GDALSubdatasetInfo
 {
   public:
     explicit GTiffDriverSubdatasetInfo(const std::string &fileName)
@@ -1207,7 +1213,7 @@ static GDALSubdatasetInfo *GTiffDriverGetSubdatasetInfo(const char *pszFileName)
 }
 
 /************************************************************************/
-/*                          GDALRegister_GTiff()                        */
+/*                         GDALRegister_GTiff()                         */
 /************************************************************************/
 
 void GDALRegister_GTiff()
@@ -1451,6 +1457,128 @@ void GDALRegister_GTiff()
         "   </Option>"
         "</CreationOptionList>";
 
+    std::string osOvrOptions;
+    osOvrOptions = "<OverviewCreationOptionList>"
+                   "   <Option name='LOCATION' type='string-select'>"
+                   "       <Value>INTERNAL</Value>"
+                   "       <Value>EXTERNAL</Value>"
+                   "       <Value>RRD</Value>"
+                   "   </Option>"
+                   "   <Option name='COMPRESS' type='string-select'>";
+    osOvrOptions += osCompressValues;
+    osOvrOptions +=
+        "   </Option>"
+        "   <Option name='BLOCKSIZE' type='int' "
+        "description='Tile size in pixels' min='64'/>"
+        "   <Option name='NUM_THREADS' type='string' description='Number of "
+        "worker threads for compression. Can be set to ALL_CPUS' default='1'/>";
+    if (bHasLZW || bHasDEFLATE || bHasZSTD)
+        osOvrOptions += "   <Option name='PREDICTOR' type='int' "
+                        "description='Predictor Type (1=default, 2=horizontal "
+                        "differencing, 3=floating point prediction)' "
+                        "default='1'/>";
+    if (bHasJPEG)
+    {
+        osOvrOptions +=
+            ""
+            "   <Option name='JPEG_QUALITY' type='int' description='JPEG "
+            "quality 1-100' min='1' max='100' default='75'/>"
+            "   <Option name='JPEGTABLESMODE' type='int' description='Content "
+            "of JPEGTABLES tag. 0=no JPEGTABLES tag, 1=Quantization tables "
+            "only, 2=Huffman tables only, 3=Both' default='1'/>";
+    }
+    if (bHasDEFLATE)
+    {
+#ifdef LIBDEFLATE_SUPPORT
+        osOvrOptions +=
+            ""
+            "   <Option name='ZLEVEL' type='int' description='DEFLATE "
+            "compression level 1-12' min='1' max='12' default='6'/>";
+#else
+        osOvrOptions +=
+            ""
+            "   <Option name='ZLEVEL' type='int' description='DEFLATE "
+            "compression level 1-9' min='1' max='9' default='6'/>";
+#endif
+    }
+    if (bHasZSTD)
+        osOvrOptions +=
+            ""
+            "   <Option name='ZSTD_LEVEL' type='int' description='ZSTD "
+            "compression level 1(fast)-22(slow)' min='1' max='22' "
+            "default='9'/>";
+    if (bHasLERC)
+    {
+        osOvrOptions +=
+            ""
+            "   <Option name='MAX_Z_ERROR' type='float' description='Maximum "
+            "error for LERC compression' default='0'/>";
+    }
+    if (bHasWebP)
+    {
+        osOvrOptions +=
+            ""
+#if WEBP_ENCODER_ABI_VERSION >= 0x0100
+            "   <Option name='WEBP_LOSSLESS' type='boolean' "
+            "description='Whether lossless compression should be used' "
+            "default='FALSE'/>"
+#endif
+            "   <Option name='WEBP_LEVEL' type='int' description='WEBP quality "
+            "level. Low values result in higher compression ratios' "
+            "default='" XSTRINGIFY(DEFAULT_WEBP_LEVEL) "'/>";
+    }
+#ifdef HAVE_JXL
+    osOvrOptions +=
+        ""
+        "   <Option name='JXL_LOSSLESS' type='boolean' description='Whether "
+        "JPEGXL compression should be lossless' default='YES'/>"
+        "   <Option name='JXL_EFFORT' type='int' description='Level of effort "
+        "1(fast)-9(slow)' min='1' max='9' default='5'/>"
+        "   <Option name='JXL_DISTANCE' type='float' description='Distance "
+        "level for lossy compression (0=mathematically lossless, 1.0=visually "
+        "lossless, usual range [0.5,3])' default='1.0' min='0.01' max='25.0'/>";
+#ifdef HAVE_JxlEncoderSetExtraChannelDistance
+    osOvrOptions += "   <Option name='JXL_ALPHA_DISTANCE' type='float' "
+                    "description='Distance level for alpha channel "
+                    "(-1=same as non-alpha channels, "
+                    "0=mathematically lossless, 1.0=visually lossless, "
+                    "usual range [0.5,3])' default='-1' min='-1' max='25.0'/>";
+#endif
+#endif
+    osOvrOptions +=
+        "   <Option name='INTERLEAVE' type='string-select' default='PIXEL'>"
+        "       <Value>BAND</Value>"
+        "       <Value>PIXEL</Value>"
+        "   </Option>"
+        "   <Option name='PHOTOMETRIC' type='string-select'>"
+        "       <Value>MINISBLACK</Value>"
+        "       <Value>MINISWHITE</Value>"
+        "       <Value>PALETTE</Value>"
+        "       <Value>RGB</Value>"
+        "       <Value>CMYK</Value>"
+        "       <Value>YCBCR</Value>"
+        "       <Value>CIELAB</Value>"
+        "       <Value>ICCLAB</Value>"
+        "       <Value>ITULAB</Value>"
+        "   </Option>"
+        "   <Option name='BIGTIFF' type='string-select' description='Force "
+        "creation of BigTIFF file (only for external overview)' "
+        "default='IF_NEEDED'>"
+        "     <Value>YES</Value>"
+        "     <Value>NO</Value>"
+        "     <Value>IF_NEEDED</Value>"
+        "     <Value>IF_SAFER</Value>"
+        "   </Option>"
+        "   <Option name='ALPHA' type='string-select' description='Mark first "
+        "extrasample as being alpha'>"
+        "       <Value>NON-PREMULTIPLIED</Value>"
+        "       <Value>PREMULTIPLIED</Value>"
+        "       <Value>UNSPECIFIED</Value>"
+        "       <Value aliasOf='NON-PREMULTIPLIED'>YES</Value>"
+        "       <Value aliasOf='UNSPECIFIED'>NO</Value>"
+        "   </Option>"
+        "</OverviewCreationOptionList>";
+
     /* -------------------------------------------------------------------- */
     /*      Set the driver details.                                         */
     /* -------------------------------------------------------------------- */
@@ -1465,6 +1593,8 @@ void GDALRegister_GTiff()
                               "Byte Int8 UInt16 Int16 UInt32 Int32 Float32 "
                               "Float64 CInt16 CInt32 CFloat32 CFloat64");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONOPTIONLIST, osOptions);
+    poDriver->SetMetadataItem(GDAL_DMD_OVERVIEW_CREATIONOPTIONLIST,
+                              osOvrOptions.c_str());
     poDriver->SetMetadataItem(
         GDAL_DMD_OPENOPTIONLIST,
         "<OpenOptionList>"
@@ -1501,6 +1631,7 @@ void GDALRegister_GTiff()
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_ONLY_VISIBLE_AT_CLOSE_TIME,
                               "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CAN_READ_AFTER_DELETE, "YES");
 
     poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS,

@@ -40,15 +40,15 @@ typedef enum
 
 GDALDataset *OGRGMLASDriverCreateCopy(const char *pszFilename,
                                       GDALDataset *poSrcDS, int /*bStrict*/,
-                                      char **papszOptions,
+                                      CSLConstList papszOptions,
                                       GDALProgressFunc pfnProgress,
                                       void *pProgressData);
 
 /************************************************************************/
-/*                          IGMLASInputSourceClosing                    */
+/*                       IGMLASInputSourceClosing                       */
 /************************************************************************/
 
-class IGMLASInputSourceClosing
+class IGMLASInputSourceClosing /* non final */
 {
   public:
     virtual ~IGMLASInputSourceClosing();
@@ -57,10 +57,10 @@ class IGMLASInputSourceClosing
 };
 
 /************************************************************************/
-/*                         GMLASResourceCache                           */
+/*                          GMLASResourceCache                          */
 /************************************************************************/
 
-class GMLASResourceCache
+class GMLASResourceCache /* non final */
 {
   protected:
     bool m_bHasCheckedCacheDirectory = false;
@@ -90,7 +90,7 @@ class GMLASResourceCache
 };
 
 /************************************************************************/
-/*                          GMLASXSDCache                               */
+/*                            GMLASXSDCache                             */
 /************************************************************************/
 
 class GMLASXSDCache final : public GMLASResourceCache
@@ -104,11 +104,11 @@ class GMLASXSDCache final : public GMLASResourceCache
 };
 
 /************************************************************************/
-/*                     GMLASBaseEntityResolver                          */
+/*                       GMLASBaseEntityResolver                        */
 /************************************************************************/
 
-class GMLASBaseEntityResolver : public EntityResolver,
-                                public IGMLASInputSourceClosing
+class GMLASBaseEntityResolver /* non final*/ : public EntityResolver,
+                                               public IGMLASInputSourceClosing
 {
   protected:
     std::vector<CPLString> m_aosPathStack{};
@@ -120,7 +120,7 @@ class GMLASBaseEntityResolver : public EntityResolver,
 
   public:
     GMLASBaseEntityResolver(const CPLString &osBasePath, GMLASXSDCache &oCache);
-    virtual ~GMLASBaseEntityResolver();
+    ~GMLASBaseEntityResolver() override;
 
     void SetBasePath(const CPLString &osBasePath);
 
@@ -144,7 +144,7 @@ class GMLASBaseEntityResolver : public EntityResolver,
         return m_bFoundNonOfficialGMLSchemaLocation;
     }
 
-    virtual void notifyClosing(const CPLString &osFilename) override;
+    void notifyClosing(const CPLString &osFilename) override;
     virtual InputSource *resolveEntity(const XMLCh *const publicId,
                                        const XMLCh *const systemId) override;
 
@@ -154,7 +154,7 @@ class GMLASBaseEntityResolver : public EntityResolver,
 };
 
 /************************************************************************/
-/*                          GMLASInputSource                            */
+/*                           GMLASInputSource                           */
 /************************************************************************/
 
 class GMLASInputSource final : public InputSource
@@ -171,18 +171,18 @@ class GMLASInputSource final : public InputSource
     GMLASInputSource(
         const char *pszFilename, const std::shared_ptr<VSIVirtualHandle> &fp,
         MemoryManager *const manager = XMLPlatformUtils::fgMemoryManager);
-    virtual ~GMLASInputSource();
+    ~GMLASInputSource() override;
 
-    virtual BinInputStream *makeStream() const override;
+    BinInputStream *makeStream() const override;
 
     void SetClosingCallback(IGMLASInputSourceClosing *cbk);
 };
 
 /************************************************************************/
-/*                            GMLASErrorHandler                         */
+/*                          GMLASErrorHandler                           */
 /************************************************************************/
 
-class GMLASErrorHandler : public ErrorHandler
+class GMLASErrorHandler final : public ErrorHandler
 {
   public:
     GMLASErrorHandler() = default;
@@ -212,11 +212,11 @@ class GMLASErrorHandler : public ErrorHandler
         return m_bFailed;
     }
 
-    virtual void warning(const SAXParseException &e) override;
-    virtual void error(const SAXParseException &e) override;
-    virtual void fatalError(const SAXParseException &e) override;
+    void warning(const SAXParseException &e) override;
+    void error(const SAXParseException &e) override;
+    void fatalError(const SAXParseException &e) override;
 
-    virtual void resetErrors() override
+    void resetErrors() override
     {
         m_bFailed = false;
     }
@@ -232,10 +232,10 @@ class GMLASErrorHandler : public ErrorHandler
 };
 
 /************************************************************************/
-/*                        GMLASXLinkResolutionConf                      */
+/*                       GMLASXLinkResolutionConf                       */
 /************************************************************************/
 
-class GMLASXLinkResolutionConf
+class GMLASXLinkResolutionConf final
 {
   public:
     /* See data/gmlasconf.xsd for documentation of the fields */
@@ -310,7 +310,7 @@ class GMLASXLinkResolutionConf
 /*                          GMLASConfiguration                          */
 /************************************************************************/
 
-class GMLASConfiguration
+class GMLASConfiguration final
 {
   public:
     /** Whether remote schemas are allowed to be download. */
@@ -489,11 +489,11 @@ class GMLASXLinkResolver final : public GMLASResourceCache
 };
 
 /************************************************************************/
-/*                           GMLASXPathMatcher                          */
+/*                          GMLASXPathMatcher                           */
 /************************************************************************/
 
 /** Object to compares a user provided XPath against a set of test XPaths */
-class GMLASXPathMatcher
+class GMLASXPathMatcher final
 {
     struct XPathComponent
     {
@@ -565,7 +565,7 @@ typedef enum
 /*                              GMLASField                              */
 /************************************************************************/
 
-class GMLASField
+class GMLASField final
 {
   public:
     typedef enum
@@ -909,10 +909,10 @@ class GMLASField
 };
 
 /************************************************************************/
-/*                            GMLASFeatureClass                         */
+/*                          GMLASFeatureClass                           */
 /************************************************************************/
 
-class GMLASFeatureClass
+class GMLASFeatureClass final
 {
     /** User facing name */
     CPLString m_osName{};
@@ -1051,7 +1051,7 @@ class GMLASFeatureClass
 /*                         GMLASSchemaAnalyzer                          */
 /************************************************************************/
 
-class GMLASSchemaAnalyzer
+class GMLASSchemaAnalyzer final
 {
     GMLASXPathMatcher &m_oIgnoredXPathMatcher;
 
@@ -1284,7 +1284,7 @@ class GMLASSchemaAnalyzer
 };
 
 /************************************************************************/
-/*                           OGRGMLASDataSource                         */
+/*                          OGRGMLASDataSource                          */
 /************************************************************************/
 
 class OGRGMLASLayer;
@@ -1399,13 +1399,13 @@ class OGRGMLASDataSource final : public GDALDataset
   public:
     OGRGMLASDataSource();
 
-    ~OGRGMLASDataSource();
+    ~OGRGMLASDataSource() override;
 
     int GetLayerCount() const override;
     const OGRLayer *GetLayer(int) const override;
-    virtual OGRLayer *GetLayerByName(const char *pszName) override;
+    OGRLayer *GetLayerByName(const char *pszName) override;
 
-    virtual void ResetReading() override;
+    void ResetReading() override;
     virtual OGRFeature *GetNextFeature(OGRLayer **ppoBelongingLayer,
                                        double *pdfProgressPct,
                                        GDALProgressFunc pfnProgress,
@@ -1495,7 +1495,7 @@ class OGRGMLASDataSource final : public GDALDataset
 };
 
 /************************************************************************/
-/*                             OGRGMLASLayer                            */
+/*                            OGRGMLASLayer                             */
 /************************************************************************/
 
 class OGRGMLASLayer final : public OGRLayer
@@ -1557,7 +1557,7 @@ class OGRGMLASLayer final : public OGRLayer
     OGRGMLASLayer(OGRGMLASDataSource *poDS, const GMLASFeatureClass &oFC,
                   OGRGMLASLayer *poParentLayer, bool bAlwaysGenerateOGRPKId);
     explicit OGRGMLASLayer(const char *pszLayerName);
-    virtual ~OGRGMLASLayer();
+    ~OGRGMLASLayer() override;
 
     const char *GetName() const override
     {
@@ -1566,8 +1566,8 @@ class OGRGMLASLayer final : public OGRLayer
 
     using OGRLayer::GetLayerDefn;
     const OGRFeatureDefn *GetLayerDefn() const override;
-    virtual void ResetReading() override;
-    virtual OGRFeature *GetNextFeature() override;
+    void ResetReading() override;
+    OGRFeature *GetNextFeature() override;
 
     int TestCapability(const char *) const override
     {
@@ -1644,7 +1644,7 @@ class OGRGMLASLayer final : public OGRLayer
 };
 
 /************************************************************************/
-/*                              GMLASReader                             */
+/*                             GMLASReader                              */
 /************************************************************************/
 
 class GMLASReader final : public DefaultHandler
@@ -1954,7 +1954,7 @@ class GMLASReader final : public DefaultHandler
     GMLASReader(GMLASXSDCache &oCache,
                 const GMLASXPathMatcher &oIgnoredXPathMatcher,
                 GMLASXLinkResolver &oXLinkResolver);
-    ~GMLASReader();
+    ~GMLASReader() override;
 
     bool Init(const char *pszFilename,
               const std::shared_ptr<VSIVirtualHandle> &fp,

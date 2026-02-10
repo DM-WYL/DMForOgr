@@ -27,7 +27,7 @@
 #endif
 
 /************************************************************************/
-/*      GDALRasterReprojectAlgorithm::GDALRasterReprojectAlgorithm()    */
+/*     GDALRasterReprojectAlgorithm::GDALRasterReprojectAlgorithm()     */
 /************************************************************************/
 
 GDALRasterReprojectAlgorithm::GDALRasterReprojectAlgorithm(bool standaloneStep)
@@ -62,7 +62,26 @@ GDALRasterReprojectAlgorithm::GDALRasterReprojectAlgorithm(bool standaloneStep)
         .SetMetaVar("<width>,<height>")
         .SetMutualExclusionGroup("resolution-size");
 
-    AddBBOXArg(&m_bbox, _("Target bounding box (in destination CRS units)"));
+    auto &arg = AddBBOXArg(&m_bbox,
+                           _("Target bounding box (in destination CRS units)"));
+
+    arg.AddValidationAction(
+        [this, &arg]()
+        {
+            // Validate it's not empty
+            const std::vector<double> &bbox = arg.Get<std::vector<double>>();
+            if ((bbox[0] >= bbox[2]) || (bbox[1] >= bbox[3]))
+            {
+                ReportError(CE_Failure, CPLE_AppDefined,
+                            "Invalid bounding box specified");
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        });
+
     AddArg("bbox-crs", 0, _("CRS of target bounding box"), &m_bboxCrs)
         .SetIsCRSArg()
         .AddHiddenAlias("bbox_srs");
@@ -97,7 +116,7 @@ GDALRasterReprojectAlgorithm::GDALRasterReprojectAlgorithm(bool standaloneStep)
 }
 
 /************************************************************************/
-/*           GDALRasterReprojectUtils::AddResamplingArg()               */
+/*             GDALRasterReprojectUtils::AddResamplingArg()             */
 /************************************************************************/
 
 /*static */ void
@@ -113,7 +132,7 @@ GDALRasterReprojectUtils::AddResamplingArg(GDALAlgorithm *alg,
 }
 
 /************************************************************************/
-/*            AddWarpOptTransformOptErrorThresholdArg()                 */
+/*              AddWarpOptTransformOptErrorThresholdArg()               */
 /************************************************************************/
 
 /* static */
@@ -176,7 +195,7 @@ bool GDALRasterReprojectAlgorithm::CanHandleNextStep(
 }
 
 /************************************************************************/
-/*            GDALRasterReprojectAlgorithm::RunStep()                   */
+/*               GDALRasterReprojectAlgorithm::RunStep()                */
 /************************************************************************/
 
 bool GDALRasterReprojectAlgorithm::RunStep(GDALPipelineStepRunContext &ctxt)
@@ -188,6 +207,7 @@ bool GDALRasterReprojectAlgorithm::RunStep(GDALPipelineStepRunContext &ctxt)
 
     CPLStringList aosOptions;
     std::string outputFilename;
+
     if (ctxt.m_poNextUsableStep)
     {
         CPLAssert(CanHandleNextStep(ctxt.m_poNextUsableStep));

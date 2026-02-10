@@ -94,9 +94,13 @@ set_property(
 
 include(GdalStandardIncludes)
 gdal_standard_includes(ogr)
-target_compile_options(ogr PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX})
+target_compile_options(ogr PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX} ${WFLAG_DOUBLE_PROMOTION})
 set_property(TARGET ogr PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
 target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:ogr>)
+
+if (HAVE_WFLAG_UNREACHABLE_CODE_AGGRESSIVE)
+  target_compile_definitions(ogr PRIVATE HAVE_WFLAG_UNREACHABLE_CODE_AGGRESSIVE)
+endif()
 
 target_compile_definitions(ogr PUBLIC $<$<CONFIG:DEBUG>:GDAL_DEBUG>)
 if (USE_PRECOMPILED_HEADERS)
@@ -142,6 +146,7 @@ configure_file(
   ${CMAKE_CURRENT_BINARY_DIR}/ogr_sfcgal.h
 )
 target_include_directories(ogr PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(ogr PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ogrsf_frmts/gmlutils)
 
 if (NOT GDAL_USE_ZLIB_INTERNAL)
   target_compile_definitions(ogr PRIVATE -DHAVE_ZLIB_H -DHAVE_ZLIB)

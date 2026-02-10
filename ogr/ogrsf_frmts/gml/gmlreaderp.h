@@ -41,7 +41,7 @@ typedef struct _GeometryNamesStruct GeometryNamesStruct;
 bool OGRGMLIsGeometryElement(const char *pszElement);
 
 /************************************************************************/
-/*                        GFSTemplateList                               */
+/*                           GFSTemplateList                            */
 /************************************************************************/
 
 class GFSTemplateItem;
@@ -111,7 +111,7 @@ typedef enum
     APPSCHEMA_MTKGML /* format of National Land Survey Finnish */
 } GMLAppSchemaType;
 
-class GMLHandler
+class GMLHandler /* non final */
 {
     char *m_pszCurField = nullptr;
     unsigned int m_nCurFieldAlloc = 0;
@@ -126,6 +126,7 @@ class GMLHandler
     int m_nGeometryDepth = 0;
     bool m_bAlreadyFoundGeometry = false;
     int m_nGeometryPropertyIndex = 0;
+    std::string m_osLastGeomPathInCurFeature{};
     std::map<std::string, CPLXMLNode *> m_oMapElementToSubstitute{};
 
     int m_nDepth = 0;
@@ -189,6 +190,8 @@ class GMLHandler
     CPL_DISALLOW_COPY_ASSIGN(GMLHandler)
 
   protected:
+    explicit GMLHandler(GMLReader *poReader);
+
     GMLReader *m_poReader = nullptr;
     GMLAppSchemaType eAppSchemaType = APPSCHEMA_GENERIC;
 
@@ -207,7 +210,6 @@ class GMLHandler
     bool IsGeometryElement(const char *pszElement);
 
   public:
-    explicit GMLHandler(GMLReader *poReader);
     virtual ~GMLHandler();
 
     virtual char *GetAttributeValue(void *attr,
@@ -224,7 +226,7 @@ class GMLHandler
 #if defined(HAVE_XERCES)
 
 /************************************************************************/
-/*                         GMLXercesHandler                             */
+/*                           GMLXercesHandler                           */
 /************************************************************************/
 class GMLXercesHandler final : public DefaultHandler, public GMLHandler
 {
@@ -248,8 +250,8 @@ class GMLXercesHandler final : public DefaultHandler, public GMLHandler
 
     void startEntity(const XMLCh *const name) override;
 
-    virtual const char *GetFID(void *attr) override;
-    virtual CPLXMLNode *AddAttributes(CPLXMLNode *psNode, void *attr) override;
+    const char *GetFID(void *attr) override;
+    CPLXMLNode *AddAttributes(CPLXMLNode *psNode, void *attr) override;
     virtual char *GetAttributeValue(void *attr,
                                     const char *pszAttributeName) override;
     virtual char *GetAttributeByIdx(void *attr, unsigned int idx,
@@ -288,8 +290,8 @@ class GMLExpatHandler final : public GMLHandler
         m_nDataHandlerCounter = 0;
     }
 
-    virtual const char *GetFID(void *attr) override;
-    virtual CPLXMLNode *AddAttributes(CPLXMLNode *psNode, void *attr) override;
+    const char *GetFID(void *attr) override;
+    CPLXMLNode *AddAttributes(CPLXMLNode *psNode, void *attr) override;
     virtual char *GetAttributeValue(void *attr,
                                     const char *pszAttributeName) override;
     virtual char *GetAttributeByIdx(void *attr, unsigned int idx,
@@ -445,7 +447,7 @@ class GMLReader final : public IGMLReader
     GMLReader(bool bExpatReader, bool bInvertAxisOrderIfLatLong,
               bool bConsiderEPSGAsURN, GMLSwapCoordinatesEnum eSwapCoordinates,
               bool bGetSecondaryGeometryOption);
-    virtual ~GMLReader();
+    ~GMLReader() override;
 
     bool IsClassListLocked() const override
     {

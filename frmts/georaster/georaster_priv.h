@@ -22,6 +22,8 @@
 #include "cpl_minixml.h"
 #include "cpl_list.h"
 
+#include <mutex>
+
 //  ---------------------------------------------------------------------------
 //  DEFLATE compression support
 //  ---------------------------------------------------------------------------
@@ -118,6 +120,28 @@ class GeoRasterRasterBand;
 class GeoRasterWrapper;
 
 //  ---------------------------------------------------------------------------
+//  GeoRasterDriver class definitions
+//  ---------------------------------------------------------------------------
+class GeoRasterDriver final : public GDALDriver
+{
+
+  private:
+    std::mutex oMutex{};
+    std::map<CPLString, OWSessionPool *> oMapSessionPool{};
+
+    CPL_DISALLOW_COPY_ASSIGN(GeoRasterDriver)
+  public:
+    GeoRasterDriver();
+    ~GeoRasterDriver() override;
+    OWConnection *GetConnection(const char *pszUserIn,
+                                const char *pszPasswordIn,
+                                const char *pszServerIn, int nSessMinIn,
+                                int nSessMaxIn, int nSessIncrIn);
+
+    static GeoRasterDriver *gpoGeoRasterDriver;
+};
+
+//  ---------------------------------------------------------------------------
 //  GeoRasterDataset, extends GDALDataset to support GeoRaster Datasets
 //  ---------------------------------------------------------------------------
 
@@ -139,13 +163,18 @@ class GeoRasterDataset final : public GDALDataset
     GeoRasterRasterBand *poMaskBand;
     bool bApplyNoDataArray;
     void JP2_Open(GDALAccess eAccess);
-    void JP2_CreateCopy(GDALDataset *poJP2DS, char **papszOptions,
+    void JP2_CreateCopy(GDALDataset *poJP2DS, CSLConstList papszOptions,
                         int *pnResolutions, GDALProgressFunc pfnProgress,
                         void *pProgressData);
     boolean JP2_CopyDirect(const char *pszJP2Filename, int *pnResolutions,
                            GDALProgressFunc pfnProgress, void *pProgressData);
     boolean JPEG_CopyDirect(const char *pszJPGFilename,
                             GDALProgressFunc pfnProgress, void *pProgressData);
+    static GeoRasterDataset *OpenDataset(const char *pszFilenameIn,
+                                         GDALAccess eAccessIn, bool bPoolIn,
+                                         int nPoolSessionMinIn,
+                                         int nPoolSessionMaxIn,
+                                         int nPoolSessionIncrIn);
 
   public:
     GDALDataset *poJP2Dataset;
@@ -157,10 +186,10 @@ class GeoRasterDataset final : public GDALDataset
     static CPLErr Delete(const char *pszFilename);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBands, GDALDataType eType,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
@@ -169,7 +198,7 @@ class GeoRasterDataset final : public GDALDataset
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
     char **GetMetadataDomainList() override;
-    char **GetMetadata(const char *pszDomain) override;
+    CSLConstList GetMetadata(const char *pszDomain) override;
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                      int nYSize, void *pData, int nBufXSize, int nBufYSize,
                      GDALDataType eBufType, int nBandCount,
@@ -279,11 +308,11 @@ class GeoRasterRasterBand final : public GDALRasterBand
 //  GeoRasterWrapper, an interface for Oracle Spatial SDO_GEORASTER objects
 //  ---------------------------------------------------------------------------
 
-class GeoRasterWrapper
+class GeoRasterWrapper final
 {
   public:
     GeoRasterWrapper();
-    virtual ~GeoRasterWrapper();
+    ~GeoRasterWrapper();
 
   private:
     OCILobLocator **pahLocator;
@@ -343,7 +372,9 @@ class GeoRasterWrapper
 
     bool FlushMetadata();
     static char **ParseIdentificator(const char *pszStringID);
-    static GeoRasterWrapper *Open(const char *pszStringID, bool bUpdate);
+    static GeoRasterWrapper *Open(const char *pszStringID, bool bUpdate,
+                                  bool bPool, int nSessionMinIn,
+                                  int nSessionMaxIn, int nSessionIncrIn);
     bool Create(char *pszDescription, char *pszInsert, bool bUpdate);
     bool Delete();
     void GetRasterInfo();
@@ -442,6 +473,11 @@ class GeoRasterWrapper
 
     bool bBlocking;
     bool bAutoBlocking;
+
+    bool bPool;
+    int nPoolSessionMin;
+    int nPoolSessionMax;
+    int nPoolSessionIncr;
 
     double dfXCoefficient[3];
     double dfYCoefficient[3];

@@ -35,7 +35,7 @@ class PCIDSK_EDBFile final : public EDBFile
 public:
 
     explicit PCIDSK_EDBFile( PCIDSKFile *file_in ) { file = file_in; }
-    ~PCIDSK_EDBFile() { PCIDSK_EDBFile::Close(); }
+    ~PCIDSK_EDBFile() override { PCIDSK_EDBFile::Close(); }
 
     int Close() const override;
     int GetWidth() const override;
@@ -69,7 +69,7 @@ EDBFile *PCIDSK::DefaultOpenEDB( const std::string& filename, const std::string&
 /*                               Close()                                */
 /************************************************************************/
 
-int PCIDSK_EDBFile::Close() const
+int PCIDSK_EDBFile::Close()const
 
 {
     if( file != nullptr )

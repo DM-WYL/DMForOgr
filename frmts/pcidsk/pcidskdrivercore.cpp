@@ -12,10 +12,13 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "pcidskdrivercore.h"
 
 /************************************************************************/
-/*                     PCIDSKDriverIdentify()                           */
+/*                        PCIDSKDriverIdentify()                        */
 /************************************************************************/
 
 int PCIDSKDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -26,7 +29,7 @@ int PCIDSKDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                     PCIDSKDriverSetCommonMetadata()                  */
+/*                   PCIDSKDriverSetCommonMetadata()                    */
 /************************************************************************/
 
 void PCIDSKDriverSetCommonMetadata(GDALDriver *poDriver)

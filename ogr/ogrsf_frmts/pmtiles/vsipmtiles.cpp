@@ -26,7 +26,7 @@ constexpr const char *PMTILES_HEADER_JSON = "pmtiles_header.json";
 constexpr const char *METADATA_JSON = "metadata.json";
 
 /************************************************************************/
-/*                   VSIPMTilesFilesystemHandler                        */
+/*                     VSIPMTilesFilesystemHandler                      */
 /************************************************************************/
 
 class VSIPMTilesFilesystemHandler final : public VSIFilesystemHandler
@@ -43,7 +43,7 @@ class VSIPMTilesFilesystemHandler final : public VSIFilesystemHandler
 };
 
 /************************************************************************/
-/*                   VSIPMTilesGetTileExtension()                       */
+/*                     VSIPMTilesGetTileExtension()                     */
 /************************************************************************/
 
 static const char *VSIPMTilesGetTileExtension(OGRPMTilesDataset *poDS)
@@ -68,7 +68,7 @@ static const char *VSIPMTilesGetTileExtension(OGRPMTilesDataset *poDS)
 }
 
 /************************************************************************/
-/*                  VSIPMTilesGetPMTilesHeaderJson()                    */
+/*                   VSIPMTilesGetPMTilesHeaderJson()                   */
 /************************************************************************/
 
 static std::string VSIPMTilesGetPMTilesHeaderJson(OGRPMTilesDataset *poDS)
@@ -204,7 +204,7 @@ VSIPMTilesOpen(const char *pszFilename, std::string &osSubfilename,
 }
 
 /************************************************************************/
-/*                               Open()                                 */
+/*                                Open()                                */
 /************************************************************************/
 
 VSIVirtualHandleUniquePtr
@@ -265,7 +265,7 @@ VSIPMTilesFilesystemHandler::Open(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                               Stat()                                 */
+/*                                Stat()                                */
 /************************************************************************/
 
 int VSIPMTilesFilesystemHandler::Stat(const char *pszFilename,
@@ -283,23 +283,24 @@ int VSIPMTilesFilesystemHandler::Stat(const char *pszFilename,
     if (!poDS)
         return -1;
 
-    if (osSubfilename.empty())
-        return -1;
-
     VSIStatBufL sStatPmtiles;
     if (VSIStatL(poDS->GetDescription(), &sStatPmtiles) == 0)
     {
         pStatBuf->st_mtime = sStatPmtiles.st_mtime;
     }
 
-    if (osSubfilename == METADATA_JSON)
+    if (osSubfilename.empty())
+    {
+        pStatBuf->st_mode = S_IFDIR;
+        return 0;
+    }
+    else if (osSubfilename == METADATA_JSON)
     {
         pStatBuf->st_mode = S_IFREG;
         pStatBuf->st_size = poDS->GetMetadataContent().size();
         return 0;
     }
-
-    if (osSubfilename == PMTILES_HEADER_JSON)
+    else if (osSubfilename == PMTILES_HEADER_JSON)
     {
         pStatBuf->st_mode = S_IFREG;
         pStatBuf->st_size = VSIPMTilesGetPMTilesHeaderJson(poDS.get()).size();
@@ -325,7 +326,7 @@ int VSIPMTilesFilesystemHandler::Stat(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                            ReadDirEx()                               */
+/*                             ReadDirEx()                              */
 /************************************************************************/
 
 char **VSIPMTilesFilesystemHandler::ReadDirEx(const char *pszFilename,
@@ -425,7 +426,7 @@ void VSIPMTilesRegister()
     if (VSIFileManager::GetHandler("/vsipmtiles/") ==
         VSIFileManager::GetHandler("/"))
     {
-        VSIFileManager::InstallHandler("/vsipmtiles/",
-                                       new VSIPMTilesFilesystemHandler());
+        VSIFileManager::InstallHandler(
+            "/vsipmtiles/", std::make_shared<VSIPMTilesFilesystemHandler>());
     }
 }

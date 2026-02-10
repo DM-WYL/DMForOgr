@@ -5,7 +5,7 @@
  *           holds all the necessary metadata to correctly interpret and
  *           access the associated raw data.
  * Author:   Abel Pau
- * 
+ *
  ******************************************************************************
  * Copyright (c) 2025, Xavier Pons
  *
@@ -15,6 +15,7 @@
 #include "cpl_port.h"
 #include "gdal_priv.h"
 #include "cpl_string.h"
+#include <set>
 
 #include "miramon_rel.h"
 #include "miramon_band.h"
@@ -24,7 +25,7 @@
 CPLString MMRRel::m_szImprobableRELChain = "@#&%$|``|$%&#@";
 
 /************************************************************************/
-/*                              MMRRel()                               */
+/*                               MMRRel()                               */
 /************************************************************************/
 MMRRel::MMRRel(const CPLString &osRELFilenameIn, bool bIMGMustExist)
     : m_osRelFileName(osRELFilenameIn)
@@ -133,7 +134,7 @@ MMRRel::MMRRel(const CPLString &osRELFilenameIn, bool bIMGMustExist)
 }
 
 /************************************************************************/
-/*                              ~MMRRel()                              */
+/*                              ~MMRRel()                               */
 /************************************************************************/
 
 MMRRel::~MMRRel()
@@ -142,7 +143,7 @@ MMRRel::~MMRRel()
 }
 
 /************************************************************************/
-/*                     Getting section-key-value                        */
+/*                      Getting section-key-value                       */
 /************************************************************************/
 // Used when the MMRREL is not yet constructed.
 CPLString
@@ -163,8 +164,8 @@ MMRRel::GetValueFromSectionKeyPriorToREL(const CPLString &osPriorRelName,
 }
 
 // Used when the MMRREL is already constructed.
-CPLString MMRRel::GetValueFromSectionKeyFromREL(const CPLString osSection,
-                                                const CPLString osKey)
+CPLString MMRRel::GetValueFromSectionKeyFromREL(const CPLString &osSection,
+                                                const CPLString &osKey)
 {
     if (!GetRELFile())
     {
@@ -246,7 +247,7 @@ CPLString MMRRel::GetValueFromSectionKey(VSILFILE *pf,
 }
 
 /************************************************************************/
-/*                     Other functions                                  */
+/*                           Other functions                            */
 /************************************************************************/
 
 // Converts FileNameI.rel to FileName.img
@@ -306,28 +307,25 @@ bool MMRRel::GetMetadataValueDirectly(const CPLString &osRELFile,
 {
     osValue = GetValueFromSectionKeyPriorToREL(osRELFile, osSection, osKey);
 
-    if (osValue.compare(m_szImprobableRELChain) != 0)
+    if (osValue != m_szImprobableRELChain)
         return true;  // Found
 
     osValue = "";
     return false;  // Key not found
 }
 
-bool MMRRel::SameFile(CPLString osFile1, CPLString osFile2)
+bool MMRRel::SameFile(const CPLString &osFile1, const CPLString &osFile2)
 {
     if (EQUAL(osFile1, osFile2))
         return true;
 
-    // Just to be sure:
-    if (osFile1.compare(osFile2) == 0)
-        return true;
-
     // Just to be more sure:
-    osFile1.replaceAll("\\", "/");
-    CPLString osLayerName = osFile2;
-    osLayerName.replaceAll("\\", "/");
+    CPLString osLayerName1 = osFile1;
+    osLayerName1.replaceAll("\\", "/");
+    CPLString osLayerName2 = osFile2;
+    osLayerName2.replaceAll("\\", "/");
 
-    if (EQUAL(osFile1, osLayerName))
+    if (EQUAL(osLayerName1, osLayerName2))
         return true;
 
     return false;
@@ -536,15 +534,15 @@ CPLString MMRRel::GetAssociatedMetadataFileName(const CPLString &osFileName)
     const CPLStringList folder(VSIReadDir(osPath.c_str()));
     const int size = folder.size();
 
-    for (int i = 0; i < size; i++)
+    for (int nIFile = 0; nIFile < size; nIFile++)
     {
-        if (folder[i][0] == '.' || !strstr(folder[i], "I.rel"))
+        if (folder[nIFile][0] == '.' || !strstr(folder[nIFile], "I.rel"))
         {
             continue;
         }
 
         const CPLString osFilePath =
-            CPLFormFilenameSafe(osPath, folder[i], nullptr);
+            CPLFormFilenameSafe(osPath, folder[nIFile], nullptr);
 
         osRELFile = MMRGetAReferenceToIMGFile(osFileName, osFilePath);
         if (!osRELFile.empty())
@@ -561,7 +559,7 @@ CPLString MMRRel::GetAssociatedMetadataFileName(const CPLString &osFileName)
 }
 
 /************************************************************************/
-/*                         CheckBandInRel()                             */
+/*                           CheckBandInRel()                           */
 /************************************************************************/
 CPLErr MMRRel::CheckBandInRel(const CPLString &osRELFileName,
                               const CPLString &osIMGFile)
@@ -582,11 +580,11 @@ CPLErr MMRRel::CheckBandInRel(const CPLString &osRELFileName,
 
     CPLString osBandSectionKey;
     CPLString osBandSectionValue;
-    for (int i = 0; i < nTokenCount; i++)
+    for (int nIBand = 0; nIBand < nTokenCount; nIBand++)
     {
         osBandSectionKey = KEY_NomCamp;
         osBandSectionKey.append("_");
-        osBandSectionKey.append(aosTokens[i]);
+        osBandSectionKey.append(aosTokens[nIBand]);
 
         if (!GetMetadataValueDirectly(osRELFileName, SECTION_ATTRIBUTE_DATA,
                                       osBandSectionKey, osBandSectionValue) ||
@@ -672,7 +670,7 @@ int MMRRel::IdentifySubdataSetFile(const CPLString &osFileName)
     return GDAL_IDENTIFY_TRUE;
 }
 
-int MMRRel::IdentifyFile(GDALOpenInfo *poOpenInfo)
+int MMRRel::IdentifyFile(const GDALOpenInfo *poOpenInfo)
 {
     // IMG files are shared for many drivers.
     // Identify will mark it as unknown.
@@ -685,8 +683,8 @@ int MMRRel::IdentifyFile(GDALOpenInfo *poOpenInfo)
         return GDAL_IDENTIFY_FALSE;
 
     // In fact, the file has to end with I.rel (pszExtRasterREL)
-    CPLString osFileName = poOpenInfo->pszFilename;
-    if (!cpl::ends_with(osFileName, pszExtRasterREL))
+    if (!cpl::ends_with(std::string_view(poOpenInfo->pszFilename),
+                        pszExtRasterREL))
         return GDAL_IDENTIFY_FALSE;
 
     // Some versions of REL files are not allowed.
@@ -697,7 +695,7 @@ int MMRRel::IdentifyFile(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                     GetMetadataValue()                               */
+/*                          GetMetadataValue()                          */
 /************************************************************************/
 bool MMRRel::GetMetadataValue(const CPLString &osMainSection,
                               const CPLString &osSubSection,
@@ -717,13 +715,13 @@ bool MMRRel::GetMetadataValue(const CPLString &osMainSection,
 
     addExcludedSectionKey(osAttributeDataName, osKey);
     osValue = GetValueFromSectionKeyFromREL(osAttributeDataName, osKey);
-    if (osValue.compare(m_szImprobableRELChain) != 0)
+    if (osValue != m_szImprobableRELChain)
         return true;  // Found
 
     // If the value is not found then searches in [pszMainSection]
     addExcludedSectionKey(osSubSubSection, osKey);
     osValue = GetValueFromSectionKeyFromREL(osSubSubSection, osKey);
-    if (osValue.compare(m_szImprobableRELChain) == 0)
+    if (osValue == m_szImprobableRELChain)
     {
         osValue = "";
         return false;  // Key not found
@@ -746,13 +744,13 @@ bool MMRRel::GetMetadataValue(const CPLString &osMainSection,
 
     addExcludedSectionKey(osAttributeDataName, osKey);
     osValue = GetValueFromSectionKeyFromREL(osAttributeDataName, osKey);
-    if (osValue.compare(m_szImprobableRELChain) != 0)
+    if (osValue != m_szImprobableRELChain)
         return true;  // Found
 
     // If the value is not found then searches in [pszMainSection]
     addExcludedSectionKey(osMainSection, osKey);
     osValue = GetValueFromSectionKeyFromREL(osMainSection, osKey);
-    if (osValue.compare(m_szImprobableRELChain) == 0)
+    if (osValue == m_szImprobableRELChain)
     {
         osValue = "";
         return false;  // Key not found
@@ -768,7 +766,7 @@ bool MMRRel::GetMetadataValue(const CPLString &osSection,
 
     addExcludedSectionKey(osSection, osKey);
     osValue = GetValueFromSectionKeyFromREL(osSection, osKey);
-    if (osValue.compare(m_szImprobableRELChain) == 0)
+    if (osValue == m_szImprobableRELChain)
     {
         osValue = "";
         return false;  // Key not found
@@ -782,7 +780,7 @@ void MMRRel::UpdateRELNameChar(const CPLString &osRelFileNameIn)
 }
 
 /************************************************************************/
-/*                          ParseBandInfo()                             */
+/*                           ParseBandInfo()                            */
 /************************************************************************/
 CPLErr MMRRel::ParseBandInfo()
 {
@@ -813,6 +811,7 @@ CPLErr MMRRel::ParseBandInfo()
 
     CPLString osBandSectionKey;
     CPLString osBandSectionValue;
+    std::set<std::string> setProcessedTokens;
 
     int nNBand;
     if (m_papoSDSBands.size())
@@ -822,11 +821,18 @@ CPLErr MMRRel::ParseBandInfo()
 
     m_oBands.reserve(nNBand);
 
-    for (int i = 0; i < nMaxBands; i++)
+    for (int nIBand = 0; nIBand < nMaxBands; nIBand++)
     {
+        const std::string lowerCaseToken =
+            CPLString(aosTokens[nIBand]).tolower();
+        if (cpl::contains(setProcessedTokens, lowerCaseToken))
+            continue;  // Repeated bands are ignored.
+
+        setProcessedTokens.insert(lowerCaseToken);
+
         osBandSectionKey = KEY_NomCamp;
         osBandSectionKey.append("_");
-        osBandSectionKey.append(aosTokens[i]);
+        osBandSectionKey.append(aosTokens[nIBand]);
 
         if (!GetMetadataValue(SECTION_ATTRIBUTE_DATA, osBandSectionKey,
                               osBandSectionValue) ||
@@ -906,7 +912,7 @@ int MMRRel::GetRowsNumberFromREL()
 }
 
 /************************************************************************/
-/*                     Preserving metadata                              */
+/*                         Preserving metadata                          */
 /************************************************************************/
 void MMRRel::RELToGDALMetadata(GDALDataset *poDS)
 {

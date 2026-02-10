@@ -395,7 +395,6 @@ def test_gdalg_generate_from_vector_pipeline_geom(tmp_vsimem):
             "read",
             "../ogr/data/poly.shp",
             "!",
-            "geom",
             "set-type",
             "--geometry-type=MULTIPOLYGON",
             "!",
@@ -407,7 +406,7 @@ def test_gdalg_generate_from_vector_pipeline_geom(tmp_vsimem):
     assert "gdal_version" in j
     del j["gdal_version"]
     assert j == {
-        "command_line": "gdal vector pipeline read --input ../ogr/data/poly.shp ! geom set-type --geometry-type MULTIPOLYGON",
+        "command_line": "gdal vector pipeline read --input ../ogr/data/poly.shp ! set-type --geometry-type MULTIPOLYGON",
         "type": "gdal_streamed_alg",
     }
 
@@ -467,13 +466,13 @@ def test_gdalg_missing_command_line():
 
 def test_gdalg_alg_does_not_support_streaming():
     with pytest.raises(
-        Exception, match="Algorithm add does not support a streamed output"
+        Exception, match="Algorithm delete does not support a streamed output"
     ):
         gdal.Open(
             json.dumps(
                 {
                     "type": "gdal_streamed_alg",
-                    "command_line": "gdal raster overview add data/byte.tif",
+                    "command_line": "gdal raster overview delete data/byte.tif",
                 }
             )
         )

@@ -110,7 +110,7 @@ static CameraPtr feat2kmlcamera(const struct fieldconfig &oFC, int iHeading,
 }
 
 /************************************************************************/
-/*                 OGRLIBKMLReplaceXYLevelInURL()                       */
+/*                    OGRLIBKMLReplaceXYLevelInURL()                    */
 /************************************************************************/
 
 static CPLString OGRLIBKMLReplaceLevelXYInURL(const char *pszURL, int level,
@@ -133,7 +133,7 @@ static CPLString OGRLIBKMLReplaceLevelXYInURL(const char *pszURL, int level,
 }
 
 /************************************************************************/
-/*                        IsPowerOf2                                    */
+/*                              IsPowerOf2                              */
 /************************************************************************/
 
 static bool IsPowerOf2(int nVal)
@@ -147,7 +147,7 @@ static bool IsPowerOf2(int nVal)
 }
 
 /************************************************************************/
-/*                    OGRLIBKMLGetMaxDimensions()                       */
+/*                     OGRLIBKMLGetMaxDimensions()                      */
 /************************************************************************/
 
 static void OGRLIBKMLGetMaxDimensions(const char *pszURL, int nTileSize,
@@ -201,7 +201,7 @@ static void OGRLIBKMLGetMaxDimensions(const char *pszURL, int nTileSize,
 }
 
 /************************************************************************/
-/*                           feat2kml()                                 */
+/*                              feat2kml()                              */
 /************************************************************************/
 
 FeaturePtr feat2kml(OGRLIBKMLDataSource *poOgrDS, OGRLIBKMLLayer *poOgrLayer,
@@ -827,9 +827,11 @@ FeaturePtr feat2kml(OGRLIBKMLDataSource *poOgrDS, OGRLIBKMLLayer *poOgrLayer,
     return poKmlFeature;
 }
 
-OGRFeature *kml2feat(PlacemarkPtr poKmlPlacemark, OGRLIBKMLDataSource *poOgrDS,
-                     OGRLIBKMLLayer *poOgrLayer, OGRFeatureDefn *poOgrFeatDefn,
-                     OGRSpatialReference *poOgrSRS)
+OGRFeature *
+kml2feat(PlacemarkPtr poKmlPlacemark, OGRLIBKMLDataSource *poOgrDS,
+         OGRLIBKMLLayer *poOgrLayer, OGRFeatureDefn *poOgrFeatDefn,
+         OGRSpatialReference *poOgrSRS,
+         const std::map<std::string, int> &mapSimpleFieldNameToOgrFieldIx)
 {
     OGRFeature *poOgrFeat = new OGRFeature(poOgrFeatDefn);
 
@@ -862,16 +864,16 @@ OGRFeature *kml2feat(PlacemarkPtr poKmlPlacemark, OGRLIBKMLDataSource *poOgrDS,
 
     /***** fields *****/
     kml2field(poOgrFeat, AsFeature(poKmlPlacemark),
-              poOgrLayer->GetFieldConfig());
+              poOgrLayer->GetFieldConfig(), mapSimpleFieldNameToOgrFieldIx);
 
     return poOgrFeat;
 }
 
-OGRFeature *kmlgroundoverlay2feat(GroundOverlayPtr poKmlOverlay,
-                                  OGRLIBKMLDataSource * /* poOgrDS */,
-                                  OGRLIBKMLLayer *poOgrLayer,
-                                  OGRFeatureDefn *poOgrFeatDefn,
-                                  OGRSpatialReference *poOgrSRS)
+OGRFeature *kmlgroundoverlay2feat(
+    GroundOverlayPtr poKmlOverlay, OGRLIBKMLDataSource * /* poOgrDS */,
+    OGRLIBKMLLayer *poOgrLayer, OGRFeatureDefn *poOgrFeatDefn,
+    OGRSpatialReference *poOgrSRS,
+    const std::map<std::string, int> &mapSimpleFieldNameToOgrFieldIx)
 {
     OGRFeature *poOgrFeat = new OGRFeature(poOgrFeatDefn);
 
@@ -890,7 +892,8 @@ OGRFeature *kmlgroundoverlay2feat(GroundOverlayPtr poKmlOverlay,
     }
 
     /***** fields *****/
-    kml2field(poOgrFeat, AsFeature(poKmlOverlay), poOgrLayer->GetFieldConfig());
+    kml2field(poOgrFeat, AsFeature(poKmlOverlay), poOgrLayer->GetFieldConfig(),
+              mapSimpleFieldNameToOgrFieldIx);
 
     return poOgrFeat;
 }

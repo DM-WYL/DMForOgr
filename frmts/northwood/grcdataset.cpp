@@ -13,6 +13,11 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_colortable.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "northwood.h"
 #include "ogrmitabspatialref.h"
 
@@ -42,7 +47,7 @@ class NWT_GRCDataset final : public GDALPamDataset
 
   public:
     NWT_GRCDataset();
-    ~NWT_GRCDataset();
+    ~NWT_GRCDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *poOpenInfo);
@@ -63,18 +68,18 @@ class NWT_GRCRasterBand final : public GDALPamRasterBand
 
   public:
     NWT_GRCRasterBand(NWT_GRCDataset *, int);
-    virtual ~NWT_GRCRasterBand();
+    ~NWT_GRCRasterBand() override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual double GetNoDataValue(int *pbSuccess) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    double GetNoDataValue(int *pbSuccess) override;
 
-    virtual GDALColorInterp GetColorInterpretation() override;
-    virtual char **GetCategoryNames() override;
-    virtual GDALColorTable *GetColorTable() override;
+    GDALColorInterp GetColorInterpretation() override;
+    char **GetCategoryNames() override;
+    GDALColorTable *GetColorTable() override;
 };
 
 /************************************************************************/
-/*                           NWT_GRCRasterBand()                        */
+/*                         NWT_GRCRasterBand()                          */
 /************************************************************************/
 
 NWT_GRCRasterBand::NWT_GRCRasterBand(NWT_GRCDataset *poDSIn, int nBandIn)
@@ -84,7 +89,7 @@ NWT_GRCRasterBand::NWT_GRCRasterBand(NWT_GRCDataset *poDSIn, int nBandIn)
     NWT_GRCDataset *poGDS = cpl::down_cast<NWT_GRCDataset *>(poDS);
 
     if (poGDS->pGrd->nBitsPerPixel == 8)
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
     else if (poGDS->pGrd->nBitsPerPixel == 16)
         eDataType = GDT_UInt16;
     else                         /* if( poGDS->pGrd->nBitsPerPixel == 32 ) */
@@ -233,7 +238,7 @@ NWT_GRCDataset::NWT_GRCDataset()
 }
 
 /************************************************************************/
-/*                            ~NWT_GRCDataset()                         */
+/*                          ~NWT_GRCDataset()                           */
 /************************************************************************/
 NWT_GRCDataset::~NWT_GRCDataset()
 {
@@ -268,7 +273,7 @@ CPLErr NWT_GRCDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 const OGRSpatialReference *NWT_GRCDataset::GetSpatialRef() const
 {

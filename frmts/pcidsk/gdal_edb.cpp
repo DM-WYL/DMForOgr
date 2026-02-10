@@ -44,7 +44,7 @@ class GDAL_EDBFile final : public EDBFile
         poDS = poDSIn;
     }
 
-    ~GDAL_EDBFile()
+    ~GDAL_EDBFile() override
     {
         if (poDS)
             GDAL_EDBFile::Close();
@@ -166,7 +166,7 @@ eChanType GDAL_EDBFile::GetType(int nChannel) const
 {
     switch (poDS->GetRasterBand(nChannel)->GetRasterDataType())
     {
-        case GDT_Byte:
+        case GDT_UInt8:
             return CHN_8U;
 
         case GDT_Int16:

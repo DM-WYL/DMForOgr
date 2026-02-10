@@ -10,16 +10,15 @@
  ****************************************************************************/
 
 #include "heifdataset.h"
+#include "gdal_frmts.h"
 
 #include "cpl_vsi_virtual.h"
 
 #include <algorithm>
 #include <cinttypes>
 
-extern "C" void CPL_DLL GDALRegister_HEIF();
-
 /************************************************************************/
-/*                       GDALHEIFRasterBand                             */
+/*                          GDALHEIFRasterBand                          */
 /************************************************************************/
 
 class GDALHEIFRasterBand final : public GDALPamRasterBand
@@ -51,7 +50,7 @@ class GDALHEIFRasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                         GDALHEIFDataset()                            */
+/*                          GDALHEIFDataset()                           */
 /************************************************************************/
 
 GDALHEIFDataset::GDALHEIFDataset() : m_hCtxt(heif_context_alloc())
@@ -67,29 +66,53 @@ GDALHEIFDataset::GDALHEIFDataset() : m_hCtxt(heif_context_alloc())
 }
 
 /************************************************************************/
-/*                         ~GDALHEIFDataset()                           */
+/*                          ~GDALHEIFDataset()                          */
 /************************************************************************/
 
 GDALHEIFDataset::~GDALHEIFDataset()
 {
-    if (m_hCtxt)
-        heif_context_free(m_hCtxt);
+    GDALHEIFDataset::Close();
+}
+
+/************************************************************************/
+/*                               Close()                                */
+/************************************************************************/
+
+CPLErr GDALHEIFDataset::Close(GDALProgressFunc, void *)
+{
+    CPLErr eErr = CE_None;
+
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        if (m_hCtxt)
+            heif_context_free(m_hCtxt);
+        m_hCtxt = nullptr;
+
 #ifdef HAS_CUSTOM_FILE_READER
-    if (m_fpL)
-        VSIFCloseL(m_fpL);
+        if (m_fpL)
+            VSIFCloseL(m_fpL);
+        m_fpL = nullptr;
 #endif
+
 #ifndef LIBHEIF_SUPPORTS_TILES
-    if (m_hImage)
-        heif_image_release(m_hImage);
+        if (m_hImage)
+            heif_image_release(m_hImage);
+        m_hImage = nullptr;
 #endif
-    if (m_hImageHandle)
-        heif_image_handle_release(m_hImageHandle);
+
+        if (m_hImageHandle)
+            heif_image_handle_release(m_hImageHandle);
+        m_hImageHandle = nullptr;
+
+        eErr = GDALPamDataset::Close();
+    }
+    return eErr;
 }
 
 #ifdef HAS_CUSTOM_FILE_READER
 
 /************************************************************************/
-/*                          GetPositionCbk()                            */
+/*                           GetPositionCbk()                           */
 /************************************************************************/
 
 int64_t GDALHEIFDataset::GetPositionCbk(void *userdata)
@@ -99,7 +122,7 @@ int64_t GDALHEIFDataset::GetPositionCbk(void *userdata)
 }
 
 /************************************************************************/
-/*                             ReadCbk()                                */
+/*                              ReadCbk()                               */
 /************************************************************************/
 
 int GDALHEIFDataset::ReadCbk(void *data, size_t size, void *userdata)
@@ -129,7 +152,7 @@ int GDALHEIFDataset::ReadCbk(void *data, size_t size, void *userdata)
 }
 
 /************************************************************************/
-/*                             SeekCbk()                                */
+/*                              SeekCbk()                               */
 /************************************************************************/
 
 int GDALHEIFDataset::SeekCbk(int64_t position, void *userdata)
@@ -153,7 +176,7 @@ GDALHEIFDataset::WaitForFileSizeCbk(int64_t target_size, void *userdata)
 }
 
 /************************************************************************/
-/*                         RequestRangeCbk()                            */
+/*                          RequestRangeCbk()                           */
 /************************************************************************/
 
 #if LIBHEIF_NUMERIC_VERSION >= BUILD_LIBHEIF_VERSION(1, 19, 0)
@@ -208,7 +231,7 @@ GDALHEIFDataset::RequestRangeCbk(uint64_t start_pos, uint64_t end_pos,
 #endif  // HAS_CUSTOM_FILE_READER
 
 /************************************************************************/
-/*                              Init()                                  */
+/*                                Init()                                */
 /************************************************************************/
 
 bool GDALHEIFDataset::Init(GDALOpenInfo *poOpenInfo)
@@ -365,7 +388,7 @@ bool GDALHEIFDataset::Init(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                         ReadMetadata()                               */
+/*                            ReadMetadata()                            */
 /************************************************************************/
 
 void GDALHEIFDataset::ReadMetadata()
@@ -434,18 +457,18 @@ void GDALHEIFDataset::ReadMetadata()
 
             const bool bLittleEndianTIFF = data[nTIFFFileOffset] == 'I' &&
                                            data[nTIFFFileOffset + 1] == 'I';
-            const bool bLSBPlatform = CPL_IS_LSB != 0;
+            constexpr bool bLSBPlatform = CPL_IS_LSB != 0;
             const bool bSwabflag = bLittleEndianTIFF != bLSBPlatform;
 
-            int nTIFFDirOff;
+            uint32_t nTIFFDirOff;
             memcpy(&nTIFFDirOff, &data[nTIFFFileOffset + 4], 4);
             if (bSwabflag)
             {
                 CPL_SWAP32PTR(&nTIFFDirOff);
             }
-            int nExifOffset = 0;
-            int nInterOffset = 0;
-            int nGPSOffset = 0;
+            uint32_t nExifOffset = 0;
+            uint32_t nInterOffset = 0;
+            uint32_t nGPSOffset = 0;
             EXIFExtractMetadata(papszMD, fpTemp, nTIFFDirOff, bSwabflag, 0,
                                 nExifOffset, nInterOffset, nGPSOffset);
             if (nExifOffset > 0)
@@ -580,7 +603,7 @@ void GDALHEIFDataset::processProperties()
 }
 
 /************************************************************************/
-/*                      ReadUserDescription()                           */
+/*                        ReadUserDescription()                         */
 /************************************************************************/
 void GDALHEIFDataset::ReadUserDescription()
 {
@@ -618,7 +641,7 @@ void GDALHEIFDataset::ReadUserDescription()
 #endif
 
 /************************************************************************/
-/*                         OpenThumbnails()                             */
+/*                           OpenThumbnails()                           */
 /************************************************************************/
 
 void GDALHEIFDataset::OpenThumbnails()
@@ -678,7 +701,7 @@ void GDALHEIFDataset::OpenThumbnails()
 }
 
 /************************************************************************/
-/*                     HEIFDriverIdentify()                             */
+/*                         HEIFDriverIdentify()                         */
 /************************************************************************/
 
 static int HEIFDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -734,7 +757,7 @@ static int HEIFDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            OpenHEIF()                                */
+/*                              OpenHEIF()                              */
 /************************************************************************/
 
 GDALDataset *GDALHEIFDataset::OpenHEIF(GDALOpenInfo *poOpenInfo)
@@ -760,7 +783,7 @@ GDALDataset *GDALHEIFDataset::OpenHEIF(GDALOpenInfo *poOpenInfo)
 #if LIBHEIF_NUMERIC_VERSION >= BUILD_LIBHEIF_VERSION(1, 12, 0)
 
 /************************************************************************/
-/*                     HEIFIdentifyOnlyAVIF()                           */
+/*                        HEIFIdentifyOnlyAVIF()                        */
 /************************************************************************/
 
 static int HEIFIdentifyOnlyAVIF(GDALOpenInfo *poOpenInfo)
@@ -796,7 +819,7 @@ GDALDataset *GDALHEIFDataset::OpenAVIF(GDALOpenInfo *poOpenInfo)
 #endif
 
 /************************************************************************/
-/*                          GDALHEIFRasterBand()                        */
+/*                         GDALHEIFRasterBand()                         */
 /************************************************************************/
 
 GDALHEIFRasterBand::GDALHEIFRasterBand(GDALHEIFDataset *poDSIn, int nBandIn)
@@ -804,7 +827,7 @@ GDALHEIFRasterBand::GDALHEIFRasterBand(GDALHEIFDataset *poDSIn, int nBandIn)
     poDS = poDSIn;
     nBand = nBandIn;
 
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 #if LIBHEIF_NUMERIC_VERSION >= BUILD_LIBHEIF_VERSION(1, 4, 0)
     const int nBits =
         heif_image_handle_get_luma_bits_per_pixel(poDSIn->m_hImageHandle);
@@ -829,7 +852,7 @@ GDALHEIFRasterBand::GDALHEIFRasterBand(GDALHEIFDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                            IReadBlock()                              */
+/*                             IReadBlock()                             */
 /************************************************************************/
 #ifdef LIBHEIF_SUPPORTS_TILES
 CPLErr GDALHEIFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -845,21 +868,14 @@ CPLErr GDALHEIFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
 
     auto err = heif_image_handle_decode_image_tile(
         poGDS->m_hImageHandle, &hImage, heif_colorspace_RGB,
-        nBands == 3
-            ? (eDataType == GDT_UInt16 ?
-#if CPL_IS_LSB
-                                       heif_chroma_interleaved_RRGGBB_LE
-#else
-                                       heif_chroma_interleaved_RRGGBB_BE
-#endif
-                                       : heif_chroma_interleaved_RGB)
-            : (eDataType == GDT_UInt16 ?
-#if CPL_IS_LSB
-                                       heif_chroma_interleaved_RRGGBBAA_LE
-#else
-                                       heif_chroma_interleaved_RRGGBBAA_BE
-#endif
-                                       : heif_chroma_interleaved_RGBA),
+        nBands == 3 ? (eDataType == GDT_UInt16
+                           ? (CPL_IS_LSB ? heif_chroma_interleaved_RRGGBB_LE
+                                         : heif_chroma_interleaved_RRGGBB_BE)
+                           : heif_chroma_interleaved_RGB)
+                    : (eDataType == GDT_UInt16
+                           ? (CPL_IS_LSB ? heif_chroma_interleaved_RRGGBBAA_LE
+                                         : heif_chroma_interleaved_RRGGBBAA_BE)
+                           : heif_chroma_interleaved_RGBA),
         decode_options, nBlockXOff, nBlockYOff);
 
     if (err.code != heif_error_Ok)
@@ -874,7 +890,7 @@ CPLErr GDALHEIFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
     int nStride = 0;
     const uint8_t *pSrcData = heif_image_get_plane_readonly(
         hImage, heif_channel_interleaved, &nStride);
-    if (eDataType == GDT_Byte)
+    if (eDataType == GDT_UInt8)
     {
         for (int y = 0; y < nBlockYSize; y++)
         {
@@ -922,24 +938,17 @@ CPLErr GDALHEIFRasterBand::IReadBlock(int, int nBlockYOff, void *pImage)
             nBands == 3
                 ? (
 #if LIBHEIF_NUMERIC_VERSION >= BUILD_LIBHEIF_VERSION(1, 4, 0)
-                      eDataType == GDT_UInt16 ?
-#if CPL_IS_LSB
-                                              heif_chroma_interleaved_RRGGBB_LE
-#else
-                                              heif_chroma_interleaved_RRGGBB_BE
+                      eDataType == GDT_UInt16
+                          ? (CPL_IS_LSB ? heif_chroma_interleaved_RRGGBB_LE
+                                        : heif_chroma_interleaved_RRGGBB_BE)
+                          :
 #endif
-                                              :
-#endif
-                                              heif_chroma_interleaved_RGB)
+                          heif_chroma_interleaved_RGB)
                 : (
 #if LIBHEIF_NUMERIC_VERSION >= BUILD_LIBHEIF_VERSION(1, 4, 0)
                       eDataType == GDT_UInt16
-                          ?
-#if CPL_IS_LSB
-                          heif_chroma_interleaved_RRGGBBAA_LE
-#else
-                          heif_chroma_interleaved_RRGGBBAA_BE
-#endif
+                          ? (CPL_IS_LSB ? heif_chroma_interleaved_RRGGBBAA_LE
+                                        : heif_chroma_interleaved_RRGGBBAA_BE)
                           :
 #endif
                           heif_chroma_interleaved_RGBA),
@@ -966,7 +975,7 @@ CPLErr GDALHEIFRasterBand::IReadBlock(int, int nBlockYOff, void *pImage)
     const uint8_t *pSrcData = heif_image_get_plane_readonly(
         poGDS->m_hImage, heif_channel_interleaved, &nStride);
     pSrcData += static_cast<size_t>(nBlockYOff) * nStride;
-    if (eDataType == GDT_Byte)
+    if (eDataType == GDT_UInt8)
     {
         for (int i = 0; i < nBlockXSize; i++)
             (static_cast<GByte *>(pImage))[i] =
@@ -995,7 +1004,7 @@ CPLErr GDALHEIFDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 const OGRSpatialReference *GDALHEIFDataset::GetSpatialRef() const
 {
@@ -1019,7 +1028,7 @@ const OGRSpatialReference *GDALHEIFDataset::GetGCPSpatialRef() const
 #endif
 
 /************************************************************************/
-/*                       GDALRegister_HEIF()                            */
+/*                         GDALRegister_HEIF()                          */
 /************************************************************************/
 
 void GDALRegister_HEIF()

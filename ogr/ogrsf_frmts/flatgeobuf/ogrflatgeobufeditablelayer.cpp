@@ -42,7 +42,7 @@ class OGRFlatGeobufEditableLayerSynchronizer final
     {
     }
 
-    virtual ~OGRFlatGeobufEditableLayerSynchronizer() override;
+    ~OGRFlatGeobufEditableLayerSynchronizer() override;
 
     virtual OGRErr EditableSyncToDisk(OGRLayer *poEditableLayer,
                                       OGRLayer **ppoDecoratedLayer) override;
@@ -192,7 +192,7 @@ GIntBig OGRFlatGeobufEditableLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                            TestCapability()                          */
+/*                           TestCapability()                           */
 /************************************************************************/
 
 int OGRFlatGeobufEditableLayer::TestCapability(const char *pszCap) const

@@ -25,7 +25,7 @@ typedef enum
 } SelafinTypeDef;
 
 /************************************************************************/
-/*                             Range                                    */
+/*                                Range                                 */
 /************************************************************************/
 class Range
 {
@@ -64,7 +64,7 @@ class Range
 };
 
 /************************************************************************/
-/*                             OGRSelafinLayer                          */
+/*                           OGRSelafinLayer                            */
 /************************************************************************/
 
 class OGRSelafinLayer final : public OGRLayer
@@ -84,7 +84,7 @@ class OGRSelafinLayer final : public OGRLayer
                     const OGRSpatialReference *poSpatialRefP,
                     Selafin::Header *poHeaderP, int nStepNumberP,
                     SelafinTypeDef eTypeP);
-    ~OGRSelafinLayer();
+    ~OGRSelafinLayer() override;
 
     const OGRSpatialReference *GetSpatialRef() const override
     {
@@ -128,7 +128,7 @@ class OGRSelafinLayer final : public OGRLayer
 };
 
 /************************************************************************/
-/*                           OGRSelafinDataSource                       */
+/*                         OGRSelafinDataSource                         */
 /************************************************************************/
 
 class OGRSelafinDataSource final : public GDALDataset
@@ -145,7 +145,7 @@ class OGRSelafinDataSource final : public GDALDataset
 
   public:
     OGRSelafinDataSource();
-    virtual ~OGRSelafinDataSource();
+    ~OGRSelafinDataSource() override;
     int Open(const char *pszFilename, int bUpdate, int bCreate);
     int OpenTable(const char *pszFilename);
 
@@ -160,7 +160,7 @@ class OGRSelafinDataSource final : public GDALDataset
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
-    virtual OGRErr DeleteLayer(int) override;
+    OGRErr DeleteLayer(int) override;
     int TestCapability(const char *) const override;
 
     void SetDefaultSelafinName(const char *pszNameIn)

@@ -47,10 +47,10 @@ class PCRasterDataset final : public GDALPamDataset
 
     static GDALDataset *create(const char *filename, int nr_cols, int nr_rows,
                                int nrBands, GDALDataType gdalType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
 
     static GDALDataset *createCopy(char const *filename, GDALDataset *source,
-                                   int strict, char **options,
+                                   int strict, CSLConstList options,
                                    GDALProgressFunc progress,
                                    void *progressData);
 
@@ -91,7 +91,7 @@ class PCRasterDataset final : public GDALPamDataset
 
     explicit PCRasterDataset(MAP *map, GDALAccess eAccess);
 
-    /* virtual */ ~PCRasterDataset();
+    ~PCRasterDataset() override;
 
     //----------------------------------------------------------------------------
     // MANIPULATORS

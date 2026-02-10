@@ -278,10 +278,29 @@ public:
 #ifdef SWIGJAVA
   %rename (CloseInternal) Close;
   %javamethodmodifiers Close() "private";
-#endif
   CPLErr Close() {
      return GDALClose(self);
   }
+#else
+%feature("kwargs") Close;
+  CPLErr Close(GDALProgressFunc callback = NULL, void* callback_data=NULL) {
+     return GDALCloseEx(self, callback, callback_data);
+  }
+
+  bool GetCloseReportsProgress() {
+    return GDALDatasetGetCloseReportsProgress(self);
+  }
+#endif
+
+#ifdef SWIGPYTHON
+  CPLErr _RunCloseWithoutDestroying(GDALProgressFunc callback = NULL, void* callback_data=NULL) {
+     CPLErr eErr = GDALDatasetRunCloseWithoutDestroyingEx(self, callback, callback_data);
+     if (eErr != CE_None && CPLGetLastErrorType() == CE_None ) {
+       CPLError(CE_Failure, CPLE_AppDefined, "Error occurred in GDALDatasetRunCloseWithoutDestroying()");
+     }
+     return eErr;
+  }
+#endif
 
   GDALDriverShadow* GetDriver() {
     return (GDALDriverShadow*) GDALGetDatasetDriver( self );
@@ -725,6 +744,66 @@ CPLErr AdviseRead(  int xoff, int yoff, int xsize, int ysize,
     DisableAsyncReaderWrapper(ario);
   }
 
+#ifdef SWIGPYTHON
+%apply (int nList, int* pList) { (int nBandCount, int *panBandList) };
+%feature ("kwargs") GetInterBandCovarianceMatrix;
+  void GetInterBandCovarianceMatrix(CPLErr *peErr, int *nRows, int *nCols, double **pMatrix,
+                                    int nBandCount = 0, int *panBandList = nullptr,
+                                    bool approx_ok = false,
+                                    bool force = false,
+                                    bool write_into_metadata = true,
+                                    int delta_degree_of_freedom = 1,
+                                    GDALProgressFunc callback = nullptr,
+                                    void *callback_data = nullptr)
+  {
+    if (nBandCount == 0)
+    {
+        *peErr = CE_Failure;
+        CPLError(CE_Failure, CPLE_AppDefined, "Empty list");
+        return;
+    }
+    *nRows = nBandCount;
+    *nCols = nBandCount;
+    *pMatrix = static_cast<double*>(VSI_MALLOC3_VERBOSE(*nRows, *nCols, sizeof(double)));
+    if (!(*pMatrix))
+        *peErr = CE_Failure;
+    else
+        *peErr = GDALDatasetGetInterBandCovarianceMatrix(
+                self, *pMatrix, static_cast<size_t>(*nRows) * (*nCols),
+                nBandCount, panBandList,
+                approx_ok, force, write_into_metadata, delta_degree_of_freedom,
+                callback, callback_data);
+  }
+
+%feature ("kwargs") ComputeInterBandCovarianceMatrix;
+  void ComputeInterBandCovarianceMatrix(CPLErr *peErr, int *nRows, int *nCols, double **pMatrix,
+                                        int nBandCount = 0, int *panBandList = nullptr,
+                                        bool approx_ok = false,
+                                        bool write_into_metadata = true,
+                                        int delta_degree_of_freedom = 1,
+                                        GDALProgressFunc callback = nullptr,
+                                        void *callback_data = nullptr)
+  {
+    if (nBandCount == 0)
+    {
+        *peErr = CE_Failure;
+        CPLError(CE_Failure, CPLE_AppDefined, "Empty list");
+        return;
+    }
+    *nRows = nBandCount;
+    *nCols = nBandCount;
+    *pMatrix = static_cast<double*>(VSI_MALLOC3_VERBOSE(*nRows, *nCols, sizeof(double)));
+    if (!(*pMatrix))
+        *peErr = CE_Failure;
+    else
+        *peErr = GDALDatasetComputeInterBandCovarianceMatrix(
+                self, *pMatrix, static_cast<size_t>(*nRows) * (*nCols),
+                nBandCount, panBandList,
+                approx_ok, write_into_metadata, delta_degree_of_freedom,
+                callback, callback_data);
+  }
+#endif
+
 %feature( "kwargs" ) GetVirtualMem;
 %newobject GetVirtualMem;
 %apply (int nList, int *pList ) { (int band_list, int *pband_list ) };
@@ -1092,6 +1171,14 @@ OGRErr AbortSQL() {
       return GDALDatasetUpdateRelationship(self, (GDALRelationshipH)relationship, NULL);
   }
   %clear GDALRelationshipShadow* relationship;
+
+%newobject AsMDArray;
+%apply (char **CSL) {char **};
+  GDALMDArrayHS *AsMDArray(char** options = NULL)
+  {
+    return GDALDatasetAsMDArray(self, options);
+  }
+%clear char **;
 
 } /* extend */
 }; /* GDALDatasetShadow */

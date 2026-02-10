@@ -21,6 +21,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 /************************************************************************/
 /* ==================================================================== */
@@ -46,16 +50,15 @@ class GSBGDataset final : public GDALPamDataset
   public:
     GSBGDataset() = default;
 
-    ~GSBGDataset();
+    ~GSBGDataset() override;
 
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
-                               int nBands, GDALDataType eType,
-                               char **papszParamList);
+                               int nBands, GDALDataType eType, CSLConstList);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 
@@ -95,7 +98,7 @@ class GSBGRasterBand final : public GDALPamRasterBand
 
   public:
     GSBGRasterBand(GSBGDataset *, int);
-    ~GSBGRasterBand();
+    ~GSBGRasterBand() override;
 
     CPLErr IReadBlock(int, int, void *) override;
     CPLErr IWriteBlock(int, int, void *) override;
@@ -124,7 +127,7 @@ GSBGRasterBand::GSBGRasterBand(GSBGDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                           ~GSBGRasterBand()                          */
+/*                          ~GSBGRasterBand()                           */
 /************************************************************************/
 
 GSBGRasterBand::~GSBGRasterBand()
@@ -137,7 +140,7 @@ GSBGRasterBand::~GSBGRasterBand()
 }
 
 /************************************************************************/
-/*                          ScanForMinMaxZ()                            */
+/*                           ScanForMinMaxZ()                           */
 /************************************************************************/
 
 CPLErr GSBGRasterBand::ScanForMinMaxZ()
@@ -677,7 +680,7 @@ CPLErr GSBGDataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                             WriteHeader()                            */
+/*                            WriteHeader()                             */
 /************************************************************************/
 
 CPLErr GSBGDataset::WriteHeader(VSILFILE *fp, int nXSize, int nYSize,
@@ -806,15 +809,14 @@ static bool GSBGCreateCheckDims(int nXSize, int nYSize)
 
 GDALDataset *GSBGDataset::Create(const char *pszFilename, int nXSize,
                                  int nYSize, int /* nBands */,
-                                 GDALDataType eType,
-                                 CPL_UNUSED char **papszParamList)
+                                 GDALDataType eType, CSLConstList)
 {
     if (!GSBGCreateCheckDims(nXSize, nYSize))
     {
         return nullptr;
     }
 
-    if (eType != GDT_Byte && eType != GDT_Float32 && eType != GDT_UInt16 &&
+    if (eType != GDT_UInt8 && eType != GDT_Float32 && eType != GDT_UInt16 &&
         eType != GDT_Int16)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
@@ -870,7 +872,7 @@ GDALDataset *GSBGDataset::Create(const char *pszFilename, int nXSize,
 
 GDALDataset *GSBGDataset::CreateCopy(const char *pszFilename,
                                      GDALDataset *poSrcDS, int bStrict,
-                                     CPL_UNUSED char **papszOptions,
+                                     CPL_UNUSED CSLConstList papszOptions,
                                      GDALProgressFunc pfnProgress,
                                      void *pProgressData)
 {
@@ -1026,7 +1028,7 @@ GDALDataset *GSBGDataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                          GDALRegister_GSBG()                         */
+/*                         GDALRegister_GSBG()                          */
 /************************************************************************/
 
 void GDALRegister_GSBG()

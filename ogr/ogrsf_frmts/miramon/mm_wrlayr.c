@@ -1584,10 +1584,19 @@ static int MMInitPolygonLayer(struct MiraMonVectLayerInfo *hMiraMonLayer)
     return 0;
 }
 
+// The map file must be written in ANSI encoding; therefore, some
+// conversions are performed for strings that may originally
+// be in UTF-8.
+
 int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
 {
+    char *pszSrcLayerNameCP1252;
+
     if (!hMiraMonLayer)
         return 1;
+
+    pszSrcLayerNameCP1252 = CPLRecode(
+        CPLGetBasename(hMiraMonLayer->pszSrcLayerName), CPL_ENC_UTF8, "CP1252");
 
     if (hMiraMonLayer->eLT == MM_LayerType_Point ||
         hMiraMonLayer->eLT == MM_LayerType_Point3d)
@@ -1606,18 +1615,24 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
         }
         if (hMiraMonLayer->MMMap && hMiraMonLayer->MMMap->fMMMap)
         {
+
             hMiraMonLayer->MMMap->nNumberOfLayers++;
             VSIFPrintfL(hMiraMonLayer->MMMap->fMMMap, "[VECTOR_%d]\n",
                         hMiraMonLayer->MMMap->nNumberOfLayers);
+
             VSIFPrintfL(hMiraMonLayer->MMMap->fMMMap, "Fitxer=%s.pnt\n",
-                        CPLGetBasename(hMiraMonLayer->pszSrcLayerName));
+                        pszSrcLayerNameCP1252
+                            ? pszSrcLayerNameCP1252
+                            : CPLGetBasename(hMiraMonLayer->pszSrcLayerName));
         }
 
         if (MMInitPointLayer(hMiraMonLayer))
         {
             // Error specified inside the function
+            CPLFree(pszSrcLayerNameCP1252);
             return 1;
         }
+        CPLFree(pszSrcLayerNameCP1252);
         return 0;
     }
     if (hMiraMonLayer->eLT == MM_LayerType_Arc ||
@@ -1644,14 +1659,18 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
             VSIFPrintfL(hMiraMonLayer->MMMap->fMMMap, "[VECTOR_%d]\n",
                         hMiraMonLayer->MMMap->nNumberOfLayers);
             VSIFPrintfL(hMiraMonLayer->MMMap->fMMMap, "Fitxer=%s.arc\n",
-                        CPLGetBasename(hMiraMonLayer->pszSrcLayerName));
+                        pszSrcLayerNameCP1252
+                            ? pszSrcLayerNameCP1252
+                            : CPLGetBasename(hMiraMonLayer->pszSrcLayerName));
         }
 
         if (MMInitArcLayer(hMiraMonLayer))
         {
             // Error specified inside the function
+            CPLFree(pszSrcLayerNameCP1252);
             return 1;
         }
+        CPLFree(pszSrcLayerNameCP1252);
         return 0;
     }
     if (hMiraMonLayer->eLT == MM_LayerType_Pol ||
@@ -1678,12 +1697,15 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
             VSIFPrintfL(hMiraMonLayer->MMMap->fMMMap, "[VECTOR_%d]\n",
                         hMiraMonLayer->MMMap->nNumberOfLayers);
             VSIFPrintfL(hMiraMonLayer->MMMap->fMMMap, "Fitxer=%s.pol\n",
-                        CPLGetBasename(hMiraMonLayer->pszSrcLayerName));
+                        pszSrcLayerNameCP1252
+                            ? pszSrcLayerNameCP1252
+                            : CPLGetBasename(hMiraMonLayer->pszSrcLayerName));
         }
 
         if (MMInitPolygonLayer(hMiraMonLayer))
         {
             // Error specified inside the function
+            CPLFree(pszSrcLayerNameCP1252);
             return 1;
         }
 
@@ -1711,6 +1733,7 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
                                  "Memory error in MiraMon "
                                  "driver (MMInitLayerByType())");
                         VSIFree(pszArcLayerName);
+                        CPLFree(pszSrcLayerNameCP1252);
                         return 1;
                     }
                     snprintf(pszArcLayerNameAux, strlen(pszArcLayerName) + 5,
@@ -1734,6 +1757,7 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
                 CPLError(CE_Failure, CPLE_OpenFailed,
                          "Error reading the ARC file in the metadata file %s.",
                          pMMPolygonLayer->pszREL_LayerName);
+                CPLFree(pszSrcLayerNameCP1252);
                 return 1;
             }
 
@@ -1744,6 +1768,7 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
                 CPLError(CE_Failure, CPLE_OpenFailed,
                          "Error pMMPolygonLayer.MMArc.pF: Cannot open file %s.",
                          pMMPolygonLayer->MMArc.pszLayerName);
+                CPLFree(pszSrcLayerNameCP1252);
                 return 1;
             }
 
@@ -1753,6 +1778,7 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
                 CPLError(CE_Failure, CPLE_NotSupported,
                          "Error reading the format in file %s.",
                          pMMPolygonLayer->MMArc.pszLayerName);
+                CPLFree(pszSrcLayerNameCP1252);
                 return 1;
             }
 
@@ -1761,6 +1787,7 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
                 CPLError(CE_Failure, CPLE_NotSupported,
                          "Error reading the format in file %s.",
                          pMMPolygonLayer->MMArc.pszLayerName);
+                CPLFree(pszSrcLayerNameCP1252);
                 return 1;
             }
 
@@ -1777,6 +1804,7 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
         if (MMInitArcLayer(hMiraMonLayer))
         {
             // Error specified inside the function
+            CPLFree(pszSrcLayerNameCP1252);
             return 1;
         }
 
@@ -1797,6 +1825,7 @@ int MMInitLayerByType(struct MiraMonVectLayerInfo *hMiraMonLayer)
                  "%s.dbf", hMiraMonLayer->pszSrcLayerName);
     }
 
+    CPLFree(pszSrcLayerNameCP1252);
     return 0;
 }
 
@@ -3825,6 +3854,9 @@ static int MMCreateFeaturePolOrArc(struct MiraMonVectLayerInfo *hMiraMonLayer,
     {
         MM_FILE_OFFSET nNodeOffset, nArcOffset;
         MM_INTERNAL_FID nArcElemCount, nNodeElemCount;
+        GInt32 nLastZCount = 0;
+        MM_FILE_OFFSET nLastOffsetZ = 0;
+        MM_INTERNAL_FID nLastElemCount = 0;
         nNodeOffset = pFlushNL->TotalSavedBytes + pFlushNL->nNumBytes;
         nArcOffset = pMMArc->nOffsetArc;
 
@@ -3927,25 +3959,44 @@ static int MMCreateFeaturePolOrArc(struct MiraMonVectLayerInfo *hMiraMonLayer,
                         return MM_STOP_WRITING_FEATURES;
                     }
 
-                    if (pZDesc[nArcElemCount - 1].nZCount < 0)
+                    if (nIPart == 0)
+                    {
+                        nLastZCount = pZDesc[nArcElemCount - 1].nZCount;
+                        nLastOffsetZ = pZDesc[nArcElemCount - 1].nOffsetZ;
+                    }
+
+                    if (nLastZCount < 0)
                     {
                         // One altitude was written on last element
                         if (MMCheckVersionFor3DOffset(
                                 hMiraMonLayer, nArcElemCount + 1, nArcOffset,
-                                pZDesc[nArcElemCount - 1].nOffsetZ +
-                                    sizeof(*pZ)))
+                                nLastOffsetZ + sizeof(*pZ)))
                             return MM_STOP_WRITING_FEATURES;
+
+                        // For the next iteration in this multipart feature
+                        nLastOffsetZ += sizeof(*pZ);
                     }
                     else
                     {
                         // One for each vertice altitude was written on last element
+                        if (nIPart == 0)
+                        {
+                            nLastElemCount = (pMMArc->pArcHeader +
+                                              pArcTopHeader->nElemCount - 1)
+                                                 ->nElemCount;
+                        }
+                        else
+                        {
+                            nLastElemCount += hMMFeature->pNCoordRing[nIPart];
+                        }
+
                         if (MMCheckVersionFor3DOffset(
                                 hMiraMonLayer, nArcElemCount + 1, nArcOffset,
-                                pZDesc[nArcElemCount - 1].nOffsetZ +
-                                    sizeof(*pZ) * (pMMArc->pArcHeader +
-                                                   (nArcElemCount - 1))
-                                                      ->nElemCount))
+                                nLastOffsetZ + sizeof(*pZ) * nLastElemCount))
                             return MM_STOP_WRITING_FEATURES;
+
+                        // For the next iteration in this multipart feature
+                        nLastOffsetZ += sizeof(*pZ) * nLastElemCount;
                     }
                 }
             }
@@ -4264,9 +4315,6 @@ static int MMCreateFeaturePolOrArc(struct MiraMonVectLayerInfo *hMiraMonLayer,
                 pZDesc[pArcTopHeader->nElemCount].nOffsetZ = 0;
             else
             {
-                pLastArcHeader =
-                    pMMArc->pArcHeader + pArcTopHeader->nElemCount - 1;
-
                 if (pZDesc[pArcTopHeader->nElemCount - 1].nZCount < 0)
                 {
                     pZDesc[pArcTopHeader->nElemCount].nOffsetZ =
@@ -4275,6 +4323,9 @@ static int MMCreateFeaturePolOrArc(struct MiraMonVectLayerInfo *hMiraMonLayer,
                 }
                 else
                 {
+                    pLastArcHeader =
+                        pMMArc->pArcHeader + pArcTopHeader->nElemCount - 1;
+
                     pZDesc[pArcTopHeader->nElemCount].nOffsetZ =
                         pZDesc[pArcTopHeader->nElemCount - 1].nOffsetZ +
                         sizeof(*pZ) * (pLastArcHeader->nElemCount);
@@ -5215,33 +5266,62 @@ static void MMGenerateFileIdentifierFromMetadataFileName(char *pMMFN,
 }
 
 // Converts a string from UTF-8 to ANSI to be written in a REL 4 file
-static void
-MMWrite_ANSI_MetadataKeyDescriptor(struct MiraMonVectorMetaData *hMMMD,
-                                   VSILFILE *pF, const char *pszEng,
-                                   const char *pszCat, const char *pszEsp)
+static void MMWrite_ANSI_MetadataKeyDescriptor(
+    struct MiraMonVectorMetaData *hMMMD, VSILFILE *pF, const char *pszEng,
+    const char *pszCat, const char *pszEsp, const char *pszCurrentEncoding)
 {
-    char *pszString = nullptr;
+    if (!EQUAL(pszCurrentEncoding, CPL_ENC_ISO8859_1))
+    {
+        char *pszString = nullptr;
 
-    switch (hMMMD->nMMLanguage)
-    {
-        case MM_CAT_LANGUAGE:
-            pszString = CPLRecode(pszCat, CPL_ENC_UTF8, CPL_ENC_ISO8859_1);
-            break;
-        case MM_SPA_LANGUAGE:
-            pszString = CPLRecode(pszEsp, CPL_ENC_UTF8, CPL_ENC_ISO8859_1);
-            break;
-        default:
-        case MM_ENG_LANGUAGE:
-            pszString = CPLRecode(pszEng, CPL_ENC_UTF8, CPL_ENC_ISO8859_1);
-            break;
+        switch (hMMMD->nMMLanguage)
+        {
+            case MM_CAT_LANGUAGE:
+                pszString =
+                    CPLRecode(pszCat, pszCurrentEncoding, CPL_ENC_ISO8859_1);
+                break;
+            case MM_SPA_LANGUAGE:
+                pszString =
+                    CPLRecode(pszEsp, pszCurrentEncoding, CPL_ENC_ISO8859_1);
+                break;
+            default:
+            case MM_ENG_LANGUAGE:
+                pszString =
+                    CPLRecode(pszEng, pszCurrentEncoding, CPL_ENC_ISO8859_1);
+                break;
+        }
+        if (pszString)
+        {
+            VSIFPrintfL(pF, "%s", KEY_descriptor);
+            VSIFPrintfL(pF, "=");
+            VSIFPrintfL(pF, "%s", pszString);
+            VSIFPrintfL(pF, "%s", LineReturn);
+            CPLFree(pszString);
+        }
     }
-    if (pszString)
+    else
     {
-        VSIFPrintfL(pF, "%s", KEY_descriptor);
-        VSIFPrintfL(pF, "=");
-        VSIFPrintfL(pF, "%s", pszString);
-        VSIFPrintfL(pF, "%s", LineReturn);
-        CPLFree(pszString);
+        const char *pszString;
+        switch (hMMMD->nMMLanguage)
+        {
+            case MM_CAT_LANGUAGE:
+                pszString = pszCat;
+                break;
+            case MM_SPA_LANGUAGE:
+                pszString = pszEsp;
+                break;
+            default:
+            case MM_ENG_LANGUAGE:
+                pszString = pszEng;
+                break;
+        }
+        if (pszString)
+        {
+            VSIFPrintfL(pF, "%s", KEY_descriptor);
+            VSIFPrintfL(pF, "=");
+            VSIFPrintfL(pF, "%s", pszString);
+            VSIFPrintfL(pF, "%s", LineReturn);
+        }
     }
 }
 
@@ -5252,11 +5332,16 @@ MMWrite_ANSI_MetadataKeyDescriptor(struct MiraMonVectorMetaData *hMMMD,
 
     Please, consult the meaning of all them at:
     https://www.miramon.cat/help/eng/GeMPlus/ClausREL.htm
+
+    This file must be written in ANSI encoding; therefore, some
+    conversions are performed for strings that may originally
+    be in UTF-8.
 */
 static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
 {
     char aMessage[MM_MESSAGE_LENGTH],
         aFileIdentifier[MM_MAX_LEN_LAYER_IDENTIFIER], aMMIDSRS[MM_MAX_ID_SNY];
+    char *pszChaiCP1252;
     MM_EXT_DBF_N_FIELDS nIField;
     VSILFILE *pF;
     time_t currentTime;
@@ -5287,7 +5372,10 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
     VSIFPrintfL(pF, "\r\n[%s]" LineReturn, SECTION_METADADES);
     CPLStrlcpy(aMessage, hMMMD->aLayerName, sizeof(aMessage));
     MMGenerateFileIdentifierFromMetadataFileName(aMessage, aFileIdentifier);
-    VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_FileIdentifier, aFileIdentifier);
+
+    pszChaiCP1252 = CPLRecode(aFileIdentifier, CPL_ENC_UTF8, "CP1252");
+    VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_FileIdentifier,
+                pszChaiCP1252 ? pszChaiCP1252 : aFileIdentifier);
     VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_language, KEY_Value_eng);
     VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_MDIdiom, KEY_Value_eng);
     VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_characterSet,
@@ -5295,19 +5383,23 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
 
     // Writing IDENTIFICATION section
     VSIFPrintfL(pF, LineReturn "[%s]" LineReturn, SECTION_IDENTIFICATION);
-    VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_code, aFileIdentifier);
+    VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_code,
+                pszChaiCP1252 ? pszChaiCP1252 : aFileIdentifier);
     VSIFPrintfL(pF, "%s=" LineReturn, KEY_codeSpace);
+    CPLFree(pszChaiCP1252);  // Not needed
     if (hMMMD->szLayerTitle && !MMIsEmptyString(hMMMD->szLayerTitle))
     {
+        pszChaiCP1252 = CPLRecode(hMMMD->szLayerTitle, CPL_ENC_UTF8, "CP1252");
         if (hMMMD->ePlainLT == MM_LayerType_Point)
             VSIFPrintfL(pF, "%s=%s (pnt)" LineReturn, KEY_DatasetTitle,
-                        hMMMD->szLayerTitle);
+                        pszChaiCP1252 ? pszChaiCP1252 : hMMMD->szLayerTitle);
         if (hMMMD->ePlainLT == MM_LayerType_Arc)
             VSIFPrintfL(pF, "%s=%s (arc)" LineReturn, KEY_DatasetTitle,
-                        hMMMD->szLayerTitle);
+                        pszChaiCP1252 ? pszChaiCP1252 : hMMMD->szLayerTitle);
         if (hMMMD->ePlainLT == MM_LayerType_Pol)
             VSIFPrintfL(pF, "%s=%s (pol)" LineReturn, KEY_DatasetTitle,
-                        hMMMD->szLayerTitle);
+                        pszChaiCP1252 ? pszChaiCP1252 : hMMMD->szLayerTitle);
+        CPLFree(pszChaiCP1252);
     }
     VSIFPrintfL(pF, "%s=%s" LineReturn, KEY_language, KEY_Value_eng);
 
@@ -5354,17 +5446,21 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
     {
         // Writing OVERVIEW:ASPECTES_TECNICS in polygon metadata file.
         // ArcSource=fitx_pol.arc
+        pszChaiCP1252 = CPLRecode(hMMMD->aArcFile, CPL_ENC_UTF8, "CP1252");
         VSIFPrintfL(pF, LineReturn "[%s]" LineReturn,
                     SECTION_OVVW_ASPECTES_TECNICS);
-        VSIFPrintfL(pF, "%s=\"%s\"" LineReturn, KEY_ArcSource, hMMMD->aArcFile);
+        VSIFPrintfL(pF, "%s=\"%s\"" LineReturn, KEY_ArcSource, pszChaiCP1252);
+        CPLFree(pszChaiCP1252);
     }
     else if (hMMMD->ePlainLT == MM_LayerType_Arc && hMMMD->aArcFile)
     {
+        pszChaiCP1252 = CPLRecode(hMMMD->aArcFile, CPL_ENC_UTF8, "CP1252");
         // Writing OVERVIEW:ASPECTES_TECNICS in arc metadata file.
         // Ciclat1=fitx_arc.pol
         VSIFPrintfL(pF, LineReturn "[%s]" LineReturn,
                     SECTION_OVVW_ASPECTES_TECNICS);
-        VSIFPrintfL(pF, "Ciclat1=\"%s\"" LineReturn, hMMMD->aArcFile);
+        VSIFPrintfL(pF, "Ciclat1=\"%s\"" LineReturn, pszChaiCP1252);
+        CPLFree(pszChaiCP1252);
     }
 
     // Writing EXTENT section
@@ -5408,7 +5504,8 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
 
     MMWrite_ANSI_MetadataKeyDescriptor(
         hMMMD, pF, szInternalGraphicIdentifierEng,
-        szInternalGraphicIdentifierCat, szInternalGraphicIdentifierSpa);
+        szInternalGraphicIdentifierCat, szInternalGraphicIdentifierSpa,
+        CPL_ENC_ISO8859_1);
 
     if (hMMMD->ePlainLT == MM_LayerType_Arc)
     {
@@ -5417,15 +5514,16 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
                     szMMNomCampNVertexsDefecte);
         VSIFPrintfL(pF, "visible=0" LineReturn);
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
-        MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szNumberOfVerticesEng,
-                                           szNumberOfVerticesCat,
-                                           szNumberOfVerticesSpa);
+        MMWrite_ANSI_MetadataKeyDescriptor(
+            hMMMD, pF, szNumberOfVerticesEng, szNumberOfVerticesCat,
+            szNumberOfVerticesSpa, CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
                     szMMNomCampLongitudArcDefecte);
-        MMWrite_ANSI_MetadataKeyDescriptor(
-            hMMMD, pF, szLengthOfAarcEng, szLengthOfAarcCat, szLengthOfAarcSpa);
+        MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szLengthOfAarcEng,
+                                           szLengthOfAarcCat, szLengthOfAarcSpa,
+                                           CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
@@ -5433,7 +5531,8 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
         VSIFPrintfL(pF, "visible=0" LineReturn);
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
         MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szInitialNodeEng,
-                                           szInitialNodeCat, szInitialNodeSpa);
+                                           szInitialNodeCat, szInitialNodeSpa,
+                                           CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
@@ -5441,7 +5540,8 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
         VSIFPrintfL(pF, "visible=0" LineReturn);
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
         MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szFinalNodeEng,
-                                           szFinalNodeCat, szFinalNodeSpa);
+                                           szFinalNodeCat, szFinalNodeSpa,
+                                           CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[GEOMETRIA_I_TOPOLOGIA]" LineReturn);
@@ -5460,16 +5560,17 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
                     szMMNomCampArcsANodeDefecte);
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
-        MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szNumberOfArcsToNodeEng,
-                                           szNumberOfArcsToNodeCat,
-                                           szNumberOfArcsToNodeSpa);
+        MMWrite_ANSI_MetadataKeyDescriptor(
+            hMMMD, pF, szNumberOfArcsToNodeEng, szNumberOfArcsToNodeCat,
+            szNumberOfArcsToNodeSpa, CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
                     szMMNomCampTipusNodeDefecte);
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
         MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szNodeTypeEng,
-                                           szNodeTypeCat, szNodeTypeSpa);
+                                           szNodeTypeCat, szNodeTypeSpa,
+                                           CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[GEOMETRIA_I_TOPOLOGIA]" LineReturn);
@@ -5485,31 +5586,32 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
                     szMMNomCampNVertexsDefecte);
         VSIFPrintfL(pF, "visible=0" LineReturn);
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
-        MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szNumberOfVerticesEng,
-                                           szNumberOfVerticesCat,
-                                           szNumberOfVerticesSpa);
+        MMWrite_ANSI_MetadataKeyDescriptor(
+            hMMMD, pF, szNumberOfVerticesEng, szNumberOfVerticesCat,
+            szNumberOfVerticesSpa, CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
                     szMMNomCampPerimetreDefecte);
         MMWrite_ANSI_MetadataKeyDescriptor(
             hMMMD, pF, szPerimeterOfThePolygonEng, szPerimeterOfThePolygonCat,
-            szPerimeterOfThePolygonSpa);
+            szPerimeterOfThePolygonSpa, CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
                     szMMNomCampAreaDefecte);
-        MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szAreaOfThePolygonEng,
-                                           szAreaOfThePolygonCat,
-                                           szAreaOfThePolygonSpa);
+        MMWrite_ANSI_MetadataKeyDescriptor(
+            hMMMD, pF, szAreaOfThePolygonEng, szAreaOfThePolygonCat,
+            szAreaOfThePolygonSpa, CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
                     szMMNomCampNArcsDefecte);
         VSIFPrintfL(pF, "visible=0" LineReturn);
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
-        MMWrite_ANSI_MetadataKeyDescriptor(
-            hMMMD, pF, szNumberOfArcsEng, szNumberOfArcsCat, szNumberOfArcsSpa);
+        MMWrite_ANSI_MetadataKeyDescriptor(hMMMD, pF, szNumberOfArcsEng,
+                                           szNumberOfArcsCat, szNumberOfArcsSpa,
+                                           CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[%s:%s]" LineReturn, SECTION_TAULA_PRINCIPAL,
@@ -5518,7 +5620,8 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
         VSIFPrintfL(pF, "simbolitzable=0" LineReturn);
         MMWrite_ANSI_MetadataKeyDescriptor(
             hMMMD, pF, szNumberOfElementaryPolygonsEng,
-            szNumberOfElementaryPolygonsCat, szNumberOfElementaryPolygonsSpa);
+            szNumberOfElementaryPolygonsCat, szNumberOfElementaryPolygonsSpa,
+            CPL_ENC_ISO8859_1);
 
         VSIFPrintfL(pF, LineReturn);
         VSIFPrintfL(pF, "[GEOMETRIA_I_TOPOLOGIA]" LineReturn);
@@ -5550,7 +5653,8 @@ static int MMWriteMetadataFile(struct MiraMonVectorMetaData *hMMMD)
                     hMMMD, pF,
                     hMMMD->pLayerDB->pFields[nIField].pszFieldDescription,
                     hMMMD->pLayerDB->pFields[nIField].pszFieldDescription,
-                    hMMMD->pLayerDB->pFields[nIField].pszFieldDescription);
+                    hMMMD->pLayerDB->pFields[nIField].pszFieldDescription,
+                    CPL_ENC_UTF8);
             }
 
             // Exception in a particular case: "altura" is a catalan word that means

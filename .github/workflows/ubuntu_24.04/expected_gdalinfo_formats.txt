@@ -1,11 +1,11 @@
 Supported Formats: (ro:read-only, rw:read-write, +:write from scratch, u:update, v:virtual-I/O s:subdatasets)
-  VRT -raster,multidimensional raster- (rw+uv): Virtual Raster (*.vrt)
   DERIVED -raster- (ro): Derived datasets using VRT pixel functions
   GTI -raster- (rov): GDAL Raster Tile Index (*.gti.gpkg, *.gti.fgb, *.gti)
   SNAP_TIFF -raster- (rov): Sentinel Application Processing GeoTIFF
   GTiff -raster- (rw+uvs): GeoTIFF (*.tif, *.tiff)
-  COG -raster- (wv): Cloud optimized GeoTIFF generator (*.tif, *.tiff)
+  COG -raster- (w+v): Cloud optimized GeoTIFF generator (*.tif, *.tiff)
   LIBERTIFF -raster- (rov): GeoTIFF (using LIBERTIFF library) (*.tif, *.tiff)
+  VRT -raster,multidimensional raster- (rw+uv): Virtual Raster (*.vrt)
   NITF -raster- (rw+uvs): National Imagery Transmission Format (*.ntf)
   RPFTOC -raster- (rovs): Raster Product Format TOC format (*.toc)
   ECRGTOC -raster- (rovs): ECRG TOC format (*.xml)
@@ -77,7 +77,6 @@ Supported Formats: (ro:read-only, rw:read-write, +:write from scratch, u:update,
   PNM -raster- (rw+v): Portable Pixmap Format (netpbm) (*.pgm, *.ppm, *.pnm)
   DOQ1 -raster- (rov): USGS DOQ (Old Style)
   DOQ2 -raster- (rov): USGS DOQ (New Style)
-  PAux -raster- (rov): PCI .aux Labelled
   MFF -raster- (rov): Vexcel MFF Raster (*.hdr)
   MFF2 -raster- (ro): Vexcel MFF2 (HKV) Raster
   GSC -raster- (rov): GSC Geogrid
@@ -103,9 +102,9 @@ Supported Formats: (ro:read-only, rw:read-write, +:write from scratch, u:update,
   USGSDEM -raster- (rov): USGS Optional ASCII DEM (and CDED) (*.dem)
   GXF -raster- (rov): GeoSoft Grid Exchange Format (*.gxf)
   BAG -raster,multidimensional raster,vector- (rw+v): Bathymetry Attributed Grid (*.bag)
-  S102 -raster,multidimensional raster- (rovs): S-102 Bathymetric Surface Product (*.h5)
-  S104 -raster,multidimensional raster- (rov): S-104 Water Level Information for Surface Navigation Product (*.h5)
-  S111 -raster,multidimensional raster- (rov): Surface Currents Product (*.h5)
+  S102 -raster,multidimensional raster- (rwvs): S-102 Bathymetric Surface Product (*.h5)
+  S104 -raster,multidimensional raster- (rwvs): S-104 Water Level Information for Surface Navigation Product (*.h5)
+  S111 -raster,multidimensional raster- (rwvs): S-111 Surface Currents Product (*.h5)
   HDF5 -raster,multidimensional raster- (rovs): Hierarchical Data Format Release 5 (*.h5, *.hdf5)
   HDF5Image -raster- (rov): HDF5 Dataset
   NWT_GRD -raster- (rw+v): Northwood Numeric Grid Format .grd/.tab (*.grd)
@@ -134,12 +133,14 @@ Supported Formats: (ro:read-only, rw:read-write, +:write from scratch, u:update,
   STACIT -raster- (rovs): Spatio-Temporal Asset Catalog Items
   JPEGXL -raster- (rwv): JPEG-XL (*.jxl)
   GDALG -raster,vector- (rov): GDAL Streamed Algorithm driver (*.gdalg.json)
+  E57 -raster- (rovs): ASTM E57 3D file format (image part) (*.e57)
   GPKG -raster,vector- (rw+uvs): GeoPackage (*.gpkg, *.gpkg.zip)
   SQLite -raster,vector- (rw+uvs): SQLite / Spatialite / RasterLite2 (*.sqlite, *.db)
   OpenFileGDB -raster,vector- (rw+uv): ESRI FileGeodatabase (using OpenFileGDB) (*.gdb)
   CAD -raster,vector- (rovs): AutoCAD Driver (*.dwg)
   PLSCENES -raster,vector- (ro): Planet Labs Scenes API
   NGW -raster,vector- (rw+s): NextGIS Web
+  PAux -raster- (rov): PCI .aux Labelled
   GenBin -raster- (rov): Generic Binary (.hdr Labelled)
   ENVI -raster- (rw+uv): ENVI .hdr Labelled
   EHdr -raster- (rw+uv): ESRI .hdr Labelled (*.bil)

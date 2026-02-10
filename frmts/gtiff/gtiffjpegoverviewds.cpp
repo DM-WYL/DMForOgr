@@ -14,6 +14,7 @@
 #include "gtiffjpegoverviewds.h"
 
 #include "gtiffdataset.h"
+#include "gdal_priv.h"
 
 #include "tifvsi.h"
 
@@ -28,11 +29,7 @@ class GTiffJPEGOverviewBand final : public GDALRasterBand
   public:
     GTiffJPEGOverviewBand(GTiffJPEGOverviewDS *poDS, int nBand);
 
-    virtual ~GTiffJPEGOverviewBand()
-    {
-    }
-
-    virtual CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
 
     GDALColorInterp GetColorInterpretation() override
     {
@@ -91,7 +88,7 @@ GTiffJPEGOverviewDS::GTiffJPEGOverviewDS(GTiffDataset *poParentDSIn,
 }
 
 /************************************************************************/
-/*                       ~GTiffJPEGOverviewDS()                         */
+/*                        ~GTiffJPEGOverviewDS()                        */
 /************************************************************************/
 
 GTiffJPEGOverviewDS::~GTiffJPEGOverviewDS()
@@ -103,7 +100,7 @@ GTiffJPEGOverviewDS::~GTiffJPEGOverviewDS()
 }
 
 /************************************************************************/
-/*                            IRasterIO()                               */
+/*                             IRasterIO()                              */
 /************************************************************************/
 
 CPLErr GTiffJPEGOverviewDS::IRasterIO(
@@ -134,7 +131,7 @@ CPLErr GTiffJPEGOverviewDS::IRasterIO(
 }
 
 /************************************************************************/
-/*                        GTiffJPEGOverviewBand()                       */
+/*                       GTiffJPEGOverviewBand()                        */
 /************************************************************************/
 
 GTiffJPEGOverviewBand::GTiffJPEGOverviewBand(GTiffJPEGOverviewDS *poDSIn,
@@ -152,7 +149,7 @@ GTiffJPEGOverviewBand::GTiffJPEGOverviewBand(GTiffJPEGOverviewDS *poDSIn,
 }
 
 /************************************************************************/
-/*                          IReadBlock()                                */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr GTiffJPEGOverviewBand::IReadBlock(int nBlockXOff, int nBlockYOff,

@@ -10,10 +10,13 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "jpegxldrivercore.h"
 
 /************************************************************************/
-/*                      IsJPEGXLContainer()                             */
+/*                         IsJPEGXLContainer()                          */
 /************************************************************************/
 
 bool IsJPEGXLContainer(GDALOpenInfo *poOpenInfo)
@@ -27,7 +30,7 @@ bool IsJPEGXLContainer(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                JPEGXLDatasetIdentifyPartial()                        */
+/*                    JPEGXLDatasetIdentifyPartial()                    */
 /************************************************************************/
 
 static int JPEGXLDatasetIdentifyPartial(GDALOpenInfo *poOpenInfo)

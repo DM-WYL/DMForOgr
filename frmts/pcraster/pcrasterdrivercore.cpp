@@ -10,6 +10,9 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "pcrasterdrivercore.h"
 
 /* value for first 27 bytes of MAIN_HEADER.signature */
@@ -19,7 +22,7 @@
 #endif
 
 /************************************************************************/
-/*                     PCRasterDriverIdentify()                         */
+/*                       PCRasterDriverIdentify()                       */
 /************************************************************************/
 
 int PCRasterDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -35,7 +38,7 @@ int PCRasterDriverIdentify(GDALOpenInfo *poOpenInfo)
 #undef CSF_SIZE_SIG
 
 /************************************************************************/
-/*                    PCRasterDriverSetCommonMetadata()                 */
+/*                  PCRasterDriverSetCommonMetadata()                   */
 /************************************************************************/
 
 void PCRasterDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -56,7 +59,7 @@ void PCRasterDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                  DeclareDeferredPCRasterPlugin()                     */
+/*                   DeclareDeferredPCRasterPlugin()                    */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

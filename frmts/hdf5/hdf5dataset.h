@@ -19,6 +19,7 @@
 
 #include "cpl_list.h"
 #include "gdal_pam.h"
+#include "gdal_pam_multidim.h"
 
 #include <map>
 
@@ -246,7 +247,7 @@ class HDF5Dataset CPL_NON_FINAL : public GDALPamDataset
 
   public:
     HDF5Dataset();
-    ~HDF5Dataset();
+    ~HDF5Dataset() override;
 
     std::shared_ptr<GDALGroup> GetRootGroup() const override
     {

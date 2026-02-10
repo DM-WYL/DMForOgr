@@ -10,12 +10,15 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "ogrsf_frmts.h"
 
 #include "ogrvfkdrivercore.h"
 
 /************************************************************************/
-/*                    OGRVFKDriverIdentify()                            */
+/*                        OGRVFKDriverIdentify()                        */
 /************************************************************************/
 
 int OGRVFKDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -50,7 +53,7 @@ int OGRVFKDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                  OGRVFKDriverSetCommonMetadata()                  */
+/*                   OGRVFKDriverSetCommonMetadata()                    */
 /************************************************************************/
 
 void OGRVFKDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -77,7 +80,7 @@ void OGRVFKDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredOGRVFKPlugin()                      */
+/*                    DeclareDeferredOGRVFKPlugin()                     */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

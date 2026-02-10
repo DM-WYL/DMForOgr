@@ -12,6 +12,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_srs_api.h"
 #include "rawdataset.h"
 
@@ -40,7 +41,7 @@ class SNODASDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(SNODASDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     SNODASDataset();
@@ -82,7 +83,7 @@ class SNODASRasterBand final : public RawRasterBand
 };
 
 /************************************************************************/
-/*                         SNODASRasterBand()                           */
+/*                          SNODASRasterBand()                          */
 /************************************************************************/
 
 SNODASRasterBand::SNODASRasterBand(VSILFILE *fpRawIn, int nXSize, int nYSize)
@@ -92,7 +93,7 @@ SNODASRasterBand::SNODASRasterBand(VSILFILE *fpRawIn, int nXSize, int nYSize)
 }
 
 /************************************************************************/
-/*                          GetNoDataValue()                            */
+/*                           GetNoDataValue()                           */
 /************************************************************************/
 
 double SNODASRasterBand::GetNoDataValue(int *pbSuccess)
@@ -108,7 +109,7 @@ double SNODASRasterBand::GetNoDataValue(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                            GetMinimum()                              */
+/*                             GetMinimum()                             */
 /************************************************************************/
 
 double SNODASRasterBand::GetMinimum(int *pbSuccess)
@@ -124,7 +125,7 @@ double SNODASRasterBand::GetMinimum(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                            GetMaximum()                             */
+/*                             GetMaximum()                             */
 /************************************************************************/
 
 double SNODASRasterBand::GetMaximum(int *pbSuccess)
@@ -168,10 +169,10 @@ SNODASDataset::~SNODASDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr SNODASDataset::Close()
+CPLErr SNODASDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -216,7 +217,7 @@ char **SNODASDataset::GetFileList()
 }
 
 /************************************************************************/
-/*                            Identify()                                */
+/*                              Identify()                              */
 /************************************************************************/
 
 int SNODASDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -501,7 +502,7 @@ GDALDataset *SNODASDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                       GDALRegister_SNODAS()                          */
+/*                        GDALRegister_SNODAS()                         */
 /************************************************************************/
 
 void GDALRegister_SNODAS()

@@ -771,7 +771,7 @@ GDALDataset *WCSDataset::GDALOpenResult(CPLHTTPResult *psResult)
 }
 
 /************************************************************************/
-/*                            WCSParseVersion()                         */
+/*                          WCSParseVersion()                           */
 /************************************************************************/
 
 static int WCSParseVersion(const char *version)
@@ -790,7 +790,7 @@ static int WCSParseVersion(const char *version)
 }
 
 /************************************************************************/
-/*                             Version()                                */
+/*                              Version()                               */
 /************************************************************************/
 
 const char *WCSDataset::Version() const
@@ -809,7 +809,7 @@ const char *WCSDataset::Version() const
 }
 
 /************************************************************************/
-/*                      FetchCapabilities()                             */
+/*                         FetchCapabilities()                          */
 /************************************************************************/
 
 #define WCS_HTTP_OPTIONS "TIMEOUT", "USERPWD", "HTTPAUTH"
@@ -859,7 +859,7 @@ static bool FetchCapabilities(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                      CreateFromCapabilities()                        */
+/*                       CreateFromCapabilities()                       */
 /************************************************************************/
 
 WCSDataset *WCSDataset::CreateFromCapabilities(const std::string &cache,
@@ -908,7 +908,7 @@ WCSDataset *WCSDataset::CreateFromCapabilities(const std::string &cache,
 }
 
 /************************************************************************/
-/*                        CreateFromMetadata()                          */
+/*                         CreateFromMetadata()                         */
 /************************************************************************/
 
 WCSDataset *WCSDataset::CreateFromMetadata(const std::string &cache,
@@ -972,7 +972,7 @@ WCSDataset *WCSDataset::CreateFromMetadata(const std::string &cache,
 }
 
 /************************************************************************/
-/*                        BootstrapGlobal()                             */
+/*                          BootstrapGlobal()                           */
 /************************************************************************/
 
 static WCSDataset *BootstrapGlobal(GDALOpenInfo *poOpenInfo,
@@ -1012,7 +1012,7 @@ static WCSDataset *BootstrapGlobal(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                          CreateService()                             */
+/*                           CreateService()                            */
 /************************************************************************/
 
 static CPLXMLNode *CreateService(const std::string &base_url,
@@ -1032,7 +1032,7 @@ static CPLXMLNode *CreateService(const std::string &base_url,
 }
 
 /************************************************************************/
-/*                          UpdateService()                             */
+/*                           UpdateService()                            */
 /************************************************************************/
 
 #define WCS_SERVICE_OPTIONS                                                    \
@@ -1513,14 +1513,14 @@ GDALDataset *WCSDataset::Open(GDALOpenInfo *poOpenInfo)
     {
         WCSRasterBand *band = new WCSRasterBand(poDS, iBand + 1, -1);
         // copy band specific metadata to the band
-        char **md_from = poDS->GetMetadata("");
+        CSLConstList md_from = poDS->GetMetadata("");
         char **md_to = nullptr;
         if (md_from)
         {
             std::string our_key = CPLString().Printf("FIELD_%d_", iBand + 1);
-            for (char **from = md_from; *from != nullptr; ++from)
+            for (const char *pszKeyValue : cpl::Iterate(md_from))
             {
-                std::vector<std::string> kv = Split(*from, "=");
+                std::vector<std::string> kv = Split(pszKeyValue, "=");
                 if (kv.size() > 1 &&
                     STARTS_WITH(kv[0].c_str(), our_key.c_str()))
                 {
@@ -1610,7 +1610,7 @@ CPLErr WCSDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *WCSDataset::GetSpatialRef() const
@@ -1648,7 +1648,7 @@ char **WCSDataset::GetFileList()
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **WCSDataset::GetMetadataDomainList()
@@ -1661,7 +1661,7 @@ char **WCSDataset::GetMetadataDomainList()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **WCSDataset::GetMetadata(const char *pszDomain)
+CSLConstList WCSDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain == nullptr || !EQUAL(pszDomain, "xml:CoverageOffering"))

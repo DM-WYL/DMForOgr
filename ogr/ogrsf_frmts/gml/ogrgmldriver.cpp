@@ -16,7 +16,7 @@
 #include "gmlreaderp.h"
 
 /************************************************************************/
-/*                         OGRGMLDriverIdentify()                       */
+/*                        OGRGMLDriverIdentify()                        */
 /************************************************************************/
 
 static int OGRGMLDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -92,13 +92,13 @@ static GDALDataset *OGRGMLDriverOpen(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                             Create()                                 */
+/*                               Create()                               */
 /************************************************************************/
 
 static GDALDataset *
 OGRGMLDriverCreate(const char *pszName, CPL_UNUSED int nBands,
                    CPL_UNUSED int nXSize, CPL_UNUSED int nYSize,
-                   CPL_UNUSED GDALDataType eDT, char **papszOptions)
+                   CPL_UNUSED GDALDataType eDT, CSLConstList papszOptions)
 {
     OGRGMLDataSource *poDS = new OGRGMLDataSource();
 
@@ -301,6 +301,8 @@ void RegisterOGRGML()
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_MULTIPLE_VECTOR_LAYERS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_HONOR_GEOM_COORDINATE_PRECISION, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_REOPEN_AFTER_WRITE_REQUIRED, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CAN_READ_AFTER_DELETE, "YES");
 
     poDriver->pfnOpen = OGRGMLDriverOpen;
     poDriver->pfnIdentify = OGRGMLDriverIdentify;

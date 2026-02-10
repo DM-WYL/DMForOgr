@@ -40,7 +40,7 @@ class MMRRasterBand final : public GDALPamRasterBand
         delete;  // I don't want to construct a MMRRasterBand from another MMRRasterBand (effc++)
     MMRRasterBand &operator=(const MMRRasterBand &) =
         delete;  // I don't want to assign a MMRRasterBand to another MMRRasterBand (effc++)
-    ~MMRRasterBand();
+    ~MMRRasterBand() override;
 
     CPLErr IReadBlock(int, int, void *) override;
     GDALColorInterp GetColorInterpretation() override;
@@ -107,8 +107,9 @@ class MMRRasterBand final : public GDALPamRasterBand
     CPLErr GetRATName(CPLString aosToken, CPLString &osRELName,
                       CPLString &osDBFName, CPLString &osAssociateREL);
     CPLErr UpdateAttributeColorsFromPalette();
-    CPLErr CreateRATFromDBF(CPLString osRELName, CPLString osDBFName,
-                            CPLString osAssociateRel);
+    CPLErr CreateRATFromDBF(const CPLString &osRELName,
+                            const CPLString &osDBFName,
+                            const CPLString &osAssociateRel);
 
     CPLErr AssignUniformColorTable();
     CPLErr FromPaletteToColorTableCategoricalMode();

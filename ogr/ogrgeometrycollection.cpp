@@ -29,16 +29,11 @@
 #include "ogr_spatialref.h"
 
 /************************************************************************/
-/*         OGRGeometryCollection( const OGRGeometryCollection& )        */
+/*        OGRGeometryCollection( const OGRGeometryCollection& )         */
 /************************************************************************/
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRGeometryCollection::OGRGeometryCollection(const OGRGeometryCollection &other)
@@ -58,7 +53,7 @@ OGRGeometryCollection::OGRGeometryCollection(const OGRGeometryCollection &other)
 }
 
 /************************************************************************/
-/*            OGRGeometryCollection( OGRGeometryCollection&& )          */
+/*           OGRGeometryCollection( OGRGeometryCollection&& )           */
 /************************************************************************/
 
 /**
@@ -94,11 +89,6 @@ OGRGeometryCollection::~OGRGeometryCollection()
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRGeometryCollection &
@@ -134,7 +124,7 @@ OGRGeometryCollection::operator=(const OGRGeometryCollection &other)
 }
 
 /************************************************************************/
-/*                  operator=( OGRGeometryCollection&&)                 */
+/*                 operator=( OGRGeometryCollection&&)                  */
 /************************************************************************/
 
 /**
@@ -1208,7 +1198,7 @@ bool OGRGeometryCollection::setMeasured(OGRBoolean bIsMeasured)
 }
 
 /************************************************************************/
-/*                              get_Length()                            */
+/*                             get_Length()                             */
 /************************************************************************/
 
 /**
@@ -1294,7 +1284,7 @@ double OGRGeometryCollection::get_Area() const
 }
 
 /************************************************************************/
-/*                        get_GeodesicArea()                            */
+/*                          get_GeodesicArea()                          */
 /************************************************************************/
 
 /**
@@ -1365,7 +1355,7 @@ double OGRGeometryCollection::get_GeodesicArea(
 }
 
 /************************************************************************/
-/*                        get_GeodesicLength()                          */
+/*                         get_GeodesicLength()                         */
 /************************************************************************/
 
 /**
@@ -1441,7 +1431,7 @@ double OGRGeometryCollection::get_GeodesicLength(
 }
 
 /************************************************************************/
-/*                               IsEmpty()                              */
+/*                              IsEmpty()                               */
 /************************************************************************/
 
 OGRBoolean OGRGeometryCollection::IsEmpty() const
@@ -1469,7 +1459,7 @@ void OGRGeometryCollection::assignSpatialReference(
 }
 
 /************************************************************************/
-/*              OGRGeometryCollection::segmentize()                     */
+/*                 OGRGeometryCollection::segmentize()                  */
 /************************************************************************/
 
 bool OGRGeometryCollection::segmentize(double dfMaxLength)
@@ -1495,7 +1485,7 @@ void OGRGeometryCollection::swapXY()
 }
 
 /************************************************************************/
-/*                          isCompatibleSubType()                       */
+/*                        isCompatibleSubType()                         */
 /************************************************************************/
 
 /** Returns whether a geometry of the specified geometry type can be a
@@ -1513,7 +1503,7 @@ OGRBoolean OGRGeometryCollection::isCompatibleSubType(
 }
 
 /************************************************************************/
-/*                         hasCurveGeometry()                           */
+/*                          hasCurveGeometry()                          */
 /************************************************************************/
 
 OGRBoolean OGRGeometryCollection::hasCurveGeometry(int bLookForNonLinear) const
@@ -1527,7 +1517,7 @@ OGRBoolean OGRGeometryCollection::hasCurveGeometry(int bLookForNonLinear) const
 }
 
 /************************************************************************/
-/*                         getLinearGeometry()                        */
+/*                         getLinearGeometry()                          */
 /************************************************************************/
 
 OGRGeometry *
@@ -1551,7 +1541,7 @@ OGRGeometryCollection::getLinearGeometry(double dfMaxAngleStepSizeDegrees,
 }
 
 /************************************************************************/
-/*                             getCurveGeometry()                       */
+/*                          getCurveGeometry()                          */
 /************************************************************************/
 
 OGRGeometry *
@@ -1580,7 +1570,7 @@ OGRGeometryCollection::getCurveGeometry(const char *const *papszOptions) const
 }
 
 /************************************************************************/
-/*                      TransferMembersAndDestroy()                     */
+/*                     TransferMembersAndDestroy()                      */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -1602,7 +1592,7 @@ OGRGeometryCollection::TransferMembersAndDestroy(OGRGeometryCollection *poSrc,
 //! @endcond
 
 /************************************************************************/
-/*                        CastToGeometryCollection()                    */
+/*                      CastToGeometryCollection()                      */
 /************************************************************************/
 
 /**
@@ -1616,7 +1606,6 @@ OGRGeometryCollection::TransferMembersAndDestroy(OGRGeometryCollection *poSrc,
  *
  * @param poSrc the input geometry - ownership is passed to the method.
  * @return new geometry.
- * @since GDAL 2.2
  */
 
 OGRGeometryCollection *

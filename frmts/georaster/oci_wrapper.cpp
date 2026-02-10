@@ -13,7 +13,7 @@
 
 #include "oci_wrapper.h"
 
-static const OW_CellDepth ahOW_CellDepth[] = {{"8BIT_U", GDT_Byte},
+static const OW_CellDepth ahOW_CellDepth[] = {{"8BIT_U", GDT_UInt8},
                                               {"16BIT_U", GDT_UInt16},
                                               {"16BIT_S", GDT_Int16},
                                               {"32BIT_U", GDT_UInt32},
@@ -22,13 +22,183 @@ static const OW_CellDepth ahOW_CellDepth[] = {{"8BIT_U", GDT_Byte},
                                               {"64BIT_REAL", GDT_Float64},
                                               {"32BIT_COMPLEX", GDT_CFloat32},
                                               {"64BIT_COMPLEX", GDT_CFloat64},
-                                              {"1BIT", GDT_Byte},
-                                              {"2BIT", GDT_Byte},
-                                              {"4BIT", GDT_Byte}};
+                                              {"1BIT", GDT_UInt8},
+                                              {"2BIT", GDT_UInt8},
+                                              {"4BIT", GDT_UInt8}};
 
-/*****************************************************************************/
-/*                            OWConnection                                   */
-/*****************************************************************************/
+/************************************************************************/
+/*                            OWSessionPool                             */
+/************************************************************************/
+
+/*************************************************
+ *  Create Connection from the Extproc Context
+ *************************************************/
+
+OWSessionPool::OWSessionPool(const char *pszUserIn, const char *pszPasswordIn,
+                             const char *pszServerIn)
+{
+    CPLDebug("GEOR", "Creating session pool with user=%s, pwd=%s, server=%s",
+             pszUserIn, pszPasswordIn, pszServerIn);
+
+    pszUser = CPLStrdup(pszUserIn);
+    pszPassword = CPLStrdup(pszPasswordIn);
+    pszServer = CPLStrdup(pszServerIn);
+
+    // ------------------------------------------------------
+    //  OCI authentication options
+    // ------------------------------------------------------
+
+    const char *pszUserId = "/";
+
+    nPoolMode |= OCI_SPC_STMTCACHE;
+    nSessMode |= OCI_SESSGET_SPOOL;
+
+    if (EQUAL(pszPassword, "") && EQUAL(pszUser, ""))
+    {
+        //Authenticated using external credentials
+        nSessMode |= OCI_SESSGET_CREDEXT;
+    }
+    else
+    {
+        char **papszUserName = CSLTokenizeString2(
+            pszUserIn, "[]", CSLT_HONOURSTRINGS | CSLT_PRESERVEQUOTES);
+
+        if (CSLCount(papszUserName) == 2)
+        {
+            //Authenticated using proxy credentials
+            nSessMode |= OCI_SESSGET_CREDPROXY;
+        }
+        else
+        {
+            //Authenticated using user/pwd, session pool is homogeneous
+            nPoolMode |= OCI_SPC_HOMOGENEOUS;
+        }
+
+        CSLDestroy(papszUserName);
+
+        pszUserId = pszUser;
+    }
+
+    // ------------------------------------------------------
+    //  Initialize Environment handler
+    // ------------------------------------------------------
+
+    if (CheckError(OCIEnvCreate(&hEnv,
+                                (OCI_DEFAULT | OCI_OBJECT | OCI_THREADED),
+                                nullptr, nullptr, nullptr, nullptr, 0, nullptr),
+                   nullptr))
+    {
+        return;
+    }
+
+    // ------------------------------------------------------
+    //  Initialize Error handler
+    // ------------------------------------------------------
+
+    if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hEnv),
+                                  reinterpret_cast<dvoid **>(&hError),
+                                  OCI_HTYPE_ERROR, 0, nullptr),
+                   nullptr))
+    {
+        return;
+    }
+
+    // ------------------------------------------------------
+    //  Initialize Pool handler
+    // ------------------------------------------------------
+
+    if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hEnv),
+                                  reinterpret_cast<dvoid **>(&hPool),
+                                  OCI_HTYPE_SPOOL, 0, nullptr),
+                   hError))
+    {
+        return;
+    }
+
+    // ------------------------------------------------------
+    //  Create the Session Pool
+    // ------------------------------------------------------
+
+    if (CheckError(
+            OCISessionPoolCreate(
+                hEnv, hError, hPool, reinterpret_cast<OraText **>(&pszPoolName),
+                &nPoolNameLen,
+                reinterpret_cast<OraText *>(const_cast<char *>(pszServerIn)),
+                static_cast<unsigned>(strlen(pszServerIn)), nSessMin, nSessMax,
+                nSessIncr,
+                reinterpret_cast<OraText *>(const_cast<char *>(pszUserId)),
+                static_cast<unsigned>(strlen(pszUserId)),
+                reinterpret_cast<OraText *>(const_cast<char *>(pszPasswordIn)),
+                static_cast<unsigned>(strlen(pszPasswordIn)), nPoolMode),
+            hError))
+    {
+        CPLDebug("OCI", "Session pool creation failed");
+        return;
+    }
+
+    bSucceeded = true;
+}
+
+OWSessionPool::~OWSessionPool()
+{
+    CPLFree(pszUser);
+    CPLFree(pszPassword);
+    CPLFree(pszServer);
+
+    if (CheckError(OCISessionPoolDestroy(hPool, hError, OCI_SPD_FORCE), hError))
+    {
+        ;
+    }
+
+    if (hPool)
+    {
+        OCIHandleFree(static_cast<dvoid *>(hPool), OCI_HTYPE_SPOOL);
+    }
+
+    if (hError)
+    {
+        OCIHandleFree(static_cast<dvoid *>(hError), OCI_HTYPE_ERROR);
+    }
+}
+
+void OWSessionPool::ReInitialize(ub4 nSessMinIn, ub4 nSessMaxIn,
+                                 ub4 nSessIncrIn)
+{
+    if ((nSessMin == nSessMinIn) && (nSessMax == nSessMaxIn) &&
+        (nSessIncr == nSessIncrIn))
+        return;
+
+    CPLDebug("GEOR", "Reinitialize the Session pool %s with %d, %d, %d",
+             pszPoolName, nSessMinIn, nSessMaxIn, nSessIncrIn);
+    nSessMin = nSessMinIn;
+    nSessMax = nSessMaxIn;
+    nSessIncr = nSessIncrIn;
+
+    // ------------------------------------------------------
+    //  Reinitialize the Session Pool
+    // ------------------------------------------------------
+
+    if (CheckError(
+            OCISessionPoolCreate(
+                hEnv, hError, hPool, reinterpret_cast<OraText **>(&pszPoolName),
+                &nPoolNameLen, nullptr, 0, nSessMinIn, nSessMaxIn, nSessIncrIn,
+                nullptr, 0, nullptr, 0, OCI_SPC_REINITIALIZE),
+            hError))
+    {
+        return;
+    }
+}
+
+OWConnection *OWSessionPool::GetConnection(const char *pszUserIn,
+                                           const char *pszPasswordIn,
+                                           const char *pszServerIn)
+{
+    return new OWConnection(this, pszUserIn, pszPasswordIn, pszServerIn);
+}
+
+/************************************************************************/
+/*                             OWConnection                             */
+/************************************************************************/
 
 OWConnection::OWConnection(OCIExtProcContext *poWithContext)
 {
@@ -80,10 +250,13 @@ OWConnection::OWConnection(OCIExtProcContext *poWithContext)
 
     QueryVersion();
 
-    bSuceeeded = true;
+    bSucceeded = true;
     bExtProc = true;
 }
 
+/***************************************
+ *  Create Connection from User/Pwd
+ ***************************************/
 OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
                            const char *pszServerIn)
 {
@@ -113,7 +286,7 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
     // ------------------------------------------------------
 
     if (CheckError(OCIEnvCreate(&hEnv,
-                                (ub4)(OCI_DEFAULT | OCI_OBJECT | OCI_THREADED),
+                                (OCI_DEFAULT | OCI_OBJECT | OCI_THREADED),
                                 nullptr, nullptr, nullptr, nullptr, 0, nullptr),
                    nullptr))
     {
@@ -126,7 +299,7 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
 
     if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hEnv),
                                   reinterpret_cast<dvoid **>(&hError),
-                                  OCI_HTYPE_ERROR, (size_t)0, nullptr),
+                                  OCI_HTYPE_ERROR, 0, nullptr),
                    nullptr))
     {
         return;
@@ -138,7 +311,7 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
 
     if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hEnv),
                                   reinterpret_cast<dvoid **>(&hSvcCtx),
-                                  OCI_HTYPE_SVCCTX, (size_t)0, nullptr),
+                                  OCI_HTYPE_SVCCTX, 0, nullptr),
                    hError))
     {
         return;
@@ -150,7 +323,7 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
 
     if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hEnv),
                                   reinterpret_cast<dvoid **>(&hServer),
-                                  (ub4)OCI_HTYPE_SERVER, (size_t)0, nullptr),
+                                  OCI_HTYPE_SERVER, 0, nullptr),
                    hError))
     {
         return;
@@ -158,7 +331,7 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
 
     if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hEnv),
                                   reinterpret_cast<dvoid **>(&hSession),
-                                  (ub4)OCI_HTYPE_SESSION, (size_t)0, nullptr),
+                                  OCI_HTYPE_SESSION, 0, nullptr),
                    hError))
     {
         return;
@@ -171,33 +344,33 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
     if (CheckError(OCIServerAttach(
                        hServer, hError,
                        reinterpret_cast<text *>(const_cast<char *>(pszServer)),
-                       (sb4)strlen(pszServer), (ub4)0),
+                       static_cast<sb4>(strlen(pszServer)), 0),
                    hError))
     {
         return;
     }
 
-    if (CheckError(
-            OCIAttrSet(static_cast<dvoid *>(hSession), (ub4)OCI_HTYPE_SESSION,
-                       const_cast<char *>(pszUserId), (ub4)strlen(pszUserId),
-                       (ub4)OCI_ATTR_USERNAME, hError),
-            hError))
+    if (CheckError(OCIAttrSet(static_cast<dvoid *>(hSession), OCI_HTYPE_SESSION,
+                              const_cast<char *>(pszUserId),
+                              static_cast<ub4>(strlen(pszUserId)),
+                              OCI_ATTR_USERNAME, hError),
+                   hError))
     {
         return;
     }
 
-    if (CheckError(OCIAttrSet(static_cast<dvoid *>(hSession),
-                              (ub4)OCI_HTYPE_SESSION, pszPassword,
-                              (ub4)strlen(pszPassword), (ub4)OCI_ATTR_PASSWORD,
-                              hError),
+    if (CheckError(OCIAttrSet(static_cast<dvoid *>(hSession), OCI_HTYPE_SESSION,
+                              pszPassword,
+                              static_cast<ub4>(strlen(pszPassword)),
+                              OCI_ATTR_PASSWORD, hError),
                    hError))
     {
         return;
     }
 
     if (CheckError(OCIAttrSet(static_cast<dvoid *>(hSvcCtx), OCI_HTYPE_SVCCTX,
-                              static_cast<dvoid *>(hServer), (ub4)0,
-                              OCI_ATTR_SERVER, static_cast<OCIError *>(hError)),
+                              static_cast<dvoid *>(hServer), 0, OCI_ATTR_SERVER,
+                              static_cast<OCIError *>(hError)),
                    hError))
     {
         return;
@@ -208,7 +381,7 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
     // ------------------------------------------------------
 
     if (CheckError(
-            OCISessionBegin(hSvcCtx, hError, hSession, eCred, (ub4)OCI_DEFAULT),
+            OCISessionBegin(hSvcCtx, hError, hSession, eCred, OCI_DEFAULT),
             hError))
     {
         return;
@@ -218,23 +391,134 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
     //  Initialize Service
     // ------------------------------------------------------
 
-    if (CheckError(OCIAttrSet(static_cast<dvoid *>(hSvcCtx),
-                              (ub4)OCI_HTYPE_SVCCTX,
-                              static_cast<dvoid *>(hSession), (ub4)0,
-                              (ub4)OCI_ATTR_SESSION, hError),
+    if (CheckError(OCIAttrSet(static_cast<dvoid *>(hSvcCtx), OCI_HTYPE_SVCCTX,
+                              static_cast<dvoid *>(hSession), 0,
+                              OCI_ATTR_SESSION, hError),
                    hError))
     {
         return;
     }
 
+    // -----------------------------------------------------------------
+    //  If no user specified or proxy user used, query the session user
+    // -----------------------------------------------------------------
+    QueryAndInit(EQUAL(pszUser, "") ||
+                 (strchr(pszUser, '[') && strchr(pszUser, ']')));
+
+    bSucceeded = true;
+}
+
+/**********************************************
+ *  Create Connection from the Session Pool
+ **********************************************/
+OWConnection::OWConnection(OWSessionPool *hPool, const char *pszUserIn,
+                           const char *pszPasswordIn, const char *pszServerIn)
+{
+    hEnv = hPool->hEnv;
+    pszUser = CPLStrdup(pszUserIn);
+    pszPassword = CPLStrdup(pszPasswordIn);
+    pszServer = CPLStrdup(pszServerIn);
+
+    CPLDebug("GEOR", "Creating OWConnection from the pool using %s, %s, %s",
+             pszUserIn, pszPasswordIn, pszServerIn);
+
+    // ------------------------------------------------------
+    //  Initialize Error handler
+    // ------------------------------------------------------
+
+    if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hPool->hEnv),
+                                  reinterpret_cast<dvoid **>(&hError),
+                                  OCI_HTYPE_ERROR, 0, nullptr),
+                   nullptr))
+    {
+        return;
+    }
+
+    // ------------------------------------------------------
+    //  Create authentication info if not a homogeneous pool
+    // ------------------------------------------------------
+
+    if (!(hPool->nPoolMode & OCI_SPC_HOMOGENEOUS))
+    {
+
+        // ------------------------------------------------------
+        //  Initialize Authentication Information Handle
+        // ------------------------------------------------------
+
+        if (CheckError(OCIHandleAlloc(static_cast<dvoid *>(hPool->hEnv),
+                                      reinterpret_cast<dvoid **>(&hAuth),
+                                      OCI_HTYPE_AUTHINFO, 0, nullptr),
+                       hError))
+        {
+            return;
+        }
+
+        // ------------------------------------------------------
+        //  Set User Name and Paassword
+        // ------------------------------------------------------
+
+        const char *pszUserId = "/";
+        if (!(hPool->nSessMode & OCI_SESSGET_CREDEXT))
+        {
+            pszUserId = pszUserIn;
+        }
+
+        if (CheckError(
+                OCIAttrSet(
+                    static_cast<dvoid *>(hAuth), OCI_HTYPE_AUTHINFO,
+                    static_cast<dvoid *>(const_cast<char *>(pszUserId)),
+                    static_cast<ub4>(strlen(const_cast<char *>(pszUserId))),
+                    OCI_ATTR_USERNAME, hError),
+                hError))
+        {
+            return;
+        }
+
+        if (CheckError(OCIAttrSet(static_cast<dvoid *>(hAuth),
+                                  OCI_HTYPE_AUTHINFO,
+                                  static_cast<dvoid *>(pszPassword),
+                                  static_cast<ub4>(strlen((char *)pszPassword)),
+                                  OCI_ATTR_PASSWORD, hError),
+                       hError))
+        {
+            return;
+        }
+    }
+
+    // ------------------------------------------------------
+    // Get the Session
+    // ------------------------------------------------------
+
+    boolean bFound = false;
+    OraText *retTagInfo = nullptr;
+    ub4 retTagInfoLen;
+    if (CheckError(
+            OCISessionGet(hPool->hEnv, hError, &hSvcCtx, hAuth,
+                          reinterpret_cast<OraText *>(hPool->pszPoolName),
+                          hPool->nPoolNameLen, nullptr, 0,
+                          static_cast<OraText **>(&retTagInfo),
+                          static_cast<ub4 *>(&retTagInfoLen),
+                          static_cast<boolean *>(&bFound), hPool->nSessMode),
+            hError))
+    {
+        return;
+    }
+
+    // -----------------------------------------------------------------
+    //  If no user specified or proxy user used, query the session user
+    // -----------------------------------------------------------------
+    QueryAndInit((hPool->nSessMode & OCI_SESSGET_CREDEXT) ||
+                 (hPool->nSessMode & OCI_SESSGET_CREDPROXY));
+
+    bFromPool = true;
+    bSucceeded = true;
+}
+
+void OWConnection::QueryAndInit(bool bQuerySessionUser)
+{
     QueryVersion();
 
-    bSuceeeded = true;
-
-    // ------------------------------------------------------
-    //  If no user specified, get it from the session
-    // ------------------------------------------------------
-    if (EQUAL(pszUser, ""))
+    if (bQuerySessionUser)
     {
         OWStatement *poStmt =
             CreateStatement("select sys_context('userenv','session_user')\n"
@@ -253,7 +537,7 @@ OWConnection::OWConnection(const char *pszUserIn, const char *pszPasswordIn,
 
     CheckError(OCIHandleAlloc(static_cast<dvoid *>(hEnv),
                               reinterpret_cast<dvoid **>(&hDescribe),
-                              (ub4)OCI_HTYPE_DESCRIBE, (size_t)0, nullptr),
+                              OCI_HTYPE_DESCRIBE, 0, nullptr),
                hError);
 
     hNumArrayTDO = DescribeType(SDO_NUMBER_ARRAY);
@@ -283,7 +567,7 @@ void OWConnection::QueryVersion()
     char szVersionTxt[OWTEXT];
 
     OCIServerVersion(hSvcCtx, hError, reinterpret_cast<text *>(szVersionTxt),
-                     (ub4)OWTEXT, (ub1)OCI_HTYPE_SVCCTX);
+                     OWTEXT, OCI_HTYPE_SVCCTX);
 
     nVersion = OWParseServerVersion(szVersionTxt);
 }
@@ -303,7 +587,8 @@ OWConnection::~OWConnection()
     if (hPCTDO)
         DestroyType(hPCTDO);
 
-    OCIHandleFree(static_cast<dvoid *>(hDescribe), (ub4)OCI_HTYPE_DESCRIBE);
+    if (hDescribe)
+        OCIHandleFree(static_cast<dvoid *>(hDescribe), OCI_HTYPE_DESCRIBE);
 
     // ------------------------------------------------------
     //  Do not free OCI handles from a external procedure
@@ -311,6 +596,35 @@ OWConnection::~OWConnection()
 
     if (bExtProc)
     {
+        CPLFree(pszExtProcUser);
+        CPLFree(pszExtProcSchema);
+        return;
+    }
+
+    // ------------------------------------------------------
+    // Release sessions to the session pool
+    // ------------------------------------------------------
+
+    if (bFromPool)
+    {
+        CPLDebug("GEOR", "Releasing the OWConnection to the pool");
+        if (hAuth)
+        {
+            OCIHandleFree(static_cast<dvoid *>(hAuth), OCI_HTYPE_AUTHINFO);
+        }
+
+        if (CheckError(
+                OCISessionRelease(hSvcCtx, hError, nullptr, 0, OCI_DEFAULT),
+                hError))
+        {
+            return;
+        }
+
+        if (hError)
+        {
+            OCIHandleFree(static_cast<dvoid *>(hError), OCI_HTYPE_ERROR);
+        }
+
         return;
     }
 
@@ -320,36 +634,33 @@ OWConnection::~OWConnection()
 
     if (hSvcCtx && hError && hSession)
     {
-        OCISessionEnd(hSvcCtx, hError, hSession, (ub4)0);
+        OCISessionEnd(hSvcCtx, hError, hSession, 0);
     }
 
     if (hSvcCtx && hError)
     {
-        OCIServerDetach(hServer, hError, (ub4)OCI_DEFAULT);
+        OCIServerDetach(hServer, hError, OCI_DEFAULT);
     }
 
     if (hServer)
     {
-        OCIHandleFree(static_cast<dvoid *>(hServer), (ub4)OCI_HTYPE_SERVER);
+        OCIHandleFree(static_cast<dvoid *>(hServer), OCI_HTYPE_SERVER);
     }
 
     if (hSvcCtx)
     {
-        OCIHandleFree(static_cast<dvoid *>(hSvcCtx), (ub4)OCI_HTYPE_SVCCTX);
+        OCIHandleFree(static_cast<dvoid *>(hSvcCtx), OCI_HTYPE_SVCCTX);
     }
 
     if (hError)
     {
-        OCIHandleFree(static_cast<dvoid *>(hError), (ub4)OCI_HTYPE_ERROR);
+        OCIHandleFree(static_cast<dvoid *>(hError), OCI_HTYPE_ERROR);
     }
 
     if (hSession)
     {
-        OCIHandleFree(static_cast<dvoid *>(hSession), (ub4)OCI_HTYPE_SESSION);
+        OCIHandleFree(static_cast<dvoid *>(hSession), OCI_HTYPE_SESSION);
     }
-
-    CPLFree(pszExtProcUser);
-    CPLFree(pszExtProcSchema);
 }
 
 OCIType *OWConnection::DescribeType(const char *pszTypeName)
@@ -361,16 +672,16 @@ OCIType *OWConnection::DescribeType(const char *pszTypeName)
     CheckError(OCIDescribeAny(
                    hSvcCtx, hError,
                    reinterpret_cast<text *>(const_cast<char *>(pszTypeName)),
-                   (ub4)strlen(pszTypeName), (ub1)OCI_OTYPE_NAME,
-                   (ub1)OCI_DEFAULT, (ub1)OCI_PTYPE_TYPE, hDescribe),
+                   static_cast<ub4>(strlen(pszTypeName)), OCI_OTYPE_NAME,
+                   OCI_DEFAULT, OCI_PTYPE_TYPE, hDescribe),
                hError);
 
-    CheckError(OCIAttrGet(hDescribe, (ub4)OCI_HTYPE_DESCRIBE, &hParam, nullptr,
-                          (ub4)OCI_ATTR_PARAM, hError),
+    CheckError(OCIAttrGet(hDescribe, OCI_HTYPE_DESCRIBE, &hParam, nullptr,
+                          OCI_ATTR_PARAM, hError),
                hError);
 
-    CheckError(OCIAttrGet(hParam, (ub4)OCI_DTYPE_PARAM, &hRef, nullptr,
-                          (ub4)OCI_ATTR_REF_TDO, hError),
+    CheckError(OCIAttrGet(hParam, OCI_DTYPE_PARAM, &hRef, nullptr,
+                          OCI_ATTR_REF_TDO, hError),
                hError);
 
     CheckError(OCIObjectPin(hEnv, hError, hRef, nullptr, (OCIPinOpt)OCI_PIN_ANY,
@@ -548,9 +859,9 @@ bool OWConnection::Commit()
     return true;
 }
 
-/*****************************************************************************/
-/*                           OWStatement                                     */
-/*****************************************************************************/
+/************************************************************************/
+/*                             OWStatement                              */
+/************************************************************************/
 
 OWStatement::OWStatement(OWConnection *pConnect, const char *pszStatement)
     : poConnection(pConnect), hError(poConnection->hError)
@@ -1350,9 +1661,9 @@ void OWStatement::BindArray(void *pData, long nSize)
                hError);
 }
 
-/*****************************************************************************/
-/*               Check for valid integer number in a string                  */
-/*****************************************************************************/
+/************************************************************************/
+/*              Check for valid integer number in a string              */
+/************************************************************************/
 
 bool OWIsNumeric(const char *pszText)
 {
@@ -1373,9 +1684,9 @@ bool OWIsNumeric(const char *pszText)
     return true;
 }
 
-/*****************************************************************************/
-/*                     Remove quotes                                         */
-/*****************************************************************************/
+/************************************************************************/
+/*                            Remove quotes                             */
+/************************************************************************/
 
 char *OWRemoveQuotes(const char *pszText)
 {
@@ -1393,9 +1704,9 @@ char *OWRemoveQuotes(const char *pszText)
     return pszResult;
 }
 
-/*****************************************************************************/
-/*                     To upper if there is no quotes                        */
-/*****************************************************************************/
+/************************************************************************/
+/*                    To upper if there is no quotes                    */
+/************************************************************************/
 
 void OWUpperIfNoQuotes(char *pszText)
 {
@@ -1413,9 +1724,9 @@ void OWUpperIfNoQuotes(char *pszText)
     }
 }
 
-/*****************************************************************************/
-/*                     Parse Value after a Hint on a string                  */
-/*****************************************************************************/
+/************************************************************************/
+/*                 Parse Value after a Hint on a string                 */
+/************************************************************************/
 static CPLString OWParseValue(const char *pszText, const char *pszSeparators,
                               const char *pszHint, int nOffset)
 {
@@ -1445,9 +1756,9 @@ static CPLString OWParseValue(const char *pszText, const char *pszSeparators,
     return osResult;
 }
 
-/*****************************************************************************/
-/*                            Parse SDO_GEOR.INIT entries                    */
-/*****************************************************************************/
+/************************************************************************/
+/*                     Parse SDO_GEOR.INIT entries                      */
+/************************************************************************/
 
 /* Input Examples:
  *
@@ -1497,9 +1808,9 @@ CPLString OWParseSDO_GEOR_INIT(const char *pszInsert, int nField)
     return EQUAL(osValue, "") ? "NULL" : osValue;
 }
 
-/*****************************************************************************/
-/*                            Parse Release Version                          */
-/*****************************************************************************/
+/************************************************************************/
+/*                        Parse Release Version                         */
+/************************************************************************/
 
 /* Input Examples:
  *
@@ -1514,9 +1825,9 @@ int OWParseServerVersion(const char *pszText)
     return atoi(OWParseValue(pszText, " .", "Release", 1));
 }
 
-/*****************************************************************************/
-/*                            Parse EPSG Codes                               */
-/*****************************************************************************/
+/************************************************************************/
+/*                           Parse EPSG Codes                           */
+/************************************************************************/
 
 /* Input Examples:
  *
@@ -1530,9 +1841,9 @@ int OWParseEPSG(const char *pszText)
     return atoi(OWParseValue(pszText, " ()", "EPSG", 2));
 }
 
-/*****************************************************************************/
-/*                            Convert Data type description                  */
-/*****************************************************************************/
+/************************************************************************/
+/*                    Convert Data type description                     */
+/************************************************************************/
 
 GDALDataType OWGetDataType(const char *pszCellDepth)
 {
@@ -1549,9 +1860,9 @@ GDALDataType OWGetDataType(const char *pszCellDepth)
     return GDT_Unknown;
 }
 
-/*****************************************************************************/
-/*                            Convert Data type description                  */
-/*****************************************************************************/
+/************************************************************************/
+/*                    Convert Data type description                     */
+/************************************************************************/
 
 const char *OWSetDataType(const GDALDataType eType)
 
@@ -1569,9 +1880,9 @@ const char *OWSetDataType(const GDALDataType eType)
     return "Unknown";
 }
 
-/*****************************************************************************/
-/*                            Check for Failure                              */
-/*****************************************************************************/
+/************************************************************************/
+/*                          Check for Failure                           */
+/************************************************************************/
 bool CheckError(sword nStatus, OCIError *hError)
 {
     text szMsg[OWTEXT];

@@ -39,7 +39,7 @@ using LayerVector = std::vector<std::pair<LayerType, OGRLayerUniquePtr>>;
 }  // namespace OGRLVBAG
 
 /************************************************************************/
-/*                           OGRLVBAGLayer                              */
+/*                            OGRLVBAGLayer                             */
 /************************************************************************/
 constexpr int PARSER_BUF_SIZE = 8192;
 
@@ -118,7 +118,7 @@ class OGRLVBAGLayer final : public OGRAbstractProxiedLayer,
   public:
     explicit OGRLVBAGLayer(const char *pszFilename, OGRLayerPool *poPoolIn,
                            char **papszOpenOptions);
-    ~OGRLVBAGLayer();
+    ~OGRLVBAGLayer() override;
 
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;

@@ -58,7 +58,7 @@ typedef struct _curve_data
 } CURVE_DATA;
 
 /************************************************************************/
-/*                         SetupTargetLayer()                           */
+/*                          SetupTargetLayer()                          */
 /************************************************************************/
 
 static OGRLayer *SetupTargetLayer(OGRLayer *poSrcLayer, GDALDataset *poDstDS,
@@ -1097,7 +1097,7 @@ static OGRErr GetCoordinates(OGRLayer *const poPkLayer, double dfPos,
 }
 
 /************************************************************************/
-/*                           OGRLineRefOptions                          */
+/*                          OGRLineRefOptions                           */
 /************************************************************************/
 
 struct OGRLineRefOptions
@@ -1148,7 +1148,7 @@ struct OGRLineRefOptions
 };
 
 /************************************************************************/
-/*                           OGRLineRefGetParser                        */
+/*                         OGRLineRefGetParser                          */
 /************************************************************************/
 
 static std::unique_ptr<GDALArgumentParser>
@@ -1312,7 +1312,7 @@ OGRLineRefAppOptionsGetParser(OGRLineRefOptions *psOptions)
 }
 
 /************************************************************************/
-/*                              GetOutputDriver()                       */
+/*                          GetOutputDriver()                           */
 /************************************************************************/
 
 static GDALDriver *GetOutputDriver(OGRLineRefOptions &sOptions)
@@ -1354,7 +1354,7 @@ static GDALDriver *GetOutputDriver(OGRLineRefOptions &sOptions)
         for (int iDriver = 0; iDriver < poDM->GetDriverCount(); iDriver++)
         {
             GDALDriver *poIter = poDM->GetDriver(iDriver);
-            char **papszDriverMD = poIter->GetMetadata();
+            CSLConstList papszDriverMD = poIter->GetMetadata();
             if (CPLTestBool(CSLFetchNameValueDef(papszDriverMD,
                                                  GDAL_DCAP_VECTOR, "FALSE")) &&
                 CPLTestBool(CSLFetchNameValueDef(papszDriverMD,
@@ -1663,13 +1663,13 @@ MAIN_START(argc, argv)
             GDALClose(poPkDS);
             if (GDALClose(poODS) != CE_None)
                 eErr = CE_Failure;
+            break;
 
 #else   // HAVE_GEOS
             fprintf(stderr,
                     _("GEOS support not enabled or incompatible version.\n"));
             exit(1);
 #endif  // HAVE_GEOS
-            break;
         }
         case op_get_pos:
         {
@@ -1732,13 +1732,13 @@ MAIN_START(argc, argv)
                                psOptions.bDisplayProgress, psOptions.bQuiet);
 
             GDALClose(poPartsDS);
+            break;
 
 #else   // HAVE_GEOS
             fprintf(stderr,
                     "GEOS support not enabled or incompatible version.\n");
             exit(1);
 #endif  // HAVE_GEOS
-            break;
         }
         case op_get_coord:
         {

@@ -64,10 +64,10 @@ namespace cpl
 {
 
 /************************************************************************/
-/*                             VSIDIRS3                                 */
+/*                               VSIDIRS3                               */
 /************************************************************************/
 
-struct VSIDIRS3 : public VSIDIRS3Like
+struct VSIDIRS3 final : public VSIDIRS3Like
 {
     bool m_bRegularListingDone = false;
     bool m_bDirectoryBucketListingDone = false;
@@ -87,13 +87,14 @@ struct VSIDIRS3 : public VSIDIRS3Like
 
     bool IssueListDir() override;
     bool
-    AnalyseS3FileList(const std::string &osBaseURL, const char *pszXML,
+    AnalyseS3FileList(bool bIsListObjectV2, const std::string &osBaseURL,
+                      const char *pszXML,
                       const std::set<std::string> &oSetIgnoredStorageClasses,
                       bool &bIsTruncated);
 };
 
 /************************************************************************/
-/*                                clear()                               */
+/*                               clear()                                */
 /************************************************************************/
 
 void VSIDIRS3Like::clear()
@@ -104,13 +105,13 @@ void VSIDIRS3Like::clear()
 }
 
 /************************************************************************/
-/*                     ~VSIDIRWithMissingDirSynthesis()                 */
+/*                   ~VSIDIRWithMissingDirSynthesis()                   */
 /************************************************************************/
 
 VSIDIRWithMissingDirSynthesis::~VSIDIRWithMissingDirSynthesis() = default;
 
 /************************************************************************/
-/*                      SynthetizeMissingDirectories()                  */
+/*                    SynthetizeMissingDirectories()                    */
 /************************************************************************/
 
 void VSIDIRWithMissingDirSynthesis::SynthetizeMissingDirectories(
@@ -168,11 +169,11 @@ void VSIDIRWithMissingDirSynthesis::SynthetizeMissingDirectories(
 }
 
 /************************************************************************/
-/*                        AnalyseS3FileList()                           */
+/*                         AnalyseS3FileList()                          */
 /************************************************************************/
 
 bool VSIDIRS3::AnalyseS3FileList(
-    const std::string &osBaseURL, const char *pszXML,
+    bool bIsListObjectV2, const std::string &osBaseURL, const char *pszXML,
     const std::set<std::string> &oSetIgnoredStorageClasses, bool &bIsTruncated)
 {
 #if DEBUG_VERBOSE
@@ -255,7 +256,16 @@ bool VSIDIRS3::AnalyseS3FileList(
             if (strcmp(psIter->pszValue, "Contents") == 0)
             {
                 const char *pszKey = CPLGetXMLValue(psIter, "Key", nullptr);
-                if (bIsTruncated && nRecurseDepth < 0 && pszKey)
+                if (pszKey && CPLHasUnbalancedPathTraversal(pszKey))
+                {
+                    CPLError(
+                        CE_Warning, CPLE_AppDefined,
+                        "Ignoring key '%s' that has a path traversal pattern",
+                        pszKey);
+                    continue;
+                }
+                if (!bIsListObjectV2 && bIsTruncated && nRecurseDepth < 0 &&
+                    pszKey)
                 {
                     osNextMarker = pszKey;
                 }
@@ -368,6 +378,14 @@ bool VSIDIRS3::AnalyseS3FileList(
                 if (pszKey &&
                     strncmp(pszKey, osPrefix.c_str(), osPrefix.size()) == 0)
                 {
+                    if (CPLHasUnbalancedPathTraversal(pszKey))
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "Ignoring prefix '%s' that has a path "
+                                 "traversal pattern",
+                                 pszKey);
+                        continue;
+                    }
                     std::string osKey = pszKey;
                     if (!osKey.empty() && osKey.back() == '/')
                         osKey.pop_back();
@@ -421,16 +439,17 @@ bool VSIDIRS3::AnalyseS3FileList(
             }
         }
 
-        if (nRecurseDepth == 0)
+        if (bIsListObjectV2)
+        {
+            if (const char *pszNextContinuationToken = CPLGetXMLValue(
+                    psListBucketResult, "NextContinuationToken", nullptr))
+            {
+                osNextMarker = pszNextContinuationToken;
+            }
+        }
+        else if (nRecurseDepth == 0)
         {
             osNextMarker = CPLGetXMLValue(psListBucketResult, "NextMarker", "");
-        }
-
-        // ListObjectsV2 uses NextContinuationToken instead of NextMarker
-        if (const char *pszNextContinuationToken = CPLGetXMLValue(
-                psListBucketResult, "NextContinuationToken", nullptr))
-        {
-            osNextMarker = pszNextContinuationToken;
         }
     }
     else if (psListAllMyBucketsResultBuckets != nullptr)
@@ -445,6 +464,14 @@ bool VSIDIRS3::AnalyseS3FileList(
                 const char *pszName = CPLGetXMLValue(psIter, "Name", nullptr);
                 if (pszName)
                 {
+                    if (CPLHasUnbalancedPathTraversal(pszName))
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "Ignoring bucket name '%s' that has a path "
+                                 "traversal pattern",
+                                 pszName);
+                        continue;
+                    }
                     aoEntries.push_back(std::make_unique<VSIDIREntry>());
                     // cppcheck-suppress constVariableReference
                     auto &entry = aoEntries.back();
@@ -480,7 +507,7 @@ bool VSIDIRS3::AnalyseS3FileList(
 }
 
 /************************************************************************/
-/*                          IssueListDir()                              */
+/*                            IssueListDir()                            */
 /************************************************************************/
 
 bool VSIDIRS3::IssueListDir()
@@ -500,11 +527,13 @@ bool VSIDIRS3::IssueListDir()
 
     IVSIS3LikeHandleHelper *l_poHandlerHelper = poHandleHelper.get();
 
-    bool bUseV2 = false;
     auto poS3HandleHelper =
         dynamic_cast<VSIS3HandleHelper *>(poHandleHelper.get());
-    if (poS3HandleHelper)
-        bUseV2 = poS3HandleHelper->IsDirectoryBucket();
+    const bool bUseListObjectsV2 =
+        ((!osBucket.empty() || !m_osFilterPrefix.empty()) &&
+         EQUAL(CPLGetConfigOption("CPL_VSIS3_LIST_OBJECTS_VERSION", "2"),
+               "2")) ||
+        (poS3HandleHelper && poS3HandleHelper->IsDirectoryBucket());
 
     std::unique_ptr<VSIS3HandleHelper> poTmpHandleHelper;
     if (m_bRegularListingDone && m_bListBucket)
@@ -523,7 +552,7 @@ bool VSIDIRS3::IssueListDir()
     {
         l_poHandlerHelper->ResetQueryParameters();
         const std::string osBaseURL(l_poHandlerHelper->GetURL());
-        if (bUseV2)
+        if (bUseListObjectsV2)
             l_poHandlerHelper->AddQueryParameter("list-type", "2");
 
         CURL *hCurlHandle = curl_easy_init();
@@ -534,7 +563,8 @@ bool VSIDIRS3::IssueListDir()
                 l_poHandlerHelper->AddQueryParameter("delimiter", "/");
             if (!l_osNextMarker.empty())
                 l_poHandlerHelper->AddQueryParameter(
-                    bUseV2 ? "continuation-token" : "marker", l_osNextMarker);
+                    bUseListObjectsV2 ? "continuation-token" : "marker",
+                    l_osNextMarker);
             if (!osMaxKeys.empty())
                 l_poHandlerHelper->AddQueryParameter("max-keys", osMaxKeys);
             if (!osObjectKey.empty())
@@ -596,7 +626,8 @@ bool VSIDIRS3::IssueListDir()
         {
             bool bIsTruncated;
             bool ret = AnalyseS3FileList(
-                osBaseURL, requestHelper.sWriteFuncData.pBuffer,
+                bUseListObjectsV2, osBaseURL,
+                requestHelper.sWriteFuncData.pBuffer,
                 VSICurlFilesystemHandlerBase::GetS3IgnoredStorageClasses(),
                 bIsTruncated);
 
@@ -609,7 +640,7 @@ bool VSIDIRS3::IssueListDir()
 }
 
 /************************************************************************/
-/*                           NextDirEntry()                             */
+/*                            NextDirEntry()                            */
 /************************************************************************/
 
 const VSIDIREntry *VSIDIRS3::NextDirEntry()
@@ -641,7 +672,7 @@ const VSIDIREntry *VSIDIRS3::NextDirEntry()
 }
 
 /************************************************************************/
-/*                           NextDirEntry()                             */
+/*                            NextDirEntry()                            */
 /************************************************************************/
 
 const VSIDIREntry *VSIDIRS3Like::NextDirEntry()
@@ -700,7 +731,7 @@ const VSIDIREntry *VSIDIRS3Like::NextDirEntry()
 }
 
 /************************************************************************/
-/*                          AnalyseS3FileList()                         */
+/*                         AnalyseS3FileList()                          */
 /************************************************************************/
 
 bool VSICurlFilesystemHandlerBase::AnalyseS3FileList(
@@ -710,8 +741,9 @@ bool VSICurlFilesystemHandlerBase::AnalyseS3FileList(
 {
     VSIDIRS3 oDir(std::string(), this);
     oDir.nMaxFiles = nMaxFiles;
-    bool ret = oDir.AnalyseS3FileList(osBaseURL, pszXML,
-                                      oSetIgnoredStorageClasses, bIsTruncated);
+    bool ret =
+        oDir.AnalyseS3FileList(/* bUseListObjectsV2 = */ false, osBaseURL,
+                               pszXML, oSetIgnoredStorageClasses, bIsTruncated);
     for (const auto &entry : oDir.aoEntries)
     {
         osFileList.AddString(entry->pszName);
@@ -720,7 +752,7 @@ bool VSICurlFilesystemHandlerBase::AnalyseS3FileList(
 }
 
 /************************************************************************/
-/*                         VSIS3FSHandler                               */
+/*                            VSIS3FSHandler                            */
 /************************************************************************/
 
 class VSIS3FSHandler final : public IVSIS3LikeFSHandlerWithMultipartUpload
@@ -809,7 +841,7 @@ class VSIS3FSHandler final : public IVSIS3LikeFSHandlerWithMultipartUpload
 };
 
 /************************************************************************/
-/*                            VSIS3Handle                               */
+/*                             VSIS3Handle                              */
 /************************************************************************/
 
 IVSIS3LikeHandle::~IVSIS3LikeHandle() = default;
@@ -871,7 +903,7 @@ VSIMultipartWriteHandle::VSIMultipartWriteHandle(
 }
 
 /************************************************************************/
-/*                      GetUploadChunkSizeInBytes()                     */
+/*                     GetUploadChunkSizeInBytes()                      */
 /************************************************************************/
 
 size_t IVSIS3LikeFSHandlerWithMultipartUpload::GetUploadChunkSizeInBytes(
@@ -932,7 +964,7 @@ size_t IVSIS3LikeFSHandlerWithMultipartUpload::GetUploadChunkSizeInBytes(
 }
 
 /************************************************************************/
-/*                     ~VSIMultipartWriteHandle()                       */
+/*                      ~VSIMultipartWriteHandle()                      */
 /************************************************************************/
 
 VSIMultipartWriteHandle::~VSIMultipartWriteHandle()
@@ -944,7 +976,7 @@ VSIMultipartWriteHandle::~VSIMultipartWriteHandle()
 }
 
 /************************************************************************/
-/*                               Seek()                                 */
+/*                                Seek()                                */
 /************************************************************************/
 
 int VSIMultipartWriteHandle::Seek(vsi_l_offset nOffset, int nWhence)
@@ -963,7 +995,7 @@ int VSIMultipartWriteHandle::Seek(vsi_l_offset nOffset, int nWhence)
 }
 
 /************************************************************************/
-/*                               Tell()                                 */
+/*                                Tell()                                */
 /************************************************************************/
 
 vsi_l_offset VSIMultipartWriteHandle::Tell()
@@ -972,11 +1004,10 @@ vsi_l_offset VSIMultipartWriteHandle::Tell()
 }
 
 /************************************************************************/
-/*                               Read()                                 */
+/*                                Read()                                */
 /************************************************************************/
 
-size_t VSIMultipartWriteHandle::Read(void * /* pBuffer */, size_t /* nSize */,
-                                     size_t /* nMemb */)
+size_t VSIMultipartWriteHandle::Read(void * /* pBuffer */, size_t /* nBytes */)
 {
     CPLError(CE_Failure, CPLE_NotSupported,
              "Read not supported on writable %s files",
@@ -986,7 +1017,7 @@ size_t VSIMultipartWriteHandle::Read(void * /* pBuffer */, size_t /* nSize */,
 }
 
 /************************************************************************/
-/*                        InitiateMultipartUpload()                     */
+/*                      InitiateMultipartUpload()                       */
 /************************************************************************/
 
 std::string IVSIS3LikeFSHandlerWithMultipartUpload::InitiateMultipartUpload(
@@ -1090,7 +1121,7 @@ std::string IVSIS3LikeFSHandlerWithMultipartUpload::InitiateMultipartUpload(
 }
 
 /************************************************************************/
-/*                           UploadPart()                               */
+/*                             UploadPart()                             */
 /************************************************************************/
 
 bool VSIMultipartWriteHandle::UploadPart()
@@ -1239,13 +1270,12 @@ std::string IVSIS3LikeFSHandlerWithMultipartUpload::UploadPart(
 /*                               Write()                                */
 /************************************************************************/
 
-size_t VSIMultipartWriteHandle::Write(const void *pBuffer, size_t nSize,
-                                      size_t nMemb)
+size_t VSIMultipartWriteHandle::Write(const void *pBuffer, size_t nBytes)
 {
     if (m_bError)
         return 0;
 
-    size_t nBytesToWrite = nSize * nMemb;
+    size_t nBytesToWrite = nBytes;
     if (nBytesToWrite == 0)
         return 0;
 
@@ -1280,11 +1310,11 @@ size_t VSIMultipartWriteHandle::Write(const void *pBuffer, size_t nSize,
             m_nBufferOff = 0;
         }
     }
-    return nMemb;
+    return nBytes;
 }
 
 /************************************************************************/
-/*                    InvalidateParentDirectory()                       */
+/*                     InvalidateParentDirectory()                      */
 /************************************************************************/
 
 void VSIMultipartWriteHandle::InvalidateParentDirectory()
@@ -1299,7 +1329,7 @@ void VSIMultipartWriteHandle::InvalidateParentDirectory()
 }
 
 /************************************************************************/
-/*                           DoSinglePartPUT()                          */
+/*                          DoSinglePartPUT()                           */
 /************************************************************************/
 
 bool VSIMultipartWriteHandle::DoSinglePartPUT()
@@ -1413,7 +1443,7 @@ bool VSIMultipartWriteHandle::DoSinglePartPUT()
 }
 
 /************************************************************************/
-/*                        CompleteMultipart()                           */
+/*                         CompleteMultipart()                          */
 /************************************************************************/
 
 bool IVSIS3LikeFSHandlerWithMultipartUpload::CompleteMultipart(
@@ -1524,7 +1554,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::CompleteMultipart(
 }
 
 /************************************************************************/
-/*                          AbortMultipart()                            */
+/*                           AbortMultipart()                           */
 /************************************************************************/
 
 bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortMultipart(
@@ -1606,7 +1636,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortMultipart(
 }
 
 /************************************************************************/
-/*                       AbortPendingUploads()                          */
+/*                        AbortPendingUploads()                         */
 /************************************************************************/
 
 bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortPendingUploads(
@@ -1803,7 +1833,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::AbortPendingUploads(
 }
 
 /************************************************************************/
-/*                                 Close()                              */
+/*                               Close()                                */
 /************************************************************************/
 
 int VSIMultipartWriteHandle::Close()
@@ -1842,7 +1872,7 @@ int VSIMultipartWriteHandle::Close()
 }
 
 /************************************************************************/
-/*                          CreateWriteHandle()                         */
+/*                         CreateWriteHandle()                          */
 /************************************************************************/
 
 VSIVirtualHandleUniquePtr
@@ -1863,6 +1893,45 @@ VSIS3FSHandler::CreateWriteHandle(const char *pszFilename,
 }
 
 /************************************************************************/
+/*                     NormalizeFilenameIfNeeded()                      */
+/************************************************************************/
+
+static void NormalizeFilenameIfNeeded(CPLString &osFilename,
+                                      const char *&pszFilename)
+{
+    // Transform '/vsis3/./foo' to '/vsis3/foo' by default
+    //
+    // Cf https://curl.se/libcurl/c/CURLOPT_PATH_AS_IS.html
+    if (!CPLTestBool(VSIGetPathSpecificOption(pszFilename,
+                                              "GDAL_HTTP_PATH_VERBATIM", "NO")))
+    {
+        osFilename.replaceAll("/./", '/');
+
+        // Remove "/.." or /../" sequences..
+        while (true)
+        {
+            const auto nSlashDotDotSlashPos = osFilename.find("/../");
+            if (nSlashDotDotSlashPos != std::string::npos &&
+                nSlashDotDotSlashPos > 0)
+            {
+                const auto nLastSlashPos =
+                    osFilename.rfind('/', nSlashDotDotSlashPos - 1);
+                if (nLastSlashPos != std::string::npos)
+                {
+                    osFilename = osFilename.substr(0, nLastSlashPos + 1) +
+                                 osFilename.substr(nSlashDotDotSlashPos +
+                                                   strlen("/../"));
+                    continue;
+                }
+            }
+            break;
+        }
+
+        pszFilename = osFilename.c_str();
+    }
+}
+
+/************************************************************************/
 /*                                Open()                                */
 /************************************************************************/
 
@@ -1872,6 +1941,9 @@ VSIVirtualHandleUniquePtr VSICurlFilesystemHandlerBaseWritable::Open(
 {
     if (!STARTS_WITH_CI(pszFilename, GetFSPrefix().c_str()))
         return nullptr;
+
+    CPLString osFilename(pszFilename);
+    NormalizeFilenameIfNeeded(osFilename, pszFilename);
 
     if (strchr(pszAccess, '+'))
     {
@@ -1975,7 +2047,7 @@ bool VSICurlFilesystemHandlerBaseWritable::SupportsRandomWrite(
 }
 
 /************************************************************************/
-/*                         ~VSIS3FSHandler()                            */
+/*                          ~VSIS3FSHandler()                           */
 /************************************************************************/
 
 VSIS3FSHandler::~VSIS3FSHandler()
@@ -1985,7 +2057,7 @@ VSIS3FSHandler::~VSIS3FSHandler()
 }
 
 /************************************************************************/
-/*                            ClearCache()                              */
+/*                             ClearCache()                             */
 /************************************************************************/
 
 void VSIS3FSHandler::ClearCache()
@@ -1998,7 +2070,7 @@ void VSIS3FSHandler::ClearCache()
 }
 
 /************************************************************************/
-/*                           GetOptions()                               */
+/*                             GetOptions()                             */
 /************************************************************************/
 
 const char *VSIS3FSHandler::GetOptions()
@@ -2068,7 +2140,7 @@ const char *VSIS3FSHandler::GetOptions()
 }
 
 /************************************************************************/
-/*                           GetSignedURL()                             */
+/*                            GetSignedURL()                            */
 /************************************************************************/
 
 char *VSIS3FSHandler::GetSignedURL(const char *pszFilename,
@@ -2092,7 +2164,7 @@ char *VSIS3FSHandler::GetSignedURL(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                           UnlinkBatch()                              */
+/*                            UnlinkBatch()                             */
 /************************************************************************/
 
 int *VSIS3FSHandler::UnlinkBatch(CSLConstList papszFiles)
@@ -2261,7 +2333,7 @@ int IVSIS3LikeFSHandler::RmdirRecursiveInternal(const char *pszDirname,
 }
 
 /************************************************************************/
-/*                            DeleteObjects()                           */
+/*                           DeleteObjects()                            */
 /************************************************************************/
 
 std::set<std::string> VSIS3FSHandler::DeleteObjects(const char *pszBucket,
@@ -2400,6 +2472,9 @@ char **VSIS3FSHandler::GetFileMetadata(const char *pszFilename,
     if (!STARTS_WITH_CI(pszFilename, GetFSPrefix().c_str()))
         return nullptr;
 
+    CPLString osFilename(pszFilename);
+    NormalizeFilenameIfNeeded(osFilename, pszFilename);
+
     if (pszDomain == nullptr || !EQUAL(pszDomain, "TAGS"))
     {
         return VSICurlFilesystemHandlerBase::GetFileMetadata(
@@ -2517,6 +2592,9 @@ bool VSIS3FSHandler::SetFileMetadata(const char *pszFilename,
 {
     if (!STARTS_WITH_CI(pszFilename, GetFSPrefix().c_str()))
         return false;
+
+    CPLString osFilename(pszFilename);
+    NormalizeFilenameIfNeeded(osFilename, pszFilename);
 
     if (pszDomain == nullptr ||
         !(EQUAL(pszDomain, "HEADERS") || EQUAL(pszDomain, "TAGS")))
@@ -2677,7 +2755,7 @@ bool VSIS3FSHandler::SetFileMetadata(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                      GetStreamingFilename()                          */
+/*                        GetStreamingFilename()                        */
 /************************************************************************/
 
 std::string
@@ -2701,7 +2779,8 @@ int IVSIS3LikeFSHandler::MkdirInternal(const char *pszDirname, long /*nMode*/,
     NetworkStatisticsFileSystem oContextFS(GetFSPrefix().c_str());
     NetworkStatisticsAction oContextAction("Mkdir");
 
-    std::string osDirname(pszDirname);
+    CPLString osDirname(pszDirname);
+    NormalizeFilenameIfNeeded(osDirname, pszDirname);
     if (!osDirname.empty() && osDirname.back() != '/')
         osDirname += "/";
 
@@ -2774,7 +2853,8 @@ int IVSIS3LikeFSHandler::Rmdir(const char *pszDirname)
     NetworkStatisticsFileSystem oContextFS(GetFSPrefix().c_str());
     NetworkStatisticsAction oContextAction("Rmdir");
 
-    std::string osDirname(pszDirname);
+    CPLString osDirname(pszDirname);
+    NormalizeFilenameIfNeeded(osDirname, pszDirname);
     if (!osDirname.empty() && osDirname.back() != '/')
         osDirname += "/";
 
@@ -2832,6 +2912,9 @@ int IVSIS3LikeFSHandler::Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
     if (!STARTS_WITH_CI(pszFilename, GetFSPrefix().c_str()))
         return -1;
 
+    CPLString osFilename(pszFilename);
+    NormalizeFilenameIfNeeded(osFilename, pszFilename);
+
     if ((nFlags & VSI_STAT_CACHE_ONLY) != 0)
         return VSICurlFilesystemHandlerBase::Stat(pszFilename, pStatBuf,
                                                   nFlags);
@@ -2843,7 +2926,6 @@ int IVSIS3LikeFSHandler::Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
     NetworkStatisticsFileSystem oContextFS(GetFSPrefix().c_str());
     NetworkStatisticsAction oContextAction("Stat");
 
-    std::string osFilename(pszFilename);
     if (osFilename.find('/', GetFSPrefix().size()) == std::string::npos)
         osFilename += "/";
 
@@ -2882,9 +2964,10 @@ int IVSIS3LikeFSHandler::Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
     bool bStatBaseObject = true;
     if (GetFSPrefix() == "/vsis3/")
     {
-        auto poS3HandleHelper = std::unique_ptr<VSIS3HandleHelper>(
-            VSIS3HandleHelper::BuildFromURI(pszFilename + GetFSPrefix().size(),
-                                            GetFSPrefix().c_str(), true));
+        auto poS3HandleHelper =
+            std::unique_ptr<VSIS3HandleHelper>(VSIS3HandleHelper::BuildFromURI(
+                osFilename.c_str() + GetFSPrefix().size(),
+                GetFSPrefix().c_str(), true));
         if (poS3HandleHelper)
         {
             const bool bIsDirectoryBucket =
@@ -2937,7 +3020,7 @@ VSICurlHandle *VSIS3FSHandler::CreateFileHandle(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                          GetURLFromFilename()                         */
+/*                         GetURLFromFilename()                         */
 /************************************************************************/
 
 std::string
@@ -2960,7 +3043,7 @@ VSIS3FSHandler::GetURLFromFilename(const std::string &osFilename) const
 }
 
 /************************************************************************/
-/*                          CreateHandleHelper()                        */
+/*                         CreateHandleHelper()                         */
 /************************************************************************/
 
 IVSIS3LikeHandleHelper *VSIS3FSHandler::CreateHandleHelper(const char *pszURI,
@@ -2978,6 +3061,9 @@ int IVSIS3LikeFSHandler::Unlink(const char *pszFilename)
 {
     if (!STARTS_WITH_CI(pszFilename, GetFSPrefix().c_str()))
         return -1;
+
+    CPLString osFilename(pszFilename);
+    NormalizeFilenameIfNeeded(osFilename, pszFilename);
 
     std::string osNameWithoutPrefix = pszFilename + GetFSPrefix().size();
     if (osNameWithoutPrefix.find('/') == std::string::npos)
@@ -3019,6 +3105,12 @@ int IVSIS3LikeFSHandler::Rename(const char *oldpath, const char *newpath,
         return -1;
     if (!STARTS_WITH_CI(newpath, GetFSPrefix().c_str()))
         return -1;
+
+    CPLString osOldPath(oldpath);
+    NormalizeFilenameIfNeeded(osOldPath, oldpath);
+
+    CPLString osNewPath(newpath);
+    NormalizeFilenameIfNeeded(osNewPath, newpath);
 
     NetworkStatisticsFileSystem oContextFS(GetFSPrefix().c_str());
     NetworkStatisticsAction oContextAction("Rename");
@@ -3080,7 +3172,7 @@ int IVSIS3LikeFSHandler::Rename(const char *oldpath, const char *newpath,
 }
 
 /************************************************************************/
-/*                            CopyObject()                              */
+/*                             CopyObject()                             */
 /************************************************************************/
 
 int IVSIS3LikeFSHandler::CopyObject(const char *oldpath, const char *newpath,
@@ -3215,7 +3307,7 @@ int IVSIS3LikeFSHandler::CopyObject(const char *oldpath, const char *newpath,
 }
 
 /************************************************************************/
-/*                           DeleteObject()                             */
+/*                            DeleteObject()                            */
 /************************************************************************/
 
 int IVSIS3LikeFSHandler::DeleteObject(const char *pszFilename)
@@ -3316,7 +3408,7 @@ int IVSIS3LikeFSHandler::DeleteObject(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                        DeleteObjectBatch()                           */
+/*                         DeleteObjectBatch()                          */
 /************************************************************************/
 
 int *IVSIS3LikeFSHandler::DeleteObjectBatch(CSLConstList papszFilesOrDirs)
@@ -3331,7 +3423,7 @@ int *IVSIS3LikeFSHandler::DeleteObjectBatch(CSLConstList papszFilesOrDirs)
 }
 
 /************************************************************************/
-/*                           GetFileList()                              */
+/*                            GetFileList()                             */
 /************************************************************************/
 
 char **IVSIS3LikeFSHandler::GetFileList(const char *pszDirname, int nMaxFiles,
@@ -3369,7 +3461,7 @@ char **IVSIS3LikeFSHandler::GetFileList(const char *pszDirname, int nMaxFiles,
 }
 
 /************************************************************************/
-/*                            OpenDir()                                 */
+/*                              OpenDir()                               */
 /************************************************************************/
 
 VSIDIR *IVSIS3LikeFSHandler::OpenDir(const char *pszPath, int nRecurseDepth,
@@ -3383,6 +3475,9 @@ VSIDIR *IVSIS3LikeFSHandler::OpenDir(const char *pszPath, int nRecurseDepth,
 
     if (!STARTS_WITH_CI(pszPath, GetFSPrefix().c_str()))
         return nullptr;
+
+    CPLString osPath(pszPath);
+    NormalizeFilenameIfNeeded(osPath, pszPath);
 
     NetworkStatisticsFileSystem oContextFS(GetFSPrefix().c_str());
     NetworkStatisticsAction oContextAction("OpenDir");
@@ -3472,7 +3567,7 @@ static std::string ComputeMD5OfLocalFile(VSILFILE *fp)
 }
 
 /************************************************************************/
-/*                           CopyFile()                                 */
+/*                              CopyFile()                              */
 /************************************************************************/
 
 int IVSIS3LikeFSHandler::CopyFile(const char *pszSource, const char *pszTarget,
@@ -3565,7 +3660,7 @@ int IVSIS3LikeFSHandler::CopyFile(const char *pszSource, const char *pszTarget,
 }
 
 /************************************************************************/
-/*                    GetRequestedNumThreadsForCopy()                   */
+/*                   GetRequestedNumThreadsForCopy()                    */
 /************************************************************************/
 
 static int GetRequestedNumThreadsForCopy(CSLConstList papszOptions)
@@ -3584,7 +3679,7 @@ static int GetRequestedNumThreadsForCopy(CSLConstList papszOptions)
 }
 
 /************************************************************************/
-/*                       CopyFileRestartable()                          */
+/*                        CopyFileRestartable()                         */
 /************************************************************************/
 
 int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
@@ -4008,7 +4103,7 @@ int IVSIS3LikeFSHandlerWithMultipartUpload::CopyFileRestartable(
 }
 
 /************************************************************************/
-/*                          CopyChunk()                                 */
+/*                             CopyChunk()                              */
 /************************************************************************/
 
 static bool CopyChunk(const char *pszSource, const char *pszTarget,
@@ -4067,7 +4162,7 @@ static bool CopyChunk(const char *pszSource, const char *pszTarget,
 }
 
 /************************************************************************/
-/*                               Sync()                                 */
+/*                                Sync()                                */
 /************************************************************************/
 
 bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
@@ -5122,7 +5217,7 @@ bool IVSIS3LikeFSHandler::Sync(const char *pszSource, const char *pszTarget,
 }
 
 /************************************************************************/
-/*                    MultipartUploadGetCapabilities()                  */
+/*                   MultipartUploadGetCapabilities()                   */
 /************************************************************************/
 
 bool IVSIS3LikeFSHandlerWithMultipartUpload::MultipartUploadGetCapabilities(
@@ -5147,7 +5242,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::MultipartUploadGetCapabilities(
 }
 
 /************************************************************************/
-/*                         MultipartUploadStart()                       */
+/*                        MultipartUploadStart()                        */
 /************************************************************************/
 
 char *IVSIS3LikeFSHandlerWithMultipartUpload::MultipartUploadStart(
@@ -5220,7 +5315,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::MultipartUploadEnd(
 }
 
 /************************************************************************/
-/*                         MultipartUploadAbort()                       */
+/*                        MultipartUploadAbort()                        */
 /************************************************************************/
 
 bool IVSIS3LikeFSHandlerWithMultipartUpload::MultipartUploadAbort(
@@ -5239,7 +5334,7 @@ bool IVSIS3LikeFSHandlerWithMultipartUpload::MultipartUploadAbort(
 }
 
 /************************************************************************/
-/*                             VSIS3Handle()                            */
+/*                            VSIS3Handle()                             */
 /************************************************************************/
 
 VSIS3Handle::VSIS3Handle(VSIS3FSHandler *poFSIn, const char *pszFilename,
@@ -5270,7 +5365,7 @@ struct curl_slist *VSIS3Handle::GetCurlHeaders(const std::string &osVerb,
 }
 
 /************************************************************************/
-/*                          CanRestartOnError()                         */
+/*                         CanRestartOnError()                          */
 /************************************************************************/
 
 bool VSIS3Handle::CanRestartOnError(const char *pszErrorMsg,
@@ -5301,12 +5396,11 @@ bool VSIS3Handle::CanRestartOnError(const char *pszErrorMsg,
  See :ref:`/vsis3/ documentation <vsis3>`
  \endverbatim
 
- @since GDAL 2.1
  */
 void VSIInstallS3FileHandler(void)
 {
-    VSIFileManager::InstallHandler("/vsis3/",
-                                   new cpl::VSIS3FSHandler("/vsis3/"));
+    VSIFileManager::InstallHandler(
+        "/vsis3/", std::make_shared<cpl::VSIS3FSHandler>("/vsis3/"));
 }
 
 #endif /* HAVE_CURL */

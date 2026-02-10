@@ -27,7 +27,7 @@ class OGRJMLDataset;
 #ifdef HAVE_EXPAT
 
 /************************************************************************/
-/*                            OGRJMLColumn                              */
+/*                             OGRJMLColumn                             */
 /************************************************************************/
 
 class OGRJMLColumn
@@ -58,7 +58,16 @@ class OGRJMLLayer final : public OGRLayer
     VSILFILE *fp;
     bool bHasReadSchema;
 
-    XML_Parser oParser;
+    struct XMLParserDeleter
+    {
+        void operator()(XML_Parser parser)
+        {
+            if (parser)
+                XML_ParserFree(parser);
+        }
+    };
+
+    std::unique_ptr<XML_ParserStruct, XMLParserDeleter> poParser{};
 
     int currentDepth;
     bool bStopParsing;
@@ -102,7 +111,7 @@ class OGRJMLLayer final : public OGRLayer
 
   public:
     OGRJMLLayer(const char *pszLayerName, OGRJMLDataset *poDS, VSILFILE *fp);
-    ~OGRJMLLayer();
+    ~OGRJMLLayer() override;
 
     const char *GetName() const override
     {
@@ -155,7 +164,7 @@ class OGRJMLWriterLayer final : public OGRLayer
     OGRJMLWriterLayer(const char *pszLayerName, OGRSpatialReference *poSRS,
                       OGRJMLDataset *poDSIn, VSILFILE *fp, bool bAddRGBField,
                       bool bAddOGRStyleField, bool bClassicGML);
-    ~OGRJMLWriterLayer();
+    ~OGRJMLWriterLayer() override;
 
     void ResetReading() override
     {
@@ -192,7 +201,7 @@ class OGRJMLDataset final : public GDALDataset
 
   public:
     OGRJMLDataset();
-    ~OGRJMLDataset();
+    ~OGRJMLDataset() override;
 
     int GetLayerCount() const override
     {
@@ -211,7 +220,7 @@ class OGRJMLDataset final : public GDALDataset
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Create(const char *pszFilename, int nBands, int nXSize,
                                int nYSize, GDALDataType eDT,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
 };
 
 #endif /* ndef OGR_JML_H_INCLUDED */

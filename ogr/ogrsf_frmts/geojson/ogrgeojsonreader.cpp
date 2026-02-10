@@ -25,7 +25,7 @@
 #include <functional>
 
 /************************************************************************/
-/*                      OGRGeoJSONReaderStreamingParser                 */
+/*                   OGRGeoJSONReaderStreamingParser                    */
 /************************************************************************/
 
 class OGRGeoJSONReaderStreamingParser final
@@ -56,7 +56,7 @@ class OGRGeoJSONReaderStreamingParser final
     OGRGeoJSONReaderStreamingParser(OGRGeoJSONReader &oReader,
                                     OGRGeoJSONLayer *poLayer, bool bFirstPass,
                                     bool bStoreNativeData);
-    ~OGRGeoJSONReaderStreamingParser();
+    ~OGRGeoJSONReaderStreamingParser() override;
 
     void FinalizeLayerDefn();
 
@@ -80,7 +80,7 @@ class OGRGeoJSONReaderStreamingParser final
 OGRGeoJSONBaseReader::OGRGeoJSONBaseReader() = default;
 
 /************************************************************************/
-/*                           SetPreserveGeometryType                    */
+/*                       SetPreserveGeometryType                        */
 /************************************************************************/
 
 void OGRGeoJSONBaseReader::SetPreserveGeometryType(bool bPreserve)
@@ -89,7 +89,7 @@ void OGRGeoJSONBaseReader::SetPreserveGeometryType(bool bPreserve)
 }
 
 /************************************************************************/
-/*                           SetSkipAttributes                          */
+/*                          SetSkipAttributes                           */
 /************************************************************************/
 
 void OGRGeoJSONBaseReader::SetSkipAttributes(bool bSkip)
@@ -98,7 +98,7 @@ void OGRGeoJSONBaseReader::SetSkipAttributes(bool bSkip)
 }
 
 /************************************************************************/
-/*                         SetFlattenNestedAttributes                   */
+/*                      SetFlattenNestedAttributes                      */
 /************************************************************************/
 
 void OGRGeoJSONBaseReader::SetFlattenNestedAttributes(bool bFlatten,
@@ -109,7 +109,7 @@ void OGRGeoJSONBaseReader::SetFlattenNestedAttributes(bool bFlatten,
 }
 
 /************************************************************************/
-/*                           SetStoreNativeData                         */
+/*                          SetStoreNativeData                          */
 /************************************************************************/
 
 void OGRGeoJSONBaseReader::SetStoreNativeData(bool bStoreNativeData)
@@ -127,7 +127,7 @@ void OGRGeoJSONBaseReader::SetArrayAsString(bool bArrayAsString)
 }
 
 /************************************************************************/
-/*                           SetDateAsString                           */
+/*                           SetDateAsString                            */
 /************************************************************************/
 
 void OGRGeoJSONBaseReader::SetDateAsString(bool bDateAsString)
@@ -168,7 +168,7 @@ OGRGeoJSONReader::~OGRGeoJSONReader()
 }
 
 /************************************************************************/
-/*                           Parse                                      */
+/*                                Parse                                 */
 /************************************************************************/
 
 OGRErr OGRGeoJSONReader::Parse(const char *pszText)
@@ -199,7 +199,7 @@ OGRErr OGRGeoJSONReader::Parse(const char *pszText)
 }
 
 /************************************************************************/
-/*                           ReadLayers                                 */
+/*                              ReadLayers                              */
 /************************************************************************/
 
 void OGRGeoJSONReader::ReadLayers(OGRGeoJSONDataSource *poDS)
@@ -215,7 +215,7 @@ void OGRGeoJSONReader::ReadLayers(OGRGeoJSONDataSource *poDS)
 }
 
 /************************************************************************/
-/*           OGRGeoJSONReaderStreamingParserGetMaxObjectSize()          */
+/*          OGRGeoJSONReaderStreamingParserGetMaxObjectSize()           */
 /************************************************************************/
 
 static size_t OGRGeoJSONReaderStreamingParserGetMaxObjectSize()
@@ -226,7 +226,7 @@ static size_t OGRGeoJSONReaderStreamingParserGetMaxObjectSize()
 }
 
 /************************************************************************/
-/*                     OGRGeoJSONReaderStreamingParser()                */
+/*                  OGRGeoJSONReaderStreamingParser()                   */
 /************************************************************************/
 
 OGRGeoJSONReaderStreamingParser::OGRGeoJSONReaderStreamingParser(
@@ -240,7 +240,7 @@ OGRGeoJSONReaderStreamingParser::OGRGeoJSONReaderStreamingParser(
 }
 
 /************************************************************************/
-/*                   ~OGRGeoJSONReaderStreamingParser()                 */
+/*                  ~OGRGeoJSONReaderStreamingParser()                  */
 /************************************************************************/
 
 OGRGeoJSONReaderStreamingParser::~OGRGeoJSONReaderStreamingParser()
@@ -250,7 +250,7 @@ OGRGeoJSONReaderStreamingParser::~OGRGeoJSONReaderStreamingParser()
 }
 
 /************************************************************************/
-/*                          GetNextFeature()                            */
+/*                           GetNextFeature()                           */
 /************************************************************************/
 
 OGRFeature *OGRGeoJSONReaderStreamingParser::GetNextFeature()
@@ -268,7 +268,7 @@ OGRFeature *OGRGeoJSONReaderStreamingParser::GetNextFeature()
 }
 
 /************************************************************************/
-/*                          GotFeature()                                */
+/*                             GotFeature()                             */
 /************************************************************************/
 
 void OGRGeoJSONReaderStreamingParser::GotFeature(json_object *poObj,
@@ -344,7 +344,7 @@ void OGRGeoJSONReaderStreamingParser::FinalizeLayerDefn()
 }
 
 /************************************************************************/
-/*                            TooComplex()                              */
+/*                             TooComplex()                             */
 /************************************************************************/
 
 void OGRGeoJSONReaderStreamingParser::TooComplex()
@@ -405,7 +405,7 @@ static void SetCoordinatePrecision(json_object *poRootObj,
 }
 
 /************************************************************************/
-/*                       FirstPassReadLayer()                           */
+/*                         FirstPassReadLayer()                         */
 /************************************************************************/
 
 bool OGRGeoJSONReader::FirstPassReadLayer(OGRGeoJSONDataSource *poDS,
@@ -471,8 +471,10 @@ bool OGRGeoJSONReader::FirstPassReadLayer(OGRGeoJSONDataSource *poDS,
         }
         if (bFinished && bJSonPLikeWrapper_ && nRead > nSkip)
             nRead--;
-        if (!oParser.Parse(reinterpret_cast<const char *>(pabyBuffer_ + nSkip),
-                           nRead - nSkip, bFinished) ||
+        if (!oParser.Parse(std::string_view(reinterpret_cast<const char *>(
+                                                pabyBuffer_ + nSkip),
+                                            nRead - nSkip),
+                           bFinished) ||
             oParser.ExceptionOccurred())
         {
             // to avoid killing ourselves during layer deletion
@@ -619,7 +621,7 @@ bool OGRGeoJSONReader::FirstPassReadLayer(OGRGeoJSONDataSource *poDS,
 }
 
 /************************************************************************/
-/*               SkipPrologEpilogAndUpdateJSonPLikeWrapper()            */
+/*             SkipPrologEpilogAndUpdateJSonPLikeWrapper()              */
 /************************************************************************/
 
 size_t OGRGeoJSONReader::SkipPrologEpilogAndUpdateJSonPLikeWrapper(size_t nRead)
@@ -697,8 +699,10 @@ OGRFeature *OGRGeoJSONReader::GetNextFeature(OGRGeoJSONLayer *poLayer)
         if (bFinished && bJSonPLikeWrapper_ && nRead > nSkip)
             nRead--;
         if (!poStreamingParser_->Parse(
-                reinterpret_cast<const char *>(pabyBuffer_ + nSkip),
-                nRead - nSkip, bFinished) ||
+                std::string_view(
+                    reinterpret_cast<const char *>(pabyBuffer_ + nSkip),
+                    nRead - nSkip),
+                bFinished) ||
             poStreamingParser_->ExceptionOccurred())
         {
             break;
@@ -758,7 +762,7 @@ OGRFeature *OGRGeoJSONReader::GetFeature(OGRGeoJSONLayer *poLayer, GIntBig nFID)
             for (size_t i = 0; i < nRead - nSkip; i++)
             {
                 oParser.ResetFeatureDetectionState();
-                if (!oParser.Parse(pszPtr + i, 1,
+                if (!oParser.Parse(std::string_view(pszPtr + i, 1),
                                    bFinished && (i + 1 == nRead - nSkip)) ||
                     oParser.ExceptionOccurred())
                 {
@@ -837,7 +841,7 @@ OGRFeature *OGRGeoJSONReader::GetFeature(OGRGeoJSONLayer *poLayer, GIntBig nFID)
 }
 
 /************************************************************************/
-/*                           IngestAll()                                */
+/*                             IngestAll()                              */
 /************************************************************************/
 
 bool OGRGeoJSONReader::IngestAll(OGRGeoJSONLayer *poLayer)
@@ -861,11 +865,10 @@ bool OGRGeoJSONReader::IngestAll(OGRGeoJSONLayer *poLayer)
     GIntBig nCounter = 0;
     while (true)
     {
-        OGRFeature *poFeature = GetNextFeature(poLayer);
+        auto poFeature = std::unique_ptr<OGRFeature>(GetNextFeature(poLayer));
         if (poFeature == nullptr)
             break;
-        poLayer->AddFeature(poFeature);
-        delete poFeature;
+        poLayer->AddFeature(std::move(poFeature));
         nCounter++;
         if (((nCounter % 10000) == 0 || nCounter == nTotalFeatureCount_) &&
             nTotalFeatureCount_ > 0)
@@ -878,7 +881,7 @@ bool OGRGeoJSONReader::IngestAll(OGRGeoJSONLayer *poLayer)
 }
 
 /************************************************************************/
-/*                           ReadLayer                                  */
+/*                              ReadLayer                               */
 /************************************************************************/
 
 void OGRGeoJSONReader::ReadLayer(OGRGeoJSONDataSource *poDS,
@@ -998,8 +1001,9 @@ void OGRGeoJSONReader::ReadLayer(OGRGeoJSONDataSource *poDS,
         GeoJSONObject::eMultiPolygon == objType ||
         GeoJSONObject::eGeometryCollection == objType)
     {
-        OGRGeometry *poGeometry = ReadGeometry(poObj, poLayer->GetSpatialRef());
-        if (!AddFeature(poLayer, poGeometry))
+        auto poGeometry = std::unique_ptr<OGRGeometry>(
+            ReadGeometry(poObj, poLayer->GetSpatialRef()));
+        if (!AddFeature(poLayer, std::move(poGeometry)))
         {
             CPLDebug("GeoJSON", "Translation of single geometry failed.");
             delete poLayer;
@@ -1012,8 +1016,9 @@ void OGRGeoJSONReader::ReadLayer(OGRGeoJSONDataSource *poDS,
     /* -------------------------------------------------------------------- */
     else if (GeoJSONObject::eFeature == objType)
     {
-        OGRFeature *poFeature = ReadFeature(poLayer, poObj, nullptr);
-        AddFeature(poLayer, poFeature);
+        auto poFeature =
+            std::unique_ptr<OGRFeature>(ReadFeature(poLayer, poObj, nullptr));
+        AddFeature(poLayer, std::move(poFeature));
     }
     /* -------------------------------------------------------------------- */
     /*      Translate multi-feature FeatureCollection object.               */
@@ -1123,7 +1128,7 @@ bool OGRGeoJSONReader::GenerateLayerDefn(OGRGeoJSONLayer *poLayer,
 }
 
 /************************************************************************/
-/*                          FinalizeLayerDefn()                         */
+/*                         FinalizeLayerDefn()                          */
 /************************************************************************/
 
 void OGRGeoJSONBaseReader::FinalizeLayerDefn(OGRLayer *poLayer,
@@ -1159,7 +1164,7 @@ void OGRGeoJSONBaseReader::FinalizeLayerDefn(OGRLayer *poLayer,
 }
 
 /************************************************************************/
-/*                     OGRGeoJSONReaderAddOrUpdateField()               */
+/*                  OGRGeoJSONReaderAddOrUpdateField()                  */
 /************************************************************************/
 
 void OGRGeoJSONReaderAddOrUpdateField(
@@ -1496,7 +1501,7 @@ void OGRGeoJSONReaderAddOrUpdateField(
 }
 
 /************************************************************************/
-/*             OGRGeoJSONGenerateFeatureDefnDealWithID()                */
+/*              OGRGeoJSONGenerateFeatureDefnDealWithID()               */
 /************************************************************************/
 
 void OGRGeoJSONGenerateFeatureDefnDealWithID(
@@ -1632,7 +1637,8 @@ bool OGRGeoJSONBaseReader::GenerateFeatureDefn(
     json_object *poGeomObj = CPL_json_object_object_get(poObj, "geometry");
     if (poGeomObj && json_object_get_type(poGeomObj) == json_type_object)
     {
-        const auto eType = OGRGeoJSONGetOGRGeometryType(poGeomObj);
+        const auto eType =
+            OGRGeoJSONGetOGRGeometryType(poGeomObj, /* bHasM = */ false);
 
         OGRGeoJSONUpdateLayerGeomType(m_bFirstGeometry, eType,
                                       m_eLayerGeomType);
@@ -1904,11 +1910,11 @@ bool OGRGeoJSONUpdateLayerGeomType(bool &bFirstGeom,
 }
 
 /************************************************************************/
-/*                           AddFeature                                 */
+/*                              AddFeature                              */
 /************************************************************************/
 
 bool OGRGeoJSONReader::AddFeature(OGRGeoJSONLayer *poLayer,
-                                  OGRGeometry *poGeometry)
+                                  std::unique_ptr<OGRGeometry> poGeometry)
 {
     bool bAdded = false;
 
@@ -1916,40 +1922,40 @@ bool OGRGeoJSONReader::AddFeature(OGRGeoJSONLayer *poLayer,
 
     if (nullptr != poGeometry)
     {
-        OGRFeature *poFeature = new OGRFeature(poLayer->GetLayerDefn());
-        poFeature->SetGeometryDirectly(poGeometry);
+        auto poFeature = std::make_unique<OGRFeature>(poLayer->GetLayerDefn());
+        poFeature->SetGeometry(std::move(poGeometry));
 
-        bAdded = AddFeature(poLayer, poFeature);
+        bAdded = AddFeature(poLayer, std::move(poFeature));
     }
 
     return bAdded;
 }
 
 /************************************************************************/
-/*                           AddFeature                                 */
+/*                              AddFeature                              */
 /************************************************************************/
 
 bool OGRGeoJSONReader::AddFeature(OGRGeoJSONLayer *poLayer,
-                                  OGRFeature *poFeature)
+                                  std::unique_ptr<OGRFeature> poFeature)
 {
     if (poFeature == nullptr)
         return false;
 
-    poLayer->AddFeature(poFeature);
-    delete poFeature;
+    poLayer->AddFeature(std::move(poFeature));
 
     return true;
 }
 
 /************************************************************************/
-/*                           ReadGeometry                               */
+/*                             ReadGeometry                             */
 /************************************************************************/
 
 OGRGeometry *
 OGRGeoJSONBaseReader::ReadGeometry(json_object *poObj,
                                    const OGRSpatialReference *poLayerSRS)
 {
-    OGRGeometry *poGeometry = OGRGeoJSONReadGeometry(poObj, poLayerSRS);
+    auto poGeometry =
+        OGRGeoJSONReadGeometry(poObj, /* bHasM = */ false, poLayerSRS);
 
     /* -------------------------------------------------------------------- */
     /*      Wrap geometry with GeometryCollection as a common denominator.  */
@@ -1963,17 +1969,17 @@ OGRGeoJSONBaseReader::ReadGeometry(json_object *poObj,
         if (!bGeometryPreserve_ &&
             wkbGeometryCollection != poGeometry->getGeometryType())
         {
-            OGRGeometryCollection *poMetaGeometry = new OGRGeometryCollection();
-            poMetaGeometry->addGeometryDirectly(poGeometry);
-            return poMetaGeometry;
+            auto poMetaGeometry = std::make_unique<OGRGeometryCollection>();
+            poMetaGeometry->addGeometry(std::move(poGeometry));
+            return poMetaGeometry.release();
         }
     }
 
-    return poGeometry;
+    return poGeometry.release();
 }
 
 /************************************************************************/
-/*                OGRGeoJSONReaderSetFieldNestedAttribute()             */
+/*              OGRGeoJSONReaderSetFieldNestedAttribute()               */
 /************************************************************************/
 
 static void OGRGeoJSONReaderSetFieldNestedAttribute(OGRLayer *poLayer,
@@ -2008,7 +2014,7 @@ static void OGRGeoJSONReaderSetFieldNestedAttribute(OGRLayer *poLayer,
 }
 
 /************************************************************************/
-/*                   OGRGeoJSONReaderSetField()                         */
+/*                      OGRGeoJSONReaderSetField()                      */
 /************************************************************************/
 
 void OGRGeoJSONReaderSetField(OGRLayer *poLayer, OGRFeature *poFeature,
@@ -2153,7 +2159,7 @@ void OGRGeoJSONReaderSetField(OGRLayer *poLayer, OGRFeature *poFeature,
 }
 
 /************************************************************************/
-/*                           ReadFeature()                              */
+/*                            ReadFeature()                             */
 /************************************************************************/
 
 OGRFeature *OGRGeoJSONBaseReader::ReadFeature(OGRLayer *poLayer,
@@ -2397,7 +2403,7 @@ OGRFeature *OGRGeoJSONBaseReader::ReadFeature(OGRLayer *poLayer,
 }
 
 /************************************************************************/
-/*                           Extent getters                             */
+/*                            Extent getters                            */
 /************************************************************************/
 
 bool OGRGeoJSONBaseReader::ExtentRead() const
@@ -2411,7 +2417,7 @@ OGREnvelope3D OGRGeoJSONBaseReader::GetExtent3D() const
 }
 
 /************************************************************************/
-/*                           ReadFeatureCollection()                    */
+/*                       ReadFeatureCollection()                        */
 /************************************************************************/
 
 void OGRGeoJSONReader::ReadFeatureCollection(OGRGeoJSONLayer *poLayer,
@@ -2433,8 +2439,9 @@ void OGRGeoJSONReader::ReadFeatureCollection(OGRGeoJSONLayer *poLayer,
         {
             json_object *poObjFeature =
                 json_object_array_get_idx(poObjFeatures, i);
-            OGRFeature *poFeature = ReadFeature(poLayer, poObjFeature, nullptr);
-            AddFeature(poLayer, poFeature);
+            auto poFeature = std::unique_ptr<OGRFeature>(
+                ReadFeature(poLayer, poObjFeature, nullptr));
+            AddFeature(poLayer, std::move(poFeature));
         }
     }
 
@@ -2480,7 +2487,7 @@ void OGRGeoJSONReader::ReadFeatureCollection(OGRGeoJSONLayer *poLayer,
 }
 
 /************************************************************************/
-/*                          OGRGeoJSONGetExtent3D()                     */
+/*                       OGRGeoJSONGetExtent3D()                        */
 /************************************************************************/
 
 bool OGRGeoJSONGetExtent3D(json_object *poObj, OGREnvelope3D *poEnvelope)

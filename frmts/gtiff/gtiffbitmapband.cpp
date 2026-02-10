@@ -14,15 +14,17 @@
 #include "gtiffbitmapband.h"
 #include "gtiffdataset.h"
 
+#include "gdal_priv.h"
+
 /************************************************************************/
-/*                           GTiffBitmapBand()                          */
+/*                          GTiffBitmapBand()                           */
 /************************************************************************/
 
 GTiffBitmapBand::GTiffBitmapBand(GTiffDataset *poDSIn, int nBandIn)
     : GTiffOddBitsBand(poDSIn, nBandIn)
 
 {
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     if (poDSIn->m_poColorTable != nullptr)
     {
@@ -73,6 +75,21 @@ GDALColorInterp GTiffBitmapBand::GetColorInterpretation()
         return GCI_Undefined;
 
     return GCI_PaletteIndex;
+}
+
+/************************************************************************/
+/*                       SetColorInterpretation()                       */
+/************************************************************************/
+
+CPLErr GTiffBitmapBand::SetColorInterpretation(GDALColorInterp eInterp)
+{
+    if (eInterp != GetColorInterpretation())
+    {
+        CPLDebug(
+            "GTiff",
+            "Setting color interpration on GTiffBitmap band is not supported");
+    }
+    return CE_None;
 }
 
 /************************************************************************/

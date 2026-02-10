@@ -70,7 +70,19 @@ int JP2OPJLikeRasterBand<CODEC, BASE>::HasArbitraryOverviews()
 }
 
 /************************************************************************/
-/*                      ~JP2OPJLikeRasterBand()                         */
+/*                MayMultiBlockReadingBeMultiThreaded()                 */
+/************************************************************************/
+
+template <typename CODEC, typename BASE>
+bool JP2OPJLikeRasterBand<CODEC, BASE>::MayMultiBlockReadingBeMultiThreaded()
+    const
+{
+    auto poGDS = cpl::down_cast<JP2OPJLikeDataset<CODEC, BASE> *>(poDS);
+    return poGDS->GetNumThreads() > 1;
+}
+
+/************************************************************************/
+/*                       ~JP2OPJLikeRasterBand()                        */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -183,7 +195,7 @@ template <typename CODEC, typename BASE> struct JP2JobStruct
 };
 
 /************************************************************************/
-/*                   GetFileHandle()                                    */
+/*                           GetFileHandle()                            */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -193,7 +205,7 @@ VSILFILE *JP2OPJLikeDataset<CODEC, BASE>::GetFileHandle()
 }
 
 /************************************************************************/
-/*                   ReadBlockInThread()                                */
+/*                         ReadBlockInThread()                          */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -372,7 +384,7 @@ int JP2OPJLikeDataset<CODEC, BASE>::PreloadBlocks(
 }
 
 /************************************************************************/
-/*                      GetEstimatedRAMUsage()                          */
+/*                        GetEstimatedRAMUsage()                        */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -702,7 +714,7 @@ end:
 }
 
 /************************************************************************/
-/*                         GetOverviewCount()                           */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -774,7 +786,7 @@ GDALColorInterp JP2OPJLikeRasterBand<CODEC, BASE>::GetColorInterpretation()
 /************************************************************************/
 
 /************************************************************************/
-/*                        JP2OPJLikeDataset()                           */
+/*                         JP2OPJLikeDataset()                          */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -796,11 +808,11 @@ JP2OPJLikeDataset<CODEC, BASE>::~JP2OPJLikeDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
-CPLErr JP2OPJLikeDataset<CODEC, BASE>::Close()
+CPLErr JP2OPJLikeDataset<CODEC, BASE>::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -1083,7 +1095,7 @@ CPLErr JP2OPJLikeDataset<CODEC, BASE>::Close()
 }
 
 /************************************************************************/
-/*                      CloseDependentDatasets()                        */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -1122,7 +1134,7 @@ JP2OPJLikeDataset<CODEC, BASE>::SetSpatialRef(const OGRSpatialReference *poSRS)
 }
 
 /************************************************************************/
-/*                           SetGeoTransform()                          */
+/*                          SetGeoTransform()                           */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -1141,7 +1153,7 @@ JP2OPJLikeDataset<CODEC, BASE>::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                           SetGCPs()                                  */
+/*                              SetGCPs()                               */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -1177,7 +1189,7 @@ CPLErr JP2OPJLikeDataset<CODEC, BASE>::SetGCPs(int nGCPCountIn,
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
-CPLErr JP2OPJLikeDataset<CODEC, BASE>::SetMetadata(char **papszMetadata,
+CPLErr JP2OPJLikeDataset<CODEC, BASE>::SetMetadata(CSLConstList papszMetadata,
                                                    const char *pszDomain)
 {
     if (eAccess == GA_Update)
@@ -1207,7 +1219,8 @@ CPLErr JP2OPJLikeDataset<CODEC, BASE>::SetMetadataItem(const char *pszName,
         this->bRewrite = TRUE;
         if (pszDomain == nullptr || EQUAL(pszDomain, ""))
         {
-            m_papszMainMD = CSLSetNameValue(GetMetadata(), pszName, pszValue);
+            GetMetadata();  // update m_papszMainMD
+            m_papszMainMD = CSLSetNameValue(m_papszMainMD, pszName, pszValue);
         }
         return GDALDataset::SetMetadataItem(pszName, pszValue, pszDomain);
     }
@@ -1216,7 +1229,7 @@ CPLErr JP2OPJLikeDataset<CODEC, BASE>::SetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                            Identify()                                */
+/*                              Identify()                              */
 /************************************************************************/
 
 #ifndef jpc_header_defined
@@ -1241,7 +1254,7 @@ int JP2OPJLikeDataset<CODEC, BASE>::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                        JP2FindCodeStream()                           */
+/*                         JP2FindCodeStream()                          */
 /************************************************************************/
 
 static vsi_l_offset JP2FindCodeStream(VSILFILE *fp, vsi_l_offset *pnLength)
@@ -1316,7 +1329,7 @@ GDALDataset *JP2OPJLikeDataset<CODEC, BASE>::Open(GDALOpenInfo *poOpenInfo)
                                   &nTileH, &numResolutions))
         return nullptr;
 
-    GDALDataType eDataType = GDT_Byte;
+    GDALDataType eDataType = GDT_UInt8;
     if (localctx.psImage->comps[0].prec > 16)
     {
         if (localctx.psImage->comps[0].sgnd)
@@ -1334,7 +1347,7 @@ GDALDataset *JP2OPJLikeDataset<CODEC, BASE>::Open(GDALOpenInfo *poOpenInfo)
 
     int bIs420 =
         (localctx.psImage->color_space != CODEC::cvtenum(JP2_CLRSPC_SRGB) &&
-         eDataType == GDT_Byte &&
+         eDataType == GDT_UInt8 &&
          (localctx.psImage->numcomps == 3 || localctx.psImage->numcomps == 4) &&
          localctx.psImage->comps[1].w == localctx.psImage->comps[0].w / 2 &&
          localctx.psImage->comps[1].h == localctx.psImage->comps[0].h / 2 &&
@@ -1871,7 +1884,7 @@ GDALDataset *JP2OPJLikeDataset<CODEC, BASE>::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                           WriteBox()                                 */
+/*                              WriteBox()                              */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -1895,13 +1908,12 @@ bool JP2OPJLikeDataset<CODEC, BASE>::WriteBox(VSILFILE *fp, GDALJP2Box *poBox)
 }
 
 /************************************************************************/
-/*                         WriteGDALMetadataBox()                       */
+/*                        WriteGDALMetadataBox()                        */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
-bool JP2OPJLikeDataset<CODEC, BASE>::WriteGDALMetadataBox(VSILFILE *fp,
-                                                          GDALDataset *poSrcDS,
-                                                          char **papszOptions)
+bool JP2OPJLikeDataset<CODEC, BASE>::WriteGDALMetadataBox(
+    VSILFILE *fp, GDALDataset *poSrcDS, CSLConstList papszOptions)
 {
     bool bRet = true;
     GDALJP2Box *poBox = GDALJP2Metadata::CreateGDALMultiDomainMetadataXMLBox(
@@ -1913,7 +1925,7 @@ bool JP2OPJLikeDataset<CODEC, BASE>::WriteGDALMetadataBox(VSILFILE *fp,
 }
 
 /************************************************************************/
-/*                         WriteXMLBoxes()                              */
+/*                           WriteXMLBoxes()                            */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -1934,7 +1946,7 @@ bool JP2OPJLikeDataset<CODEC, BASE>::WriteXMLBoxes(VSILFILE *fp,
 }
 
 /************************************************************************/
-/*                           WriteXMPBox()                              */
+/*                            WriteXMPBox()                             */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -1950,7 +1962,7 @@ bool JP2OPJLikeDataset<CODEC, BASE>::WriteXMPBox(VSILFILE *fp,
 }
 
 /************************************************************************/
-/*                           WriteIPRBox()                              */
+/*                            WriteIPRBox()                             */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
@@ -1966,7 +1978,7 @@ bool JP2OPJLikeDataset<CODEC, BASE>::WriteIPRBox(VSILFILE *fp,
 }
 
 /************************************************************************/
-/*                         FloorPowerOfTwo()                            */
+/*                          FloorPowerOfTwo()                           */
 /************************************************************************/
 
 static int FloorPowerOfTwo(int nVal)
@@ -1981,13 +1993,14 @@ static int FloorPowerOfTwo(int nVal)
 }
 
 /************************************************************************/
-/*                          CreateCopy()                                */
+/*                             CreateCopy()                             */
 /************************************************************************/
 
 template <typename CODEC, typename BASE>
 GDALDataset *JP2OPJLikeDataset<CODEC, BASE>::CreateCopy(
     const char *pszFilename, GDALDataset *poSrcDS, CPL_UNUSED int bStrict,
-    char **papszOptions, GDALProgressFunc pfnProgress, void *pProgressData)
+    CSLConstList papszOptions, GDALProgressFunc pfnProgress,
+    void *pProgressData)
 
 {
     int nBands = poSrcDS->GetRasterCount();
@@ -2014,7 +2027,7 @@ GDALDataset *JP2OPJLikeDataset<CODEC, BASE>::CreateCopy(
 
     GDALDataType eDataType = poSrcDS->GetRasterBand(1)->GetRasterDataType();
     const int nDataTypeSize = GDALGetDataTypeSizeBytes(eDataType);
-    if (eDataType != GDT_Byte && eDataType != GDT_Int16 &&
+    if (eDataType != GDT_UInt8 && eDataType != GDT_Int16 &&
         eDataType != GDT_UInt16 && eDataType != GDT_Int32 &&
         eDataType != GDT_UInt32)
     {
@@ -2218,7 +2231,7 @@ GDALDataset *JP2OPJLikeDataset<CODEC, BASE>::CreateCopy(
     int bYCBCR420 = FALSE;
     if (pszYCBCR420 && CPLTestBool(pszYCBCR420))
     {
-        if ((nBands == 3 || nBands == 4) && eDataType == GDT_Byte &&
+        if ((nBands == 3 || nBands == 4) && eDataType == GDT_UInt8 &&
             nRedBandIndex == 0 && nGreenBandIndex == 1 && nBlueBandIndex == 2)
         {
             if (((nXSize % 2) == 0 && (nYSize % 2) == 0 &&

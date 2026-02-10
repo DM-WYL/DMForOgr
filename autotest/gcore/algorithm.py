@@ -164,36 +164,25 @@ def test_algorithm(tmp_path):
 
 def test_algorithm_dataset_value(tmp_path):
 
+    outfilename = str(tmp_path / "out.tif")
+
+    gdal.Run("raster", "create", input="data/byte.tif", output=outfilename)
+
     reg = gdal.GetGlobalAlgorithmRegistry()
     raster = reg.InstantiateAlg("raster")
-    convert = raster.InstantiateSubAlgorithm("convert")
+    update = raster.InstantiateSubAlgorithm("update")
 
-    input_arg = convert.GetArg("input")
-    input_arg_value = input_arg.Get()
-    input_arg_value.SetName("data/byte.tif")
-    assert input_arg_value.GetName() == "data/byte.tif"
-    assert input_arg_value.GetDataset() is None
+    update["input"] = "data/byte.tif"
 
-    output_arg = convert.GetArg("output")
-    outfilename = str(tmp_path / "out.tif")
+    output_arg = update.GetArg("output")
     output_arg_value = output_arg.Get()
     output_arg_value.SetName(outfilename)
 
-    assert convert.Run()
-
-    in_ds = input_arg_value.GetDataset()
-    assert in_ds is not None
+    assert update.Run()
 
     out_ds = output_arg_value.GetDataset()
     assert out_ds is not None
     assert out_ds.GetRasterBand(1).Checksum() == 4672
-
-    output_arg_value.SetDataset(None)
-    with pytest.raises(
-        Exception,
-        match="Dataset object 'output' is created by algorithm and cannot be set as an input",
-    ):
-        output_arg.SetDataset(None)
 
 
 ###############################################################################
@@ -270,7 +259,7 @@ def test_algorithm_arg_set_int():
 
 def test_algorithm_arg_set_real():
     reg = gdal.GetGlobalAlgorithmRegistry()
-    alg = reg["vector"]["geom"]["simplify"]
+    alg = reg["vector"]["simplify"]
 
     alg["tolerance"] = 1
     assert alg["tolerance"] == 1
@@ -427,25 +416,25 @@ def test_algorithm_arg_set_double_list():
 
 def test_algorithm_arg_set_dataset(tmp_path):
     reg = gdal.GetGlobalAlgorithmRegistry()
-    alg = reg["raster"]["convert"]
+    alg = reg["raster"]["update"]
 
-    alg["input"] = tmp_path
-    alg["input"] = "foo"
-    alg["input"] = gdal.GetDriverByName("MEM").Create("", 1, 1)
-    alg["input"] = [tmp_path]
-    alg["input"] = ["foo"]
-    alg["input"] = [gdal.GetDriverByName("MEM").Create("", 1, 1)]
+    alg["output"] = tmp_path
+    alg["output"] = "foo"
+    alg["output"] = gdal.GetDriverByName("MEM").Create("", 1, 1)
+    alg["output"] = [tmp_path]
+    alg["output"] = ["foo"]
+    alg["output"] = [gdal.GetDriverByName("MEM").Create("", 1, 1)]
 
     with pytest.raises(TypeError):
-        alg["input"] = None
+        alg["output"] = None
     with pytest.raises(TypeError):
-        alg["input"] = []
+        alg["output"] = []
     with pytest.raises(TypeError):
-        alg["input"] = [None]
+        alg["output"] = [None]
     with pytest.raises(
         RuntimeError, match="Only one value supported for an argument of type Dataset"
     ):
-        alg["input"] = ["foo", "bar"]
+        alg["output"] = ["foo", "bar"]
 
 
 ###############################################################################
@@ -462,10 +451,71 @@ def test_algorithm_arg_set_dataset_list(tmp_path):
     alg["input"] = [tmp_path]
     alg["input"] = ["foo"]
     alg["input"] = [gdal.GetDriverByName("MEM").Create("", 1, 1)]
-    alg["input"] = []
+    with pytest.raises(
+        RuntimeError, match="Only 0 value has been specified for argument 'input'"
+    ):
+        alg["input"] = []
     alg["input"] = ["foo", "bar"]
 
     with pytest.raises(TypeError):
         alg["input"] = None
     with pytest.raises(TypeError):
         alg["input"] = [None]
+
+
+###############################################################################
+# Test gdal.alg module
+
+
+def test_gdal_alg_module(tmp_vsimem):
+
+    assert set(["dataset", "mdim", "raster", "vector", "vsi"]).issubset(
+        set(gdal.alg.__dict__.keys())
+    )
+    assert "gdal" not in gdal.alg.__dict__.keys()
+    assert "os" not in gdal.alg.__dict__.keys()
+    assert "Optional" not in gdal.alg.__dict__.keys()
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "a", "a")
+
+    assert gdal.alg.vsi.__doc__ == "GDAL Virtual System Interface (VSI) commands."
+
+    assert (
+        gdal.alg.vsi.list.__doc__
+        == """List files of one of the GDAL Virtual System Interface (VSI).
+
+       Consult https://gdal.org/programs/gdal_vsi_list.html for more details.
+
+       Parameters
+       ----------
+       filename: str
+           File or directory name
+       output_format: Optional[str]=None
+           Output format
+       long_listing: Optional[bool]=None
+           Use a long listing format
+       recursive: Optional[bool]=None
+           List subdirectories recursively
+       depth: Optional[int]=None
+           Maximum depth in recursive mode
+       absolute_path: Optional[bool]=None
+           Display absolute path
+       tree: Optional[bool]=None
+           Use a hierarchical presentation for JSON output
+       progress: Optional[Callable[[float, str, object], bool]]=None
+           Progress callback
+
+
+       Output parameters
+       -----------------
+       output_string: str
+           Output string, in which the result is placed
+
+"""
+    )
+
+    assert gdal.alg.vsi.list(tmp_vsimem).Output() == ["a"]
+
+    gdal.reregister_gdal_alg()
+
+    assert gdal.alg.vsi.list(filename=tmp_vsimem).Output() == ["a"]

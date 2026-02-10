@@ -312,7 +312,7 @@ OGRFeature *S57Reader::NextPendingMultiPoint()
 /*                             SetOptions()                             */
 /************************************************************************/
 
-bool S57Reader::SetOptions(char **papszOptionsIn)
+bool S57Reader::SetOptions(CSLConstList papszOptionsIn)
 
 {
     CSLDestroy(papszOptions);
@@ -2053,7 +2053,7 @@ void S57Reader::AssembleSoundingGeometry(DDFRecord *poFRecord,
 }
 
 /************************************************************************/
-/*                            GetIntSubfield()                          */
+/*                           GetIntSubfield()                           */
 /************************************************************************/
 
 static int GetIntSubfield(const DDFField *poField, const char *pszSubfield,
@@ -3258,7 +3258,6 @@ bool S57Reader::ApplyUpdates(DDFModule *poUpdateModule)
                     default:
                         // CPLAssert( false );
                         return false;
-                        break;
                 }
             }
             else

@@ -7,7 +7,7 @@
 # Public domain
 # or licensed under MIT (LICENSE.TXT) Copyright 2019 Even Rouault <even.rouault@spatialys.com>
 
-ARG ALPINE_VERSION=3.22
+ARG ALPINE_VERSION=3.23
 FROM alpine:${ALPINE_VERSION} AS builder
 
 # Derived from osgeo/proj by Howard Butler <howard@hobu.co>
@@ -16,7 +16,7 @@ LABEL maintainer="Even Rouault <even.rouault@spatialys.com>"
 ENV HOME="/root"
 
 # Setup build env for PROJ
-RUN apk add --no-cache  wget curl unzip cmake make libtool autoconf automake pkgconfig gcc g++ sqlite sqlite-dev tiff-dev
+RUN apk add --no-cache curl unzip cmake make libtool autoconf automake pkgconfig gcc g++ sqlite sqlite-dev tiff-dev
 
 ARG PROJ_DATUMGRID_LATEST_LAST_MODIFIED
 RUN \
@@ -40,6 +40,7 @@ RUN apk add --no-cache \
     expat-dev \
     freexl-dev \
     geos-dev \
+    git \
     giflib-dev \
     gnu-libiconv-dev \
     hdf5-dev \
@@ -104,14 +105,14 @@ RUN if test "$(uname -m)" = "x86_64"; then ( \
     ); fi
 
 # Build hdf4
-ARG HDF4_VERSION=4.3.0
+ARG HDF4_VERSION=4.3.1
 RUN if test "${HDF4_VERSION}" != "" -a "$(uname -m)" = "x86_64"; then ( \
     apk add --no-cache byacc flex libtirpc-dev \
     && mkdir hdf4 \
     && curl -L -fsS https://github.com/HDFGroup/hdf4/archive/refs/tags/hdf${HDF4_VERSION}.tar.gz \
         | tar xz -C hdf4 --strip-components=1 \
     && cd hdf4 \
-    && LDFLAGS=-ltirpc ./configure --prefix=/usr --enable-shared --disable-static \
+    && CFLAGS="-std=c99" LDFLAGS=-ltirpc ./configure --prefix=/usr --enable-shared --disable-static \
         --with-szlib=/usr --disable-fortran --disable-netcdf \
     && make -j$(nproc) \
     && make install \
@@ -141,14 +142,15 @@ RUN if test "${OPENDRIVE_VERSION}" != ""; then ( \
     && rm -rf libOpenDRIVE-${OPENDRIVE_VERSION} \
     ); fi
 
+RUN mkdir proj gdal
+
 ARG RSYNC_REMOTE
 ARG WITH_CCACHE
 
 # Build PROJ
 ARG PROJ_VERSION=master
 RUN --mount=type=cache,id=alpine-normal-proj,target=$HOME/.cache \
-    mkdir proj \
-    && curl -L -fsS https://github.com/OSGeo/PROJ/archive/${PROJ_VERSION}.tar.gz \
+    curl -L -fsS https://github.com/OSGeo/PROJ/archive/${PROJ_VERSION}.tar.gz \
         | tar xz -C proj --strip-components=1 \
     && cd proj \
     && if test "${RSYNC_REMOTE}" != ""; then \
@@ -240,10 +242,20 @@ ARG GDAL_RELEASE_DATE
 ARG GDAL_BUILD_IS_RELEASE
 ARG GDAL_REPOSITORY=OSGeo/gdal
 
+COPY --link . gdal/
+
 RUN --mount=type=cache,id=alpine-normal-gdal,target=$HOME/.cache \
-    if test "${GDAL_VERSION}" = "master"; then \
+    cd gdal \
+    && if test "${GDAL_VERSION}" = "master"; then \
         export GDAL_VERSION=$(curl -Ls https://api.github.com/repos/${GDAL_REPOSITORY}/commits/HEAD -H "Accept: application/vnd.github.VERSION.sha"); \
         export GDAL_RELEASE_DATE=$(date "+%Y%m%d"); \
+    fi \
+    && if test "${GDAL_VERSION}" = "local"; then \
+        export GDAL_VERSION=$(git describe --match=BOGUSTAG --always --abbrev=40 --dirty); \
+    else \
+        rm -rf ./*; \
+        (curl -Lo - -fsS https://github.com/${GDAL_REPOSITORY}/archive/${GDAL_VERSION}.tar.gz \
+          | tar xz --strip-components=1) || exit 1; \
     fi \
     && if test "x${GDAL_BUILD_IS_RELEASE}" = "x"; then \
         export GDAL_SHA1SUM=${GDAL_VERSION}; \
@@ -252,10 +264,6 @@ RUN --mount=type=cache,id=alpine-normal-gdal,target=$HOME/.cache \
         apk add --no-cache libtirpc-dev \
         && export LDFLAGS="-ltirpc ${LDFLAGS}"; \
     fi \
-    && mkdir gdal \
-    && curl -L -fsS https://github.com/${GDAL_REPOSITORY}/archive/${GDAL_VERSION}.tar.gz \
-        | tar xz -C gdal --strip-components=1 \
-    && cd gdal \
     && if test "${RSYNC_REMOTE}" != ""; then \
         echo "Downloading cache..."; \
         rsync -ra ${RSYNC_REMOTE}/gdal/$(uname -m)/ $HOME/.cache/; \
@@ -342,6 +350,7 @@ RUN apk add --no-cache \
         hdf5 \
         icu-libs \
         imath \
+        mimalloc2 \
         json-c \
         kealib \
         lerc \
@@ -405,21 +414,24 @@ RUN if test "$(uname -m)" = "x86_64"; then ( \
     ); fi
 
 # Order layers starting with less frequently varying ones
-COPY --from=builder  /build_thirdparty/usr/ /usr/
+COPY --from=builder --link  /build_thirdparty/usr/ /usr/
 
-COPY --from=builder  /build_projgrids/usr/ /usr/
+COPY --from=builder --link  /build_projgrids/usr/ /usr/
 
-COPY --from=builder  /build_spatialite/usr/ /usr/
+COPY --from=builder --link  /build_spatialite/usr/ /usr/
 
-COPY --from=builder  /build_proj/usr/share/proj/ /usr/share/proj/
-COPY --from=builder  /build_proj/usr/include/ /usr/include/
-COPY --from=builder  /build_proj/usr/bin/ /usr/bin/
-COPY --from=builder  /build_proj/usr/lib/ /usr/lib/
+COPY --from=builder --link  /build_proj/usr/share/proj/ /usr/share/proj/
+COPY --from=builder --link  /build_proj/usr/include/ /usr/include/
+COPY --from=builder --link  /build_proj/usr/bin/ /usr/bin/
+COPY --from=builder --link  /build_proj/usr/lib/ /usr/lib/
 
-COPY --from=builder  /build/usr/share/bash-completion/ /usr/share/bash-completion/
-COPY --from=builder  /build/usr/share/gdal/ /usr/share/gdal/
-COPY --from=builder  /build/usr/include/ /usr/include/
-COPY --from=builder  /build_gdal_python/usr/ /usr/
-COPY --from=builder  /build_gdal_version_changing/usr/ /usr/
+COPY --from=builder --link  /build/usr/share/bash-completion/ /usr/share/bash-completion/
+COPY --from=builder --link  /build/usr/share/gdal/ /usr/share/gdal/
+COPY --from=builder --link  /build/usr/include/ /usr/include/
+COPY --from=builder --link  /build_gdal_python/usr/ /usr/
+COPY --from=builder --link  /build_gdal_version_changing/usr/ /usr/
+
+# Use mimalloc allocator to improve multi-threaded performance
+ENV LD_PRELOAD=libmimalloc.so.2
 
 CMD ["/bin/bash", "-l"]

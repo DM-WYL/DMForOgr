@@ -10,12 +10,18 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 #include "ogrsf_frmts.h"
 
 #include "ogrplscenesdrivercore.h"
 
 /************************************************************************/
-/*                   OGRPLSCENESDriverIdentify()                        */
+/*                     OGRPLSCENESDriverIdentify()                      */
 /************************************************************************/
 
 int OGRPLSCENESDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -25,7 +31,7 @@ int OGRPLSCENESDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                OGRPLSCENESDriverSetCommonMetadata()                  */
+/*                 OGRPLSCENESDriverSetCommonMetadata()                 */
 /************************************************************************/
 
 void OGRPLSCENESDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -73,7 +79,7 @@ void OGRPLSCENESDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                 DeclareDeferredOGRPLSCENESPlugin()                   */
+/*                  DeclareDeferredOGRPLSCENESPlugin()                  */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

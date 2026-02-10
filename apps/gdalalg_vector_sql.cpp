@@ -35,9 +35,8 @@ GDALVectorSQLAlgorithm::GetConstructorOptions(bool standaloneStep)
     ConstructorOptions opts;
     opts.SetStandaloneStep(standaloneStep);
     opts.SetOutputDatasetRequired(false);
-    opts.SetUpdateMutualExclusionGroup("output-update");
-    opts.SetOutputDatasetMutualExclusionGroup("output-update");
     opts.SetAddInputLayerNameArgument(false);
+    opts.SetAddOutputLayerNameArgument(false);
     return opts;
 }
 
@@ -63,7 +62,7 @@ GDALVectorSQLAlgorithm::GDALVectorSQLAlgorithm(bool standaloneStep)
 }
 
 /************************************************************************/
-/*                   GDALVectorSQLAlgorithmDataset                      */
+/*                    GDALVectorSQLAlgorithmDataset                     */
 /************************************************************************/
 
 namespace
@@ -79,12 +78,14 @@ class GDALVectorSQLAlgorithmDataset final : public GDALDataset
     explicit GDALVectorSQLAlgorithmDataset(GDALDataset &oSrcDS)
         : m_oSrcDS(oSrcDS)
     {
+        m_oSrcDS.Reference();
     }
 
     ~GDALVectorSQLAlgorithmDataset() override
     {
         for (OGRLayer *poLayer : m_layers)
             m_oSrcDS.ReleaseResultSet(poLayer);
+        m_oSrcDS.ReleaseRef();
     }
 
     void AddLayer(OGRLayer *poLayer)
@@ -129,7 +130,7 @@ class ProxiedSQLLayer final : public OGRProxiedLayer
         SetDescription(osName.c_str());
     }
 
-    ~ProxiedSQLLayer()
+    ~ProxiedSQLLayer() override
     {
         if (m_poLayerDefn)
             m_poLayerDefn->Release();
@@ -185,6 +186,13 @@ class GDALVectorSQLAlgorithmDatasetMultiLayer final : public GDALDataset
     explicit GDALVectorSQLAlgorithmDatasetMultiLayer(GDALDataset &oSrcDS)
         : m_oSrcDS(oSrcDS)
     {
+        m_oSrcDS.Reference();
+    }
+
+    ~GDALVectorSQLAlgorithmDatasetMultiLayer() override
+    {
+        m_layers.clear();
+        m_oSrcDS.ReleaseRef();
     }
 
     void AddLayer(const std::string &osSQL, const std::string &osDialect,
@@ -228,7 +236,7 @@ class GDALVectorSQLAlgorithmDatasetMultiLayer final : public GDALDataset
 }  // namespace
 
 /************************************************************************/
-/*                 GDALVectorSQLAlgorithm::RunStep()                    */
+/*                  GDALVectorSQLAlgorithm::RunStep()                   */
 /************************************************************************/
 
 bool GDALVectorSQLAlgorithm::RunStep(GDALPipelineStepRunContext &)

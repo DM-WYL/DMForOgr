@@ -14,11 +14,12 @@
 #include "cpl_string.h"
 
 #include "gdalalgorithm.h"
+#include "gdal_frmts.h"
 #include "gdal_proxy.h"
 #include "gdal_priv.h"
 
 /************************************************************************/
-/*                            GDALGDataset                              */
+/*                             GDALGDataset                             */
 /************************************************************************/
 
 class GDALGDataset final : public GDALProxyDataset
@@ -101,7 +102,7 @@ class GDALGDataset final : public GDALProxyDataset
 };
 
 /************************************************************************/
-/*                          GDALGRasterBand                             */
+/*                           GDALGRasterBand                            */
 /************************************************************************/
 
 class GDALGRasterBand final : public GDALProxyRasterBand
@@ -125,7 +126,7 @@ class GDALGRasterBand final : public GDALProxyRasterBand
 };
 
 /************************************************************************/
-/*                      GDALGDataset::GDALGDataset()                    */
+/*                     GDALGDataset::GDALGDataset()                     */
 /************************************************************************/
 
 GDALGDataset::GDALGDataset(const std::string &filename,
@@ -151,7 +152,7 @@ void GDALGDataset::UnrefUnderlyingDataset(GDALDataset *) const
 }
 
 /************************************************************************/
-/*                    GDALGRasterBand::GDALGRasterBand()                */
+/*                  GDALGRasterBand::GDALGRasterBand()                  */
 /************************************************************************/
 
 GDALGRasterBand::GDALGRasterBand(GDALRasterBand *poUnderlyingBand)
@@ -165,7 +166,7 @@ GDALGRasterBand::GDALGRasterBand(GDALRasterBand *poUnderlyingBand)
 }
 
 /************************************************************************/
-/*             GDALGRasterBand::UnrefUnderlyingDataset()                */
+/*              GDALGRasterBand::UnrefUnderlyingDataset()               */
 /************************************************************************/
 
 void GDALGRasterBand::UnrefUnderlyingRasterBand(GDALRasterBand *) const
@@ -173,7 +174,7 @@ void GDALGRasterBand::UnrefUnderlyingRasterBand(GDALRasterBand *) const
 }
 
 /************************************************************************/
-/*                         GDALGDataset::Identify()                     */
+/*                       GDALGDataset::Identify()                       */
 /************************************************************************/
 
 /* static */ int GDALGDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -316,7 +317,7 @@ void GDALGRasterBand::UnrefUnderlyingRasterBand(GDALRasterBand *) const
 }
 
 /************************************************************************/
-/*                       GDALRegister_GDALG()                           */
+/*                         GDALRegister_GDALG()                         */
 /************************************************************************/
 
 void GDALRegister_GDALG()

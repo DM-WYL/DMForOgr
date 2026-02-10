@@ -589,6 +589,63 @@ Destination=CoordSys Earth Projection 3, 33, "m", 3, 46.5, 44, 49.00000000002, 7
 
 
 ###############################################################################
+# Test BOUNDS metadata item
+
+
+def test_ogr_mitab_bounds_metadata(tmp_vsimem):
+
+    bounds = "475000,4760000,482000,4770000"
+
+    ds = gdal.VectorTranslate(
+        tmp_vsimem / "poly.tab",
+        "data/poly.shp",
+        layerCreationOptions={"BOUNDS": bounds},
+    )
+
+    assert ds.GetLayer(0).GetMetadataItem("BOUNDS") == bounds
+
+    ds.Close()
+
+    with ogr.Open(tmp_vsimem / "poly.tab") as ds:
+        assert ds.GetLayer(0).GetMetadataItem("BOUNDS") == bounds
+
+    # custom bounds are preserved with TAB->TAB translation
+    ds2 = gdal.VectorTranslate(tmp_vsimem / "poly2.tab", tmp_vsimem / "poly.tab")
+    assert ds2.GetLayer(0).GetMetadataItem("BOUNDS") == bounds
+
+    # bounds invalidated if we reproject
+    ds3 = gdal.VectorTranslate(
+        tmp_vsimem / "poly3.tab",
+        tmp_vsimem / "poly.tab",
+        dstSRS="EPSG:4326",
+        reproject=True,
+    )
+    assert ds3.GetLayer(0).GetMetadataItem("BOUNDS") != bounds
+
+
+@pytest.mark.require_geos()
+def test_ogr_mitab_bounds_metadata_pipeline(tmp_vsimem):
+
+    pipeline = gdal.Algorithm("vector", "pipeline")
+
+    src_fname = "/vsizip/data/mitab/all_geoms_block_32256.zip"
+    dst_fname = tmp_vsimem / "out.tab"
+
+    with gdal.OpenEx(src_fname) as src_ds:
+        src_bounds = src_ds.GetLayer(0).GetMetadataItem("BOUNDS")
+        assert src_bounds
+
+    assert pipeline.ParseRunAndFinalize(
+        ["read", src_fname, "!", "buffer", 20, "!", "write", dst_fname]
+    )
+
+    with gdal.OpenEx(dst_fname) as dst_ds:
+        dst_bounds = dst_ds.GetLayer(0).GetMetadataItem("BOUNDS")
+        assert dst_bounds
+        assert dst_bounds != src_bounds
+
+
+###############################################################################
 # Create .tab without explicit field
 
 
@@ -2210,11 +2267,11 @@ def test_ogr_mitab_style(tmp_vsimem):
     lyr.CreateFeature(f)
     f = ogr.Feature(lyr.GetLayerDefn())
     f.SetGeometryDirectly(ogr.CreateGeometryFromWkt("POLYGON((0 0,0 1,1 1,0 0))"))
-    f.SetStyleString('BRUSH(fc:#AABBCC,id:"mapinfo-brush-1")')
+    f.SetStyleString('BRUSH(fc:#AABBCC,id:"mapinfo-brush-1");PEN(w:2px)')
     lyr.CreateFeature(f)
     f = ogr.Feature(lyr.GetLayerDefn())
     f.SetGeometryDirectly(ogr.CreateGeometryFromWkt("POLYGON((0 0,0 1,1 1,0 0))"))
-    f.SetStyleString("BRUSH(fc:#AABBCC00,bc:#ddeeff00)")
+    f.SetStyleString("BRUSH(fc:#AABBCC00,bc:#ddeeff00);PEN(w:2.5pt)")
     lyr.CreateFeature(f)
     ds = None
 
@@ -2230,14 +2287,14 @@ def test_ogr_mitab_style(tmp_vsimem):
     f = lyr.GetNextFeature()
     if (
         f.GetStyleString()
-        != 'BRUSH(fc:#aabbcc,id:"mapinfo-brush-1,ogr-brush-1");PEN(w:1px,c:#000000,id:"mapinfo-pen-2,ogr-pen-0",cap:r,j:r)'
+        != 'BRUSH(fc:#aabbcc,id:"mapinfo-brush-1,ogr-brush-1");PEN(w:2px,c:#000000,id:"mapinfo-pen-2,ogr-pen-0",cap:r,j:r)'
     ):
         f.DumpReadable()
         pytest.fail()
     f = lyr.GetNextFeature()
     if (
         f.GetStyleString()
-        != 'BRUSH(fc:#aabbcc,id:"mapinfo-brush-1,ogr-brush-1");PEN(w:1px,c:#000000,id:"mapinfo-pen-2,ogr-pen-0",cap:r,j:r)'
+        != 'BRUSH(fc:#aabbcc,id:"mapinfo-brush-1,ogr-brush-1");PEN(w:2.5pt,c:#000000,id:"mapinfo-pen-2,ogr-pen-0",cap:r,j:r)'
     ):
         f.DumpReadable()
         pytest.fail()
@@ -3021,3 +3078,61 @@ def test_ogr_mitab_creation_illegal_layer_name(tmp_vsimem):
     ds = ogr.GetDriverByName("MapInfo File").CreateDataSource(tmp_vsimem / "out")
     with pytest.raises(Exception, match="Illegal character"):
         ds.CreateLayer("illegal/with/slash")
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_mitab_mif_linestring_one_point(tmp_vsimem):
+
+    with gdal.GetDriverByName("MapInfo File").CreateVector(
+        tmp_vsimem / "out.mif"
+    ) as ds:
+        lyr = ds.CreateLayer("out")
+        lyr.CreateField(ogr.FieldDefn("ID", ogr.OFTInteger))
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetGeometry(ogr.CreateGeometryFromWkt("LINESTRING (1 2)"))
+        lyr.CreateFeature(f)
+
+    with gdal.VSIFile(tmp_vsimem / "out.mif", "rb") as f:
+        data = f.read()
+
+    assert (
+        data
+        == b'Version 300\nCharset "Neutral"\nDelimiter ","\nColumns 1\n  ID Integer\nData\n\nPline 1\n1 2\n    Pen (1,2,0)\n'
+    )
+
+    with ogr.Open(tmp_vsimem / "out.mif") as ds:
+        lyr = ds.GetLayer(0)
+        f = lyr.GetNextFeature()
+        assert f.GetGeometryRef().ExportToWkt() == "LINESTRING (1 2)"
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_ogr_mitab_mif_multilinestring_one_point(tmp_vsimem):
+
+    with gdal.GetDriverByName("MapInfo File").CreateVector(
+        tmp_vsimem / "out.mif"
+    ) as ds:
+        lyr = ds.CreateLayer("out")
+        lyr.CreateField(ogr.FieldDefn("ID", ogr.OFTInteger))
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetGeometry(ogr.CreateGeometryFromWkt("MULTILINESTRING ((1 2))"))
+        lyr.CreateFeature(f)
+
+    with gdal.VSIFile(tmp_vsimem / "out.mif", "rb") as f:
+        data = f.read()
+
+    assert (
+        data
+        == b'Version 300\nCharset "Neutral"\nDelimiter ","\nColumns 1\n  ID Integer\nData\n\nPLINE MULTIPLE 1\n  1\n1 2\n    Pen (1,2,0)\n'
+    )
+
+    with ogr.Open(tmp_vsimem / "out.mif") as ds:
+        lyr = ds.GetLayer(0)
+        f = lyr.GetNextFeature()
+        assert f.GetGeometryRef().ExportToWkt() == "MULTILINESTRING ((1 2))"

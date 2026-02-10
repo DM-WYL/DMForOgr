@@ -12,6 +12,8 @@
  ****************************************************************************/
 
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
+#include "gdal_pam.h"
 #include "ogr_spatialref.h"
 #include "rawdataset.h"
 
@@ -132,7 +134,7 @@ CPLErr ACE2Dataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          ACE2RasterBand()                            */
+/*                           ACE2RasterBand()                           */
 /************************************************************************/
 
 ACE2RasterBand::ACE2RasterBand(VSILFILE *fpRawIn, GDALDataType eDataTypeIn,
@@ -144,7 +146,7 @@ ACE2RasterBand::ACE2RasterBand(VSILFILE *fpRawIn, GDALDataType eDataTypeIn,
 }
 
 /************************************************************************/
-/*                             GetUnitType()                            */
+/*                            GetUnitType()                             */
 /************************************************************************/
 
 const char *ACE2RasterBand::GetUnitType()
@@ -156,7 +158,7 @@ const char *ACE2RasterBand::GetUnitType()
 }
 
 /************************************************************************/
-/*                         GetCategoryNames()                           */
+/*                          GetCategoryNames()                          */
 /************************************************************************/
 
 char **ACE2RasterBand::GetCategoryNames()
@@ -177,7 +179,7 @@ char **ACE2RasterBand::GetCategoryNames()
 }
 
 /************************************************************************/
-/*                             Identify()                               */
+/*                              Identify()                              */
 /************************************************************************/
 
 int ACE2Dataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -345,7 +347,7 @@ GDALDataset *ACE2Dataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          GDALRegister_ACE2()                         */
+/*                         GDALRegister_ACE2()                          */
 /************************************************************************/
 
 void GDALRegister_ACE2()

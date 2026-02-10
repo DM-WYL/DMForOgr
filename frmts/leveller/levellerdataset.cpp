@@ -17,6 +17,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 static bool str_equal(const char *_s1, const char *_s2)
@@ -34,8 +38,6 @@ static bool str_equal(const char *_s1, const char *_s2)
 /*                              LevellerDataset                         */
 /* ==================================================================== */
 /************************************************************************/
-
-constexpr size_t kMaxTagNameLen = 63;
 
 enum
 {
@@ -278,17 +280,17 @@ class LevellerDataset final : public GDALPamDataset
 
   public:
     LevellerDataset();
-    virtual ~LevellerDataset();
+    ~LevellerDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
-    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
@@ -386,18 +388,18 @@ class LevellerRasterBand final : public GDALPamRasterBand
 
   public:
     explicit LevellerRasterBand(LevellerDataset *);
-    virtual ~LevellerRasterBand();
+    ~LevellerRasterBand() override;
 
     bool Init();
 
     // Geomeasure support.
-    virtual const char *GetUnitType() override;
-    virtual double GetScale(int *pbSuccess = nullptr) override;
-    virtual double GetOffset(int *pbSuccess = nullptr) override;
+    const char *GetUnitType() override;
+    double GetScale(int *pbSuccess = nullptr) override;
+    double GetOffset(int *pbSuccess = nullptr) override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IWriteBlock(int, int, void *) override;
-    virtual CPLErr SetUnitType(const char *) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
+    CPLErr SetUnitType(const char *) override;
 };
 
 /************************************************************************/
@@ -417,7 +419,7 @@ LevellerRasterBand::LevellerRasterBand(LevellerDataset *poDSIn)
 }
 
 /************************************************************************/
-/*                           Init()                                     */
+/*                                Init()                                */
 /************************************************************************/
 
 bool LevellerRasterBand::Init()
@@ -433,7 +435,7 @@ LevellerRasterBand::~LevellerRasterBand()
 }
 
 /************************************************************************/
-/*                             IWriteBlock()                            */
+/*                            IWriteBlock()                             */
 /************************************************************************/
 
 CPLErr LevellerRasterBand::IWriteBlock(CPL_UNUSED int nBlockXOff,
@@ -821,11 +823,12 @@ CPLErr LevellerDataset::SetSpatialRef(const OGRSpatialReference *poSRS)
 }
 
 /************************************************************************/
-/*                           Create()                                   */
+/*                               Create()                               */
 /************************************************************************/
 GDALDataset *LevellerDataset::Create(const char *pszFilename, int nXSize,
                                      int nYSize, int nBandsIn,
-                                     GDALDataType eType, char **papszOptions)
+                                     GDALDataType eType,
+                                     CSLConstList papszOptions)
 {
     if (nBandsIn != 1)
     {
@@ -958,9 +961,10 @@ bool LevellerDataset::write_tag(const char *pszTag, double d)
 
 bool LevellerDataset::write_tag(const char *pszTag, const char *psz)
 {
+    constexpr size_t kMaxTagNameLen = 63;
     CPLAssert(strlen(pszTag) <= kMaxTagNameLen);
 
-    char sz[kMaxTagNameLen + 1];
+    char sz[kMaxTagNameLen + 2];
     snprintf(sz, sizeof(sz), "%sl", pszTag);
     const size_t len = strlen(psz);
 
@@ -1197,7 +1201,7 @@ bool LevellerDataset::make_local_coordsys(const char *pszName, UNITLABEL code)
 }
 
 /************************************************************************/
-/*                            load_from_file()                            */
+/*                           load_from_file()                           */
 /************************************************************************/
 
 bool LevellerDataset::load_from_file(VSILFILE *file, const char *pszFilename)
@@ -1389,7 +1393,7 @@ bool LevellerDataset::load_from_file(VSILFILE *file, const char *pszFilename)
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *LevellerDataset::GetSpatialRef() const
@@ -1491,7 +1495,7 @@ GDALDataset *LevellerDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                        GDALRegister_Leveller()                       */
+/*                       GDALRegister_Leveller()                        */
 /************************************************************************/
 
 void GDALRegister_Leveller()

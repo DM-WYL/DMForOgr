@@ -14,6 +14,10 @@
 #include "cpl_vsi_virtual.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 #include <array>
 #include <cmath>
@@ -45,15 +49,15 @@ class ZMapDataset final : public GDALPamDataset
 
   public:
     ZMapDataset();
-    virtual ~ZMapDataset();
+    ~ZMapDataset() override;
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
@@ -71,8 +75,8 @@ class ZMapRasterBand final : public GDALPamRasterBand
   public:
     explicit ZMapRasterBand(ZMapDataset *);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual double GetNoDataValue(int *pbSuccess = nullptr) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    double GetNoDataValue(int *pbSuccess = nullptr) override;
 };
 
 /************************************************************************/
@@ -196,7 +200,7 @@ CPLErr ZMapRasterBand::IReadBlock(int nBlockXOff, CPL_UNUSED int nBlockYOff,
 }
 
 /************************************************************************/
-/*                          GetNoDataValue()                            */
+/*                           GetNoDataValue()                           */
 /************************************************************************/
 
 double ZMapRasterBand::GetNoDataValue(int *pbSuccess)
@@ -226,7 +230,7 @@ ZMapDataset::~ZMapDataset()
 }
 
 /************************************************************************/
-/*                             Identify()                               */
+/*                              Identify()                              */
 /************************************************************************/
 
 int ZMapDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -484,7 +488,7 @@ GDALDataset *ZMapDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                       WriteRightJustified()                          */
+/*                        WriteRightJustified()                         */
 /************************************************************************/
 
 static void WriteRightJustified(VSIVirtualHandleUniquePtr &fp,
@@ -537,7 +541,7 @@ static void WriteRightJustified(VSIVirtualHandleUniquePtr &fp, double dfValue,
 
 GDALDataset *ZMapDataset::CreateCopy(const char *pszFilename,
                                      GDALDataset *poSrcDS, int bStrict,
-                                     CPL_UNUSED char **papszOptions,
+                                     CPL_UNUSED CSLConstList papszOptions,
                                      GDALProgressFunc pfnProgress,
                                      void *pProgressData)
 {

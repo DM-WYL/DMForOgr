@@ -13,23 +13,19 @@
 #include "cpl_error.h"
 #include "cpl_json.h"
 #include "cpl_http.h"
+#include "gdal_frmts.h"
 #include "gdal_priv.h"
 #include "tilematrixset.hpp"
 #include "gdal_utils.h"
 #include "ogrsf_frmts.h"
 #include "ogr_spatialref.h"
+#include "gdalplugindriverproxy.h"
 
 #include "parsexsd.h"
 
 #include <algorithm>
 #include <memory>
 #include <vector>
-
-// g++ -Wall -Wextra -std=c++11 -Wall -g -fPIC
-// frmts/ogcapi/gdalogcapidataset.cpp -shared -o gdal_OGCAPI.so -Iport -Igcore
-// -Iogr -Iogr/ogrsf_frmts -Iogr/ogrsf_frmts/gml -Iapps -L. -lgdal
-
-extern "C" void GDALRegister_OGCAPI();
 
 #define MEDIA_TYPE_OAPI_3_0 "application/vnd.oai.openapi+json;version=3.0"
 #define MEDIA_TYPE_OAPI_3_0_ALT "application/openapi+json;version=3.0"
@@ -125,7 +121,7 @@ class OGCAPIDataset final : public GDALDataset
 
   public:
     OGCAPIDataset() = default;
-    ~OGCAPIDataset();
+    ~OGCAPIDataset() override;
 
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
@@ -158,16 +154,15 @@ class OGCAPIMapWrapperBand final : public GDALRasterBand
   public:
     OGCAPIMapWrapperBand(OGCAPIDataset *poDS, int nBand);
 
-    virtual GDALRasterBand *GetOverview(int nLevel) override;
-    virtual int GetOverviewCount() override;
-    virtual GDALColorInterp GetColorInterpretation() override;
+    GDALRasterBand *GetOverview(int nLevel) override;
+    int GetOverviewCount() override;
+    GDALColorInterp GetColorInterpretation() override;
 
   protected:
-    virtual CPLErr IReadBlock(int nBlockXOff, int nBlockYOff,
-                              void *pImage) override;
-    virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, GSpacing, GSpacing,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage) override;
+    CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
+                     GDALDataType, GSpacing, GSpacing,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
 
 /************************************************************************/
@@ -181,16 +176,15 @@ class OGCAPITilesWrapperBand final : public GDALRasterBand
   public:
     OGCAPITilesWrapperBand(OGCAPIDataset *poDS, int nBand);
 
-    virtual GDALRasterBand *GetOverview(int nLevel) override;
-    virtual int GetOverviewCount() override;
-    virtual GDALColorInterp GetColorInterpretation() override;
+    GDALRasterBand *GetOverview(int nLevel) override;
+    int GetOverviewCount() override;
+    GDALColorInterp GetColorInterpretation() override;
 
   protected:
-    virtual CPLErr IReadBlock(int nBlockXOff, int nBlockYOff,
-                              void *pImage) override;
-    virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, GSpacing, GSpacing,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage) override;
+    CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
+                     GDALDataType, GSpacing, GSpacing,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
 
 /************************************************************************/
@@ -259,7 +253,8 @@ class OGCAPITiledLayer final
     OGRFeature *GetNextRawFeature();
     GDALDataset *OpenTile(int nX, int nY, bool &bEmptyContent);
     void FinalizeFeatureDefnWithLayer(OGRLayer *poUnderlyingLayer);
-    OGRFeature *BuildFeature(OGRFeature *poSrcFeature, int nX, int nY);
+    OGRFeature *BuildFeature(std::unique_ptr<OGRFeature> poSrcFeature, int nX,
+                             int nY);
 
     CPL_DISALLOW_COPY_ASSIGN(OGCAPITiledLayer)
 
@@ -272,7 +267,7 @@ class OGCAPITiledLayer final
                      const CPLString &osTileURL, bool bIsMVT,
                      const gdal::TileMatrixSet::TileMatrix &tileMatrix,
                      OGRwkbGeometryType eGeomType);
-    ~OGCAPITiledLayer();
+    ~OGCAPITiledLayer() override;
 
     void SetExtent(double dfXMin, double dfYMin, double dfXMax, double dfYMax);
     void SetFields(const std::vector<std::unique_ptr<OGRFieldDefn>> &apoFields);
@@ -312,7 +307,7 @@ class OGCAPITiledLayer final
 };
 
 /************************************************************************/
-/*                            GetFieldCount()                           */
+/*                           GetFieldCount()                            */
 /************************************************************************/
 
 int OGCAPITiledLayerFeatureDefn::GetFieldCount() const
@@ -342,7 +337,7 @@ OGCAPIDataset::~OGCAPIDataset()
 }
 
 /************************************************************************/
-/*                        CloseDependentDatasets()                      */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int OGCAPIDataset::CloseDependentDatasets()
@@ -560,7 +555,7 @@ bool OGCAPIDataset::Download(const CPLString &osURL, const char *pszPostContent,
 }
 
 /************************************************************************/
-/*                           DownloadJSon()                             */
+/*                            DownloadJSon()                            */
 /************************************************************************/
 
 bool OGCAPIDataset::DownloadJSon(const CPLString &osURL, CPLJSONDocument &oDoc,
@@ -577,7 +572,7 @@ bool OGCAPIDataset::DownloadJSon(const CPLString &osURL, CPLJSONDocument &oDoc,
 }
 
 /************************************************************************/
-/*                            OpenTile()                                */
+/*                              OpenTile()                              */
 /************************************************************************/
 
 std::unique_ptr<GDALDataset>
@@ -623,7 +618,7 @@ OGCAPIDataset::OpenTile(const CPLString &osURLPattern, int nMatrix, int nColumn,
 }
 
 /************************************************************************/
-/*                            Identify()                                */
+/*                              Identify()                              */
 /************************************************************************/
 
 int OGCAPIDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -640,7 +635,7 @@ int OGCAPIDataset::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            BuildURL()                                */
+/*                              BuildURL()                              */
 /************************************************************************/
 
 CPLString OGCAPIDataset::BuildURL(const std::string &href) const
@@ -668,7 +663,7 @@ void OGCAPIDataset::SetRootURLFromURL(const std::string &osURL)
 }
 
 /************************************************************************/
-/*                          FigureBands()                               */
+/*                            FigureBands()                             */
 /************************************************************************/
 
 int OGCAPIDataset::FigureBands(const std::string &osContentType,
@@ -699,7 +694,7 @@ int OGCAPIDataset::FigureBands(const std::string &osContentType,
 }
 
 /************************************************************************/
-/*                           InitFromFile()                             */
+/*                            InitFromFile()                            */
 /************************************************************************/
 
 bool OGCAPIDataset::InitFromFile(GDALOpenInfo *poOpenInfo)
@@ -732,7 +727,7 @@ bool OGCAPIDataset::InitFromFile(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                        ProcessScale()                          */
+/*                            ProcessScale()                            */
 /************************************************************************/
 
 bool OGCAPIDataset::ProcessScale(const CPLJSONObject &oScaleDenominator,
@@ -769,7 +764,7 @@ bool OGCAPIDataset::ProcessScale(const CPLJSONObject &oScaleDenominator,
 }
 
 /************************************************************************/
-/*                        InitFromCollection()                          */
+/*                         InitFromCollection()                         */
 /************************************************************************/
 
 bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
@@ -971,7 +966,7 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                               InitFromURL()                          */
+/*                            InitFromURL()                             */
 /************************************************************************/
 
 bool OGCAPIDataset::InitFromURL(GDALOpenInfo *poOpenInfo)
@@ -1079,7 +1074,7 @@ bool OGCAPIDataset::InitFromURL(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          SelectImageURL()                            */
+/*                           SelectImageURL()                           */
 /************************************************************************/
 
 static const std::pair<std::string, std::string>
@@ -1146,7 +1141,7 @@ SelectImageURL(const char *const *papszOptionOptions,
 }
 
 /************************************************************************/
-/*                        SelectVectorFormatURL()                       */
+/*                       SelectVectorFormatURL()                        */
 /************************************************************************/
 
 static const CPLString
@@ -1168,7 +1163,7 @@ SelectVectorFormatURL(const char *const *papszOptionOptions,
 }
 
 /************************************************************************/
-/*                          InitWithMapAPI()                            */
+/*                           InitWithMapAPI()                           */
 /************************************************************************/
 
 bool OGCAPIDataset::InitWithMapAPI(GDALOpenInfo *poOpenInfo,
@@ -1336,7 +1331,7 @@ bool OGCAPIDataset::InitWithCoverageAPI(GDALOpenInfo *poOpenInfo,
             }
             static const std::map<std::string, GDALDataType> oMapTypes = {
                 // https://edc-oapi.dev.hub.eox.at/oapi/collections/S2L2A
-                {"UINT8", GDT_Byte},
+                {"UINT8", GDT_UInt8},
                 {"INT16", GDT_Int16},
                 {"UINT16", GDT_UInt16},
                 {"INT32", GDT_Int32},
@@ -1344,7 +1339,7 @@ bool OGCAPIDataset::InitWithCoverageAPI(GDALOpenInfo *poOpenInfo,
                 {"FLOAT32", GDT_Float32},
                 {"FLOAT64", GDT_Float64},
                 // https://test.cubewerx.com/cubewerx/cubeserv/demo/ogcapi/Daraa/collections/Daraa_DTED/coverage/rangetype?f=json
-                {"ogcType:unsignedByte", GDT_Byte},
+                {"ogcType:unsignedByte", GDT_UInt8},
                 {"ogcType:signedShort", GDT_Int16},
                 {"ogcType:unsignedShort", GDT_UInt16},
                 {"ogcType:signedInt", GDT_Int32},
@@ -1541,7 +1536,7 @@ bool OGCAPIDataset::InitWithCoverageAPI(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                      OGCAPIMapWrapperBand()                          */
+/*                        OGCAPIMapWrapperBand()                        */
 /************************************************************************/
 
 OGCAPIMapWrapperBand::OGCAPIMapWrapperBand(OGCAPIDataset *poDSIn, int nBandIn)
@@ -1554,7 +1549,7 @@ OGCAPIMapWrapperBand::OGCAPIMapWrapperBand(OGCAPIDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                            IReadBlock()                              */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr OGCAPIMapWrapperBand::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -1581,7 +1576,7 @@ CPLErr OGCAPIMapWrapperBand::IRasterIO(
 }
 
 /************************************************************************/
-/*                         GetOverviewCount()                           */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int OGCAPIMapWrapperBand::GetOverviewCount()
@@ -1591,7 +1586,7 @@ int OGCAPIMapWrapperBand::GetOverviewCount()
 }
 
 /************************************************************************/
-/*                              GetOverview()                           */
+/*                            GetOverview()                             */
 /************************************************************************/
 
 GDALRasterBand *OGCAPIMapWrapperBand::GetOverview(int nLevel)
@@ -1601,7 +1596,7 @@ GDALRasterBand *OGCAPIMapWrapperBand::GetOverview(int nLevel)
 }
 
 /************************************************************************/
-/*                   GetColorInterpretation()                           */
+/*                       GetColorInterpretation()                       */
 /************************************************************************/
 
 GDALColorInterp OGCAPIMapWrapperBand::GetColorInterpretation()
@@ -1609,7 +1604,7 @@ GDALColorInterp OGCAPIMapWrapperBand::GetColorInterpretation()
     OGCAPIDataset *poGDS = cpl::down_cast<OGCAPIDataset *>(poDS);
     // The WMS driver returns Grey-Alpha for 2 band, RGB(A) for 3 or 4 bands
     // Restrict that behavior to Byte only data.
-    if (eDataType == GDT_Byte)
+    if (eDataType == GDT_UInt8)
         return poGDS->m_poWMSDS->GetRasterBand(nBand)->GetColorInterpretation();
     return GCI_Undefined;
 }
@@ -1664,7 +1659,7 @@ ParseXMLSchema(const std::string &osURL,
 }
 
 /************************************************************************/
-/*                         InitWithTilesAPI()                           */
+/*                          InitWithTilesAPI()                          */
 /************************************************************************/
 
 bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
@@ -1980,10 +1975,9 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
                     continue;
                 }
             }
-            auto poLayer =
-                std::unique_ptr<OGCAPITiledLayer>(new OGCAPITiledLayer(
-                    this, bInvertAxis, osVectorURL, osVectorURL == osMVT_URL,
-                    tileMatrix, eGeomType));
+            auto poLayer = std::make_unique<OGCAPITiledLayer>(
+                this, bInvertAxis, osVectorURL, osVectorURL == osMVT_URL,
+                tileMatrix, eGeomType);
             poLayer->SetMinMaxXY(minCol, minRow, maxCol, maxRow);
             poLayer->SetExtent(dfXMin, dfYMin, dfXMax, dfYMax);
             if (bGotSchema)
@@ -2260,7 +2254,7 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                      OGCAPITilesWrapperBand()                        */
+/*                       OGCAPITilesWrapperBand()                       */
 /************************************************************************/
 
 OGCAPITilesWrapperBand::OGCAPITilesWrapperBand(OGCAPIDataset *poDSIn,
@@ -2276,7 +2270,7 @@ OGCAPITilesWrapperBand::OGCAPITilesWrapperBand(OGCAPIDataset *poDSIn,
 }
 
 /************************************************************************/
-/*                            IReadBlock()                              */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr OGCAPITilesWrapperBand::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -2315,7 +2309,7 @@ CPLErr OGCAPITilesWrapperBand::IRasterIO(
 }
 
 /************************************************************************/
-/*                         GetOverviewCount()                           */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int OGCAPITilesWrapperBand::GetOverviewCount()
@@ -2325,7 +2319,7 @@ int OGCAPITilesWrapperBand::GetOverviewCount()
 }
 
 /************************************************************************/
-/*                              GetOverview()                           */
+/*                            GetOverview()                             */
 /************************************************************************/
 
 GDALRasterBand *OGCAPITilesWrapperBand::GetOverview(int nLevel)
@@ -2337,7 +2331,7 @@ GDALRasterBand *OGCAPITilesWrapperBand::GetOverview(int nLevel)
 }
 
 /************************************************************************/
-/*                   GetColorInterpretation()                           */
+/*                       GetColorInterpretation()                       */
 /************************************************************************/
 
 GDALColorInterp OGCAPITilesWrapperBand::GetColorInterpretation()
@@ -2397,7 +2391,7 @@ CPLErr OGCAPIDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                         OGCAPITiledLayer()                           */
+/*                          OGCAPITiledLayer()                          */
 /************************************************************************/
 
 OGCAPITiledLayer::OGCAPITiledLayer(
@@ -2422,7 +2416,7 @@ OGCAPITiledLayer::OGCAPITiledLayer(
 }
 
 /************************************************************************/
-/*                        ~OGCAPITiledLayer()                           */
+/*                         ~OGCAPITiledLayer()                          */
 /************************************************************************/
 
 OGCAPITiledLayer::~OGCAPITiledLayer()
@@ -2432,7 +2426,7 @@ OGCAPITiledLayer::~OGCAPITiledLayer()
 }
 
 /************************************************************************/
-/*                       GetCoalesceFactorForRow()                      */
+/*                      GetCoalesceFactorForRow()                       */
 /************************************************************************/
 
 int OGCAPITiledLayer::GetCoalesceFactorForRow(int nRow) const
@@ -2450,7 +2444,7 @@ int OGCAPITiledLayer::GetCoalesceFactorForRow(int nRow) const
 }
 
 /************************************************************************/
-/*                         ResetReading()                               */
+/*                            ResetReading()                            */
 /************************************************************************/
 
 void OGCAPITiledLayer::ResetReading()
@@ -2469,7 +2463,7 @@ void OGCAPITiledLayer::ResetReading()
 }
 
 /************************************************************************/
-/*                             OpenTile()                               */
+/*                              OpenTile()                              */
 /************************************************************************/
 
 GDALDataset *OGCAPITiledLayer::OpenTile(int nX, int nY, bool &bEmptyContent)
@@ -2518,7 +2512,7 @@ GDALDataset *OGCAPITiledLayer::OpenTile(int nX, int nY, bool &bEmptyContent)
 }
 
 /************************************************************************/
-/*                      FinalizeFeatureDefnWithLayer()                  */
+/*                    FinalizeFeatureDefnWithLayer()                    */
 /************************************************************************/
 
 void OGCAPITiledLayer::FinalizeFeatureDefnWithLayer(OGRLayer *poUnderlyingLayer)
@@ -2539,8 +2533,9 @@ void OGCAPITiledLayer::FinalizeFeatureDefnWithLayer(OGRLayer *poUnderlyingLayer)
 /*                            BuildFeature()                            */
 /************************************************************************/
 
-OGRFeature *OGCAPITiledLayer::BuildFeature(OGRFeature *poSrcFeature, int nX,
-                                           int nY)
+OGRFeature *
+OGCAPITiledLayer::BuildFeature(std::unique_ptr<OGRFeature> poSrcFeature, int nX,
+                               int nY)
 {
     int nCoalesce = GetCoalesceFactorForRow(nY);
     if (nCoalesce <= 0)
@@ -2551,21 +2546,20 @@ OGRFeature *OGCAPITiledLayer::BuildFeature(OGRFeature *poSrcFeature, int nX,
     const GIntBig nFID = nY * m_oTileMatrix.mMatrixWidth + nX +
                          poSrcFeature->GetFID() * m_oTileMatrix.mMatrixWidth *
                              m_oTileMatrix.mMatrixHeight;
-    auto poGeom = poSrcFeature->StealGeometry();
+    auto poGeom = std::unique_ptr<OGRGeometry>(poSrcFeature->StealGeometry());
     if (poGeom && m_poFeatureDefn->GetGeomType() != wkbUnknown)
     {
-        poGeom =
-            OGRGeometryFactory::forceTo(poGeom, m_poFeatureDefn->GetGeomType());
+        poGeom = OGRGeometryFactory::forceTo(std::move(poGeom),
+                                             m_poFeatureDefn->GetGeomType());
     }
-    poFeature->SetFrom(poSrcFeature, true);
+    poFeature->SetFrom(poSrcFeature.get(), true);
     poFeature->SetFID(nFID);
     if (poGeom && m_poFeatureDefn->GetGeomFieldCount() > 0)
     {
         poGeom->assignSpatialReference(
             m_poFeatureDefn->GetGeomFieldDefn(0)->GetSpatialRef());
     }
-    poFeature->SetGeometryDirectly(poGeom);
-    delete poSrcFeature;
+    poFeature->SetGeometry(std::move(poGeom));
     return poFeature;
 }
 
@@ -2597,7 +2591,7 @@ bool OGCAPITiledLayer::IncrementTileIndices()
 }
 
 /************************************************************************/
-/*                          GetNextRawFeature()                         */
+/*                         GetNextRawFeature()                          */
 /************************************************************************/
 
 OGRFeature *OGCAPITiledLayer::GetNextRawFeature()
@@ -2630,10 +2624,11 @@ OGRFeature *OGCAPITiledLayer::GetNextRawFeature()
             FinalizeFeatureDefnWithLayer(m_poUnderlyingLayer);
         }
 
-        auto poSrcFeature = m_poUnderlyingLayer->GetNextFeature();
+        auto poSrcFeature =
+            std::unique_ptr<OGRFeature>(m_poUnderlyingLayer->GetNextFeature());
         if (poSrcFeature != nullptr)
         {
-            return BuildFeature(poSrcFeature, m_nCurX, m_nCurY);
+            return BuildFeature(std::move(poSrcFeature), m_nCurX, m_nCurY);
         }
 
         m_poUnderlyingDS.reset();
@@ -2645,7 +2640,7 @@ OGRFeature *OGCAPITiledLayer::GetNextRawFeature()
 }
 
 /************************************************************************/
-/*                           GetFeature()                               */
+/*                             GetFeature()                             */
 /************************************************************************/
 
 OGRFeature *OGCAPITiledLayer::GetFeature(GIntBig nFID)
@@ -2667,14 +2662,15 @@ OGRFeature *OGCAPITiledLayer::GetFeature(GIntBig nFID)
     if (poUnderlyingLayer == nullptr)
         return nullptr;
     FinalizeFeatureDefnWithLayer(poUnderlyingLayer);
-    OGRFeature *poSrcFeature = poUnderlyingLayer->GetFeature(nFIDInTile);
+    auto poSrcFeature =
+        std::unique_ptr<OGRFeature>(poUnderlyingLayer->GetFeature(nFIDInTile));
     if (poSrcFeature == nullptr)
         return nullptr;
-    return BuildFeature(poSrcFeature, nX, nY);
+    return BuildFeature(std::move(poSrcFeature), nX, nY);
 }
 
 /************************************************************************/
-/*                         EstablishFields()                            */
+/*                          EstablishFields()                           */
 /************************************************************************/
 
 void OGCAPITiledLayer::EstablishFields()
@@ -2740,7 +2736,7 @@ void OGCAPITiledLayer::EstablishFields()
 }
 
 /************************************************************************/
-/*                            SetExtent()                               */
+/*                             SetExtent()                              */
 /************************************************************************/
 
 void OGCAPITiledLayer::SetExtent(double dfXMin, double dfYMin, double dfXMax,
@@ -2753,7 +2749,7 @@ void OGCAPITiledLayer::SetExtent(double dfXMin, double dfYMin, double dfXMax,
 }
 
 /************************************************************************/
-/*                           IGetExtent()                               */
+/*                             IGetExtent()                             */
 /************************************************************************/
 
 OGRErr OGCAPITiledLayer::IGetExtent(int /* iGeomField */, OGREnvelope *psExtent,
@@ -2816,7 +2812,7 @@ OGRErr OGCAPITiledLayer::ISetSpatialFilter(int iGeomField,
 }
 
 /************************************************************************/
-/*                          TestCapability()                            */
+/*                           TestCapability()                           */
 /************************************************************************/
 
 int OGCAPITiledLayer::TestCapability(const char *pszCap) const
@@ -2865,7 +2861,7 @@ void OGCAPITiledLayer::SetFields(
 }
 
 /************************************************************************/
-/*                              Open()                                  */
+/*                                Open()                                */
 /************************************************************************/
 
 GDALDataset *OGCAPIDataset::Open(GDALOpenInfo *poOpenInfo)

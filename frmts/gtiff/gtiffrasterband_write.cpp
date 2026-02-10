@@ -20,6 +20,7 @@
 
 #include "cpl_vsi_virtual.h"
 #include "gdal_priv_templates.hpp"
+#include "gdal_priv.h"
 #include "gtiff.h"
 #include "tifvsi.h"
 
@@ -30,7 +31,21 @@
 CPLErr GTiffRasterBand::SetDefaultRAT(const GDALRasterAttributeTable *poRAT)
 {
     m_poGDS->LoadGeoreferencingAndPamIfNeeded();
-    return GDALPamRasterBand::SetDefaultRAT(poRAT);
+    m_bRATSet = true;
+    m_bRATTriedReadingFromPAM = true;
+    if (poRAT)
+        m_poRAT.reset(poRAT->Clone());
+    else
+        m_poRAT.reset();
+    const bool bWriteToPAM =
+        CPLTestBool(CPLGetConfigOption("GTIFF_WRITE_RAT_TO_PAM", "NO"));
+    if (!bWriteToPAM)
+        m_poGDS->m_bMetadataChanged = true;
+    if (bWriteToPAM || GDALPamRasterBand::GetDefaultRAT())
+    {
+        return GDALPamRasterBand::SetDefaultRAT(poRAT);
+    }
+    return CE_None;
 }
 
 /************************************************************************/
@@ -247,7 +262,7 @@ CPLErr GTiffRasterBand::SetScale(double dfNewValue)
 }
 
 /************************************************************************/
-/*                           SetUnitType()                              */
+/*                            SetUnitType()                             */
 /************************************************************************/
 
 CPLErr GTiffRasterBand::SetUnitType(const char *pszNewValue)
@@ -267,7 +282,7 @@ CPLErr GTiffRasterBand::SetUnitType(const char *pszNewValue)
 /*                            SetMetadata()                             */
 /************************************************************************/
 
-CPLErr GTiffRasterBand::SetMetadata(char **papszMD, const char *pszDomain)
+CPLErr GTiffRasterBand::SetMetadata(CSLConstList papszMD, const char *pszDomain)
 
 {
     m_poGDS->LoadGeoreferencingAndPamIfNeeded();
@@ -582,7 +597,7 @@ CPLErr GTiffRasterBand::SetColorTable(GDALColorTable *poCT)
             return CE_Failure;
         }
 
-        if (eDataType != GDT_Byte && eDataType != GDT_UInt16)
+        if (eDataType != GDT_UInt8 && eDataType != GDT_UInt16)
         {
             ReportError(
                 CE_Failure, CPLE_NotSupported,
@@ -625,7 +640,7 @@ CPLErr GTiffRasterBand::SetColorTable(GDALColorTable *poCT)
     {
         int nColors = 65536;
 
-        if (eDataType == GDT_Byte)
+        if (eDataType == GDT_UInt8)
             nColors = 256;
 
         unsigned short *panTRed = static_cast<unsigned short *>(
@@ -867,7 +882,7 @@ CPLErr GTiffRasterBand::SetNoDataValueAsInt64(int64_t nNoData)
 }
 
 /************************************************************************/
-/*                      SetNoDataValueAsUInt64()                        */
+/*                       SetNoDataValueAsUInt64()                       */
 /************************************************************************/
 
 CPLErr GTiffRasterBand::SetNoDataValueAsUInt64(uint64_t nNoData)
@@ -951,7 +966,7 @@ CPLErr GTiffRasterBand::SetNoDataValueAsUInt64(uint64_t nNoData)
 }
 
 /************************************************************************/
-/*                        ResetNoDataValues()                           */
+/*                         ResetNoDataValues()                          */
 /************************************************************************/
 
 void GTiffRasterBand::ResetNoDataValues(bool bResetDatasetToo)
@@ -985,7 +1000,7 @@ void GTiffRasterBand::ResetNoDataValues(bool bResetDatasetToo)
 }
 
 /************************************************************************/
-/*                        DeleteNoDataValue()                           */
+/*                         DeleteNoDataValue()                          */
 /************************************************************************/
 
 CPLErr GTiffRasterBand::DeleteNoDataValue()

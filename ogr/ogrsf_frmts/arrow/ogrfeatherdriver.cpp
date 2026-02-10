@@ -24,7 +24,7 @@
 #include "ogrfeatherdrivercore.h"
 
 /************************************************************************/
-/*                        IsArrowIPCStream()                            */
+/*                          IsArrowIPCStream()                          */
 /************************************************************************/
 
 static bool IsArrowIPCStream(GDALOpenInfo *poOpenInfo)
@@ -234,7 +234,7 @@ static GDALDataset *OGRFeatherDriverOpen(GDALOpenInfo *poOpenInfo)
             osLayername = "layer";
         auto poLayer = std::make_unique<OGRFeatherLayer>(
             poDS.get(), osLayername.c_str(), infile, bSeekable, options,
-            poRecordBatchStreamReader);
+            poRecordBatchStreamReader, poOpenInfo->papszOpenOptions);
         poDS->SetLayer(std::move(poLayer));
 
         // Pre-load field domains, as this depends on the first record batch
@@ -270,7 +270,7 @@ static GDALDataset *OGRFeatherDriverOpen(GDALOpenInfo *poOpenInfo)
         auto poRecordBatchReader = *result;
         auto poLayer = std::make_unique<OGRFeatherLayer>(
             poDS.get(), CPLGetBasenameSafe(poOpenInfo->pszFilename).c_str(),
-            poRecordBatchReader);
+            poRecordBatchReader, poOpenInfo->papszOpenOptions);
         poDS->SetLayer(std::move(poLayer));
     }
     return poDS.release();
@@ -283,7 +283,7 @@ static GDALDataset *OGRFeatherDriverOpen(GDALOpenInfo *poOpenInfo)
 static GDALDataset *OGRFeatherDriverCreate(const char *pszName, int nXSize,
                                            int nYSize, int nBands,
                                            GDALDataType eType,
-                                           char ** /* papszOptions */)
+                                           CSLConstList /* papszOptions */)
 {
     if (!(nXSize == 0 && nYSize == 0 && nBands == 0 && eType == GDT_Unknown))
         return nullptr;
@@ -317,12 +317,12 @@ static GDALDataset *OGRFeatherDriverCreate(const char *pszName, int nXSize,
 }
 
 /************************************************************************/
-/*                         OGRFeatherDriver()                           */
+/*                          OGRFeatherDriver()                          */
 /************************************************************************/
 
 class OGRFeatherDriver final : public GDALDriver
 {
-    std::mutex m_oMutex{};
+    std::recursive_mutex m_oMutex{};
     bool m_bMetadataInitialized = false;
     void InitMetadata();
 
@@ -330,7 +330,7 @@ class OGRFeatherDriver final : public GDALDriver
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain) override;
 
-    char **GetMetadata(const char *pszDomain) override
+    CSLConstList GetMetadata(const char *pszDomain) override
     {
         std::lock_guard oLock(m_oMutex);
         InitMetadata();
@@ -449,13 +449,26 @@ void OGRFeatherDriver::InitMetadata()
                                    "Name of the FID column to create");
     }
 
+    {
+        auto psOption = CPLCreateXMLNode(oTree.get(), CXT_Element, "Option");
+        CPLAddXMLAttributeAndValue(psOption, "name", "TIMESTAMP_WITH_OFFSET");
+        CPLAddXMLAttributeAndValue(psOption, "type", "string-select");
+        CPLAddXMLAttributeAndValue(psOption, "default", "AUTO");
+        CPLAddXMLAttributeAndValue(
+            psOption, "description",
+            "Whether timestamp with offset fields should be used");
+        CPLCreateXMLElementAndValue(psOption, "Value", "AUTO");
+        CPLCreateXMLElementAndValue(psOption, "Value", "YES");
+        CPLCreateXMLElementAndValue(psOption, "Value", "NO");
+    }
+
     char *pszXML = CPLSerializeXMLTree(oTree.get());
     GDALDriver::SetMetadataItem(GDAL_DS_LAYER_CREATIONOPTIONLIST, pszXML);
     CPLFree(pszXML);
 }
 
 /************************************************************************/
-/*                         RegisterOGRArrow()                           */
+/*                          RegisterOGRArrow()                          */
 /************************************************************************/
 
 void RegisterOGRArrow()

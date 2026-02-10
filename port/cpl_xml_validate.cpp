@@ -68,7 +68,7 @@
 static xmlExternalEntityLoader pfnLibXMLOldExtranerEntityLoader = nullptr;
 
 /************************************************************************/
-/*                            CPLFixPath()                              */
+/*                             CPLFixPath()                             */
 /************************************************************************/
 
 // Replace \ by / to make libxml2 happy on Windows and
@@ -101,7 +101,7 @@ static void CPLFixPath(char *pszPath)
 #ifdef HAS_VALIDATION_BUG
 
 /************************************************************************/
-/*                  CPLHasLibXMLBugWarningCallback()                    */
+/*                   CPLHasLibXMLBugWarningCallback()                   */
 /************************************************************************/
 
 static void CPLHasLibXMLBugWarningCallback(void * /*ctx*/, const char * /*msg*/,
@@ -169,7 +169,7 @@ static bool CPLHasLibXMLBug()
 #endif
 
 /************************************************************************/
-/*                         CPLExtractSubSchema()                        */
+/*                        CPLExtractSubSchema()                         */
 /************************************************************************/
 
 static CPLXMLNode *CPLExtractSubSchema(CPLXMLNode *psSubXML,
@@ -234,7 +234,7 @@ static CPLXMLNode *CPLExtractSubSchema(CPLXMLNode *psSubXML,
 
 #ifdef HAS_VALIDATION_BUG
 /************************************************************************/
-/*                        CPLWorkaroundLibXMLBug()                      */
+/*                       CPLWorkaroundLibXMLBug()                       */
 /************************************************************************/
 
 // Return TRUE if the current node must be destroyed.
@@ -368,7 +368,7 @@ static bool CPLWorkaroundLibXMLBug(CPLXMLNode *psIter)
 #endif
 
 /************************************************************************/
-/*                       CPLLoadSchemaStrInternal()                     */
+/*                      CPLLoadSchemaStrInternal()                      */
 /************************************************************************/
 
 static CPLXMLNode *CPLLoadSchemaStrInternal(CPLHashSet *hSetSchemas,
@@ -540,7 +540,7 @@ static CPLXMLNode *CPLLoadSchemaStrInternal(CPLHashSet *hSetSchemas,
 }
 
 /************************************************************************/
-/*                       CPLMoveImportAtBeginning()                     */
+/*                      CPLMoveImportAtBeginning()                      */
 /************************************************************************/
 
 static void CPLMoveImportAtBeginning(CPLXMLNode *psXML)
@@ -581,7 +581,7 @@ static void CPLMoveImportAtBeginning(CPLXMLNode *psXML)
 }
 
 /************************************************************************/
-/*                           CPLLoadSchemaStr()                         */
+/*                          CPLLoadSchemaStr()                          */
 /************************************************************************/
 
 static char *CPLLoadSchemaStr(const char *pszXSDFilename)
@@ -607,7 +607,7 @@ static char *CPLLoadSchemaStr(const char *pszXSDFilename)
 }
 
 /************************************************************************/
-/*                           CPLFindLocalXSD()                          */
+/*                          CPLFindLocalXSD()                           */
 /************************************************************************/
 
 static CPLString CPLFindLocalXSD(const char *pszXSDFilename)
@@ -882,7 +882,7 @@ static xmlParserInputPtr CPLExternalEntityLoader(const char *URL,
 }
 
 /************************************************************************/
-/*                    CPLLibXMLWarningErrorCallback()                   */
+/*                   CPLLibXMLWarningErrorCallback()                    */
 /************************************************************************/
 
 static void CPLLibXMLWarningErrorCallback(void *ctx, const char *msg, ...)
@@ -917,7 +917,7 @@ static void CPLLibXMLWarningErrorCallback(void *ctx, const char *msg, ...)
 }
 
 /************************************************************************/
-/*                      CPLLoadContentFromFile()                        */
+/*                       CPLLoadContentFromFile()                       */
 /************************************************************************/
 
 static char *CPLLoadContentFromFile(const char *pszFilename)
@@ -962,7 +962,7 @@ static char *CPLLoadContentFromFile(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                         CPLLoadXMLSchema()                           */
+/*                          CPLLoadXMLSchema()                          */
 /************************************************************************/
 
 typedef void *CPLXMLSchemaPtr;
@@ -975,7 +975,6 @@ typedef void *CPLXMLSchemaPtr;
  * @param pszXSDFilename XSD schema to load.
  * @return a handle to the parsed XML schema, or NULL in case of failure.
  *
- * @since GDAL 1.10.0
  */
 
 static CPLXMLSchemaPtr CPLLoadXMLSchema(const char *pszXSDFilename)
@@ -1006,7 +1005,7 @@ static CPLXMLSchemaPtr CPLLoadXMLSchema(const char *pszXSDFilename)
 }
 
 /************************************************************************/
-/*                         CPLFreeXMLSchema()                           */
+/*                          CPLFreeXMLSchema()                          */
 /************************************************************************/
 
 /**
@@ -1014,7 +1013,6 @@ static CPLXMLSchemaPtr CPLLoadXMLSchema(const char *pszXSDFilename)
  *
  * @param pSchema a handle to the parsed XML schema.
  *
- * @since GDAL 1.10.0
  */
 
 static void CPLFreeXMLSchema(CPLXMLSchemaPtr pSchema)
@@ -1024,7 +1022,7 @@ static void CPLFreeXMLSchema(CPLXMLSchemaPtr pSchema)
 }
 
 /************************************************************************/
-/*                          CPLValidateXML()                            */
+/*                           CPLValidateXML()                           */
 /************************************************************************/
 
 /**
@@ -1035,7 +1033,6 @@ static void CPLFreeXMLSchema(CPLXMLSchemaPtr pSchema)
  * @param papszOptions unused for now. Set to NULL.
  * @return TRUE if the XML file validates against the XML schema.
  *
- * @since GDAL 1.10.0
  */
 
 int CPLValidateXML(const char *pszXMLFilename, const char *pszXSDFilename,
@@ -1205,7 +1202,7 @@ int CPLValidateXML(const char *pszXMLFilename, const char *pszXSDFilename,
 #else  // HAVE_RECENT_LIBXML2
 
 /************************************************************************/
-/*                          CPLValidateXML()                            */
+/*                           CPLValidateXML()                           */
 /************************************************************************/
 
 int CPLValidateXML(const char * /* pszXMLFilename */,

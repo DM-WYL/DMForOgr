@@ -16,6 +16,10 @@
 #include "cpl_vsi.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 /************************************************************************/
 /* ==================================================================== */
@@ -40,12 +44,12 @@ class AirSARDataset final : public GDALPamDataset
 
     CPLErr LoadLine(int iLine);
 
-    static char **ReadHeader(VSILFILE *fp, int nFileOffset,
+    static char **ReadHeader(VSILFILE *fp, vsi_l_offset nFileOffset,
                              const char *pszPrefix, int nMaxLines);
 
   public:
     AirSARDataset();
-    ~AirSARDataset();
+    ~AirSARDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
 };
@@ -348,7 +352,7 @@ CPLErr AirSARDataset::LoadLine(int iLine)
 /*      blank record or some zero bytes.                                */
 /************************************************************************/
 
-char **AirSARDataset::ReadHeader(VSILFILE *fp, int nFileOffset,
+char **AirSARDataset::ReadHeader(VSILFILE *fp, vsi_l_offset nFileOffset,
                                  const char *pszPrefix, int nMaxLines)
 
 {
@@ -557,13 +561,14 @@ GDALDataset *AirSARDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      Read and merge parameter header into metadata.  Prefix          */
     /*      parameter header values with PH_.                               */
     /* -------------------------------------------------------------------- */
-    int nPHOffset = 0;
+    vsi_l_offset nPHOffset = 0;
 
     if (CSLFetchNameValue(papszMD, "MH_BYTE_OFFSET_OF_PARAMETER_HEADER") !=
         nullptr)
     {
-        nPHOffset = atoi(
-            CSLFetchNameValue(papszMD, "MH_BYTE_OFFSET_OF_PARAMETER_HEADER"));
+        nPHOffset = std::strtoull(
+            CSLFetchNameValue(papszMD, "MH_BYTE_OFFSET_OF_PARAMETER_HEADER"),
+            nullptr, 0);
         char **papszPHInfo = ReadHeader(poDS->fp, nPHOffset, "PH", 100);
 
         papszMD = CSLInsertStrings(papszMD, CSLCount(papszMD), papszPHInfo);

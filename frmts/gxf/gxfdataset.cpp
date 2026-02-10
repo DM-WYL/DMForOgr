@@ -13,6 +13,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "gxfopen.h"
 
 /************************************************************************/
@@ -35,7 +39,7 @@ class GXFDataset final : public GDALPamDataset
 
   public:
     GXFDataset();
-    ~GXFDataset();
+    ~GXFDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
 
@@ -57,7 +61,7 @@ class GXFRasterBand final : public GDALPamRasterBand
     GXFRasterBand(GXFDataset *, int);
     double GetNoDataValue(int *bGotNoDataValue) override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
 };
 
 /************************************************************************/
@@ -77,7 +81,7 @@ GXFRasterBand::GXFRasterBand(GXFDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                          GetNoDataValue()                          */
+/*                           GetNoDataValue()                           */
 /************************************************************************/
 
 double GXFRasterBand::GetNoDataValue(int *bGotNoDataValue)
@@ -189,7 +193,7 @@ CPLErr GXFDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                         GetSpatialRef()                              */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *GXFDataset::GetSpatialRef() const

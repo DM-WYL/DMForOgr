@@ -37,9 +37,7 @@ if test "${CIFUZZ:-}" = "True"; then
   echo "Running under CI fuzz"
 
   PACKAGES="zlib1g-dev${ARCH_SUFFIX} libexpat-dev${ARCH_SUFFIX} liblzma-dev${ARCH_SUFFIX} \
-          libgif-dev${ARCH_SUFFIX} \
           libjpeg-dev${ARCH_SUFFIX} \
-          libwebp-dev${ARCH_SUFFIX} \
           libzstd-dev${ARCH_SUFFIX} \
           libsqlite3-dev${ARCH_SUFFIX}"
   apt-get install -y $PACKAGES sqlite3
@@ -70,6 +68,7 @@ if test "${CIFUZZ:-}" = "True"; then
         -DOGR_ENABLE_DRIVER_SQLITE:BOOL=ON \
         -DGDAL_ENABLE_DRIVER_ZARR:BOOL=ON \
         -DGDAL_USE_PNG_INTERNAL=ON \
+        -DGDAL_USE_GIF_INTERNAL=ON \
         -DGDAL_USE_TIFF_INTERNAL=ON \
         -DGDAL_USE_GEOTIFF_INTERNAL=ON
   make -j$(nproc) GDAL
@@ -88,7 +87,7 @@ if test "${CIFUZZ:-}" = "True"; then
             $LIB_FUZZING_ENGINE \
             -L$SRC_DIR/build -lgdal \
             -lproj \
-            -Wl,-Bstatic -lzstd -lwebp -llzma -lexpat -lsqlite3 -lgif -ljpeg -lz \
+            -Wl,-Bstatic -lzstd -llzma -lexpat -lsqlite3 -ljpeg -lz \
             -Wl,-Bdynamic -ldl -lpthread -lclang_rt.builtins
 
   echo "Building ogr_fuzzer"
@@ -102,7 +101,7 @@ if test "${CIFUZZ:-}" = "True"; then
             $LIB_FUZZING_ENGINE \
             -L$SRC_DIR/build -lgdal \
             -L$SRC/install/lib -lproj \
-            -Wl,-Bstatic -lzstd -lwebp -llzma -lexpat -lsqlite3 -lgif -ljpeg -lz \
+            -Wl,-Bstatic -lzstd -llzma -lexpat -lsqlite3 -ljpeg -lz \
             -Wl,-Bdynamic -ldl -lpthread -lclang_rt.builtins
 
   echo "Building gdal_fuzzer_seed_corpus.zip"
@@ -128,7 +127,8 @@ rm -rf proj
 git clone --depth 1 https://github.com/OSGeo/PROJ proj
 
 rm -rf curl
-git clone --depth 1 https://github.com/curl/curl.git curl
+# Pin to 8.17.0 as later versions require openssl 3.0 that Ubuntu 20.04 doesn't provide
+git clone --depth 1 --branch curl-8_17_0 https://github.com/curl/curl.git curl
 
 rm -rf netcdf-c-4.7.4
 # fix_stack_read_overflow_ncindexlookup.patch: https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=39189
@@ -169,15 +169,25 @@ curl -L https://github.com/beltoforion/muparser/archive/refs/tags/v2.3.5.tar.gz 
   mv muparser-2.3.5 muparser && \
   rm v2.3.5.tar.gz
 
+rm -rf tiff
+curl -L http://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz > tiff-4.7.1.tar.gz && \
+  tar xzf tiff-4.7.1.tar.gz && \
+  mv tiff-4.7.1 tiff && \
+  rm tiff-4.7.1.tar.gz
+
+rm -rf libaec
+git clone --depth 1 --branch fix_ossfuzz_478301093 https://github.com/rouault/libaec
+
 # libxerces-c-dev${ARCH_SUFFIX}
 # libsqlite3-dev${ARCH_SUFFIX}
 PACKAGES="zlib1g-dev${ARCH_SUFFIX} libexpat-dev${ARCH_SUFFIX} liblzma-dev${ARCH_SUFFIX} \
-          libpng-dev${ARCH_SUFFIX} libgif-dev${ARCH_SUFFIX} \
+          libpng-dev${ARCH_SUFFIX} \
           libjpeg-dev${ARCH_SUFFIX} \
           libwebp-dev${ARCH_SUFFIX} \
           libzstd-dev${ARCH_SUFFIX} \
           libssl-dev${ARCH_SUFFIX} \
-          libfreetype6-dev${ARCH_SUFFIX} libfontconfig1-dev${ARCH_SUFFIX} libtiff5-dev${ARCH_SUFFIX} libboost-dev${ARCH_SUFFIX}"
+          libdeflate-dev${ARCH_SUFFIX} \
+          libfreetype6-dev${ARCH_SUFFIX} libfontconfig1-dev${ARCH_SUFFIX} libboost-dev${ARCH_SUFFIX}"
 
 if [ "$ARCHITECTURE" = "x86_64" ]; then
   PACKAGES="${PACKAGES} libnetcdf-dev${ARCH_SUFFIX}"
@@ -220,6 +230,16 @@ CFLAGS="$NON_FUZZING_CFLAGS" ./configure --prefix=$SRC/install
 make clean -s
 make -j$(nproc) -s
 make install
+cd ..
+
+# build libtiff
+cd tiff
+./configure --prefix=$SRC/install
+make clean -s
+make -j$(nproc) -s
+make install
+rm -f /usr/include/$ARCHITECTURE-linux-gnu/tiff*
+rm -f /usr/lib/$ARCHITECTURE-linux-gnu/libtiff*
 cd ..
 
 # build poppler
@@ -302,6 +322,8 @@ cmake . -DBUILD_SHARED_LIBS:BOOL=OFF \
         -DSQLITE3_LIBRARY:FILEPATH="$SRC/install/lib/libsqlite3.a" \
         -DCURL_INCLUDE_DIR:PATH="$SRC/install/include" \
         -DCURL_LIBRARY_RELEASE:FILEPATH="$SRC/install/lib/libcurl.a" \
+        -DTIFF_INCLUDE_DIR="$SRC/install" \
+        -DTIFF_LIBRARY_RELEASE="$SRC/install/lib/libtiff.a" \
         -DCMAKE_INSTALL_PREFIX=$SRC/install \
         -DBUILD_APPS:BOOL=OFF \
         -DBUILD_TESTING:BOOL=OFF
@@ -311,6 +333,19 @@ make -j$(nproc) -s
 make install
 cd ..
 
+# build libaec.a
+cd libaec
+rm -rf build
+mkdir build
+cd build
+cmake .. -DBUILD_STATIC_LIBS=ON -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$SRC/install
+make -j$(nproc) -s
+make install
+rm -f /usr/lib/$ARCHITECTURE-linux-gnu/libaec.*
+rm -f /usr/lib/$ARCHITECTURE-linux-gnu/libsz.*
+rm -f $SRC/install/lib/libaec.so*
+rm -f $SRC/install/lib/libsz.so*
+cd ../..
 
 if [ "$ARCHITECTURE" = "x86_64" ]; then
   # build libnetcdf.a
@@ -342,23 +377,25 @@ cmake .. \
     -DGDAL_USE_GEOTIFF_INTERNAL=ON \
     -DGDAL_USE_HDF5=OFF \
     -DGDAL_USE_PNG_INTERNAL=ON \
+    -DGDAL_USE_GIF_INTERNAL=ON \
     -DBUILD_APPS:BOOL=OFF  \
     -DBUILD_CSHARP_BINDINGS:BOOL=OFF  \
     -DBUILD_JAVA_BINDINGS:BOOL=OFF  \
     -DBUILD_PYTHON_BINDINGS:BOOL=OFF  \
     -DBUILD_TESTING:BOOL=OFF \
+    -DGDAL_USE_LIBXML2=OFF \
     -DPOPPLER_24_05_OR_LATER=ON
 make -j$(nproc)
 cd ..
 
 export EXTRA_LIBS="-Wl,-Bstatic "
 # curl related
-export EXTRA_LIBS="$EXTRA_LIBS -L$SRC/install/lib -lcurl -lssl -lcrypto -lz"
+export EXTRA_LIBS="$EXTRA_LIBS -L$SRC/install/lib -lcurl -lssl -lcrypto -lz -lbrotlidec -lbrotlicommon"
 # muparser
 export EXTRA_LIBS="$EXTRA_LIBS -lmuparser "
 # PROJ
 export EXTRA_LIBS="$EXTRA_LIBS -lproj -ltiff "
-export EXTRA_LIBS="$EXTRA_LIBS -ljbig -lzstd -lwebp -llzma -lexpat -L$SRC/install/lib -lsqlite3 -lgif -ljpeg -lpng -lz"
+export EXTRA_LIBS="$EXTRA_LIBS -ldeflate -lzstd -lwebp -lsharpyuv -llzma -lexpat -L$SRC/install/lib -lsqlite3 -ljpeg -lpng -lz"
 # Xerces-C related
 export EXTRA_LIBS="$EXTRA_LIBS -L$SRC/install/lib -lxerces-c"
 if [ "$ARCHITECTURE" = "x86_64" ]; then
@@ -367,6 +404,7 @@ if [ "$ARCHITECTURE" = "x86_64" ]; then
 fi
 # poppler related
 export EXTRA_LIBS="$EXTRA_LIBS -L$SRC/install/lib -lpoppler -ljpeg -lfreetype -lfontconfig -lpng"
+export EXTRA_LIBS="$EXTRA_LIBS -lbz2 -lz"
 export EXTRA_LIBS="$EXTRA_LIBS -Wl,-Bdynamic -ldl -lpthread -lclang_rt.builtins"
 
 # to find sqlite3.h

@@ -22,34 +22,175 @@
 /*                         OGRParquetDataset()                          */
 /************************************************************************/
 
-OGRParquetDataset::OGRParquetDataset(
-    const std::shared_ptr<arrow::MemoryPool> &poMemoryPool)
-    : OGRArrowDataset(poMemoryPool)
+OGRParquetDataset::OGRParquetDataset()
+    : OGRArrowDataset(arrow::MemoryPool::CreateDefault())
 {
 }
 
 /************************************************************************/
-/*                        ~OGRParquetDataset()                          */
+/*                         ~OGRParquetDataset()                         */
 /************************************************************************/
 
 OGRParquetDataset::~OGRParquetDataset()
 {
-    // libarrow might continue to do I/O in auxiliary threads on the underlying
-    // files when using the arrow::dataset API even after we closed the dataset.
-    // This is annoying as it can cause crashes when closing GDAL, in particular
-    // the virtual file manager, as this could result in VSI files being
-    // accessed after their VSIVirtualFileSystem has been destroyed, resulting
-    // in crashes. The workaround is to make sure that VSIArrowFileSystem
-    // waits for all file handles it is aware of to have been destroyed.
-    close();
-    auto poFS = std::dynamic_pointer_cast<VSIArrowFileSystem>(m_poFS);
-    if (poFS)
-        poFS->AskToClose();
+    OGRParquetDataset::Close();
 }
 
-/***********************************************************************/
-/*                            ExecuteSQL()                             */
-/***********************************************************************/
+/************************************************************************/
+/*                               Close()                                */
+/************************************************************************/
+
+CPLErr OGRParquetDataset::Close(GDALProgressFunc, void *)
+{
+    CPLErr eErr = CE_None;
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        // libarrow might continue to do I/O in auxiliary threads on the underlying
+        // files when using the arrow::dataset API even after we closed the dataset.
+        // This is annoying as it can cause crashes when closing GDAL, in particular
+        // the virtual file manager, as this could result in VSI files being
+        // accessed after their VSIVirtualFileSystem has been destroyed, resulting
+        // in crashes. The workaround is to make sure that VSIArrowFileSystem
+        // waits for all file handles it is aware of to have been destroyed.
+        eErr = OGRArrowDataset::Close();
+
+        auto poFS = std::dynamic_pointer_cast<VSIArrowFileSystem>(m_poFS);
+        if (poFS)
+            poFS->AskToClose();
+    }
+
+    return eErr;
+}
+
+/************************************************************************/
+/*                         CreateReaderLayer()                          */
+/************************************************************************/
+
+std::unique_ptr<OGRParquetLayer>
+OGRParquetDataset::CreateReaderLayer(const std::string &osFilename,
+                                     VSILFILE *&fpIn,
+                                     CSLConstList papszOpenOptionsIn)
+{
+    try
+    {
+        std::shared_ptr<arrow::io::RandomAccessFile> infile;
+        if (STARTS_WITH(osFilename.c_str(), "/vsi") ||
+            CPLTestBool(CPLGetConfigOption("OGR_PARQUET_USE_VSI", "NO")))
+        {
+            VSIVirtualHandleUniquePtr fp(fpIn);
+            fpIn = nullptr;
+            if (fp == nullptr)
+            {
+                fp.reset(VSIFOpenL(osFilename.c_str(), "rb"));
+                if (fp == nullptr)
+                    return nullptr;
+            }
+            infile = std::make_shared<OGRArrowRandomAccessFile>(osFilename,
+                                                                std::move(fp));
+        }
+        else
+        {
+            PARQUET_ASSIGN_OR_THROW(infile,
+                                    arrow::io::ReadableFile::Open(osFilename));
+        }
+
+        // Open Parquet file reader
+        std::unique_ptr<parquet::arrow::FileReader> arrow_reader;
+
+        const int nNumCPUs = OGRParquetLayerBase::GetNumCPUs();
+        const char *pszUseThreads =
+            CPLGetConfigOption("OGR_PARQUET_USE_THREADS", nullptr);
+        if (!pszUseThreads && nNumCPUs > 1)
+        {
+            pszUseThreads = "YES";
+        }
+        const bool bUseThreads = pszUseThreads && CPLTestBool(pszUseThreads);
+
+        const char *pszParquetBatchSize =
+            CPLGetConfigOption("OGR_PARQUET_BATCH_SIZE", nullptr);
+
+        auto poMemoryPool = GetMemoryPool();
+#if ARROW_VERSION_MAJOR >= 21
+        parquet::arrow::FileReaderBuilder fileReaderBuilder;
+        {
+            auto st = fileReaderBuilder.Open(std::move(infile));
+            if (!st.ok())
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "parquet::arrow::FileReaderBuilder::Open() failed: %s",
+                         st.message().c_str());
+                return nullptr;
+            }
+        }
+        fileReaderBuilder.memory_pool(poMemoryPool);
+        parquet::ArrowReaderProperties fileReaderProperties;
+        fileReaderProperties.set_arrow_extensions_enabled(CPLTestBool(
+            CPLGetConfigOption("OGR_PARQUET_ENABLE_ARROW_EXTENSIONS", "YES")));
+        if (pszParquetBatchSize)
+        {
+            fileReaderProperties.set_batch_size(
+                CPLAtoGIntBig(pszParquetBatchSize));
+        }
+        if (bUseThreads)
+        {
+            fileReaderProperties.set_use_threads(true);
+        }
+        fileReaderBuilder.properties(fileReaderProperties);
+        {
+            auto res = fileReaderBuilder.Build();
+            if (!res.ok())
+            {
+                CPLError(
+                    CE_Failure, CPLE_AppDefined,
+                    "parquet::arrow::FileReaderBuilder::Build() failed: %s",
+                    res.status().message().c_str());
+                return nullptr;
+            }
+            arrow_reader = std::move(*res);
+        }
+#elif ARROW_VERSION_MAJOR >= 19
+        PARQUET_ASSIGN_OR_THROW(
+            arrow_reader,
+            parquet::arrow::OpenFile(std::move(infile), poMemoryPool));
+#else
+        auto st = parquet::arrow::OpenFile(std::move(infile), poMemoryPool,
+                                           &arrow_reader);
+        if (!st.ok())
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "parquet::arrow::OpenFile() failed: %s",
+                     st.message().c_str());
+            return nullptr;
+        }
+#endif
+
+#if ARROW_VERSION_MAJOR < 21
+        if (pszParquetBatchSize)
+        {
+            arrow_reader->set_batch_size(CPLAtoGIntBig(pszParquetBatchSize));
+        }
+
+        if (bUseThreads)
+        {
+            arrow_reader->set_use_threads(true);
+        }
+#endif
+
+        return std::make_unique<OGRParquetLayer>(
+            this, CPLGetBasenameSafe(osFilename.c_str()).c_str(),
+            std::move(arrow_reader), papszOpenOptionsIn);
+    }
+    catch (const std::exception &e)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Parquet exception: %s",
+                 e.what());
+        return nullptr;
+    }
+}
+
+/************************************************************************/
+/*                             ExecuteSQL()                             */
+/************************************************************************/
 
 OGRLayer *OGRParquetDataset::ExecuteSQL(const char *pszSQLCommand,
                                         OGRGeometry *poSpatialFilter,
@@ -113,13 +254,14 @@ OGRLayer *OGRParquetDataset::ExecuteSQL(const char *pszSQLCommand,
                     OGR_RawField_SetNull(&sField);
                     OGRFieldType eType = OFTReal;
                     OGRFieldSubType eSubType = OFSTNone;
-                    const int iCol =
+                    const std::vector<int> anCols =
                         iOGRField == OGRParquetLayer::OGR_FID_INDEX
-                            ? poLayer->GetFIDParquetColumn()
-                            : poLayer->GetMapFieldIndexToParquetColumn()
-                                  [iOGRField];
-                    if (iCol < 0)
+                            ? std::vector<int>{poLayer->GetFIDParquetColumn()}
+                            : poLayer->GetParquetColumnIndicesForArrowField(
+                                  pszFieldName);
+                    if (anCols.size() != 1 || anCols[0] < 0)
                         break;
+                    const int iCol = anCols[0];
                     const auto metadata =
                         poLayer->GetReader()->parquet_reader()->metadata();
                     const auto numRowGroups = metadata->num_row_groups();
@@ -242,11 +384,10 @@ OGRLayer *OGRParquetDataset::ExecuteSQL(const char *pszSQLCommand,
                     {
                         poMemLayer =
                             new OGRMemLayer("SELECT", nullptr, wkbNone);
-                        OGRFeature *poFeature =
-                            new OGRFeature(poMemLayer->GetLayerDefn());
+                        auto poFeature = std::make_unique<OGRFeature>(
+                            poMemLayer->GetLayerDefn());
                         CPL_IGNORE_RET_VAL(
-                            poMemLayer->CreateFeature(poFeature));
-                        delete poFeature;
+                            poMemLayer->CreateFeature(std::move(poFeature)));
                     }
 
                     const char *pszMinMaxFieldName =
@@ -261,10 +402,11 @@ OGRLayer *OGRParquetDataset::ExecuteSQL(const char *pszSQLCommand,
                     oFieldDefn.SetSubType(eSubType);
                     poMemLayer->CreateField(&oFieldDefn);
 
-                    OGRFeature *poFeature = poMemLayer->GetFeature(0);
+                    auto poFeature =
+                        std::unique_ptr<OGRFeature>(poMemLayer->GetFeature(0));
                     poFeature->SetField(oFieldDefn.GetNameRef(), &sField);
-                    CPL_IGNORE_RET_VAL(poMemLayer->SetFeature(poFeature));
-                    delete poFeature;
+                    CPL_IGNORE_RET_VAL(
+                        poMemLayer->SetFeature(std::move(poFeature)));
                 }
                 if (i != oSelect.result_columns())
                 {
@@ -280,12 +422,35 @@ OGRLayer *OGRParquetDataset::ExecuteSQL(const char *pszSQLCommand,
         }
     }
 
+    else if (EQUAL(pszSQLCommand, "GET_SET_FILES_ASKED_TO_BE_OPEN") &&
+             pszDialect && EQUAL(pszDialect, "_DEBUG_"))
+    {
+        if (auto poFS = dynamic_cast<VSIArrowFileSystem *>(m_poFS.get()))
+        {
+            auto poMemLayer = std::make_unique<OGRMemLayer>(
+                "SET_FILES_ASKED_TO_BE_OPEN", nullptr, wkbNone);
+            OGRFieldDefn oFieldDefn("path", OFTString);
+            CPL_IGNORE_RET_VAL(poMemLayer->CreateField(&oFieldDefn));
+            for (const std::string &path : poFS->GetSetFilesAskedToOpen())
+            {
+                auto poFeature =
+                    std::make_unique<OGRFeature>(poMemLayer->GetLayerDefn());
+                poFeature->SetField(0, path.c_str());
+                CPL_IGNORE_RET_VAL(
+                    poMemLayer->CreateFeature(std::move(poFeature)));
+            }
+            poFS->ResetSetFilesAskedToOpen();
+            return poMemLayer.release();
+        }
+        return nullptr;
+    }
+
     return GDALDataset::ExecuteSQL(pszSQLCommand, poSpatialFilter, pszDialect);
 }
 
-/***********************************************************************/
-/*                           ReleaseResultSet()                        */
-/***********************************************************************/
+/************************************************************************/
+/*                          ReleaseResultSet()                          */
+/************************************************************************/
 
 void OGRParquetDataset::ReleaseResultSet(OGRLayer *poResultsSet)
 {

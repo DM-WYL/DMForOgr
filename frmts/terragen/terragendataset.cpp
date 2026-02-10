@@ -88,6 +88,10 @@
 #include "cpl_string.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #include <cmath>
@@ -148,15 +152,15 @@ class TerragenDataset final : public GDALPamDataset
 
   public:
     TerragenDataset();
-    virtual ~TerragenDataset();
+    ~TerragenDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
-    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
@@ -169,7 +173,7 @@ class TerragenDataset final : public GDALPamDataset
 
     bool skip(size_t n)
     {
-        return 0 == VSIFSeekL(m_fp, n, SEEK_CUR);
+        return 0 == VSIFSeekL(m_fp, static_cast<vsi_l_offset>(n), SEEK_CUR);
     }
 
     bool pad(size_t n)
@@ -200,20 +204,20 @@ class TerragenRasterBand final : public GDALPamRasterBand
   public:
     explicit TerragenRasterBand(TerragenDataset *);
 
-    virtual ~TerragenRasterBand()
+    ~TerragenRasterBand() override
     {
         if (m_pvLine != nullptr)
             CPLFree(m_pvLine);
     }
 
     // Geomeasure support.
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual const char *GetUnitType() override;
-    virtual double GetOffset(int *pbSuccess = nullptr) override;
-    virtual double GetScale(int *pbSuccess = nullptr) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    const char *GetUnitType() override;
+    double GetOffset(int *pbSuccess = nullptr) override;
+    double GetScale(int *pbSuccess = nullptr) override;
 
-    virtual CPLErr IWriteBlock(int, int, void *) override;
-    virtual CPLErr SetUnitType(const char *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
+    CPLErr SetUnitType(const char *) override;
 };
 
 /************************************************************************/
@@ -253,10 +257,12 @@ CPLErr TerragenRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff, int nBlockYOff,
      -------------------------------------------------------------------- */
     const size_t rowbytes = nBlockXSize * sizeof(GInt16);
 
-    if (0 != VSIFSeekL(ds.m_fp,
-                       ds.m_nDataOffset +
-                           (ds.GetRasterYSize() - 1 - nBlockYOff) * rowbytes,
-                       SEEK_SET))
+    if (0 !=
+        VSIFSeekL(ds.m_fp,
+                  ds.m_nDataOffset + static_cast<vsi_l_offset>(
+                                         ds.GetRasterYSize() - 1 - nBlockYOff) *
+                                         rowbytes,
+                  SEEK_SET))
     {
         CPLError(CE_Failure, CPLE_FileIO, "Terragen Seek failed:%s",
                  VSIStrerror(errno));
@@ -323,7 +329,7 @@ double TerragenRasterBand::GetOffset(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                             IWriteBlock()                            */
+/*                            IWriteBlock()                             */
 /************************************************************************/
 
 CPLErr TerragenRasterBand::IWriteBlock(CPL_UNUSED int nBlockXOff,
@@ -349,7 +355,9 @@ CPLErr TerragenRasterBand::IWriteBlock(CPL_UNUSED int nBlockXOff,
     if (0 == VSIFSeekL(ds.m_fp,
                        ds.m_nDataOffset +
                            // Terragen is Y inverted.
-                           (ds.GetRasterYSize() - 1 - nBlockYOff) * rowbytes,
+                           static_cast<vsi_l_offset>(ds.GetRasterYSize() - 1 -
+                                                     nBlockYOff) *
+                               rowbytes,
                        SEEK_SET))
     {
         // Convert each float32 to int16.
@@ -845,7 +853,7 @@ CPLErr TerragenDataset::SetSpatialRef(const OGRSpatialReference *poSRS)
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *TerragenDataset::GetSpatialRef() const
@@ -877,11 +885,12 @@ CPLErr TerragenDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                                Create()                                */
+/*                               Create()                               */
 /************************************************************************/
 GDALDataset *TerragenDataset::Create(const char *pszFilename, int nXSize,
                                      int nYSize, int nBandsIn,
-                                     GDALDataType eType, char **papszOptions)
+                                     GDALDataType eType,
+                                     CSLConstList papszOptions)
 {
     TerragenDataset *poDS = new TerragenDataset();
 
@@ -1017,7 +1026,7 @@ GDALDataset *TerragenDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                        GDALRegister_Terragen()                       */
+/*                       GDALRegister_Terragen()                        */
 /************************************************************************/
 
 void GDALRegister_Terragen()

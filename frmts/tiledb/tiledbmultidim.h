@@ -23,7 +23,7 @@ constexpr const char *DIM_TYPE_ATTRIBUTE_NAME = "_DIM_TYPE";
 constexpr const char *DIM_DIRECTION_ATTRIBUTE_NAME = "_DIM_DIRECTION";
 
 /************************************************************************/
-/*                     TileDBSharedResource                            */
+/*                         TileDBSharedResource                         */
 /************************************************************************/
 
 class TileDBSharedResource
@@ -74,10 +74,10 @@ class TileDBSharedResource
 };
 
 /************************************************************************/
-/*                      TileDBAttributeHolder                           */
+/*                        TileDBAttributeHolder                         */
 /************************************************************************/
 
-class TileDBAttributeHolder
+class TileDBAttributeHolder /* non final */
 {
   private:
     mutable std::map<std::string, std::shared_ptr<GDALAttribute>>
@@ -136,7 +136,7 @@ class TileDBAttributeHolder
 };
 
 /************************************************************************/
-/*                          TileDBGroup                                 */
+/*                             TileDBGroup                              */
 /************************************************************************/
 
 class TileDBArray;
@@ -301,7 +301,7 @@ class TileDBGroup final : public GDALGroup, public TileDBAttributeHolder
 };
 
 /************************************************************************/
-/*                          TileDBArray                                 */
+/*                             TileDBArray                              */
 /************************************************************************/
 
 class TileDBArray final : public GDALMDArray, public TileDBAttributeHolder
@@ -503,7 +503,7 @@ class TileDBArray final : public GDALMDArray, public TileDBAttributeHolder
 };
 
 /************************************************************************/
-/*                       TileDBAttribute                                */
+/*                           TileDBAttribute                            */
 /************************************************************************/
 
 // Caution: TileDBAttribute implements a GDAL multidim attribute, which
@@ -572,7 +572,7 @@ class TileDBDimension final : public GDALDimension
 };
 
 /************************************************************************/
-/*                       TileDBArrayGroup                               */
+/*                           TileDBArrayGroup                           */
 /************************************************************************/
 
 class TileDBArrayGroup final : public GDALGroup
@@ -599,7 +599,7 @@ class TileDBArrayGroup final : public GDALGroup
 };
 
 /************************************************************************/
-/*                     TileDBMultiDimDataset                            */
+/*                        TileDBMultiDimDataset                         */
 /************************************************************************/
 
 class TileDBMultiDimDataset final : public GDALDataset

@@ -40,28 +40,28 @@ class OGRS57Layer final : public OGRLayer
   public:
     OGRS57Layer(OGRS57DataSource *poDS, OGRFeatureDefn *,
                 int nFeatureCount = -1, int nOBJL = -1);
-    virtual ~OGRS57Layer();
+    ~OGRS57Layer() override;
 
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;
     OGRFeature *GetNextUnfilteredFeature();
-    virtual OGRFeature *GetFeature(GIntBig nFeatureId) override;
+    OGRFeature *GetFeature(GIntBig nFeatureId) override;
 
-    virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
-    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
-                              bool bForce) override;
+    GIntBig GetFeatureCount(int bForce = TRUE) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
     const OGRFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
+    OGRErr ICreateFeature(OGRFeature *poFeature) override;
     int TestCapability(const char *) const override;
 };
 
 /************************************************************************/
-/*                          OGRS57DataSource                            */
+/*                           OGRS57DataSource                           */
 /************************************************************************/
 
 class OGRS57DataSource final : public GDALDataset
@@ -86,14 +86,14 @@ class OGRS57DataSource final : public GDALDataset
     CPL_DISALLOW_COPY_ASSIGN(OGRS57DataSource)
 
   public:
-    explicit OGRS57DataSource(char **papszOpenOptions = nullptr);
-    ~OGRS57DataSource();
+    explicit OGRS57DataSource(CSLConstList papszOpenOptions = nullptr);
+    ~OGRS57DataSource() override;
 
     void SetOptionList(char **);
     const char *GetOption(const char *);
 
     int Open(const char *pszName);
-    int Create(const char *pszName, char **papszOptions);
+    int Create(const char *pszName, CSLConstList papszOptions);
 
     int GetLayerCount() const override
     {
@@ -126,7 +126,7 @@ class OGRS57DataSource final : public GDALDataset
 };
 
 /************************************************************************/
-/*                            OGRS57Driver                              */
+/*                             OGRS57Driver                             */
 /************************************************************************/
 
 class OGRS57Driver final : public GDALDriver
@@ -135,12 +135,12 @@ class OGRS57Driver final : public GDALDriver
 
   public:
     OGRS57Driver();
-    ~OGRS57Driver();
+    ~OGRS57Driver() override;
 
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Create(const char *pszName, int nBands, int nXSize,
                                int nYSize, GDALDataType eDT,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
 
     static S57ClassRegistrar *GetS57Registrar();
 };

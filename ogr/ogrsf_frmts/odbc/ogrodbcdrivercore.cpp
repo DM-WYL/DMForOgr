@@ -10,12 +10,15 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "ogrsf_frmts.h"
 
 #include "ogrodbcdrivercore.h"
 
 /************************************************************************/
-/*                OGRODBCDriverIsSupportedMsAccessFileExtension()       */
+/*           OGRODBCDriverIsSupportedMsAccessFileExtension()            */
 /************************************************************************/
 
 bool OGRODBCDriverIsSupportedMsAccessFileExtension(const char *pszExtension)
@@ -26,7 +29,7 @@ bool OGRODBCDriverIsSupportedMsAccessFileExtension(const char *pszExtension)
 }
 
 /************************************************************************/
-/*                    OGRODBCDriverIdentify()                           */
+/*                       OGRODBCDriverIdentify()                        */
 /************************************************************************/
 
 int OGRODBCDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -53,7 +56,7 @@ int OGRODBCDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                  OGRODBCDriverSetCommonMetadata()                    */
+/*                   OGRODBCDriverSetCommonMetadata()                   */
 /************************************************************************/
 
 void OGRODBCDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -85,7 +88,7 @@ void OGRODBCDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredOGRODBCPlugin()                     */
+/*                    DeclareDeferredOGRODBCPlugin()                    */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

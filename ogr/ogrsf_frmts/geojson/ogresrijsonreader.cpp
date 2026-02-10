@@ -35,10 +35,13 @@
 #include "ogrgeojsonutils.h"
 #include "ogresrijsongeometry.h"
 
+#include <map>
+#include <utility>
+
 // #include "symbol_renames.h"
 
 /************************************************************************/
-/*                          OGRESRIJSONReader()                         */
+/*                         OGRESRIJSONReader()                          */
 /************************************************************************/
 
 OGRESRIJSONReader::OGRESRIJSONReader() : poGJObject_(nullptr), poLayer_(nullptr)
@@ -61,7 +64,7 @@ OGRESRIJSONReader::~OGRESRIJSONReader()
 }
 
 /************************************************************************/
-/*                           Parse()                                    */
+/*                               Parse()                                */
 /************************************************************************/
 
 OGRErr OGRESRIJSONReader::Parse(const char *pszText)
@@ -79,7 +82,7 @@ OGRErr OGRESRIJSONReader::Parse(const char *pszText)
 }
 
 /************************************************************************/
-/*                           ReadLayers()                               */
+/*                             ReadLayers()                             */
 /************************************************************************/
 
 void OGRESRIJSONReader::ReadLayers(OGRGeoJSONDataSource *poDS,
@@ -295,6 +298,21 @@ bool OGRESRIJSONReader::GenerateLayerDefn()
 /*                             ParseField()                             */
 /************************************************************************/
 
+static const std::map<std::string, std::pair<OGRFieldType, OGRFieldSubType>>
+    goMapEsriTypeToOGR = {
+        {"esriFieldTypeString", {OFTString, OFSTNone}},
+        {"esriFieldTypeSingle", {OFTReal, OFSTFloat32}},
+        {"esriFieldTypeDouble", {OFTReal, OFSTNone}},
+        {"esriFieldTypeSmallInteger", {OFTInteger, OFSTInt16}},
+        {"esriFieldTypeInteger", {OFTInteger, OFSTNone}},
+        {"esriFieldTypeDate", {OFTDateTime, OFSTNone}},
+        {"esriFieldTypeDateOnly", {OFTDate, OFSTNone}},
+        {"esriFieldTypeTimeOnly", {OFTTime, OFSTNone}},
+        {"esriFieldTypeBigInteger", {OFTInteger64, OFSTNone}},
+        {"esriFieldTypeGUID", {OFTString, OFSTUUID}},
+        {"esriFieldTypeGlobalID", {OFTString, OFSTUUID}},
+};
+
 bool OGRESRIJSONReader::ParseField(json_object *poObj)
 {
     OGRFeatureDefn *poDefn = poLayer_->GetLayerDefn();
@@ -313,43 +331,26 @@ bool OGRESRIJSONReader::ParseField(json_object *poObj)
         OGRFieldSubType eFieldSubType = OFSTNone;
         const char *pszObjName = json_object_get_string(poObjName);
         const char *pszObjType = json_object_get_string(poObjType);
-        if (EQUAL(pszObjType, "esriFieldTypeString"))
-        {
-            // do nothing
-        }
-        else if (EQUAL(pszObjType, "esriFieldTypeOID"))
+        if (strcmp(pszObjType, "esriFieldTypeOID") == 0)
         {
             eFieldType = OFTInteger;
             poLayer_->SetFIDColumn(pszObjName);
         }
-        else if (EQUAL(pszObjType, "esriFieldTypeSingle"))
-        {
-            eFieldType = OFTReal;
-            eFieldSubType = OFSTFloat32;
-        }
-        else if (EQUAL(pszObjType, "esriFieldTypeDouble"))
-        {
-            eFieldType = OFTReal;
-        }
-        else if (EQUAL(pszObjType, "esriFieldTypeSmallInteger"))
-        {
-            eFieldType = OFTInteger;
-            eFieldSubType = OFSTInt16;
-        }
-        else if (EQUAL(pszObjType, "esriFieldTypeInteger"))
-        {
-            eFieldType = OFTInteger;
-        }
-        else if (EQUAL(pszObjType, "esriFieldTypeDate"))
-        {
-            eFieldType = OFTDateTime;
-        }
         else
         {
-            CPLDebug("ESRIJSON",
-                     "Unhandled fields[\"%s\"].type = %s. "
-                     "Processing it as a String",
-                     pszObjName, pszObjType);
+            const auto it = goMapEsriTypeToOGR.find(pszObjType);
+            if (it != goMapEsriTypeToOGR.end())
+            {
+                eFieldType = it->second.first;
+                eFieldSubType = it->second.second;
+            }
+            else
+            {
+                CPLDebug("ESRIJSON",
+                         "Unhandled fields[\"%s\"].type = %s. "
+                         "Processing it as a String",
+                         pszObjName, pszObjType);
+            }
         }
         OGRFieldDefn fldDefn(pszObjName, eFieldType);
         fldDefn.SetSubType(eFieldSubType);
@@ -386,22 +387,21 @@ bool OGRESRIJSONReader::ParseField(json_object *poObj)
 }
 
 /************************************************************************/
-/*                           AddFeature                                 */
+/*                              AddFeature                              */
 /************************************************************************/
 
-bool OGRESRIJSONReader::AddFeature(OGRFeature *poFeature)
+bool OGRESRIJSONReader::AddFeature(std::unique_ptr<OGRFeature> poFeature)
 {
     if (nullptr == poFeature)
         return false;
 
-    poLayer_->AddFeature(poFeature);
-    delete poFeature;
+    poLayer_->AddFeature(std::move(poFeature));
 
     return true;
 }
 
 /************************************************************************/
-/*                           EsriDateToOGRDate()                        */
+/*                         EsriDateToOGRDate()                          */
 /************************************************************************/
 
 static void EsriDateToOGRDate(int64_t nVal, OGRField *psField)
@@ -424,7 +424,7 @@ static void EsriDateToOGRDate(int64_t nVal, OGRField *psField)
 }
 
 /************************************************************************/
-/*                           ReadFeature()                              */
+/*                            ReadFeature()                             */
 /************************************************************************/
 
 OGRFeature *OGRESRIJSONReader::ReadFeature(json_object *poObj)
@@ -531,7 +531,7 @@ OGRFeature *OGRESRIJSONReader::ReadFeature(json_object *poObj)
 }
 
 /************************************************************************/
-/*                           ReadFeatureCollection()                    */
+/*                       ReadFeatureCollection()                        */
 /************************************************************************/
 
 OGRGeoJSONLayer *OGRESRIJSONReader::ReadFeatureCollection(json_object *poObj)
@@ -557,9 +557,9 @@ OGRGeoJSONLayer *OGRESRIJSONReader::ReadFeatureCollection(json_object *poObj)
             if (poObjFeature != nullptr &&
                 json_object_get_type(poObjFeature) == json_type_object)
             {
-                OGRFeature *poFeature =
-                    OGRESRIJSONReader::ReadFeature(poObjFeature);
-                AddFeature(poFeature);
+                auto poFeature = std::unique_ptr<OGRFeature>(
+                    OGRESRIJSONReader::ReadFeature(poObjFeature));
+                AddFeature(std::move(poFeature));
             }
         }
     }

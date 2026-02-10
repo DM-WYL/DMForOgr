@@ -108,7 +108,7 @@ class VSIWebHDFSFSHandler final : public VSICurlFilesystemHandlerBaseWritable
 };
 
 /************************************************************************/
-/*                            VSIWebHDFSHandle                          */
+/*                           VSIWebHDFSHandle                           */
 /************************************************************************/
 
 class VSIWebHDFSHandle final : public VSICurlHandle
@@ -138,7 +138,7 @@ class VSIWebHDFSHandle final : public VSICurlHandle
 };
 
 /************************************************************************/
-/*                           PatchWebHDFSUrl()                          */
+/*                          PatchWebHDFSUrl()                           */
 /************************************************************************/
 
 static std::string PatchWebHDFSUrl(const std::string &osURLIn,
@@ -173,7 +173,7 @@ static std::string GetWebHDFSDataNodeHost(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                         VSIWebHDFSWriteHandle                        */
+/*                        VSIWebHDFSWriteHandle                         */
 /************************************************************************/
 
 class VSIWebHDFSWriteHandle final : public VSIAppendWriteHandle
@@ -194,7 +194,7 @@ class VSIWebHDFSWriteHandle final : public VSIAppendWriteHandle
 
   public:
     VSIWebHDFSWriteHandle(VSIWebHDFSFSHandler *poFS, const char *pszFilename);
-    virtual ~VSIWebHDFSWriteHandle();
+    ~VSIWebHDFSWriteHandle() override;
 };
 
 /************************************************************************/
@@ -221,7 +221,7 @@ static int GetWebHDFSBufferSize()
 }
 
 /************************************************************************/
-/*                      VSIWebHDFSWriteHandle()                         */
+/*                       VSIWebHDFSWriteHandle()                        */
 /************************************************************************/
 
 VSIWebHDFSWriteHandle::VSIWebHDFSWriteHandle(VSIWebHDFSFSHandler *poFS,
@@ -250,7 +250,7 @@ VSIWebHDFSWriteHandle::VSIWebHDFSWriteHandle(VSIWebHDFSFSHandler *poFS,
 }
 
 /************************************************************************/
-/*                     ~VSIWebHDFSWriteHandle()                         */
+/*                       ~VSIWebHDFSWriteHandle()                       */
 /************************************************************************/
 
 VSIWebHDFSWriteHandle::~VSIWebHDFSWriteHandle()
@@ -259,7 +259,7 @@ VSIWebHDFSWriteHandle::~VSIWebHDFSWriteHandle()
 }
 
 /************************************************************************/
-/*                    InvalidateParentDirectory()                       */
+/*                     InvalidateParentDirectory()                      */
 /************************************************************************/
 
 void VSIWebHDFSWriteHandle::InvalidateParentDirectory()
@@ -274,7 +274,7 @@ void VSIWebHDFSWriteHandle::InvalidateParentDirectory()
 }
 
 /************************************************************************/
-/*                             Send()                                   */
+/*                                Send()                                */
 /************************************************************************/
 
 bool VSIWebHDFSWriteHandle::Send(bool /* bIsLastBlock */)
@@ -285,7 +285,7 @@ bool VSIWebHDFSWriteHandle::Send(bool /* bIsLastBlock */)
 }
 
 /************************************************************************/
-/*                           CreateFile()                               */
+/*                             CreateFile()                             */
 /************************************************************************/
 
 bool VSIWebHDFSWriteHandle::CreateFile()
@@ -389,7 +389,7 @@ retry:
 }
 
 /************************************************************************/
-/*                             Append()                                 */
+/*                               Append()                               */
 /************************************************************************/
 
 bool VSIWebHDFSWriteHandle::Append()
@@ -499,7 +499,7 @@ bool VSIWebHDFSWriteHandle::Append()
 }
 
 /************************************************************************/
-/*                          CreateWriteHandle()                         */
+/*                         CreateWriteHandle()                          */
 /************************************************************************/
 
 VSIVirtualHandleUniquePtr
@@ -515,7 +515,7 @@ VSIWebHDFSFSHandler::CreateWriteHandle(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                           GetOptions()                               */
+/*                             GetOptions()                             */
 /************************************************************************/
 
 const char *VSIWebHDFSFSHandler::GetOptions()
@@ -550,7 +550,7 @@ VSICurlHandle *VSIWebHDFSFSHandler::CreateFileHandle(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                          GetURLFromFilename()                        */
+/*                         GetURLFromFilename()                         */
 /************************************************************************/
 
 std::string
@@ -560,7 +560,7 @@ VSIWebHDFSFSHandler::GetURLFromFilename(const std::string &osFilename) const
 }
 
 /************************************************************************/
-/*                           GetFileList()                              */
+/*                            GetFileList()                             */
 /************************************************************************/
 
 char **VSIWebHDFSFSHandler::GetFileList(const char *pszDirname,
@@ -640,6 +640,14 @@ char **VSIWebHDFSFSHandler::GetFileList(const char *pszDirname,
                 // case the file entry is reported but with an empty pathSuffix
                 if (!osName.empty())
                 {
+                    if (CPLHasUnbalancedPathTraversal(osName.c_str()))
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "Ignoring pathSuffix '%s' that has a path "
+                                 "traversal pattern",
+                                 osName.c_str());
+                        continue;
+                    }
                     aosList.AddString(osName.c_str());
 
                     FileProp prop;
@@ -886,7 +894,7 @@ int VSIWebHDFSFSHandler::Mkdir(const char *pszDirname, long nMode)
 }
 
 /************************************************************************/
-/*                            VSIWebHDFSHandle()                        */
+/*                          VSIWebHDFSHandle()                          */
 /************************************************************************/
 
 VSIWebHDFSHandle::VSIWebHDFSHandle(VSIWebHDFSFSHandler *poFSIn,
@@ -906,7 +914,7 @@ VSIWebHDFSHandle::VSIWebHDFSHandle(VSIWebHDFSFSHandler *poFSIn,
 }
 
 /************************************************************************/
-/*                           GetFileSize()                              */
+/*                            GetFileSize()                             */
 /************************************************************************/
 
 vsi_l_offset VSIWebHDFSHandle::GetFileSize(bool bSetError)
@@ -1017,7 +1025,7 @@ vsi_l_offset VSIWebHDFSHandle::GetFileSize(bool bSetError)
 }
 
 /************************************************************************/
-/*                          DownloadRegion()                            */
+/*                           DownloadRegion()                           */
 /************************************************************************/
 
 std::string VSIWebHDFSHandle::DownloadRegion(const vsi_l_offset startOffset,
@@ -1191,12 +1199,12 @@ retry:
  See :ref:`/vsiwebhdfs/ documentation <vsiwebhdfs>`
  \endverbatim
 
- @since GDAL 2.4
  */
 void VSIInstallWebHdfsHandler(void)
 {
     VSIFileManager::InstallHandler(
-        "/vsiwebhdfs/", new cpl::VSIWebHDFSFSHandler("/vsiwebhdfs/"));
+        "/vsiwebhdfs/",
+        std::make_shared<cpl::VSIWebHDFSFSHandler>("/vsiwebhdfs/"));
 }
 
 #endif /* HAVE_CURL */

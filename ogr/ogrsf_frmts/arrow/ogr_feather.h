@@ -38,7 +38,7 @@ constexpr const char *GDAL_GEO_FOOTER_KEY = "gdal:geo";
 constexpr const char *ARROW_DRIVER_NAME_UC = "ARROW";
 
 /************************************************************************/
-/*                        OGRFeatherLayer                               */
+/*                           OGRFeatherLayer                            */
 /************************************************************************/
 
 class OGRFeatherDataset;
@@ -68,7 +68,7 @@ class OGRFeatherLayer final : public OGRArrowLayer
 
     CPLStringList m_aosFeatherMetadata{};
 
-    virtual std::string GetDriverUCName() const override
+    std::string GetDriverUCName() const override
     {
         return ARROW_DRIVER_NAME_UC;
     }
@@ -85,7 +85,7 @@ class OGRFeatherLayer final : public OGRArrowLayer
 
     OGRFeature *GetNextRawFeature();
 
-    virtual bool CanRunNonForcedGetExtent() override;
+    bool CanRunNonForcedGetExtent() override;
 
     bool
     CanPostFilterArrowArray(const struct ArrowSchema *schema) const override;
@@ -97,19 +97,21 @@ class OGRFeatherLayer final : public OGRArrowLayer
   public:
     OGRFeatherLayer(OGRFeatherDataset *poDS, const char *pszLayerName,
                     std::shared_ptr<arrow::ipc::RecordBatchFileReader>
-                        &poRecordBatchFileReader);
+                        &poRecordBatchFileReader,
+                    CSLConstList papszOpenOptions);
     OGRFeatherLayer(OGRFeatherDataset *poDS, const char *pszLayerName,
                     std::shared_ptr<arrow::io::RandomAccessFile> poFile,
                     bool bSeekable, const arrow::ipc::IpcReadOptions &oOptions,
                     std::shared_ptr<arrow::ipc::RecordBatchStreamReader>
-                        &poRecordBatchStreamReader);
+                        &poRecordBatchStreamReader,
+                    CSLConstList papszOpenOptions);
 
     void ResetReading() override;
     int TestCapability(const char *pszCap) const override;
     GIntBig GetFeatureCount(int bForce) override;
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain = "") override;
-    char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
 
     GDALDataset *GetDataset() override;
 
@@ -118,7 +120,7 @@ class OGRFeatherLayer final : public OGRArrowLayer
 };
 
 /************************************************************************/
-/*                         OGRFeatherDataset                            */
+/*                          OGRFeatherDataset                           */
 /************************************************************************/
 
 class OGRFeatherDataset final : public OGRArrowDataset
@@ -145,20 +147,20 @@ class OGRFeatherWriterLayer final : public OGRArrowWriterLayer
     std::shared_ptr<arrow::ipc::RecordBatchWriter> m_poFileWriter{};
     std::shared_ptr<arrow::KeyValueMetadata> m_poFooterKeyValueMetadata{};
 
-    virtual bool IsFileWriterCreated() const override
+    bool IsFileWriterCreated() const override
     {
         return m_poFileWriter != nullptr;
     }
 
-    virtual void CreateWriter() override;
-    virtual bool CloseFileWriter() override;
+    void CreateWriter() override;
+    bool CloseFileWriter() override;
 
-    virtual void CreateSchema() override;
-    virtual void PerformStepsBeforeFinalFlushGroup() override;
+    void CreateSchema() override;
+    void PerformStepsBeforeFinalFlushGroup() override;
 
-    virtual bool FlushGroup() override;
+    bool FlushGroup() override;
 
-    virtual std::string GetDriverUCName() const override
+    std::string GetDriverUCName() const override
     {
         return ARROW_DRIVER_NAME_UC;
     }
@@ -166,7 +168,7 @@ class OGRFeatherWriterLayer final : public OGRArrowWriterLayer
     virtual bool
     IsSupportedGeometryType(OGRwkbGeometryType eGType) const override;
 
-    virtual bool IsSRSRequired() const override
+    bool IsSRSRequired() const override
     {
         return true;
     }
@@ -195,7 +197,7 @@ class OGRFeatherWriterLayer final : public OGRArrowWriterLayer
 };
 
 /************************************************************************/
-/*                        OGRFeatherWriterDataset                       */
+/*                       OGRFeatherWriterDataset                        */
 /************************************************************************/
 
 class OGRFeatherWriterDataset final : public GDALPamDataset
@@ -212,7 +214,7 @@ class OGRFeatherWriterDataset final : public GDALPamDataset
 
     ~OGRFeatherWriterDataset() override;
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
     arrow::MemoryPool *GetMemoryPool() const
     {

@@ -74,7 +74,7 @@ OGRDWGLayer::OGRDWGLayer(OGRDWGDataSource *poDSIn)
 }
 
 /************************************************************************/
-/*                           ~OGRDWGLayer()                           */
+/*                            ~OGRDWGLayer()                            */
 /************************************************************************/
 
 OGRDWGLayer::~OGRDWGLayer()
@@ -1086,7 +1086,7 @@ class GeometryInsertTransformer : public OGRCoordinateTransformation
         return new GeometryInsertTransformer(*this);
     }
 
-    virtual OGRCoordinateTransformation *GetInverse() const override
+    OGRCoordinateTransformation *GetInverse() const override
     {
         return nullptr;
     }
@@ -1122,7 +1122,7 @@ class GeometryInsertTransformer : public OGRCoordinateTransformation
 };
 
 /************************************************************************/
-/*                        Translate3DFACE()                             */
+/*                          Translate3DFACE()                           */
 /************************************************************************/
 
 OGRFeature *OGRDWGLayer::Translate3DFACE(OdDbEntityPtr poEntity)

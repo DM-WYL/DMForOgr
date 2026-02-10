@@ -39,13 +39,13 @@ class GNMFileNetwork : public GNMGenericNetwork
 {
   public:
     GNMFileNetwork();
-    virtual ~GNMFileNetwork();
-    virtual CPLErr Open(GDALOpenInfo *poOpenInfo) override;
-    virtual CPLErr Delete() override;
-    virtual int CloseDependentDatasets() override;
-    virtual OGRErr DeleteLayer(int) override;
+    ~GNMFileNetwork() override;
+    CPLErr Open(GDALOpenInfo *poOpenInfo) override;
+    CPLErr Delete() override;
+    int CloseDependentDatasets() override;
+    OGRErr DeleteLayer(int) override;
     virtual CPLErr Create(const char *pszFilename,
-                          char **papszOptions) override;
+                          CSLConstList papszOptions) override;
 
   protected:
     OGRLayer *ICreateLayer(const char *pszName,
@@ -53,27 +53,27 @@ class GNMFileNetwork : public GNMGenericNetwork
                            CSLConstList papszOptions) override;
 
     virtual int CheckNetworkExist(const char *pszFilename,
-                                  char **papszOptions) override;
+                                  CSLConstList papszOptions) override;
 
   protected:
     virtual CPLErr CreateMetadataLayerFromFile(const char *pszFilename,
                                                int nVersion,
-                                               char **papszOptions);
-    virtual CPLErr StoreNetworkSrs() override;
-    virtual CPLErr LoadNetworkSrs() override;
-    virtual CPLErr DeleteMetadataLayer() override;
+                                               CSLConstList papszOptions);
+    CPLErr StoreNetworkSrs() override;
+    CPLErr LoadNetworkSrs() override;
+    CPLErr DeleteMetadataLayer() override;
     virtual CPLErr CreateGraphLayerFromFile(const char *pszFilename,
-                                            char **papszOptions);
-    virtual CPLErr DeleteGraphLayer() override;
+                                            CSLConstList papszOptions);
+    CPLErr DeleteGraphLayer() override;
     virtual CPLErr CreateFeaturesLayerFromFile(const char *pszFilename,
-                                               char **papszOptions);
-    virtual CPLErr DeleteFeaturesLayer() override;
-    virtual CPLErr DeleteNetworkLayers() override;
-    virtual CPLErr LoadNetworkLayer(const char *pszLayername) override;
-    virtual bool CheckStorageDriverSupport(const char *pszDriverName) override;
+                                               CSLConstList papszOptions);
+    CPLErr DeleteFeaturesLayer() override;
+    CPLErr DeleteNetworkLayers() override;
+    CPLErr LoadNetworkLayer(const char *pszLayername) override;
+    bool CheckStorageDriverSupport(const char *pszDriverName) override;
 
   protected:
-    CPLErr FormPath(const char *pszFilename, char **papszOptions);
+    CPLErr FormPath(const char *pszFilename, CSLConstList papszOptions);
 
   protected:
     CPLString m_soNetworkFullName;

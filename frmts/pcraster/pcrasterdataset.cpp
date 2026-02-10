@@ -83,10 +83,11 @@ GDALDataset *PCRasterDataset::open(GDALOpenInfo *info)
   This function always writes rasters using CR_UINT1, CR_INT4 or CR_REAL4
   cell representations.
 */
-GDALDataset *
-PCRasterDataset::createCopy(char const *filename, GDALDataset *source,
-                            CPL_UNUSED int strict, CPL_UNUSED char **options,
-                            GDALProgressFunc progress, void *progressData)
+GDALDataset *PCRasterDataset::createCopy(char const *filename,
+                                         GDALDataset *source,
+                                         CPL_UNUSED int strict, CSLConstList,
+                                         GDALProgressFunc progress,
+                                         void *progressData)
 {
     // Checks.
     const int nrBands = source->GetRasterCount();
@@ -398,7 +399,7 @@ double PCRasterDataset::defaultNoDataValue() const
 GDALDataset *PCRasterDataset::create(const char *filename, int nr_cols,
                                      int nr_rows, int nrBands,
                                      GDALDataType gdalType,
-                                     char **papszParamList)
+                                     CSLConstList papszParamList)
 {
     // Checks
     if (nrBands != 1)
@@ -432,7 +433,7 @@ GDALDataset *PCRasterDataset::create(const char *filename, int nr_cols,
         return nullptr;
     }
 
-    if (gdalType != GDT_Byte && gdalType != GDT_Int32 &&
+    if (gdalType != GDT_UInt8 && gdalType != GDT_Int32 &&
         gdalType != GDT_Float32)
     {
         CPLError(CE_Failure, CPLE_AppDefined,

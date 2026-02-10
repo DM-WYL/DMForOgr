@@ -12,6 +12,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 constexpr int HEADER_LINE_COUNT = 5;
@@ -156,7 +160,7 @@ CTGRasterBand::CTGRasterBand(CTGDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                          ~CTGRasterBand()                            */
+/*                           ~CTGRasterBand()                           */
 /************************************************************************/
 
 CTGRasterBand::~CTGRasterBand()
@@ -225,7 +229,7 @@ char **CTGRasterBand::GetCategoryNames()
 }
 
 /************************************************************************/
-/*                            ~CTGDataset()                            */
+/*                            ~CTGDataset()                             */
 /************************************************************************/
 
 CTGDataset::CTGDataset()
@@ -236,7 +240,7 @@ CTGDataset::CTGDataset()
 }
 
 /************************************************************************/
-/*                            ~CTGDataset()                            */
+/*                            ~CTGDataset()                             */
 /************************************************************************/
 
 CTGDataset::~CTGDataset()
@@ -248,7 +252,7 @@ CTGDataset::~CTGDataset()
 }
 
 /************************************************************************/
-/*                              ExtractField()                          */
+/*                            ExtractField()                            */
 /************************************************************************/
 
 const char *CTGDataset::ExtractField(char *szField, const char *pszBuffer,
@@ -328,7 +332,7 @@ int CTGDataset::ReadImagery()
 }
 
 /************************************************************************/
-/*                             Identify()                               */
+/*                              Identify()                              */
 /************************************************************************/
 
 int CTGDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -535,7 +539,7 @@ CPLErr CTGDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                         GDALRegister_CTG()                           */
+/*                          GDALRegister_CTG()                          */
 /************************************************************************/
 
 void GDALRegister_CTG()

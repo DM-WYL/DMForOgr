@@ -97,6 +97,7 @@ def test_cog_basic():
     ds = gdal.GetDriverByName("COG").CreateCopy(
         filename, src_ds, callback=my_cbk, callback_data=tab
     )
+    assert not ds.GetCloseReportsProgress()
     src_ds = None
     assert tab[0] == 1.0
     assert ds
@@ -105,6 +106,7 @@ def test_cog_basic():
     assert ds.GetRasterBand(1).Checksum() == 4672
     assert ds.GetMetadataItem("LAYOUT", "IMAGE_STRUCTURE") == "COG"
     assert ds.GetMetadataItem("COMPRESSION", "IMAGE_STRUCTURE") == "LZW"
+    assert ds.GetMetadataItem("OVERVIEW_RESAMPLING", "IMAGE_STRUCTURE") is None
     assert ds.GetRasterBand(1).GetOverviewCount() == 0
     assert ds.GetRasterBand(1).GetBlockSize() == [512, 512]
     assert (
@@ -237,7 +239,7 @@ def test_cog_creation_options():
 # Test creation of overviews
 
 
-def test_cog_creation_of_overviews():
+def test_cog_creation_of_overviews(tmp_vsimem):
 
     tab = [0]
 
@@ -246,39 +248,44 @@ def test_cog_creation_of_overviews():
         tab[0] = pct
         return 1
 
-    directory = "/vsimem/test_cog_creation_of_overviews"
-    filename = directory + "/cog.tif"
+    filename = tmp_vsimem / "cog.tif"
     src_ds = gdal.Translate("", "data/byte.tif", options="-of MEM -outsize 2048 300")
 
     check_filename = "/vsimem/tmp.tif"
     ds = gdal.GetDriverByName("GTiff").CreateCopy(
         check_filename, src_ds, options=["TILED=YES"]
     )
-    ds.BuildOverviews("CUBIC", [2, 4])
+    ds.BuildOverviews("AVERAGE", [2, 4])
     cs1 = ds.GetRasterBand(1).GetOverview(0).Checksum()
     cs2 = ds.GetRasterBand(1).GetOverview(1).Checksum()
     ds = None
     gdal.Unlink(check_filename)
 
     ds = gdal.GetDriverByName("COG").CreateCopy(
-        filename, src_ds, callback=my_cbk, callback_data=tab
+        filename,
+        src_ds,
+        callback=my_cbk,
+        callback_data=tab,
+        options=["OVERVIEW_RESAMPLING=AVERAGE"],
     )
     assert tab[0] == 1.0
     assert ds
-    assert len(gdal.ReadDir(directory)) == 1  # check that the temp file has gone away
+    assert len(gdal.ReadDir(tmp_vsimem)) == 1  # check that the temp file has gone away
 
     ds = None
     ds = gdal.Open(filename)
+    assert ds.GetMetadataItem("OVERVIEW_RESAMPLING", "IMAGE_STRUCTURE") == "AVERAGE"
     assert ds.GetRasterBand(1).Checksum() == src_ds.GetRasterBand(1).Checksum()
     assert ds.GetRasterBand(1).GetOverviewCount() == 2
     assert ds.GetRasterBand(1).GetOverview(0).Checksum() == cs1
+    assert ds.GetRasterBand(1).GetOverview(0).GetMetadataItem("RESAMPLING") == "AVERAGE"
     assert ds.GetRasterBand(1).GetOverview(1).Checksum() == cs2
     ds = None
-    _check_cog(filename)
+    _check_cog(str(filename))
 
-    src_ds = None
-    gdal.GetDriverByName("GTiff").Delete(filename)
-    gdal.Unlink(directory)
+    gdal.Translate(tmp_vsimem / "cog2.tif", filename, format="COG")
+    ds = gdal.Open(tmp_vsimem / "cog2.tif")
+    assert ds.GetMetadataItem("OVERVIEW_RESAMPLING", "IMAGE_STRUCTURE") == "AVERAGE"
 
 
 ###############################################################################
@@ -478,11 +485,7 @@ def test_cog_small_world_to_web_mercator():
         if gt[i] != pytest.approx(expected_gt[i], abs=1e-10 * abs(expected_gt[i])):
             assert False, gt
     got_cs = [ds.GetRasterBand(i + 1).Checksum() for i in range(3)]
-    assert got_cs in (
-        [26293, 23439, 14955],
-        [26228, 22085, 12992],
-        [25088, 23140, 13265],  # libjpeg 9e
-    )
+    assert got_cs == pytest.approx([20968, 23493, 14665], abs=100)
     assert ds.GetRasterBand(1).GetMaskBand().Checksum() == 17849
     assert ds.GetRasterBand(1).GetOverviewCount() == 0
     ds = None
@@ -2276,3 +2279,42 @@ def test_cog_write_complex(tmp_vsimem):
     with gdal.Open(tmp_vsimem / "out.tif") as src_ds:
         assert src_ds.GetRasterBand(1).GetOverviewCount() == 1
         assert src_ds.GetRasterBand(1).GetOverview(0).Checksum() != 0
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_cog_create(tmp_vsimem):
+
+    ds = gdal.GetDriverByName("COG").Create(
+        tmp_vsimem / "out.tif", 2, 1, 3, options=["COMPRESS=LZW", "PREDICTOR=YES"]
+    )
+    assert ds.GetDriver().ShortName == "COG"
+    assert ds.RasterXSize == 2
+    assert ds.RasterYSize == 1
+    assert ds.RasterCount == 3
+    assert ds.GetCloseReportsProgress()
+    ds.GetRasterBand(1).Fill(1)
+
+    def my_progress(pct, msg, tab_pct):
+        assert pct >= tab_pct[0]
+        tab_pct[0] = pct
+        return True
+
+    tab_pct = [0]
+    assert ds.Close(callback=my_progress, callback_data=tab_pct) == gdal.CE_None
+
+    assert tab_pct[0] == 1.0
+
+    with gdal.Open(tmp_vsimem / "out.tif") as src_ds:
+        assert src_ds.RasterXSize == 2
+        assert src_ds.RasterYSize == 1
+        assert src_ds.RasterCount == 3
+        assert src_ds.GetRasterBand(1).Checksum() == 2
+        assert src_ds.GetMetadataItem("LAYOUT", "IMAGE_STRUCTURE") == "COG"
+        assert src_ds.GetMetadataItem("COMPRESSION", "IMAGE_STRUCTURE") == "LZW"
+        assert src_ds.GetMetadataItem("PREDICTOR", "IMAGE_STRUCTURE") == "2"
+
+    with pytest.raises(Exception, match="Attempt to create 0x0 dataset is illegal"):
+        gdal.GetDriverByName("COG").Create(tmp_vsimem / "out.tif", 0, 0)

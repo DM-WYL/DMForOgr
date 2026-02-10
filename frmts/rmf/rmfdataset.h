@@ -51,7 +51,7 @@ constexpr int RMF_JPEG_BAND_COUNT = 3;
 constexpr int RMF_DEM_BAND_COUNT = 1;
 
 /************************************************************************/
-/*                            RMFHeader                                 */
+/*                              RMFHeader                               */
 /************************************************************************/
 
 typedef struct
@@ -115,7 +115,7 @@ typedef struct
 } RMFHeader;
 
 /************************************************************************/
-/*                            RMFExtHeader                              */
+/*                             RMFExtHeader                             */
 /************************************************************************/
 
 typedef struct
@@ -127,7 +127,7 @@ typedef struct
 } RMFExtHeader;
 
 /************************************************************************/
-/*                              RSWFrame                                */
+/*                               RSWFrame                               */
 /************************************************************************/
 
 typedef struct
@@ -144,7 +144,7 @@ typedef struct
 } RSWFrameCoord;
 
 /************************************************************************/
-/*                            RMFCompressionJob                         */
+/*                          RMFCompressionJob                           */
 /************************************************************************/
 
 struct RMFCompressionJob
@@ -168,7 +168,7 @@ struct RMFCompressionJob
 };
 
 /************************************************************************/
-/*                            RMFCompressData                           */
+/*                           RMFCompressData                            */
 /************************************************************************/
 
 struct RMFCompressData
@@ -188,7 +188,7 @@ struct RMFCompressData
 };
 
 /************************************************************************/
-/*                            RMFTileData                               */
+/*                             RMFTileData                              */
 /************************************************************************/
 
 struct RMFTileData
@@ -292,41 +292,39 @@ class RMFDataset final : public GDALDataset
 
   public:
     RMFDataset();
-    virtual ~RMFDataset();
+    ~RMFDataset() override;
 
     static int Identify(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Open(GDALOpenInfo *);
     static RMFDataset *Open(GDALOpenInfo *, RMFDataset *poParentDS,
                             vsi_l_offset nNextHeaderOffset);
     static GDALDataset *Create(const char *, int, int, int, GDALDataType,
-                               char **);
+                               CSLConstList);
     static GDALDataset *Create(const char *, int, int, int, GDALDataType,
-                               char **, RMFDataset *poParentDS,
+                               CSLConstList, RMFDataset *poParentDS,
                                double dfOvFactor);
-    virtual CPLErr FlushCache(bool bAtClosing) override;
+    CPLErr FlushCache(bool bAtClosing) override;
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
-    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
-    virtual CPLErr IBuildOverviews(const char *pszResampling, int nOverviews,
-                                   const int *panOverviewList, int nBandsIn,
-                                   const int *panBandList,
-                                   GDALProgressFunc pfnProgress,
-                                   void *pProgressData,
-                                   CSLConstList papszOptions) override;
-    virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                             int nXSize, int nYSize, void *pData, int nBufXSize,
-                             int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, BANDMAP_TYPE panBandMap,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GSpacing nBandSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
-    virtual CPLErr SetMetadataItem(const char *pszName, const char *pszValue,
-                                   const char *pszDomain = "") override;
-    virtual CPLErr SetMetadata(char **papszMetadata,
-                               const char *pszDomain = "") override;
+    CPLErr IBuildOverviews(const char *pszResampling, int nOverviews,
+                           const int *panOverviewList, int nBandsIn,
+                           const int *panBandList, GDALProgressFunc pfnProgress,
+                           void *pProgressData,
+                           CSLConstList papszOptions) override;
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, int nBandCount,
+                     BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr SetMetadataItem(const char *pszName, const char *pszValue,
+                           const char *pszDomain = "") override;
+    CPLErr SetMetadata(CSLConstList papszMetadata,
+                       const char *pszDomain = "") override;
     // cppcheck-suppress functionStatic
     vsi_l_offset GetFileOffset(GUInt32 iRMFOffset) const;
     GUInt32 GetRMFOffset(vsi_l_offset iFileOffset,
@@ -337,7 +335,7 @@ class RMFDataset final : public GDALDataset
     static GByte GetCompressionType(const char *pszCompressName);
     int SetupCompression(GDALDataType eType, const char *pszFilename);
     static void WriteTileJobFunc(void *pData);
-    CPLErr InitCompressorData(char **papszParamList);
+    CPLErr InitCompressorData(CSLConstList papszParamList);
     CPLErr WriteTile(int nBlockXOff, int nBlockYOff, GByte *pabyData,
                      size_t nBytes, GUInt32 nRawXSize, GUInt32 nRawYSize);
     CPLErr WriteRawTile(int nBlockXOff, int nBlockYOff, GByte *pabyData,
@@ -365,26 +363,26 @@ class RMFRasterBand final : public GDALRasterBand
 
   public:
     RMFRasterBand(RMFDataset *, int, GDALDataType);
-    virtual ~RMFRasterBand();
+    ~RMFRasterBand() override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IWriteBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
     virtual GDALSuggestedBlockAccessPattern
     GetSuggestedBlockAccessPattern() const override;
-    virtual double GetNoDataValue(int *pbSuccess = nullptr) override;
-    virtual CPLErr SetNoDataValue(double dfNoData) override;
-    virtual const char *GetUnitType() override;
-    virtual GDALColorInterp GetColorInterpretation() override;
-    virtual GDALColorTable *GetColorTable() override;
-    virtual CPLErr SetUnitType(const char *) override;
-    virtual CPLErr SetColorTable(GDALColorTable *) override;
-    virtual int GetOverviewCount() override;
-    virtual GDALRasterBand *GetOverview(int i) override;
-    virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                             int nXSize, int nYSize, void *pData, int nBufXSize,
-                             int nBufYSize, GDALDataType eBufType,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    double GetNoDataValue(int *pbSuccess = nullptr) override;
+    CPLErr SetNoDataValue(double dfNoData) override;
+    const char *GetUnitType() override;
+    GDALColorInterp GetColorInterpretation() override;
+    GDALColorTable *GetColorTable() override;
+    CPLErr SetUnitType(const char *) override;
+    CPLErr SetColorTable(GDALColorTable *) override;
+    int GetOverviewCount() override;
+    GDALRasterBand *GetOverview(int i) override;
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, GSpacing nPixelSpace,
+                     GSpacing nLineSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
 
 #endif

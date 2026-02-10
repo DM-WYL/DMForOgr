@@ -15,6 +15,10 @@
 #include "rawdataset.h"
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_srs_api.h"
 #include "timedelta.hpp"
 
@@ -35,7 +39,7 @@ class MerisL2FlagBand final : public GDALPamRasterBand
   public:
     MerisL2FlagBand(GDALDataset *, int, VSILFILE *, vsi_l_offset, int);
     ~MerisL2FlagBand() override;
-    virtual CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
 
   private:
     vsi_l_offset nImgOffset;
@@ -48,7 +52,7 @@ class MerisL2FlagBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                        MerisL2FlagBand()                       */
+/*                          MerisL2FlagBand()                           */
 /************************************************************************/
 MerisL2FlagBand::MerisL2FlagBand(GDALDataset *poDSIn, int nBandIn,
                                  VSILFILE *fpImageIn, vsi_l_offset nImgOffsetIn,
@@ -71,7 +75,7 @@ MerisL2FlagBand::MerisL2FlagBand(GDALDataset *poDSIn, int nBandIn,
 }
 
 /************************************************************************/
-/*                        ~MerisL2FlagBand()                       */
+/*                          ~MerisL2FlagBand()                          */
 /************************************************************************/
 MerisL2FlagBand::~MerisL2FlagBand()
 {
@@ -153,17 +157,17 @@ class EnvisatDataset final : public RawDataset
     void CollectDSDMetadata();
     void CollectADSMetadata();
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     EnvisatDataset();
-    virtual ~EnvisatDataset();
+    ~EnvisatDataset() override;
 
-    virtual int GetGCPCount() override;
+    int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
-    virtual const GDAL_GCP *GetGCPs() override;
-    virtual char **GetMetadataDomainList() override;
-    virtual char **GetMetadata(const char *pszDomain) override;
+    const GDAL_GCP *GetGCPs() override;
+    char **GetMetadataDomainList() override;
+    CSLConstList GetMetadata(const char *pszDomain) override;
 
     static GDALDataset *Open(GDALOpenInfo *);
 };
@@ -175,7 +179,7 @@ class EnvisatDataset final : public RawDataset
 /************************************************************************/
 
 /************************************************************************/
-/*                            EnvisatDataset()                          */
+/*                           EnvisatDataset()                           */
 /************************************************************************/
 
 EnvisatDataset::EnvisatDataset()
@@ -187,7 +191,7 @@ EnvisatDataset::EnvisatDataset()
 }
 
 /************************************************************************/
-/*                            ~EnvisatDataset()                         */
+/*                          ~EnvisatDataset()                           */
 /************************************************************************/
 
 EnvisatDataset::~EnvisatDataset()
@@ -197,10 +201,10 @@ EnvisatDataset::~EnvisatDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr EnvisatDataset::Close()
+CPLErr EnvisatDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -262,7 +266,7 @@ const GDAL_GCP *EnvisatDataset::GetGCPs()
 }
 
 /************************************************************************/
-/*                         UnwrapGCPs()                                 */
+/*                             UnwrapGCPs()                             */
 /************************************************************************/
 
 /* external C++ implementation of the in-place unwrapper */
@@ -580,7 +584,7 @@ void EnvisatDataset::ScanForGCPs_MERIS()
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **EnvisatDataset::GetMetadataDomainList()
@@ -592,7 +596,7 @@ char **EnvisatDataset::GetMetadataDomainList()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **EnvisatDataset::GetMetadata(const char *pszDomain)
+CSLConstList EnvisatDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain == nullptr || !STARTS_WITH_CI(pszDomain, "envisat-ds-"))
@@ -952,7 +956,7 @@ GDALDataset *EnvisatDataset::Open(GDALOpenInfo *poOpenInfo)
         CPLError(CE_Warning, CPLE_AppDefined,
                  "Envisat product format not recognised.  Assuming 8bit\n"
                  "with no per-record prefix data.  Results may be useless!");
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
         poDS->nRasterXSize = dsr_size;
     }
     else
@@ -960,7 +964,7 @@ GDALDataset *EnvisatDataset::Open(GDALOpenInfo *poOpenInfo)
         if (dsr_size >= 2 * poDS->nRasterXSize)
             eDataType = GDT_UInt16;
         else
-            eDataType = GDT_Byte;
+            eDataType = GDT_UInt8;
     }
 
     const int nPrefixBytes =
@@ -1036,7 +1040,7 @@ GDALDataset *EnvisatDataset::Open(GDALOpenInfo *poOpenInfo)
                 {
                     auto poBand = RawRasterBand::Create(
                         poDS.get(), iBand + 1, poDS->fpImage,
-                        ds_offset + nPrefixBytes, 3, dsr_size, GDT_Byte,
+                        ds_offset + nPrefixBytes, 3, dsr_size, GDT_UInt8,
                         RawRasterBand::ByteOrder::ORDER_BIG_ENDIAN,
                         RawRasterBand::OwnFP::NO);
                     if (!poBand)
@@ -1085,7 +1089,7 @@ GDALDataset *EnvisatDataset::Open(GDALOpenInfo *poOpenInfo)
             int nPrefixBytes2, nSubBands, nSubBandIdx, nSubBandOffset;
 
             int nPixelSize = 1;
-            GDALDataType eDataType2 = GDT_Byte;
+            GDALDataType eDataType2 = GDT_UInt8;
 
             nSubBands = dsr_size2 / poDS->nRasterXSize;
             if ((nSubBands < 1) || (nSubBands > 3))
@@ -1153,7 +1157,7 @@ GDALDataset *EnvisatDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                         GDALRegister_Envisat()                       */
+/*                        GDALRegister_Envisat()                        */
 /************************************************************************/
 
 void GDALRegister_Envisat()

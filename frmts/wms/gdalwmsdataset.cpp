@@ -28,6 +28,9 @@
 #include "minidriver_tiled_wms.h"
 #include "minidriver_virtualearth.h"
 
+#include "gdal_colortable.h"
+#include "gdal_cpp_functions.h"
+
 #include <algorithm>
 
 /************************************************************************/
@@ -35,7 +38,7 @@
 /************************************************************************/
 GDALWMSDataset::GDALWMSDataset()
     : m_mini_driver(nullptr), m_cache(nullptr), m_poColorTable(nullptr),
-      m_data_type(GDT_Byte), m_block_size_x(0), m_block_size_y(0),
+      m_data_type(GDT_UInt8), m_block_size_x(0), m_block_size_y(0),
       m_use_advise_read(0), m_verify_advise_read(0), m_offline_mode(0),
       m_http_max_conn(0), m_http_timeout(0), m_http_options(nullptr),
       m_tileOO(nullptr), m_clamp_requests(true), m_unsafeSsl(false),
@@ -752,7 +755,7 @@ CPLErr GDALWMSDataset::IRasterIO(GDALRWFlag rw, int x0, int y0, int sx, int sy,
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 const OGRSpatialReference *GDALWMSDataset::GetSpatialRef() const
 {
@@ -802,7 +805,8 @@ CPLErr GDALWMSDataset::SetGeoTransform(const GDALGeoTransform &)
 CPLErr GDALWMSDataset::AdviseRead(int x0, int y0, int sx, int sy, int bsx,
                                   int bsy, GDALDataType bdt,
                                   CPL_UNUSED int band_count,
-                                  CPL_UNUSED int *band_map, char **options)
+                                  CPL_UNUSED int *band_map,
+                                  CSLConstList options)
 {
     //    printf("AdviseRead(%d, %d, %d, %d)\n", x0, y0, sx, sy);
     if (m_offline_mode || !m_use_advise_read)
@@ -817,7 +821,7 @@ CPLErr GDALWMSDataset::AdviseRead(int x0, int y0, int sx, int sy, int bsx,
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **GDALWMSDataset::GetMetadataDomainList()

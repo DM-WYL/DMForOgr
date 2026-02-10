@@ -20,7 +20,7 @@ namespace OGRPDS
 {
 
 /************************************************************************/
-/*                              OGRPDSLayer                             */
+/*                             OGRPDSLayer                              */
 /************************************************************************/
 
 typedef enum
@@ -50,7 +50,7 @@ class OGRPDSLayer final : public OGRLayer,
     std::string osTableID;
     VSILFILE *fpPDS;
     int nRecords;
-    int nStartBytes;
+    vsi_l_offset nStartBytes;
     int nRecordSize;
     GByte *pabyRecord;
     int nNextFID;
@@ -68,11 +68,11 @@ class OGRPDSLayer final : public OGRLayer,
     OGRPDSLayer(const std::string &osTableID, const char *pszLayerName,
                 VSILFILE *fp, const std::string &osLabelFilename,
                 const std::string &osStructureFilename, int nRecords,
-                int nStartBytes, int nRecordSize, GByte *pabyRecord,
+                vsi_l_offset nStartBytes, int nRecordSize, GByte *pabyRecord,
                 bool bIsASCII);
-    virtual ~OGRPDSLayer();
+    ~OGRPDSLayer() override;
 
-    virtual void ResetReading() override;
+    void ResetReading() override;
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRPDSLayer)
 
     const OGRFeatureDefn *GetLayerDefn() const override
@@ -82,11 +82,11 @@ class OGRPDSLayer final : public OGRLayer,
 
     int TestCapability(const char *) const override;
 
-    virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
+    GIntBig GetFeatureCount(int bForce = TRUE) override;
 
-    virtual OGRFeature *GetFeature(GIntBig nFID) override;
+    OGRFeature *GetFeature(GIntBig nFID) override;
 
-    virtual OGRErr SetNextByIndex(GIntBig nIndex) override;
+    OGRErr SetNextByIndex(GIntBig nIndex) override;
 };
 
 }  // namespace OGRPDS
@@ -111,7 +111,7 @@ class OGRPDSDataSource final : public GDALDataset
 
   public:
     OGRPDSDataSource();
-    virtual ~OGRPDSDataSource();
+    ~OGRPDSDataSource() override;
 
     int Open(const char *pszFilename);
 

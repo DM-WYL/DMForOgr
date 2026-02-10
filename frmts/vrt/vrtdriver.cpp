@@ -17,6 +17,7 @@
 #include "cpl_string.h"
 #include "gdal_alg_priv.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "vrtexpression.h"
 
 #include <mutex>
@@ -55,7 +56,7 @@ VRTDriver::~VRTDriver()
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **VRTDriver::GetMetadataDomainList()
@@ -68,7 +69,7 @@ char **VRTDriver::GetMetadataDomainList()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **VRTDriver::GetMetadata(const char *pszDomain)
+CSLConstList VRTDriver::GetMetadata(const char *pszDomain)
 
 {
     std::lock_guard oLock(m_oMutex);
@@ -82,7 +83,7 @@ char **VRTDriver::GetMetadata(const char *pszDomain)
 /*                            SetMetadata()                             */
 /************************************************************************/
 
-CPLErr VRTDriver::SetMetadata(char **papszMetadata, const char *pszDomain)
+CPLErr VRTDriver::SetMetadata(CSLConstList papszMetadata, const char *pszDomain)
 
 {
     std::lock_guard oLock(m_oMutex);
@@ -171,7 +172,7 @@ VRTSource *VRTDriver::ParseSource(const CPLXMLNode *psSrc,
 /************************************************************************/
 
 static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
-                                  int /* bStrict */, char **papszOptions,
+                                  int /* bStrict */, CSLConstList papszOptions,
                                   GDALProgressFunc pfnProgress,
                                   void *pProgressData)
 {
@@ -279,7 +280,7 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     /* -------------------------------------------------------------------- */
     auto poVRTDS = VRTDataset::CreateVRTDataset(
         pszFilename, poSrcDS->GetRasterXSize(), poSrcDS->GetRasterYSize(), 0,
-        GDT_Byte, papszOptions);
+        GDT_UInt8, papszOptions);
     if (poVRTDS == nullptr)
         return nullptr;
 
@@ -321,7 +322,7 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         {
             if (!papszSrcMDD || CSLFindString(papszSrcMDD, pszDomain) >= 0)
             {
-                char **papszMD = poSrcDS->GetMetadata(pszDomain);
+                CSLConstList papszMD = poSrcDS->GetMetadata(pszDomain);
                 if (papszMD)
                     poVRTDS->SetMetadata(papszMD, pszDomain);
             }
@@ -505,7 +506,8 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 void GDALRegister_VRT()
 
 {
-    if (GDALGetDriverByName("VRT") != nullptr)
+    auto poDM = GetGDALDriverManager();
+    if (poDM->GetDriverByName("VRT") != nullptr)
         return;
 
     static std::once_flag flag;
@@ -543,6 +545,33 @@ void GDALRegister_VRT()
         "   <Option name='BLOCKXSIZE' type='int' description='Block width'/>\n"
         "   <Option name='BLOCKYSIZE' type='int' description='Block height'/>\n"
         "</CreationOptionList>\n");
+
+    auto poGTiffDrv = poDM->GetDriverByName("GTiff");
+    if (poGTiffDrv)
+    {
+        const char *pszGTiffOvrCO =
+            poGTiffDrv->GetMetadataItem(GDAL_DMD_OVERVIEW_CREATIONOPTIONLIST);
+        if (pszGTiffOvrCO &&
+            STARTS_WITH(pszGTiffOvrCO, "<OverviewCreationOptionList>"))
+        {
+            std::string ocoList =
+                "<OverviewCreationOptionList>"
+                "   <Option name='VIRTUAL' type='boolean' "
+                "default='NO' "
+                "description='Whether virtual overviews rather than "
+                "materialized external GeoTIFF .ovr should be created'/>";
+            ocoList += (pszGTiffOvrCO + strlen("<OverviewCreationOptionList>"));
+            poDriver->SetMetadataItem(GDAL_DMD_OVERVIEW_CREATIONOPTIONLIST,
+                                      ocoList.c_str());
+        }
+    }
+
+    poDriver->SetMetadataItem(
+        GDAL_DMD_MULTIDIM_ARRAY_CREATIONOPTIONLIST,
+        "<MultiDimArrayCreationOptionList>"
+        "   <Option name='BLOCKSIZE' type='int' description='Block size in "
+        "pixels'/>"
+        "</MultiDimArrayCreationOptionList>");
 
     poDriver->pfnCreateCopy = VRTCreateCopy;
     poDriver->pfnCreate = VRTDataset::Create;
@@ -605,7 +634,7 @@ void GDALRegister_VRT()
     poDriver->AddSourceParser("KernelFilteredSource", VRTParseFilterSources);
     poDriver->AddSourceParser("ArraySource", VRTParseArraySource);
 
-    GetGDALDriverManager()->RegisterDriver(poDriver);
+    poDM->RegisterDriver(poDriver);
 }
 
 /*! @endcond */

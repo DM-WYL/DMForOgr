@@ -37,6 +37,7 @@
 #include "cpl_string.h"
 #include "cpl_vsi.h"
 #include "gdal.h"
+#include "gdalantirecursion.h"
 #include "gdal_priv.h"
 #include "gdal_thread_pool.h"
 #include "ogr_geometry.h"
@@ -117,12 +118,12 @@ VRTSourcedRasterBand::~VRTSourcedRasterBand()
 }
 
 /************************************************************************/
-/*                  CanIRasterIOBeForwardedToEachSource()               */
+/*                CanIRasterIOBeForwardedToEachSource()                 */
 /************************************************************************/
 
 bool VRTSourcedRasterBand::CanIRasterIOBeForwardedToEachSource(
     GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize, int nYSize,
-    int nBufXSize, int nBufYSize, GDALRasterIOExtraArg *psExtraArg) const
+    int nBufXSize, int nBufYSize, const GDALRasterIOExtraArg *psExtraArg) const
 {
     const auto IsNonNearestInvolved = [this, psExtraArg]
     {
@@ -130,13 +131,16 @@ bool VRTSourcedRasterBand::CanIRasterIOBeForwardedToEachSource(
         {
             return true;
         }
-        for (auto &poSource : m_papoSources)
+        for (const auto &poSource : m_papoSources)
         {
             if (poSource->GetType() == VRTComplexSource::GetTypeStatic())
             {
-                auto *const poComplexSource =
-                    static_cast<VRTComplexSource *>(poSource.get());
-                if (!poComplexSource->GetResampling().empty())
+                const auto *const poComplexSource =
+                    static_cast<const VRTComplexSource *>(poSource.get());
+                const auto &osSourceResampling =
+                    poComplexSource->GetResampling();
+                if (!osSourceResampling.empty() &&
+                    osSourceResampling != "nearest")
                     return true;
             }
         }
@@ -172,7 +176,10 @@ bool VRTSourcedRasterBand::CanIRasterIOBeForwardedToEachSource(
                 {
                     auto *const poComplexSource =
                         static_cast<VRTComplexSource *>(poSimpleSource);
-                    if (!poComplexSource->GetResampling().empty())
+                    const auto &osSourceResampling =
+                        poComplexSource->GetResampling();
+                    if (!osSourceResampling.empty() &&
+                        osSourceResampling != "nearest")
                     {
                         const int lMaskFlags =
                             const_cast<VRTSourcedRasterBand *>(this)
@@ -221,9 +228,10 @@ bool VRTSourcedRasterBand::CanIRasterIOBeForwardedToEachSource(
                 bool bError = false;
                 if (!poSimpleSource->GetSrcDstWindow(
                         dfXOff, dfYOff, dfXSize, dfYSize, nBufXSize, nBufYSize,
-                        &dfReqXOff, &dfReqYOff, &dfReqXSize, &dfReqYSize,
-                        &nReqXOff, &nReqYOff, &nReqXSize, &nReqYSize, &nOutXOff,
-                        &nOutYOff, &nOutXSize, &nOutYSize, bError))
+                        psExtraArg->eResampleAlg, &dfReqXOff, &dfReqYOff,
+                        &dfReqXSize, &dfReqYSize, &nReqXOff, &nReqYOff,
+                        &nReqXSize, &nReqYSize, &nOutXOff, &nOutYOff,
+                        &nOutXSize, &nOutYSize, bError))
                 {
                     continue;
                 }
@@ -265,7 +273,7 @@ bool VRTSourcedRasterBand::CanIRasterIOBeForwardedToEachSource(
 }
 
 /************************************************************************/
-/*                      CanMultiThreadRasterIO()                        */
+/*                       CanMultiThreadRasterIO()                       */
 /************************************************************************/
 
 bool VRTSourcedRasterBand::CanMultiThreadRasterIO(
@@ -336,10 +344,16 @@ bool VRTSourcedRasterBand::CanMultiThreadRasterIO(
             poSimpleSource->GetDstWindow(dfSourceXOff, dfSourceYOff,
                                          dfSourceXSize, dfSourceYSize);
             constexpr double EPSILON = 1e-1;
-            sSourceBounds.minx = dfSourceXOff + EPSILON;
-            sSourceBounds.miny = dfSourceYOff + EPSILON;
-            sSourceBounds.maxx = dfSourceXOff + dfSourceXSize - EPSILON;
-            sSourceBounds.maxy = dfSourceYOff + dfSourceYSize - EPSILON;
+            // We floor/ceil to detect potential overlaps of sources whose
+            // destination offset is not integer. Otherwise, in case of
+            // multithreading, this could cause one line to be written
+            // concurrently by multiple threads.
+            sSourceBounds.minx = std::floor(dfSourceXOff) + EPSILON;
+            sSourceBounds.miny = std::floor(dfSourceYOff) + EPSILON;
+            sSourceBounds.maxx =
+                std::ceil(dfSourceXOff + dfSourceXSize) - EPSILON;
+            sSourceBounds.maxy =
+                std::ceil(dfSourceYOff + dfSourceYSize) - EPSILON;
             iLastSource = iSource;
 
             if (hQuadTree)
@@ -368,7 +382,7 @@ bool VRTSourcedRasterBand::CanMultiThreadRasterIO(
 }
 
 /************************************************************************/
-/*                 VRTSourcedRasterBandRasterIOJob                      */
+/*                   VRTSourcedRasterBandRasterIOJob                    */
 /************************************************************************/
 
 /** Structure used to declare a threaded job to satisfy IRasterIO()
@@ -392,14 +406,14 @@ struct VRTSourcedRasterBandRasterIOJob
     GDALDataType eBufType = GDT_Unknown;
     GSpacing nPixelSpace = 0;
     GSpacing nLineSpace = 0;
-    GDALRasterIOExtraArg *psExtraArg = nullptr;
+    GDALRasterIOExtraArg sExtraArg{};
     VRTSimpleSource *poSource = nullptr;
 
     static void Func(void *pData);
 };
 
 /************************************************************************/
-/*                 VRTSourcedRasterBandRasterIOJob::Func()              */
+/*               VRTSourcedRasterBandRasterIOJob::Func()                */
 /************************************************************************/
 
 void VRTSourcedRasterBandRasterIOJob::Func(void *pData)
@@ -408,9 +422,8 @@ void VRTSourcedRasterBandRasterIOJob::Func(void *pData)
         static_cast<VRTSourcedRasterBandRasterIOJob *>(pData));
     if (*psJob->pbSuccess)
     {
-        GDALRasterIOExtraArg sArg = *(psJob->psExtraArg);
-        sArg.pfnProgress = nullptr;
-        sArg.pProgressData = nullptr;
+        psJob->sExtraArg.pfnProgress = nullptr;
+        psJob->sExtraArg.pProgressData = nullptr;
 
         std::unique_ptr<VRTSource::WorkingState> poWorkingState;
         {
@@ -428,7 +441,8 @@ void VRTSourcedRasterBandRasterIOJob::Func(void *pData)
                 psJob->eVRTBandDataType, psJob->nXOff, psJob->nYOff,
                 psJob->nXSize, psJob->nYSize, psJob->pData, psJob->nBufXSize,
                 psJob->nBufYSize, psJob->eBufType, psJob->nPixelSpace,
-                psJob->nLineSpace, &sArg, *(poWorkingState.get())) != CE_None)
+                psJob->nLineSpace, &psJob->sExtraArg,
+                *(poWorkingState.get())) != CE_None)
         {
             *psJob->pbSuccess = false;
         }
@@ -441,6 +455,29 @@ void VRTSourcedRasterBandRasterIOJob::Func(void *pData)
     }
 
     ++(*psJob->pnCompletedJobs);
+}
+
+/************************************************************************/
+/*                MayMultiBlockReadingBeMultiThreaded()                 */
+/************************************************************************/
+
+bool VRTSourcedRasterBand::MayMultiBlockReadingBeMultiThreaded() const
+{
+    GDALRasterIOExtraArg sExtraArg;
+    INIT_RASTERIO_EXTRA_ARG(sExtraArg);
+    sExtraArg.dfXOff = 0;
+    sExtraArg.dfYOff = 0;
+    sExtraArg.dfXSize = nRasterXSize;
+    sExtraArg.dfYSize = nRasterYSize;
+    int nContributingSources = 0;
+    auto l_poDS = dynamic_cast<VRTDataset *>(poDS);
+    return l_poDS &&
+           CanIRasterIOBeForwardedToEachSource(GF_Read, 0, 0, nRasterXSize,
+                                               nRasterYSize, nRasterXSize,
+                                               nRasterYSize, &sExtraArg) &&
+           CanMultiThreadRasterIO(0, 0, nRasterXSize, nRasterYSize,
+                                  nContributingSources) &&
+           nContributingSources > 1 && VRTDataset::GetNumThreads(l_poDS) > 1;
 }
 
 /************************************************************************/
@@ -698,7 +735,7 @@ CPLErr VRTSourcedRasterBand::IRasterIO(
                 psJob->eBufType = eBufType;
                 psJob->nPixelSpace = nPixelSpace;
                 psJob->nLineSpace = nLineSpace;
-                psJob->psExtraArg = psExtraArg;
+                psJob->sExtraArg = *psExtraArg;
                 psJob->poSource = poSimpleSource;
 
                 if (!oQueue->SubmitJob(VRTSourcedRasterBandRasterIOJob::Func,
@@ -763,7 +800,7 @@ CPLErr VRTSourcedRasterBand::IRasterIO(
 }
 
 /************************************************************************/
-/*                         IGetDataCoverageStatus()                     */
+/*                       IGetDataCoverageStatus()                       */
 /************************************************************************/
 
 int VRTSourcedRasterBand::IGetDataCoverageStatus(int nXOff, int nYOff,
@@ -806,9 +843,9 @@ int VRTSourcedRasterBand::IGetDataCoverageStatus(int nXOff, int nYOff,
         bool bError = false;
         if (poSource->GetSrcDstWindow(
                 0, 0, GetXSize(), GetYSize(), GetXSize(), GetYSize(),
-                &dfReqXOff, &dfReqYOff, &dfReqXSize, &dfReqYSize, &nReqXOff,
-                &nReqYOff, &nReqXSize, &nReqYSize, &nOutXOff, &nOutYOff,
-                &nOutXSize, &nOutYSize, bError) &&
+                GRIORA_NearestNeighbour, &dfReqXOff, &dfReqYOff, &dfReqXSize,
+                &dfReqYSize, &nReqXOff, &nReqYOff, &nReqXSize, &nReqYSize,
+                &nOutXOff, &nOutYOff, &nOutXSize, &nOutYSize, bError) &&
             nReqXOff == 0 && nReqYOff == 0 && nReqXSize == GetXSize() &&
             nReqXSize == poBand->GetXSize() && nReqYSize == GetYSize() &&
             nReqYSize == poBand->GetYSize() && nOutXOff == 0 && nOutYOff == 0 &&
@@ -948,7 +985,7 @@ CPLErr VRTSourcedRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                        CPLGettimeofday()                             */
+/*                          CPLGettimeofday()                           */
 /************************************************************************/
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
@@ -979,7 +1016,7 @@ static int CPLGettimeofday(struct CPLTimeVal *tp, void * /* timezonep*/)
 #endif
 
 /************************************************************************/
-/*                    CanUseSourcesMinMaxImplementations()              */
+/*                 CanUseSourcesMinMaxImplementations()                 */
 /************************************************************************/
 
 bool VRTSourcedRasterBand::CanUseSourcesMinMaxImplementations()
@@ -1098,7 +1135,7 @@ double VRTSourcedRasterBand::GetMinimum(int *pbSuccess)
         if (iSource == 0 || dfSourceMin < dfMin)
         {
             dfMin = dfSourceMin;
-            if (dfMin == 0 && eDataType == GDT_Byte)
+            if (dfMin == 0 && eDataType == GDT_UInt8)
                 break;
         }
         if (m_papoSources.size() > 1)
@@ -1176,7 +1213,7 @@ double VRTSourcedRasterBand::GetMaximum(int *pbSuccess)
         if (iSource == 0 || dfSourceMax > dfMax)
         {
             dfMax = dfSourceMax;
-            if (dfMax == 255.0 && eDataType == GDT_Byte)
+            if (dfMax == 255.0 && eDataType == GDT_UInt8)
                 break;
         }
         if (m_papoSources.size() > 1)
@@ -1199,7 +1236,7 @@ double VRTSourcedRasterBand::GetMaximum(int *pbSuccess)
 }
 
 /************************************************************************/
-/* IsMosaicOfNonOverlappingSimpleSourcesOfFullRasterNoResAndTypeChange() */
+/*IsMosaicOfNonOverlappingSimpleSourcesOfFullRasterNoResAndTypeChange() */
 /************************************************************************/
 
 /* Returns true if the VRT raster band consists of non-overlapping simple
@@ -1278,9 +1315,9 @@ bool VRTSourcedRasterBand::
         bool bError = false;
         if (!poSimpleSource->GetSrcDstWindow(
                 0, 0, nRasterXSize, nRasterYSize, nRasterXSize, nRasterYSize,
-                &dfReqXOff, &dfReqYOff, &dfReqXSize, &dfReqYSize, &nReqXOff,
-                &nReqYOff, &nReqXSize, &nReqYSize, &nOutXOff, &nOutYOff,
-                &nOutXSize, &nOutYSize, bError) ||
+                GRIORA_NearestNeighbour, &dfReqXOff, &dfReqYOff, &dfReqXSize,
+                &dfReqYSize, &nReqXOff, &nReqYOff, &nReqXSize, &nReqYSize,
+                &nOutXOff, &nOutYOff, &nOutXSize, &nOutYSize, bError) ||
             nReqXOff != 0 || nReqYOff != 0 ||
             nReqXSize != poSimpleSourceBand->GetXSize() ||
             nReqYSize != poSimpleSourceBand->GetYSize() ||
@@ -1314,7 +1351,7 @@ bool VRTSourcedRasterBand::
 }
 
 /************************************************************************/
-/*                       ComputeRasterMinMax()                          */
+/*                        ComputeRasterMinMax()                         */
 /************************************************************************/
 
 CPLErr VRTSourcedRasterBand::ComputeRasterMinMax(int bApproxOK,
@@ -1448,7 +1485,7 @@ CPLErr VRTSourcedRasterBand::ComputeRasterMinMax(int bApproxOK,
         }
 
         bool bSignedByte = false;
-        if (eDataType == GDT_Byte)
+        if (eDataType == GDT_UInt8)
         {
             EnablePixelTypeSignedByteWarning(false);
             const char *pszPixelType =
@@ -1520,7 +1557,7 @@ CPLErr VRTSourcedRasterBand::ComputeRasterMinMax(int bApproxOK,
             }
 
             // Early exit if we know we reached theoretical bounds
-            if (eDataType == GDT_Byte && !bSignedByte && dfGlobalMin == 0.0 &&
+            if (eDataType == GDT_UInt8 && !bSignedByte && dfGlobalMin == 0.0 &&
                 dfGlobalMax == 255.0)
             {
                 break;
@@ -2236,7 +2273,7 @@ CPLErr VRTSourcedRasterBand::AddSource(std::unique_ptr<VRTSource> poNewSource)
 /*! @endcond */
 
 /************************************************************************/
-/*                              VRTAddSource()                          */
+/*                            VRTAddSource()                            */
 /************************************************************************/
 
 /**
@@ -2365,7 +2402,7 @@ CPLXMLNode *VRTSourcedRasterBand::SerializeToXML(const char *pszVRTPath,
 }
 
 /************************************************************************/
-/*                     SkipBufferInitialization()                       */
+/*                      SkipBufferInitialization()                      */
 /************************************************************************/
 
 bool VRTSourcedRasterBand::SkipBufferInitialization()
@@ -2683,7 +2720,7 @@ CPLErr VRTSourcedRasterBand::AddComplexSource(
 /*! @endcond */
 
 /************************************************************************/
-/*                         VRTAddComplexSource()                        */
+/*                        VRTAddComplexSource()                         */
 /************************************************************************/
 
 /**
@@ -2754,7 +2791,7 @@ CPLErr CPL_STDCALL VRTAddFuncSource(VRTSourcedRasterBandH hVRTBand,
 /*! @cond Doxygen_Suppress */
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **VRTSourcedRasterBand::GetMetadataDomainList()
@@ -2857,11 +2894,11 @@ const char *VRTSourcedRasterBand::GetMetadataItem(const char *pszName,
             int nOutYSize = 0;
 
             bool bError = false;
-            if (!poSrc->GetSrcDstWindow(iPixel, iLine, 1, 1, 1, 1, &dfReqXOff,
-                                        &dfReqYOff, &dfReqXSize, &dfReqYSize,
-                                        &nReqXOff, &nReqYOff, &nReqXSize,
-                                        &nReqYSize, &nOutXOff, &nOutYOff,
-                                        &nOutXSize, &nOutYSize, bError))
+            if (!poSrc->GetSrcDstWindow(
+                    iPixel, iLine, 1, 1, 1, 1, GRIORA_NearestNeighbour,
+                    &dfReqXOff, &dfReqYOff, &dfReqXSize, &dfReqYSize, &nReqXOff,
+                    &nReqYOff, &nReqXSize, &nReqYSize, &nOutXOff, &nOutYOff,
+                    &nOutXSize, &nOutYSize, bError))
             {
                 if (bError)
                 {
@@ -2910,7 +2947,7 @@ const char *VRTSourcedRasterBand::GetMetadataItem(const char *pszName,
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **VRTSourcedRasterBand::GetMetadata(const char *pszDomain)
+CSLConstList VRTSourcedRasterBand::GetMetadata(const char *pszDomain)
 
 {
     /* ==================================================================== */
@@ -3038,7 +3075,7 @@ CPLErr VRTSourcedRasterBand::SetMetadataItem(const char *pszName,
 /*                            SetMetadata()                             */
 /************************************************************************/
 
-CPLErr VRTSourcedRasterBand::SetMetadata(char **papszNewMD,
+CPLErr VRTSourcedRasterBand::SetMetadata(CSLConstList papszNewMD,
                                          const char *pszDomain)
 
 {
@@ -3086,7 +3123,7 @@ CPLErr VRTSourcedRasterBand::SetMetadata(char **papszNewMD,
 }
 
 /************************************************************************/
-/*                             GetFileList()                            */
+/*                            GetFileList()                             */
 /************************************************************************/
 
 void VRTSourcedRasterBand::GetFileList(char ***ppapszFileList, int *pnSize,
@@ -3101,7 +3138,7 @@ void VRTSourcedRasterBand::GetFileList(char ***ppapszFileList, int *pnSize,
 }
 
 /************************************************************************/
-/*                        CloseDependentDatasets()                      */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int VRTSourcedRasterBand::CloseDependentDatasets()
@@ -3117,7 +3154,7 @@ int VRTSourcedRasterBand::CloseDependentDatasets()
 }
 
 /************************************************************************/
-/*                               FlushCache()                           */
+/*                             FlushCache()                             */
 /************************************************************************/
 
 CPLErr VRTSourcedRasterBand::FlushCache(bool bAtClosing)
@@ -3131,7 +3168,7 @@ CPLErr VRTSourcedRasterBand::FlushCache(bool bAtClosing)
 }
 
 /************************************************************************/
-/*                           RemoveCoveredSources()                     */
+/*                        RemoveCoveredSources()                        */
 /************************************************************************/
 
 /** Remove sources that are covered by other sources.

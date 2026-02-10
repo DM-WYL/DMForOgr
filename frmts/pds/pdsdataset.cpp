@@ -84,42 +84,41 @@ class PDSDataset final : public RawDataset
     CPL_DISALLOW_COPY_ASSIGN(PDSDataset)
 
   protected:
-    virtual int CloseDependentDatasets() override;
+    int CloseDependentDatasets() override;
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     PDSDataset();
-    virtual ~PDSDataset();
+    ~PDSDataset() override;
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 
-    virtual char **GetFileList(void) override;
+    char **GetFileList(void) override;
 
-    virtual CPLErr IBuildOverviews(const char *, int, const int *, int,
-                                   const int *, GDALProgressFunc, void *,
-                                   CSLConstList papszOptions) override;
+    CPLErr IBuildOverviews(const char *, int, const int *, int, const int *,
+                           GDALProgressFunc, void *,
+                           CSLConstList papszOptions) override;
 
-    virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, int, BANDMAP_TYPE,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GSpacing nBandSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
+                     GDALDataType, int, BANDMAP_TYPE, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 
     bool GetRawBinaryLayout(GDALDataset::RawBinaryLayout &) override;
 
     char **GetMetadataDomainList() override;
-    char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBands, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
 };
 
 /************************************************************************/
-/*                            PDSDataset()                            */
+/*                             PDSDataset()                             */
 /************************************************************************/
 
 PDSDataset::PDSDataset()
@@ -128,7 +127,7 @@ PDSDataset::PDSDataset()
 }
 
 /************************************************************************/
-/*                            ~PDSDataset()                            */
+/*                            ~PDSDataset()                             */
 /************************************************************************/
 
 PDSDataset::~PDSDataset()
@@ -138,10 +137,10 @@ PDSDataset::~PDSDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr PDSDataset::Close()
+CPLErr PDSDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -162,7 +161,7 @@ CPLErr PDSDataset::Close()
 }
 
 /************************************************************************/
-/*                        CloseDependentDatasets()                      */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int PDSDataset::CloseDependentDatasets()
@@ -257,7 +256,7 @@ CPLErr PDSDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                         GetSpatialRef()                              */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *PDSDataset::GetSpatialRef() const
@@ -734,7 +733,7 @@ void PDSDataset::ParseSRS()
 }
 
 /************************************************************************/
-/*                        GetRawBinaryLayout()                          */
+/*                         GetRawBinaryLayout()                         */
 /************************************************************************/
 
 bool PDSDataset::GetRawBinaryLayout(GDALDataset::RawBinaryLayout &sLayout)
@@ -746,7 +745,7 @@ bool PDSDataset::GetRawBinaryLayout(GDALDataset::RawBinaryLayout &sLayout)
 }
 
 /************************************************************************/
-/*                        PDSConvertFromHex()                           */
+/*                         PDSConvertFromHex()                          */
 /************************************************************************/
 
 static GUInt32 PDSConvertFromHex(const char *pszVal)
@@ -1013,7 +1012,7 @@ int PDSDataset::ParseImage(const CPLString &osPrefix,
 
     /**** Grab format type - pds supports 1,2,4,8,16,32,64 (in theory) **/
     /**** I have only seen 8, 16, 32 (float) in released datasets      **/
-    GDALDataType eDataType = GDT_Byte;
+    GDALDataType eDataType = GDT_UInt8;
     int nSuffixItems = 0;
     int nSuffixLines = 0;
     int nSuffixBytes = 4;  // Default as per PDS specification
@@ -1030,7 +1029,7 @@ int PDSDataset::ParseImage(const CPLString &osPrefix,
         switch (itype)
         {
             case 8:
-                eDataType = GDT_Byte;
+                eDataType = GDT_UInt8;
                 dfNoData = PDS_NULL1;
                 break;
             case 16:
@@ -1072,7 +1071,7 @@ int PDSDataset::ParseImage(const CPLString &osPrefix,
         switch (itype)
         {
             case 1:
-                eDataType = GDT_Byte;
+                eDataType = GDT_UInt8;
                 break;
             case 2:
                 if (strstr(osST, "UNSIGNED") != nullptr)
@@ -1321,7 +1320,7 @@ PDSWrapperRasterBand::RefUnderlyingRasterBand(bool /*bForceOpen*/) const
 }
 
 /************************************************************************/
-/*                       ParseCompressedImage()                         */
+/*                        ParseCompressedImage()                        */
 /************************************************************************/
 
 int PDSDataset::ParseCompressedImage()
@@ -1534,7 +1533,7 @@ const char *PDSDataset::GetKeyword(const std::string &osPath,
 }
 
 /************************************************************************/
-/*                            GetKeywordSub()                           */
+/*                           GetKeywordSub()                            */
 /************************************************************************/
 
 const char *PDSDataset::GetKeywordSub(const std::string &osPath, int iSubscript,
@@ -1564,7 +1563,7 @@ const char *PDSDataset::GetKeywordSub(const std::string &osPath, int iSubscript,
 }
 
 /************************************************************************/
-/*                            GetKeywordUnit()                          */
+/*                           GetKeywordUnit()                           */
 /************************************************************************/
 
 const char *PDSDataset::GetKeywordUnit(const char *pszPath, int iSubscript,
@@ -1620,7 +1619,7 @@ CPLString PDSDataset::CleanString(const CPLString &osInput)
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **PDSDataset::GetMetadataDomainList()
@@ -1629,10 +1628,10 @@ char **PDSDataset::GetMetadataDomainList()
 }
 
 /************************************************************************/
-/*                             GetMetadata()                            */
+/*                            GetMetadata()                             */
 /************************************************************************/
 
-char **PDSDataset::GetMetadata(const char *pszDomain)
+CSLConstList PDSDataset::GetMetadata(const char *pszDomain)
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "json:PDS"))
     {
@@ -1642,7 +1641,7 @@ char **PDSDataset::GetMetadata(const char *pszDomain)
 }
 
 /************************************************************************/
-/*                         GDALRegister_PDS()                           */
+/*                          GDALRegister_PDS()                          */
 /************************************************************************/
 
 void GDALRegister_PDS()

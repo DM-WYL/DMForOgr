@@ -157,7 +157,7 @@ class TileDBRasterBand;
 /* ==================================================================== */
 /************************************************************************/
 
-class TileDBDataset : public GDALPamDataset
+class TileDBDataset /* non final */ : public GDALPamDataset
 {
   protected:
     std::unique_ptr<tiledb::Context> m_ctx{};
@@ -176,10 +176,10 @@ class TileDBDataset : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBands, GDALDataType eType,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 
@@ -263,15 +263,15 @@ class TileDBRasterDataset final : public TileDBDataset
     void LoadOverviews();
 
   public:
-    ~TileDBRasterDataset();
+    ~TileDBRasterDataset() override;
     CPLErr TryLoadCachedXML(CSLConstList papszSiblingFiles = nullptr,
                             bool bReload = true);
     CPLErr TryLoadXML(CSLConstList papszSiblingFiles = nullptr) override;
     CPLErr TrySaveXML() override;
-    char **GetMetadata(const char *pszDomain) override;
-    CPLErr Close() override;
+    CSLConstList GetMetadata(const char *pszDomain) override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
     int CloseDependentDatasets() override;
-    virtual CPLErr FlushCache(bool bAtClosing) override;
+    CPLErr FlushCache(bool bAtClosing) override;
 
     CPLErr IBuildOverviews(const char *pszResampling, int nOverviews,
                            const int *panOverviewList, int nListBands,
@@ -292,16 +292,17 @@ class TileDBRasterDataset final : public TileDBDataset
     static GDALDataset *Open(GDALOpenInfo *, tiledb::Object::Type objectType);
     static TileDBRasterDataset *Create(const char *pszFilename, int nXSize,
                                        int nYSize, int nBands,
-                                       GDALDataType eType, char **papszOptions);
+                                       GDALDataType eType,
+                                       CSLConstList papszOptions);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
 
 /************************************************************************/
-/*                        OGRTileDBLayer                                */
+/*                            OGRTileDBLayer                            */
 /************************************************************************/
 
 class OGRTileDBDataset;
@@ -477,7 +478,7 @@ class OGRTileDBLayer final : public OGRLayer,
     OGRTileDBLayer(GDALDataset *poDS, const char *pszFilename,
                    const char *pszLayerName, const OGRwkbGeometryType eGType,
                    const OGRSpatialReference *poSRS);
-    ~OGRTileDBLayer();
+    ~OGRTileDBLayer() override;
     void ResetReading() override;
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRTileDBLayer)
     OGRFeature *GetFeature(GIntBig nFID) override;
@@ -510,7 +511,7 @@ class OGRTileDBLayer final : public OGRLayer,
 };
 
 /************************************************************************/
-/*                         OGRTileDBDataset                             */
+/*                           OGRTileDBDataset                           */
 /************************************************************************/
 
 class OGRTileDBDataset final : public TileDBDataset
@@ -521,7 +522,7 @@ class OGRTileDBDataset final : public TileDBDataset
 
   public:
     OGRTileDBDataset();
-    ~OGRTileDBDataset();
+    ~OGRTileDBDataset() override;
     OGRLayer *ExecuteSQL(const char *pszSQLCommand,
                          OGRGeometry *poSpatialFilter,
                          const char *pszDialect) override;

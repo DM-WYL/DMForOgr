@@ -10,11 +10,14 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "webp_headers.h"
 #include "webpdrivercore.h"
 
 /************************************************************************/
-/*                     WEBPDriverIdentify()                             */
+/*                         WEBPDriverIdentify()                         */
 /************************************************************************/
 
 int WEBPDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -34,7 +37,7 @@ int WEBPDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                      WEBPDriverSetCommonMetadata()                   */
+/*                    WEBPDriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void WEBPDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -104,6 +107,8 @@ void WEBPDriverSetCommonMetadata(GDALDriver *poDriver)
         "   <Option name='EXACT' type='int' description='preserve the exact "
         "RGB values under transparent area. off=0, on=1' default='0'/>\n"
 #endif
+        "<Option name='WORLDFILE' type='boolean' description='whether "
+        "to generate a worldfile' default='NO'/>\n"
         "</CreationOptionList>\n");
 
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");

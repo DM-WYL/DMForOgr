@@ -15,6 +15,7 @@
 
 #include "cpl_json.h"
 #include "cpl_mem_cache.h"
+#include "cpl_vsi_error.h"
 #include "cpl_vsi_virtual.h"
 
 #include "gdal_priv.h"
@@ -31,7 +32,7 @@
 extern "C" int CPL_DLL GDALIsInGlobalDestructor();
 
 /************************************************************************/
-/*                         VSIZarrArrayInfo                             */
+/*                           VSIZarrArrayInfo                           */
 /************************************************************************/
 
 struct VSIZarrArrayInfo
@@ -40,7 +41,7 @@ struct VSIZarrArrayInfo
 };
 
 /************************************************************************/
-/*                    VSIKerchunkParquetRefFile                         */
+/*                      VSIKerchunkParquetRefFile                       */
 /************************************************************************/
 
 struct VSIKerchunkParquetRefFile
@@ -51,7 +52,7 @@ struct VSIKerchunkParquetRefFile
 };
 
 /************************************************************************/
-/*                    VSIKerchunkParquetRefFileSystem                   */
+/*                   VSIKerchunkParquetRefFileSystem                    */
 /************************************************************************/
 
 class VSIKerchunkParquetRefFileSystem final : public VSIFilesystemHandler
@@ -59,10 +60,11 @@ class VSIKerchunkParquetRefFileSystem final : public VSIFilesystemHandler
   public:
     VSIKerchunkParquetRefFileSystem()
     {
-        IsFileSystemInstantiated() = true;
+        bool *pbInstantiated = &IsFileSystemInstantiated();
+        *pbInstantiated = true;
     }
 
-    ~VSIKerchunkParquetRefFileSystem();
+    ~VSIKerchunkParquetRefFileSystem() override;
 
     static bool &IsFileSystemInstantiated()
     {
@@ -78,6 +80,9 @@ class VSIKerchunkParquetRefFileSystem final : public VSIFilesystemHandler
              int nFlags) override;
 
     char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
+
+    char **GetFileMetadata(const char *pszFilename, const char *pszDomain,
+                           CSLConstList papszOptions) override;
 
     void CleanCache();
 
@@ -114,13 +119,14 @@ class VSIKerchunkParquetRefFileSystem final : public VSIFilesystemHandler
 };
 
 /************************************************************************/
-/*               ~VSIKerchunkParquetRefFileSystem()                     */
+/*                  ~VSIKerchunkParquetRefFileSystem()                  */
 /************************************************************************/
 
 VSIKerchunkParquetRefFileSystem::~VSIKerchunkParquetRefFileSystem()
 {
     CleanCache();
-    IsFileSystemInstantiated() = false;
+    bool *pbInstantiated = &IsFileSystemInstantiated();
+    *pbInstantiated = false;
 }
 
 /************************************************************************/
@@ -144,7 +150,7 @@ void VSIKerchunkParquetRefFileSystem::CleanCache()
 }
 
 /************************************************************************/
-/*            VSIKerchunkParquetRefFileSystem::SplitFilename()          */
+/*           VSIKerchunkParquetRefFileSystem::SplitFilename()           */
 /************************************************************************/
 
 /*static*/
@@ -203,7 +209,7 @@ VSIKerchunkParquetRefFileSystem::SplitFilename(const char *pszFilename)
 }
 
 /************************************************************************/
-/*              VSIKerchunkParquetRefFileSystem::Load()                 */
+/*               VSIKerchunkParquetRefFileSystem::Load()                */
 /************************************************************************/
 
 std::shared_ptr<VSIKerchunkParquetRefFile>
@@ -552,7 +558,15 @@ VSIVirtualHandleUniquePtr VSIKerchunkParquetRefFileSystem::Open(
                              osPath.c_str());
                 CPLConfigOptionSetter oSetter("GDAL_DISABLE_READDIR_ON_OPEN",
                                               "EMPTY_DIR", false);
-                return VSIFilesystemHandler::OpenStatic(osPath.c_str(), "rb");
+                auto fp = VSIFilesystemHandler::OpenStatic(osPath.c_str(), "rb",
+                                                           true);
+                if (!fp)
+                {
+                    if (!VSIToCPLError(CE_Failure, CPLE_FileIO))
+                        CPLError(CE_Failure, CPLE_FileIO, "Cannot open %s",
+                                 osPath.c_str());
+                }
+                return fp;
             }
         }
 
@@ -634,6 +648,92 @@ int VSIKerchunkParquetRefFileSystem::Stat(const char *pszFilename,
     pStatBuf->st_mode = S_IFREG;
 
     return 0;
+}
+
+/************************************************************************/
+/*          VSIKerchunkParquetRefFileSystem::GetFileMetadata()          */
+/************************************************************************/
+
+char **VSIKerchunkParquetRefFileSystem::GetFileMetadata(
+    const char *pszFilename, const char *pszDomain,
+    CSLConstList /* papszOptions */)
+{
+    if (!pszDomain || !EQUAL(pszDomain, "CHUNK_INFO"))
+        return nullptr;
+
+    const auto [osRootFilename, osKey] = SplitFilename(pszFilename);
+    if (osRootFilename.empty() || osKey.empty())
+        return nullptr;
+
+    const auto refFile = Load(osRootFilename);
+    if (!refFile)
+        return nullptr;
+
+    const auto oIter = refFile->m_oMapKeys.find(osKey);
+    if (oIter != refFile->m_oMapKeys.end())
+    {
+        CPLStringList aosMetadata;
+        const auto &abyData = oIter->second;
+        aosMetadata.SetNameValue(
+            "SIZE",
+            CPLSPrintf(CPL_FRMT_GUIB, static_cast<GUIntBig>(abyData.size())));
+        if (abyData.size() <
+            static_cast<size_t>(std::numeric_limits<int>::max() - 1))
+        {
+            char *pszBase64 = CPLBase64Encode(static_cast<int>(abyData.size()),
+                                              abyData.data());
+            aosMetadata.SetNameValue("BASE64", pszBase64);
+            CPLFree(pszBase64);
+        }
+        return aosMetadata.StealList();
+    }
+
+    const auto info = GetChunkInfo(osRootFilename, refFile, osKey);
+    if (!info.poFeature)
+        return nullptr;
+
+    CPLStringList aosMetadata;
+    if (info.poFeature->IsFieldSetAndNotNull(info.iRawField))
+    {
+        const auto psField = info.poFeature->GetRawFieldRef(info.iRawField);
+        aosMetadata.SetNameValue("SIZE",
+                                 CPLSPrintf("%d", psField->Binary.nCount));
+        char *pszBase64 =
+            CPLBase64Encode(psField->Binary.nCount, psField->Binary.paData);
+        aosMetadata.SetNameValue("BASE64", pszBase64);
+        CPLFree(pszBase64);
+    }
+    else
+    {
+        const uint64_t nOffset =
+            info.poFeature->GetFieldAsInteger64(info.iOffsetField);
+        const int nSize = info.poFeature->GetFieldAsInteger(info.iSizeField);
+
+        std::string osVSIPath = VSIKerchunkMorphURIToVSIPath(
+            info.poFeature->GetFieldAsString(info.iPathField),
+            info.osParquetFileDirectory);
+        if (osVSIPath.empty())
+            return nullptr;
+        if (nSize)
+        {
+            aosMetadata.SetNameValue("SIZE", CPLSPrintf("%d", nSize));
+        }
+        else
+        {
+            VSIStatBufL sStatBuf;
+            if (VSIStatL(osVSIPath.c_str(), &sStatBuf) != 0)
+                return nullptr;
+            aosMetadata.SetNameValue(
+                "SIZE", CPLSPrintf(CPL_FRMT_GUIB,
+                                   static_cast<GUIntBig>(sStatBuf.st_size)));
+        }
+        aosMetadata.SetNameValue(
+            "OFFSET",
+            CPLSPrintf(CPL_FRMT_GUIB, static_cast<GUIntBig>(nOffset)));
+        aosMetadata.SetNameValue("FILENAME", osVSIPath.c_str());
+    }
+
+    return aosMetadata.StealList();
 }
 
 /************************************************************************/
@@ -744,12 +844,12 @@ void VSIInstallKerchunkParquetRefFileSystem()
     {
         VSIFileManager::InstallHandler(
             PARQUET_REF_FS_PREFIX,
-            std::make_unique<VSIKerchunkParquetRefFileSystem>().release());
+            std::make_shared<VSIKerchunkParquetRefFileSystem>());
     }
 }
 
 /************************************************************************/
-/*                VSIKerchunkParquetRefFileSystemCleanCache()           */
+/*             VSIKerchunkParquetRefFileSystemCleanCache()              */
 /************************************************************************/
 
 void VSIKerchunkParquetRefFileSystemCleanCache()

@@ -10,12 +10,15 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "ogrsf_frmts.h"
 
 #include "ogrmongodbv3drivercore.h"
 
 /************************************************************************/
-/*                   OGRMongoDBv3DriverIdentify()                       */
+/*                     OGRMongoDBv3DriverIdentify()                     */
 /************************************************************************/
 
 int OGRMongoDBv3DriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -27,7 +30,7 @@ int OGRMongoDBv3DriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                 OGRMongoDBv3DriverSetCommonMetadata()                */
+/*                OGRMongoDBv3DriverSetCommonMetadata()                 */
 /************************************************************************/
 
 void OGRMongoDBv3DriverSetCommonMetadata(GDALDriver *poDriver)
@@ -43,6 +46,7 @@ void OGRMongoDBv3DriverSetCommonMetadata(GDALDriver *poDriver)
                               "drivers/vector/mongodbv3.html");
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS,
                               "OGRSQL SQLITE MongoDB");
+    poDriver->SetMetadataItem(GDAL_DCAP_UPSERT, "YES");
 
     poDriver->SetMetadataItem(GDAL_DMD_CONNECTION_PREFIX, "MongoDBv3:");
 

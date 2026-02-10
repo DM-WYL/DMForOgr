@@ -40,7 +40,7 @@ namespace OpenFileGDB
 FileGDBIndex::~FileGDBIndex() = default;
 
 /************************************************************************/
-/*                    GetFieldNameFromExpression()                      */
+/*                     GetFieldNameFromExpression()                     */
 /************************************************************************/
 
 std::string
@@ -54,7 +54,7 @@ FileGDBIndex::GetFieldNameFromExpression(const std::string &osExpression)
 }
 
 /************************************************************************/
-/*                           GetFieldName()                             */
+/*                            GetFieldName()                            */
 /************************************************************************/
 
 std::string FileGDBIndex::GetFieldName() const
@@ -78,40 +78,40 @@ class FileGDBTrivialIterator final : public FileGDBIterator
   public:
     explicit FileGDBTrivialIterator(FileGDBIterator *poParentIter);
 
-    virtual ~FileGDBTrivialIterator()
+    ~FileGDBTrivialIterator() override
     {
         delete poParentIter;
     }
 
-    virtual FileGDBTable *GetTable() override
+    FileGDBTable *GetTable() override
     {
         return poTable;
     }
 
-    virtual void Reset() override
+    void Reset() override
     {
         iRow = 0;
         poParentIter->Reset();
     }
 
-    virtual int64_t GetNextRowSortedByFID() override;
+    int64_t GetNextRowSortedByFID() override;
 
-    virtual int64_t GetRowCount() override
+    int64_t GetRowCount() override
     {
         return poTable->GetTotalRecordCount();
     }
 
-    virtual int64_t GetNextRowSortedByValue() override
+    int64_t GetNextRowSortedByValue() override
     {
         return poParentIter->GetNextRowSortedByValue();
     }
 
-    virtual const OGRField *GetMinValue(int &eOutType) override
+    const OGRField *GetMinValue(int &eOutType) override
     {
         return poParentIter->GetMinValue(eOutType);
     }
 
-    virtual const OGRField *GetMaxValue(int &eOutType) override
+    const OGRField *GetMaxValue(int &eOutType) override
     {
         return poParentIter->GetMaxValue(eOutType);
     }
@@ -124,7 +124,7 @@ class FileGDBTrivialIterator final : public FileGDBIterator
 };
 
 /************************************************************************/
-/*                        FileGDBNotIterator                            */
+/*                          FileGDBNotIterator                          */
 /************************************************************************/
 
 class FileGDBNotIterator final : public FileGDBIterator
@@ -140,20 +140,20 @@ class FileGDBNotIterator final : public FileGDBIterator
 
   public:
     explicit FileGDBNotIterator(FileGDBIterator *poIterBase);
-    virtual ~FileGDBNotIterator();
+    ~FileGDBNotIterator() override;
 
-    virtual FileGDBTable *GetTable() override
+    FileGDBTable *GetTable() override
     {
         return poTable;
     }
 
-    virtual void Reset() override;
-    virtual int64_t GetNextRowSortedByFID() override;
-    virtual int64_t GetRowCount() override;
+    void Reset() override;
+    int64_t GetNextRowSortedByFID() override;
+    int64_t GetRowCount() override;
 };
 
 /************************************************************************/
-/*                        FileGDBAndIterator                            */
+/*                          FileGDBAndIterator                          */
 /************************************************************************/
 
 class FileGDBAndIterator final : public FileGDBIterator
@@ -170,19 +170,19 @@ class FileGDBAndIterator final : public FileGDBIterator
   public:
     FileGDBAndIterator(FileGDBIterator *poIter1, FileGDBIterator *poIter2,
                        bool bTakeOwnershipOfIterators);
-    virtual ~FileGDBAndIterator();
+    ~FileGDBAndIterator() override;
 
-    virtual FileGDBTable *GetTable() override
+    FileGDBTable *GetTable() override
     {
         return poIter1->GetTable();
     }
 
-    virtual void Reset() override;
-    virtual int64_t GetNextRowSortedByFID() override;
+    void Reset() override;
+    int64_t GetNextRowSortedByFID() override;
 };
 
 /************************************************************************/
-/*                        FileGDBOrIterator                             */
+/*                          FileGDBOrIterator                           */
 /************************************************************************/
 
 class FileGDBOrIterator final : public FileGDBIterator
@@ -200,16 +200,16 @@ class FileGDBOrIterator final : public FileGDBIterator
   public:
     FileGDBOrIterator(FileGDBIterator *poIter1, FileGDBIterator *poIter2,
                       int bIteratorAreExclusive = FALSE);
-    virtual ~FileGDBOrIterator();
+    ~FileGDBOrIterator() override;
 
-    virtual FileGDBTable *GetTable() override
+    FileGDBTable *GetTable() override
     {
         return poIter1->GetTable();
     }
 
-    virtual void Reset() override;
-    virtual int64_t GetNextRowSortedByFID() override;
-    virtual int64_t GetRowCount() override;
+    void Reset() override;
+    int64_t GetNextRowSortedByFID() override;
+    int64_t GetRowCount() override;
 };
 
 /************************************************************************/
@@ -221,7 +221,7 @@ constexpr int FGDB_PAGE_SIZE_V1 = 4096;
 constexpr int FGDB_PAGE_SIZE_V2 = 65536;
 constexpr int MAX_FGDB_PAGE_SIZE = FGDB_PAGE_SIZE_V2;
 
-class FileGDBIndexIteratorBase : virtual public FileGDBIterator
+class FileGDBIndexIteratorBase /* non final */ : virtual public FileGDBIterator
 {
   protected:
     FileGDBTable *poParent = nullptr;
@@ -296,18 +296,18 @@ class FileGDBIndexIteratorBase : virtual public FileGDBIterator
     operator=(const FileGDBIndexIteratorBase &) = delete;
 
   public:
-    virtual ~FileGDBIndexIteratorBase();
+    ~FileGDBIndexIteratorBase() override;
 
-    virtual FileGDBTable *GetTable() override
+    FileGDBTable *GetTable() override
     {
         return poParent;
     }
 
-    virtual void Reset() override;
+    void Reset() override;
 };
 
 /************************************************************************/
-/*                        FileGDBIndexIterator                          */
+/*                         FileGDBIndexIterator                         */
 /************************************************************************/
 
 constexpr int UUID_LEN_AS_STRING = 38;
@@ -337,7 +337,7 @@ class FileGDBIndexIterator final : public FileGDBIndexIteratorBase
     const OGRField *GetMinMaxValue(OGRField *psField, int &eOutType,
                                    int bIsMin);
 
-    virtual bool FindPages(int iLevel, uint64_t nPage) override;
+    bool FindPages(int iLevel, uint64_t nPage) override;
     int64_t GetNextRow();
 
     FileGDBIndexIterator(FileGDBTable *poParent, int bAscending);
@@ -352,24 +352,24 @@ class FileGDBIndexIterator final : public FileGDBIndexIteratorBase
     FileGDBIndexIterator &operator=(const FileGDBIndexIterator &) = delete;
 
   public:
-    virtual ~FileGDBIndexIterator();
+    ~FileGDBIndexIterator() override;
 
     static FileGDBIterator *Build(FileGDBTable *poParentIn, int nFieldIdx,
                                   int bAscendingIn, FileGDBSQLOp op,
                                   OGRFieldType eOGRFieldType,
                                   const OGRField *psValue);
 
-    virtual int64_t GetNextRowSortedByFID() override;
-    virtual int64_t GetRowCount() override;
-    virtual void Reset() override;
+    int64_t GetNextRowSortedByFID() override;
+    int64_t GetRowCount() override;
+    void Reset() override;
 
-    virtual int64_t GetNextRowSortedByValue() override
+    int64_t GetNextRowSortedByValue() override
     {
         return GetNextRow();
     }
 
-    virtual const OGRField *GetMinValue(int &eOutType) override;
-    virtual const OGRField *GetMaxValue(int &eOutType) override;
+    const OGRField *GetMinValue(int &eOutType) override;
+    const OGRField *GetMaxValue(int &eOutType) override;
     virtual bool GetMinMaxSumCount(double &dfMin, double &dfMax, double &dfSum,
                                    int &nCount) override;
 };
@@ -397,7 +397,7 @@ const OGRField *FileGDBIterator::GetMaxValue(int &eOutType)
 }
 
 /************************************************************************/
-/*                       GetNextRowSortedByValue()                      */
+/*                      GetNextRowSortedByValue()                       */
 /************************************************************************/
 
 int64_t FileGDBIterator::GetNextRowSortedByValue()
@@ -407,7 +407,7 @@ int64_t FileGDBIterator::GetNextRowSortedByValue()
 }
 
 /************************************************************************/
-/*                        GetMinMaxSumCount()                           */
+/*                         GetMinMaxSumCount()                          */
 /************************************************************************/
 
 bool FileGDBIterator::GetMinMaxSumCount(double &dfMin, double &dfMax,
@@ -422,7 +422,7 @@ bool FileGDBIterator::GetMinMaxSumCount(double &dfMin, double &dfMax,
 }
 
 /************************************************************************/
-/*                             Build()                                  */
+/*                               Build()                                */
 /************************************************************************/
 
 FileGDBIterator *FileGDBIterator::Build(FileGDBTable *poParent, int nFieldIdx,
@@ -466,7 +466,7 @@ FileGDBIterator *FileGDBIterator::BuildNot(FileGDBIterator *poIterBase)
 }
 
 /************************************************************************/
-/*                               BuildAnd()                             */
+/*                              BuildAnd()                              */
 /************************************************************************/
 
 FileGDBIterator *FileGDBIterator::BuildAnd(FileGDBIterator *poIter1,
@@ -477,7 +477,7 @@ FileGDBIterator *FileGDBIterator::BuildAnd(FileGDBIterator *poIter1,
 }
 
 /************************************************************************/
-/*                               BuildOr()                              */
+/*                              BuildOr()                               */
 /************************************************************************/
 
 FileGDBIterator *FileGDBIterator::BuildOr(FileGDBIterator *poIter1,
@@ -488,7 +488,7 @@ FileGDBIterator *FileGDBIterator::BuildOr(FileGDBIterator *poIter1,
 }
 
 /************************************************************************/
-/*                           GetRowCount()                              */
+/*                            GetRowCount()                             */
 /************************************************************************/
 
 int64_t FileGDBIterator::GetRowCount()
@@ -502,7 +502,7 @@ int64_t FileGDBIterator::GetRowCount()
 }
 
 /************************************************************************/
-/*                         FileGDBTrivialIterator()                     */
+/*                       FileGDBTrivialIterator()                       */
 /************************************************************************/
 
 FileGDBTrivialIterator::FileGDBTrivialIterator(FileGDBIterator *poParentIterIn)
@@ -511,7 +511,7 @@ FileGDBTrivialIterator::FileGDBTrivialIterator(FileGDBIterator *poParentIterIn)
 }
 
 /************************************************************************/
-/*                        GetNextRowSortedByFID()                       */
+/*                       GetNextRowSortedByFID()                        */
 /************************************************************************/
 
 int64_t FileGDBTrivialIterator::GetNextRowSortedByFID()
@@ -523,7 +523,7 @@ int64_t FileGDBTrivialIterator::GetNextRowSortedByFID()
 }
 
 /************************************************************************/
-/*                           FileGDBNotIterator()                       */
+/*                         FileGDBNotIterator()                         */
 /************************************************************************/
 
 FileGDBNotIterator::FileGDBNotIterator(FileGDBIterator *poIterBaseIn)
@@ -534,7 +534,7 @@ FileGDBNotIterator::FileGDBNotIterator(FileGDBIterator *poIterBaseIn)
 }
 
 /************************************************************************/
-/*                          ~FileGDBNotIterator()                       */
+/*                        ~FileGDBNotIterator()                         */
 /************************************************************************/
 
 FileGDBNotIterator::~FileGDBNotIterator()
@@ -543,7 +543,7 @@ FileGDBNotIterator::~FileGDBNotIterator()
 }
 
 /************************************************************************/
-/*                             Reset()                                  */
+/*                               Reset()                                */
 /************************************************************************/
 
 void FileGDBNotIterator::Reset()
@@ -554,7 +554,7 @@ void FileGDBNotIterator::Reset()
 }
 
 /************************************************************************/
-/*                        GetNextRowSortedByFID()                       */
+/*                       GetNextRowSortedByFID()                        */
 /************************************************************************/
 
 int64_t FileGDBNotIterator::GetNextRowSortedByFID()
@@ -592,7 +592,7 @@ int64_t FileGDBNotIterator::GetNextRowSortedByFID()
 }
 
 /************************************************************************/
-/*                           GetRowCount()                              */
+/*                            GetRowCount()                             */
 /************************************************************************/
 
 int64_t FileGDBNotIterator::GetRowCount()
@@ -601,7 +601,7 @@ int64_t FileGDBNotIterator::GetRowCount()
 }
 
 /************************************************************************/
-/*                          FileGDBAndIterator()                        */
+/*                         FileGDBAndIterator()                         */
 /************************************************************************/
 
 FileGDBAndIterator::FileGDBAndIterator(FileGDBIterator *poIter1In,
@@ -614,7 +614,7 @@ FileGDBAndIterator::FileGDBAndIterator(FileGDBIterator *poIter1In,
 }
 
 /************************************************************************/
-/*                          ~FileGDBAndIterator()                       */
+/*                        ~FileGDBAndIterator()                         */
 /************************************************************************/
 
 FileGDBAndIterator::~FileGDBAndIterator()
@@ -627,7 +627,7 @@ FileGDBAndIterator::~FileGDBAndIterator()
 }
 
 /************************************************************************/
-/*                             Reset()                                  */
+/*                               Reset()                                */
 /************************************************************************/
 
 void FileGDBAndIterator::Reset()
@@ -639,7 +639,7 @@ void FileGDBAndIterator::Reset()
 }
 
 /************************************************************************/
-/*                        GetNextRowSortedByFID()                       */
+/*                       GetNextRowSortedByFID()                        */
 /************************************************************************/
 
 int64_t FileGDBAndIterator::GetNextRowSortedByFID()
@@ -674,7 +674,7 @@ int64_t FileGDBAndIterator::GetNextRowSortedByFID()
 }
 
 /************************************************************************/
-/*                          FileGDBOrIterator()                         */
+/*                         FileGDBOrIterator()                          */
 /************************************************************************/
 
 FileGDBOrIterator::FileGDBOrIterator(FileGDBIterator *poIter1In,
@@ -687,7 +687,7 @@ FileGDBOrIterator::FileGDBOrIterator(FileGDBIterator *poIter1In,
 }
 
 /************************************************************************/
-/*                          ~FileGDBOrIterator()                        */
+/*                         ~FileGDBOrIterator()                         */
 /************************************************************************/
 
 FileGDBOrIterator::~FileGDBOrIterator()
@@ -697,7 +697,7 @@ FileGDBOrIterator::~FileGDBOrIterator()
 }
 
 /************************************************************************/
-/*                             Reset()                                  */
+/*                               Reset()                                */
 /************************************************************************/
 
 void FileGDBOrIterator::Reset()
@@ -710,7 +710,7 @@ void FileGDBOrIterator::Reset()
 }
 
 /************************************************************************/
-/*                        GetNextRowSortedByFID()                       */
+/*                       GetNextRowSortedByFID()                        */
 /************************************************************************/
 
 int64_t FileGDBOrIterator::GetNextRowSortedByFID()
@@ -751,7 +751,7 @@ int64_t FileGDBOrIterator::GetNextRowSortedByFID()
 }
 
 /************************************************************************/
-/*                           GetRowCount()                              */
+/*                            GetRowCount()                             */
 /************************************************************************/
 
 int64_t FileGDBOrIterator::GetRowCount()
@@ -763,7 +763,7 @@ int64_t FileGDBOrIterator::GetRowCount()
 }
 
 /************************************************************************/
-/*                     FileGDBIndexIteratorBase()                       */
+/*                      FileGDBIndexIteratorBase()                      */
 /************************************************************************/
 
 FileGDBIndexIteratorBase::FileGDBIndexIteratorBase(FileGDBTable *poParentIn,
@@ -783,7 +783,7 @@ FileGDBIndexIteratorBase::FileGDBIndexIteratorBase(FileGDBTable *poParentIn,
 }
 
 /************************************************************************/
-/*                       ~FileGDBIndexIteratorBase()                    */
+/*                     ~FileGDBIndexIteratorBase()                      */
 /************************************************************************/
 
 FileGDBIndexIteratorBase::~FileGDBIndexIteratorBase()
@@ -794,7 +794,7 @@ FileGDBIndexIteratorBase::~FileGDBIndexIteratorBase()
 }
 
 /************************************************************************/
-/*                           ReadTrailer()                              */
+/*                            ReadTrailer()                             */
 /************************************************************************/
 
 bool FileGDBIndexIteratorBase::ReadTrailer(const std::string &osFilename)
@@ -915,7 +915,7 @@ bool FileGDBIndexIteratorBase::ReadTrailer(const std::string &osFilename)
 }
 
 /************************************************************************/
-/*                         FileGDBIndexIterator()                       */
+/*                        FileGDBIndexIterator()                        */
 /************************************************************************/
 
 FileGDBIndexIterator::FileGDBIndexIterator(FileGDBTable *poParentIn,
@@ -932,7 +932,7 @@ FileGDBIndexIterator::FileGDBIndexIterator(FileGDBTable *poParentIn,
 }
 
 /************************************************************************/
-/*                         ~FileGDBIndexIterator()                      */
+/*                       ~FileGDBIndexIterator()                        */
 /************************************************************************/
 
 FileGDBIndexIterator::~FileGDBIndexIterator()
@@ -941,7 +941,7 @@ FileGDBIndexIterator::~FileGDBIndexIterator()
 }
 
 /************************************************************************/
-/*                             Build()                                  */
+/*                               Build()                                */
 /************************************************************************/
 
 FileGDBIterator *FileGDBIndexIterator::Build(FileGDBTable *poParentIn,
@@ -961,7 +961,7 @@ FileGDBIterator *FileGDBIndexIterator::Build(FileGDBTable *poParentIn,
 }
 
 /************************************************************************/
-/*                           FileGDBSQLOpToStr()                        */
+/*                         FileGDBSQLOpToStr()                          */
 /************************************************************************/
 
 static const char *FileGDBSQLOpToStr(FileGDBSQLOp op)
@@ -987,7 +987,7 @@ static const char *FileGDBSQLOpToStr(FileGDBSQLOp op)
 }
 
 /************************************************************************/
-/*                           FileGDBValueToStr()                        */
+/*                         FileGDBValueToStr()                          */
 /************************************************************************/
 
 static const char *FileGDBValueToStr(OGRFieldType eOGRFieldType,
@@ -1023,7 +1023,7 @@ static const char *FileGDBValueToStr(OGRFieldType eOGRFieldType,
 }
 
 /************************************************************************/
-/*                          GetMaxWidthInBytes()                        */
+/*                         GetMaxWidthInBytes()                         */
 /************************************************************************/
 
 int FileGDBIndex::GetMaxWidthInBytes(const FileGDBTable *poTable) const
@@ -1308,7 +1308,7 @@ int FileGDBIndexIterator::SetConstraint(int nFieldIdx, FileGDBSQLOp op,
 }
 
 /************************************************************************/
-/*                          FileGDBUTF16StrCompare()                    */
+/*                       FileGDBUTF16StrCompare()                       */
 /************************************************************************/
 
 static int FileGDBUTF16StrCompare(const GUInt16 *pasFirst,
@@ -1594,7 +1594,7 @@ bool FileGDBIndexIterator::FindPages(int iLevel, uint64_t nPage)
 }
 
 /************************************************************************/
-/*                             Reset()                                  */
+/*                               Reset()                                */
 /************************************************************************/
 
 void FileGDBIndexIteratorBase::Reset()
@@ -1611,7 +1611,7 @@ void FileGDBIndexIteratorBase::Reset()
 }
 
 /************************************************************************/
-/*                             Reset()                                  */
+/*                               Reset()                                */
 /************************************************************************/
 
 void FileGDBIndexIterator::Reset()
@@ -1659,7 +1659,7 @@ uint64_t FileGDBIndexIteratorBase::ReadPageNumber(int iLevel)
 }
 
 /************************************************************************/
-/*                           LoadNextPage()                             */
+/*                            LoadNextPage()                            */
 /************************************************************************/
 
 bool FileGDBIndexIteratorBase::LoadNextPage(int iLevel)
@@ -1754,7 +1754,7 @@ bool FileGDBIndexIteratorBase::LoadNextFeaturePage()
 }
 
 /************************************************************************/
-/*                              GetNextRow()                            */
+/*                             GetNextRow()                             */
 /************************************************************************/
 
 int64_t FileGDBIndexIterator::GetNextRow()
@@ -1954,7 +1954,7 @@ int64_t FileGDBIndexIterator::GetNextRow()
 }
 
 /************************************************************************/
-/*                             SortRows()                               */
+/*                              SortRows()                              */
 /************************************************************************/
 
 int FileGDBIndexIterator::SortRows()
@@ -1995,7 +1995,7 @@ int FileGDBIndexIterator::SortRows()
 }
 
 /************************************************************************/
-/*                        GetNextRowSortedByFID()                       */
+/*                       GetNextRowSortedByFID()                        */
 /************************************************************************/
 
 int64_t FileGDBIndexIterator::GetNextRowSortedByFID()
@@ -2019,7 +2019,7 @@ int64_t FileGDBIndexIterator::GetNextRowSortedByFID()
 }
 
 /************************************************************************/
-/*                           GetRowCount()                              */
+/*                            GetRowCount()                             */
 /************************************************************************/
 
 int64_t FileGDBIndexIterator::GetRowCount()
@@ -2048,7 +2048,7 @@ int64_t FileGDBIndexIterator::GetRowCount()
 }
 
 /************************************************************************/
-/*                            GetMinMaxValue()                          */
+/*                           GetMinMaxValue()                           */
 /************************************************************************/
 
 const OGRField *FileGDBIndexIterator::GetMinMaxValue(OGRField *psField,
@@ -2253,7 +2253,7 @@ const OGRField *FileGDBIndexIterator::GetMaxValue(int &eOutType)
 }
 
 /************************************************************************/
-/*                        GetMinMaxSumCount()                           */
+/*                         GetMinMaxSumCount()                          */
 /************************************************************************/
 
 struct Int16Getter
@@ -2398,7 +2398,7 @@ bool FileGDBIndexIterator::GetMinMaxSumCount(double &dfMin, double &dfMax,
 FileGDBSpatialIndexIterator::~FileGDBSpatialIndexIterator() = default;
 
 /************************************************************************/
-/*                    FileGDBSpatialIndexIteratorImpl                   */
+/*                   FileGDBSpatialIndexIteratorImpl                    */
 /************************************************************************/
 
 class FileGDBSpatialIndexIteratorImpl final : public FileGDBIndexIteratorBase,
@@ -2414,7 +2414,7 @@ class FileGDBSpatialIndexIteratorImpl final : public FileGDBIndexIteratorBase,
     GInt32 m_nCurX = 0;
     GInt32 m_nMaxX = 0;
 
-    virtual bool FindPages(int iLevel, uint64_t nPage) override;
+    bool FindPages(int iLevel, uint64_t nPage) override;
     int GetNextRow();
     bool ReadNewXRange();
     bool ResetInternal();
@@ -2428,19 +2428,19 @@ class FileGDBSpatialIndexIteratorImpl final : public FileGDBIndexIteratorBase,
     bool Init();
 
   public:
-    virtual FileGDBTable *GetTable() override
+    FileGDBTable *GetTable() override
     {
         return poParent;
     }  // avoid MSVC C4250 inherits via dominance warning
 
-    virtual int64_t GetNextRowSortedByFID() override;
-    virtual void Reset() override;
+    int64_t GetNextRowSortedByFID() override;
+    void Reset() override;
 
-    virtual bool SetEnvelope(const OGREnvelope &sFilterEnvelope) override;
+    bool SetEnvelope(const OGREnvelope &sFilterEnvelope) override;
 };
 
 /************************************************************************/
-/*                      FileGDBSpatialIndexIteratorImpl()               */
+/*                  FileGDBSpatialIndexIteratorImpl()                   */
 /************************************************************************/
 
 FileGDBSpatialIndexIteratorImpl::FileGDBSpatialIndexIteratorImpl(
@@ -2458,7 +2458,7 @@ FileGDBSpatialIndexIteratorImpl::FileGDBSpatialIndexIteratorImpl(
 }
 
 /************************************************************************/
-/*                                  Build()                             */
+/*                               Build()                                */
 /************************************************************************/
 
 FileGDBSpatialIndexIterator *
@@ -2476,7 +2476,7 @@ FileGDBSpatialIndexIterator::Build(FileGDBTable *poParent,
 }
 
 /************************************************************************/
-/*                         SetEnvelope()                                */
+/*                            SetEnvelope()                             */
 /************************************************************************/
 
 bool FileGDBSpatialIndexIteratorImpl::SetEnvelope(
@@ -2489,7 +2489,7 @@ bool FileGDBSpatialIndexIteratorImpl::SetEnvelope(
 }
 
 /************************************************************************/
-/*                              Init()                                  */
+/*                                Init()                                */
 /************************************************************************/
 
 bool FileGDBSpatialIndexIteratorImpl::Init()
@@ -2568,7 +2568,7 @@ bool FileGDBSpatialIndexIteratorImpl::Init()
 }
 
 /************************************************************************/
-/*                         GetScaledCoord()                             */
+/*                           GetScaledCoord()                           */
 /************************************************************************/
 
 double FileGDBSpatialIndexIteratorImpl::GetScaledCoord(double coord) const
@@ -2578,7 +2578,7 @@ double FileGDBSpatialIndexIteratorImpl::GetScaledCoord(double coord) const
 }
 
 /************************************************************************/
-/*                         ReadNewXRange()                              */
+/*                           ReadNewXRange()                            */
 /************************************************************************/
 
 bool FileGDBSpatialIndexIteratorImpl::ReadNewXRange()
@@ -2626,7 +2626,7 @@ bool FileGDBSpatialIndexIteratorImpl::ReadNewXRange()
 }
 
 /************************************************************************/
-/*                         FindMinMaxIdx()                              */
+/*                           FindMinMaxIdx()                            */
 /************************************************************************/
 
 static bool FindMinMaxIdx(const GByte *pBaseAddr, const int nVals,
@@ -2759,7 +2759,7 @@ bool FileGDBSpatialIndexIteratorImpl::FindPages(int iLevel, uint64_t nPage)
 }
 
 /************************************************************************/
-/*                              GetNextRow()                            */
+/*                             GetNextRow()                             */
 /************************************************************************/
 
 int FileGDBSpatialIndexIteratorImpl::GetNextRow()
@@ -2837,7 +2837,7 @@ int FileGDBSpatialIndexIteratorImpl::GetNextRow()
 }
 
 /************************************************************************/
-/*                             Reset()                                  */
+/*                               Reset()                                */
 /************************************************************************/
 
 bool FileGDBSpatialIndexIteratorImpl::ResetInternal()
@@ -2867,7 +2867,7 @@ void FileGDBSpatialIndexIteratorImpl::Reset()
 }
 
 /************************************************************************/
-/*                        GetNextRowSortedByFID()                       */
+/*                       GetNextRowSortedByFID()                        */
 /************************************************************************/
 
 int64_t FileGDBSpatialIndexIteratorImpl::GetNextRowSortedByFID()

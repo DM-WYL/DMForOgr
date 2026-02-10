@@ -31,26 +31,16 @@
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiPoint::OGRMultiPoint(const OGRMultiPoint &) = default;
 
 /************************************************************************/
-/*                  operator=( const OGRMultiPoint&)                    */
+/*                   operator=( const OGRMultiPoint&)                   */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiPoint &OGRMultiPoint::operator=(const OGRMultiPoint &other)
@@ -110,7 +100,7 @@ const char *OGRMultiPoint::getGeometryName() const
 }
 
 /************************************************************************/
-/*                          isCompatibleSubType()                       */
+/*                        isCompatibleSubType()                         */
 /************************************************************************/
 
 OGRBoolean
@@ -405,7 +395,7 @@ OGRErr OGRMultiPoint::importFromWkt_Bracketed(const char **ppszInput, int bHasM,
 }
 
 /************************************************************************/
-/*                         hasCurveGeometry()                           */
+/*                          hasCurveGeometry()                          */
 /************************************************************************/
 
 OGRBoolean OGRMultiPoint::hasCurveGeometry(int /* bLookForNonLinear */) const

@@ -169,7 +169,7 @@ class MrSIDProgress : public LTIProgressDelegate
     {
     }
 
-    virtual LT_STATUS setProgressStatus(float fraction) override
+    LT_STATUS setProgressStatus(float fraction) override
     {
         if (!m_f)
             return LT_STS_BadContext;
@@ -240,31 +240,30 @@ class MrSIDDataset final : public GDALJP2AbstractDataset
 
     int m_nInRasterIO = 0;  // Prevent infinite recursion in IRasterIO()
 
-    virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, int, BANDMAP_TYPE,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GSpacing nBandSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
+                     GDALDataType, int, BANDMAP_TYPE, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 
   protected:
-    virtual int CloseDependentDatasets() override;
+    int CloseDependentDatasets() override;
 
-    virtual CPLErr IBuildOverviews(const char *, int, const int *, int,
-                                   const int *, GDALProgressFunc, void *,
-                                   CSLConstList papszOptions) override;
+    CPLErr IBuildOverviews(const char *, int, const int *, int, const int *,
+                           GDALProgressFunc, void *,
+                           CSLConstList papszOptions) override;
 
   public:
     explicit MrSIDDataset(int bIsJPEG2000);
-    ~MrSIDDataset();
+    ~MrSIDDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo, int bIsJP2);
 
-    virtual char **GetFileList() override;
+    char **GetFileList() override;
 
 #ifdef MRSID_ESDK
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBands, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
 #endif
 };
 
@@ -291,31 +290,30 @@ class MrSIDRasterBand final : public GDALPamRasterBand
 
   public:
     MrSIDRasterBand(MrSIDDataset *, int);
-    ~MrSIDRasterBand();
+    ~MrSIDRasterBand() override;
 
-    virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, GSpacing nPixelSpace,
-                             GSpacing nLineSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
+                     GDALDataType, GSpacing nPixelSpace, GSpacing nLineSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual GDALColorInterp GetColorInterpretation() override;
+    CPLErr IReadBlock(int, int, void *) override;
+    GDALColorInterp GetColorInterpretation() override;
     CPLErr SetColorInterpretation(GDALColorInterp eNewInterp) override;
-    virtual double GetNoDataValue(int *) override;
-    virtual int GetOverviewCount() override;
-    virtual GDALRasterBand *GetOverview(int) override;
+    double GetNoDataValue(int *) override;
+    int GetOverviewCount() override;
+    GDALRasterBand *GetOverview(int) override;
 
     virtual CPLErr GetStatistics(int bApproxOK, int bForce, double *pdfMin,
                                  double *pdfMax, double *pdfMean,
                                  double *pdfStdDev) override;
 
 #ifdef MRSID_ESDK
-    virtual CPLErr IWriteBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
 #endif
 };
 
 /************************************************************************/
-/*                           MrSIDRasterBand()                          */
+/*                          MrSIDRasterBand()                           */
 /************************************************************************/
 
 MrSIDRasterBand::MrSIDRasterBand(MrSIDDataset *poDSIn, int nBandIn)
@@ -475,7 +473,7 @@ MrSIDRasterBand::MrSIDRasterBand(MrSIDDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                            ~MrSIDRasterBand()                        */
+/*                          ~MrSIDRasterBand()                          */
 /************************************************************************/
 
 MrSIDRasterBand::~MrSIDRasterBand()
@@ -732,12 +730,12 @@ GDALRasterBand *MrSIDRasterBand::GetOverview(int i)
 }
 
 /************************************************************************/
-/*                           MrSIDDataset()                             */
+/*                            MrSIDDataset()                            */
 /************************************************************************/
 
 MrSIDDataset::MrSIDDataset(int bIsJPEG2000)
     : nBlockXSize(0), nBlockYSize(0), eSampleType(LTI_DATATYPE_UINT8),
-      eDataType(GDT_Byte), eColorSpace(LTI_COLORSPACE_INVALID)
+      eDataType(GDT_UInt8), eColorSpace(LTI_COLORSPACE_INVALID)
 {
     poStream = nullptr;
     poImageReader = nullptr;
@@ -767,7 +765,7 @@ MrSIDDataset::MrSIDDataset(int bIsJPEG2000)
 }
 
 /************************************************************************/
-/*                            ~MrSIDDataset()                           */
+/*                           ~MrSIDDataset()                            */
 /************************************************************************/
 
 MrSIDDataset::~MrSIDDataset()
@@ -803,7 +801,7 @@ MrSIDDataset::~MrSIDDataset()
 }
 
 /************************************************************************/
-/*                      CloseDependentDatasets()                        */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int MrSIDDataset::CloseDependentDatasets()
@@ -1113,7 +1111,7 @@ static CPLString SerializeMetadataRec(const LTIMetadataRecord *poMetadataRec)
 }
 
 /************************************************************************/
-/*                          GetMetadataElement()                        */
+/*                         GetMetadataElement()                         */
 /************************************************************************/
 
 int MrSIDDataset::GetMetadataElement(const char *pszKey, void *pValue,
@@ -1183,7 +1181,7 @@ char **MrSIDDataset::GetFileList()
 }
 
 /************************************************************************/
-/*                             OpenZoomLevel()                          */
+/*                           OpenZoomLevel()                            */
 /************************************************************************/
 
 CPLErr MrSIDDataset::OpenZoomLevel(lt_int32 iZoom)
@@ -1259,7 +1257,7 @@ CPLErr MrSIDDataset::OpenZoomLevel(lt_int32 iZoom)
         case LTI_DATATYPE_UINT8:
         case LTI_DATATYPE_SINT8:
         default:
-            eDataType = GDT_Byte;
+            eDataType = GDT_UInt8;
             break;
     }
 
@@ -3010,7 +3008,7 @@ class MrSIDDummyImageReader : public LTIImageReader
 };
 
 /************************************************************************/
-/*                        MrSIDDummyImageReader()                       */
+/*                       MrSIDDummyImageReader()                        */
 /************************************************************************/
 
 MrSIDDummyImageReader::MrSIDDummyImageReader(GDALDataset *poSrcDS)
@@ -3020,7 +3018,7 @@ MrSIDDummyImageReader::MrSIDDummyImageReader(GDALDataset *poSrcDS)
 }
 
 /************************************************************************/
-/*                        ~MrSIDDummyImageReader()                      */
+/*                       ~MrSIDDummyImageReader()                       */
 /************************************************************************/
 
 MrSIDDummyImageReader::~MrSIDDummyImageReader()
@@ -3080,7 +3078,7 @@ LT_STATUS MrSIDDummyImageReader::initialize()
         case GDT_Float64:
             eSampleType = LTI_DATATYPE_FLOAT64;
             break;
-        case GDT_Byte:
+        case GDT_UInt8:
         default:
             eSampleType = LTI_DATATYPE_UINT8;
             break;
@@ -3130,7 +3128,7 @@ LT_STATUS MrSIDDummyImageReader::initialize()
 }
 
 /************************************************************************/
-/*                             decodeStrip()                            */
+/*                            decodeStrip()                             */
 /************************************************************************/
 
 LT_STATUS MrSIDDummyImageReader::decodeStrip(LTISceneBuffer &stripData,
@@ -3170,7 +3168,7 @@ LT_STATUS MrSIDDummyImageReader::decodeStrip(LTISceneBuffer &stripData,
 
 static GDALDataset *MrSIDCreateCopy(const char *pszFilename,
                                     GDALDataset *poSrcDS, int bStrict,
-                                    char **papszOptions,
+                                    CSLConstList papszOptions,
                                     GDALProgressFunc pfnProgress,
                                     void *pProgressData)
 
@@ -3423,7 +3421,7 @@ static GDALDataset *MrSIDCreateCopy(const char *pszFilename,
 /************************************************************************/
 
 static GDALDataset *JP2CreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
-                                  int bStrict, char **papszOptions,
+                                  int bStrict, CSLConstList papszOptions,
                                   GDALProgressFunc pfnProgress,
                                   void *pProgressData)
 
@@ -3552,7 +3550,7 @@ static GDALDataset *JP2CreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 #endif /* MRSID_ESDK */
 
 /************************************************************************/
-/*                        GDALRegister_MrSID()                          */
+/*                         GDALRegister_MrSID()                         */
 /************************************************************************/
 
 void GDALRegister_MrSID()

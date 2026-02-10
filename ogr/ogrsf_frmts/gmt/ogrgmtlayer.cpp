@@ -236,7 +236,7 @@ OGRGmtLayer::OGRGmtLayer(GDALDataset *poDS, const char *pszFilename,
 }
 
 /************************************************************************/
-/*                           ~OGRGmtLayer()                           */
+/*                            ~OGRGmtLayer()                            */
 /************************************************************************/
 
 OGRGmtLayer::~OGRGmtLayer()
@@ -777,7 +777,7 @@ OGRErr OGRGmtLayer::CompleteHeader(OGRGeometry *poThisGeom)
 }
 
 /************************************************************************/
-/*                           ICreateFeature()                            */
+/*                           ICreateFeature()                           */
 /************************************************************************/
 
 OGRErr OGRGmtLayer::ICreateFeature(OGRFeature *poFeature)
@@ -1038,9 +1038,6 @@ OGRErr OGRGmtLayer::CreateField(const OGRFieldDefn *poField, int bApproxOK)
         case OFTDateTime:
             poFeatureDefn->AddFieldDefn(poField);
             return OGRERR_NONE;
-            break;
-
-            break;
 
         default:
             if (!bApproxOK)

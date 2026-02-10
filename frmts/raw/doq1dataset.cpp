@@ -13,6 +13,7 @@
 
 #include "gdal_frmts.h"
 #include "cpl_string.h"
+#include "gdal_priv.h"
 #include "rawdataset.h"
 
 #include <algorithm>
@@ -112,11 +113,11 @@ class DOQ1Dataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(DOQ1Dataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     DOQ1Dataset();
-    ~DOQ1Dataset();
+    ~DOQ1Dataset() override;
 
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
@@ -148,10 +149,10 @@ DOQ1Dataset::~DOQ1Dataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr DOQ1Dataset::Close()
+CPLErr DOQ1Dataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -281,7 +282,7 @@ GDALDataset *DOQ1Dataset::Open(GDALOpenInfo *poOpenInfo)
     {
         auto poBand = RawRasterBand::Create(
             poDS.get(), i + 1, poDS->fpImage, nSkipBytes + i, nBytesPerPixel,
-            nBytesPerLine, GDT_Byte,
+            nBytesPerLine, GDT_UInt8,
             RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN,
             RawRasterBand::OwnFP::NO);
         if (!poBand)

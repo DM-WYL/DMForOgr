@@ -13,6 +13,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "rawdataset.h"
 
 #include <algorithm>
@@ -31,11 +32,11 @@ class GSCDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(GSCDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     GSCDataset() = default;
-    ~GSCDataset();
+    ~GSCDataset() override;
 
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
@@ -53,10 +54,10 @@ GSCDataset::~GSCDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr GSCDataset::Close()
+CPLErr GSCDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)

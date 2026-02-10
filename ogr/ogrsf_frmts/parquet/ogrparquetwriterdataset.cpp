@@ -15,7 +15,7 @@
 #include "../arrow_common/ograrrowwriterlayer.hpp"
 
 /************************************************************************/
-/*                       OGRParquetWriterDataset()                      */
+/*                      OGRParquetWriterDataset()                       */
 /************************************************************************/
 
 OGRParquetWriterDataset::OGRParquetWriterDataset(
@@ -26,7 +26,7 @@ OGRParquetWriterDataset::OGRParquetWriterDataset(
 }
 
 /************************************************************************/
-/*                     ~OGRParquetWriterDataset()                       */
+/*                      ~OGRParquetWriterDataset()                      */
 /************************************************************************/
 
 OGRParquetWriterDataset::~OGRParquetWriterDataset()
@@ -35,10 +35,10 @@ OGRParquetWriterDataset::~OGRParquetWriterDataset()
 }
 
 /************************************************************************/
-/*                                Close()                               */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr OGRParquetWriterDataset::Close()
+CPLErr OGRParquetWriterDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -67,7 +67,7 @@ int OGRParquetWriterDataset::GetLayerCount() const
 }
 
 /************************************************************************/
-/*                             GetLayer()                               */
+/*                              GetLayer()                              */
 /************************************************************************/
 
 const OGRLayer *OGRParquetWriterDataset::GetLayer(int idx) const
@@ -76,7 +76,7 @@ const OGRLayer *OGRParquetWriterDataset::GetLayer(int idx) const
 }
 
 /************************************************************************/
-/*                         TestCapability()                             */
+/*                           TestCapability()                           */
 /************************************************************************/
 
 int OGRParquetWriterDataset::TestCapability(const char *pszCap) const
@@ -89,7 +89,7 @@ int OGRParquetWriterDataset::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                          ICreateLayer()                              */
+/*                            ICreateLayer()                            */
 /************************************************************************/
 
 OGRLayer *
@@ -104,13 +104,9 @@ OGRParquetWriterDataset::ICreateLayer(const char *pszName,
         return nullptr;
     }
 
-    const auto eGType = poGeomFieldDefn ? poGeomFieldDefn->GetType() : wkbNone;
-    const auto poSpatialRef =
-        poGeomFieldDefn ? poGeomFieldDefn->GetSpatialRef() : nullptr;
-
     m_poLayer = std::make_unique<OGRParquetWriterLayer>(
         this, m_poMemoryPool.get(), m_poOutputStream, pszName);
-    if (!m_poLayer->SetOptions(papszOptions, poSpatialRef, eGType))
+    if (!m_poLayer->SetOptions(poGeomFieldDefn, papszOptions))
     {
         m_poLayer.reset();
         return nullptr;
@@ -119,7 +115,7 @@ OGRParquetWriterDataset::ICreateLayer(const char *pszName,
 }
 
 /************************************************************************/
-/*                          AddFieldDomain()                            */
+/*                           AddFieldDomain()                           */
 /************************************************************************/
 
 bool OGRParquetWriterDataset::AddFieldDomain(
@@ -134,7 +130,7 @@ bool OGRParquetWriterDataset::AddFieldDomain(
 }
 
 /************************************************************************/
-/*                          GetFieldDomainNames()                       */
+/*                        GetFieldDomainNames()                         */
 /************************************************************************/
 
 std::vector<std::string>
@@ -145,7 +141,7 @@ OGRParquetWriterDataset::GetFieldDomainNames(CSLConstList) const
 }
 
 /************************************************************************/
-/*                          GetFieldDomain()                            */
+/*                           GetFieldDomain()                           */
 /************************************************************************/
 
 const OGRFieldDomain *

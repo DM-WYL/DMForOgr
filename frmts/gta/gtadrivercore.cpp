@@ -11,10 +11,13 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "gtadrivercore.h"
 
 /************************************************************************/
-/*                     GTADriverIdentify()                              */
+/*                         GTADriverIdentify()                          */
 /************************************************************************/
 
 int GTADriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -30,7 +33,7 @@ int GTADriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                      GTADriverSetCommonMetadata()                    */
+/*                     GTADriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void GTADriverSetCommonMetadata(GDALDriver *poDriver)
@@ -72,7 +75,7 @@ void GTADriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                     DeclareDeferredGTAPlugin()                       */
+/*                      DeclareDeferredGTAPlugin()                      */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

@@ -24,9 +24,9 @@
 
 #include <oci.h>
 
-/***************************************************************************/
-/*                            Data type conversion table record type       */
-/***************************************************************************/
+/************************************************************************/
+/*                Data type conversion table record type                */
+/************************************************************************/
 
 struct OW_CellDepth
 {
@@ -34,15 +34,15 @@ struct OW_CellDepth
     GDALDataType eDataType;
 };
 
-/***************************************************************************/
-/*                            OCI Error check                              */
-/***************************************************************************/
+/************************************************************************/
+/*                           OCI Error check                            */
+/************************************************************************/
 
 bool CheckError(sword nStatus, OCIError *hError);
 
-/***************************************************************************/
-/*                            Auxiliary functions                          */
-/***************************************************************************/
+/************************************************************************/
+/*                         Auxiliary functions                          */
+/************************************************************************/
 
 GDALDataType OWGetDataType(const char *pszCellDepth);
 const char *OWSetDataType(const GDALDataType eType);
@@ -53,17 +53,17 @@ CPLString OWParseSDO_GEOR_INIT(const char *pszInsert, int nField);
 char *OWRemoveQuotes(const char *pszText);
 void OWUpperIfNoQuotes(char *pszText);
 
-/***************************************************************************/
-/*                            Arbitrary limits                             */
-/***************************************************************************/
+/************************************************************************/
+/*                           Arbitrary limits                           */
+/************************************************************************/
 
 #define OWCODE 64
 #define OWNAME 512
 #define OWTEXT 1024
 
-/***************************************************************************/
-/*                                  TYPES                                  */
-/***************************************************************************/
+/************************************************************************/
+/*                                TYPES                                 */
+/************************************************************************/
 
 #define TYPE_OWNER "MDSYS"
 #define SDO_GEOMETRY TYPE_OWNER ".SDO_GEOMETRY"
@@ -73,11 +73,15 @@ void OWUpperIfNoQuotes(char *pszText);
 #define SDO_ORDINATE_ARRAY TYPE_OWNER ".SDO_ORDINATE_ARRAY"
 #define SDO_ELEM_INFO_ARRAY TYPE_OWNER ".SDO_ELEM_INFO_ARRAY"
 
+#define SDO_SPOOL_DEFAULT_SESSMIN 1
+#define SDO_SPOOL_DEFAULT_SESSMAX 10
+#define SDO_SPOOL_DEFAULT_SESSINCR 2
+
 #define OW_XMLNS "xmlns=\"http://xmlns.oracle.com/spatial/georaster\""
 
-/***************************************************************************/
-/*                   USER DEFINED (actually Oracle's) types                 */
-/***************************************************************************/
+/************************************************************************/
+/*                USER DEFINED (actually Oracle's) types                */
+/************************************************************************/
 
 typedef OCIRef SDO_GEORASTER_ref;
 typedef OCIRef SDO_GEOMETRY_ref;
@@ -87,9 +91,9 @@ typedef OCIArray sdo_elem_info_array;
 typedef OCIArray sdo_ordinate_array;
 typedef OCIArray SDO_NUMBER_ARRAY_TYPE;
 
-/***************************************************************************/
-/*                            Point type                                   */
-/***************************************************************************/
+/************************************************************************/
+/*                              Point type                              */
+/************************************************************************/
 
 struct sdo_point_type
 {
@@ -110,9 +114,9 @@ struct sdo_point_type_ind
 
 typedef struct sdo_point_type_ind sdo_point_type_ind;
 
-/***************************************************************************/
-/*                            Geometry type                                */
-/***************************************************************************/
+/************************************************************************/
+/*                            Geometry type                             */
+/************************************************************************/
 
 struct sdo_geometry
 {
@@ -137,9 +141,9 @@ struct sdo_geometry_ind
 
 typedef struct SDO_GEOMETRY_ind SDO_GEOMETRY_ind;
 
-/***************************************************************************/
-/*                            GeoRaster type                               */
-/***************************************************************************/
+/************************************************************************/
+/*                            GeoRaster type                            */
+/************************************************************************/
 
 struct sdo_georaster
 {
@@ -164,9 +168,9 @@ struct sdo_georaster_ind
 
 typedef struct sdo_georaster_ind SDO_GEORASTER_ind;
 
-/***************************************************************************/
-/*                            Point Cloud type                             */
-/***************************************************************************/
+/************************************************************************/
+/*                           Point Cloud type                           */
+/************************************************************************/
 
 struct sdo_mbr
 {
@@ -233,26 +237,92 @@ struct sdo_pc_ind
 };
 typedef struct sdo_pc_ind SDO_PC_ind;
 
-/***************************************************************************/
-/*                            Oracle class wrappers                        */
-/***************************************************************************/
+/************************************************************************/
+/*                        Oracle class wrappers                         */
+/************************************************************************/
 
 class OWConnection;
 class OWStatement;
 
 //  ---------------------------------------------------------------------------
+//  OWSPool, OCISessionPool
+//  ---------------------------------------------------------------------------
+class OWSessionPool final
+{
+    friend class OWConnection;
+
+  public:
+    OWSessionPool(const char *pszUserIn, const char *pszPasswordIn,
+                  const char *pszServerIn);
+    ~OWSessionPool();
+
+  private:
+    OCIEnv *hEnv = nullptr;
+    OCIError *hError = nullptr;
+    OCISPool *hPool = nullptr;
+
+    ub4 nSessMode = OCI_DEFAULT;
+    ub4 nPoolMode = OCI_DEFAULT;
+
+    ub4 nPoolNameLen = 0;
+    char *pszPoolName = nullptr;
+    char *pszUser = nullptr;
+    char *pszPassword = nullptr;
+    char *pszServer = nullptr;
+
+    ub4 nSessMin = SDO_SPOOL_DEFAULT_SESSMIN;
+    ub4 nSessMax = SDO_SPOOL_DEFAULT_SESSMAX;
+    ub4 nSessIncr = SDO_SPOOL_DEFAULT_SESSINCR;
+
+    bool bSucceeded = false;
+
+  public:
+    void ReInitialize(ub4 nSessMinIn, ub4 nSessMaxIn, ub4 nSessIncrIn);
+    OWConnection *GetConnection(const char *pszUserIn,
+                                const char *pszPasswordIn,
+                                const char *pszServerIn);
+
+    bool Succeeded()
+    {
+        return bSucceeded;
+    }
+
+    bool isHomogeneous()
+    {
+        return (nPoolMode & OCI_SPC_HOMOGENEOUS);
+    }
+
+    ub4 GetSessMin()
+    {
+        return nSessMin;
+    }
+
+    ub4 GetSessMax()
+    {
+        return nSessMax;
+    }
+
+    ub4 GetSessIncr()
+    {
+        return nSessIncr;
+    }
+};
+
+//  ---------------------------------------------------------------------------
 //  OWConnection
 //  ---------------------------------------------------------------------------
 
-class OWConnection
+class OWConnection final
 {
     friend class OWStatement;
 
   public:
     OWConnection(const char *pszUserIn, const char *pszPasswordIn,
                  const char *pszServerIn);
+    OWConnection(OWSessionPool *hPool, const char *pszUserIn,
+                 const char *pszPasswordIn, const char *pszServerIn);
     explicit OWConnection(OCIExtProcContext *poWithContext);
-    virtual ~OWConnection();
+    ~OWConnection();
 
   private:
     OCIEnv *hEnv = nullptr;
@@ -261,13 +331,15 @@ class OWConnection
     OCIServer *hServer = nullptr;
     OCISession *hSession = nullptr;
     OCIDescribe *hDescribe = nullptr;
+    OCIAuthInfo *hAuth = nullptr;
 
     int nVersion = 0;
     sb4 nCharSize = 1;
 
-    bool bSuceeeded = false;
+    bool bSucceeded = false;
 
     bool bExtProc = false;
+    bool bFromPool = false;
 
     char *pszUser = nullptr;
     // session is only used when user is not provided.
@@ -286,6 +358,7 @@ class OWConnection
     OCIType *hOrdnArrayTDO = nullptr;
 
     void QueryVersion();
+    void QueryAndInit(bool bQuerySessionUser);
 
   public:
     OWStatement *CreateStatement(const char *pszStatement);
@@ -303,7 +376,7 @@ class OWConnection
 
     bool Succeeded() const
     {
-        return bSuceeeded;
+        return bSucceeded;
     }
 
     const char *GetUser() const
@@ -380,16 +453,16 @@ class OWConnection
     }
 };
 
-/***************************************************************************/
-/*                           OWStatement                                   */
-/***************************************************************************/
+/************************************************************************/
+/*                             OWStatement                              */
+/************************************************************************/
 
-class OWStatement
+class OWStatement final
 {
 
   public:
     OWStatement(OWConnection *poConnect, const char *pszStatement);
-    virtual ~OWStatement();
+    ~OWStatement();
 
   private:
     OWConnection *poConnection = nullptr;

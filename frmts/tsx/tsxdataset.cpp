@@ -16,6 +16,10 @@
 #include "cpl_minixml.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #define MAX_GCPS 5000  // this should be more than enough ground control points
@@ -43,7 +47,7 @@ enum eProductType
 using namespace gdal::TSX;
 
 /************************************************************************/
-/* Helper Functions                                                     */
+/*                           Helper Functions                           */
 /************************************************************************/
 
 /* GetFilePath: return a relative path to a file within an XML node.
@@ -86,11 +90,11 @@ class TSXDataset final : public GDALPamDataset
 
   public:
     TSXDataset();
-    virtual ~TSXDataset();
+    ~TSXDataset() override;
 
-    virtual int GetGCPCount() override;
+    int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
-    virtual const GDAL_GCP *GetGCPs() override;
+    const GDAL_GCP *GetGCPs() override;
 
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
@@ -116,10 +120,9 @@ class TSXRasterBand final : public GDALPamRasterBand
   public:
     TSXRasterBand(TSXDataset *poDSIn, GDALDataType eDataType,
                   ePolarization ePol, GDALDataset *poBand);
-    virtual ~TSXRasterBand();
+    ~TSXRasterBand() override;
 
-    virtual CPLErr IReadBlock(int nBlockXOff, int nBlockYOff,
-                              void *pImage) override;
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage) override;
 
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
 };
@@ -157,7 +160,7 @@ TSXRasterBand::TSXRasterBand(TSXDataset *poDSIn, GDALDataType eDataTypeIn,
 }
 
 /************************************************************************/
-/*                            TSXRasterBand()                           */
+/*                           TSXRasterBand()                            */
 /************************************************************************/
 
 TSXRasterBand::~TSXRasterBand()
@@ -795,7 +798,7 @@ const OGRSpatialReference *TSXDataset::GetGCPSpatialRef() const
 }
 
 /************************************************************************/
-/*                               GetGCPs()                              */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *TSXDataset::GetGCPs()
@@ -804,7 +807,7 @@ const GDAL_GCP *TSXDataset::GetGCPs()
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *TSXDataset::GetSpatialRef() const
@@ -814,7 +817,7 @@ const OGRSpatialReference *TSXDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                               GetGeotransform()                      */
+/*                          GetGeotransform()                           */
 /************************************************************************/
 CPLErr TSXDataset::GetGeoTransform(GDALGeoTransform &gt) const
 {
@@ -827,7 +830,7 @@ CPLErr TSXDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                         GDALRegister_TSX()                           */
+/*                          GDALRegister_TSX()                          */
 /************************************************************************/
 
 void GDALRegister_TSX()

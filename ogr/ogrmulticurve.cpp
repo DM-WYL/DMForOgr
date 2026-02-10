@@ -26,26 +26,16 @@
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiCurve::OGRMultiCurve(const OGRMultiCurve &) = default;
 
 /************************************************************************/
-/*                  operator=( const OGRMultiCurve&)                    */
+/*                   operator=( const OGRMultiCurve&)                   */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiCurve &OGRMultiCurve::operator=(const OGRMultiCurve &other)
@@ -114,7 +104,7 @@ const char *OGRMultiCurve::getGeometryName() const
 }
 
 /************************************************************************/
-/*                          isCompatibleSubType()                       */
+/*                        isCompatibleSubType()                         */
 /************************************************************************/
 
 OGRBoolean
@@ -125,7 +115,7 @@ OGRMultiCurve::isCompatibleSubType(OGRwkbGeometryType eGeomType) const
 
 /*! @cond Doxygen_Suppress */
 /************************************************************************/
-/*                       addCurveDirectlyFromWkt()                      */
+/*                      addCurveDirectlyFromWkt()                       */
 /************************************************************************/
 
 OGRErr OGRMultiCurve::addCurveDirectlyFromWkt(OGRGeometry *poSelf,
@@ -167,7 +157,7 @@ std::string OGRMultiCurve::exportToWkt(const OGRWktOptions &opts,
 }
 
 /************************************************************************/
-/*                         hasCurveGeometry()                           */
+/*                          hasCurveGeometry()                          */
 /************************************************************************/
 
 OGRBoolean OGRMultiCurve::hasCurveGeometry(int bLookForNonLinear) const
@@ -178,7 +168,7 @@ OGRBoolean OGRMultiCurve::hasCurveGeometry(int bLookForNonLinear) const
 }
 
 /************************************************************************/
-/*                          CastToMultiLineString()                     */
+/*                       CastToMultiLineString()                        */
 /************************************************************************/
 
 /**

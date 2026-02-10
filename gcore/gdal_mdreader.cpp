@@ -90,7 +90,7 @@ GDALMDReaderManager::~GDALMDReaderManager()
     delete pReaderBase
 
 GDALMDReaderBase *GDALMDReaderManager::GetReader(const char *pszPath,
-                                                 char **papszSiblingFiles,
+                                                 CSLConstList papszSiblingFiles,
                                                  GUInt32 nType)
 {
     if (!GDALCanFileAcceptSidecarFile(pszPath))
@@ -160,7 +160,7 @@ GDALMDReaderBase *GDALMDReaderManager::GetReader(const char *pszPath,
  * GDALMDReaderBase()
  */
 GDALMDReaderBase::GDALMDReaderBase(const char * /* pszPath */,
-                                   char ** /* papszSiblingFiles */)
+                                   CSLConstList /* papszSiblingFiles */)
 {
 }
 
@@ -712,10 +712,10 @@ char **GDALLoadRPCFile(const CPLString &soFilePath)
 }
 
 /************************************************************************/
-/*                         GDALWriteRPCTXTFile()                        */
+/*                        GDALWriteRPCTXTFile()                         */
 /************************************************************************/
 
-CPLErr GDALWriteRPCTXTFile(const char *pszFilename, char **papszMD)
+CPLErr GDALWriteRPCTXTFile(const char *pszFilename, CSLConstList papszMD)
 
 {
     CPLString osRPCFilename = pszFilename;
@@ -818,7 +818,7 @@ CPLErr GDALWriteRPCTXTFile(const char *pszFilename, char **papszMD)
 /*                          GDALWriteRPBFile()                          */
 /************************************************************************/
 
-CPLErr GDALWriteRPBFile(const char *pszFilename, char **papszMD)
+CPLErr GDALWriteRPBFile(const char *pszFilename, CSLConstList papszMD)
 
 {
     const CPLString osRPBFilename = CPLResetExtensionSafe(pszFilename, "RPB");
@@ -1103,7 +1103,7 @@ static void GDALWriteIMDMultiLine(VSILFILE *fp, const char *pszValue)
 /*                          GDALWriteIMDFile()                          */
 /************************************************************************/
 
-CPLErr GDALWriteIMDFile(const char *pszFilename, char **papszMD)
+CPLErr GDALWriteIMDFile(const char *pszFilename, CSLConstList papszMD)
 
 {
     const CPLString osRPBFilename = CPLResetExtensionSafe(pszFilename, "IMD");

@@ -4,7 +4,12 @@
 #include "cpl_port.h"
 #include "cpl_minixml.h"
 #include "cpl_vsi_virtual.h"
+#include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "rawdataset.h"
 
 #define LIBERTIFF_NS GDAL_libertiff
@@ -30,7 +35,7 @@ constexpr int GCP_Y = 4;
 constexpr int GCP_Z = 5;
 
 /************************************************************************/
-/*                            SNAPTIFFDataset                           */
+/*                           SNAPTIFFDataset                            */
 /************************************************************************/
 
 class SNAPTIFFDataset final : public GDALPamDataset
@@ -42,7 +47,7 @@ class SNAPTIFFDataset final : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
 
     char **GetMetadataDomainList() override;
-    char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain = "") override;
 
@@ -159,7 +164,7 @@ int SNAPTIFFDataset::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                               Open()                                 */
+/*                                Open()                                */
 /************************************************************************/
 
 GDALDataset *SNAPTIFFDataset::Open(GDALOpenInfo *poOpenInfo)
@@ -384,7 +389,7 @@ GDALDataset *SNAPTIFFDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **SNAPTIFFDataset::GetMetadataDomainList()
@@ -395,7 +400,7 @@ char **SNAPTIFFDataset::GetMetadataDomainList()
 }
 
 /************************************************************************/
-/*                      GetGeolocationMetadata()                        */
+/*                       GetGeolocationMetadata()                       */
 /************************************************************************/
 
 // (Partially) read the content of the GeoTIFFTiePoints tag to check if the
@@ -560,7 +565,7 @@ bool SNAPTIFFDataset::GetGeolocationMetadata()
 }
 
 /************************************************************************/
-/*                             ReadSRS()                                */
+/*                              ReadSRS()                               */
 /************************************************************************/
 
 // Simplified GeoTIFF SRS reader, assuming the SRS is encoded as a EPSG code
@@ -623,7 +628,7 @@ void SNAPTIFFDataset::ReadSRS()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **SNAPTIFFDataset::GetMetadata(const char *pszDomain)
+CSLConstList SNAPTIFFDataset::GetMetadata(const char *pszDomain)
 {
     if (!m_bIsGeolocArray)
     {
@@ -690,7 +695,7 @@ char **SNAPTIFFDataset::GetMetadata(const char *pszDomain)
 }
 
 /************************************************************************/
-/*                         GetMetadataItem()                            */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *SNAPTIFFDataset::GetMetadataItem(const char *pszName,
@@ -705,7 +710,7 @@ const char *SNAPTIFFDataset::GetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                     GDALRegister_SNAP_TIFF()                         */
+/*                       GDALRegister_SNAP_TIFF()                       */
 /************************************************************************/
 
 void GDALRegister_SNAP_TIFF()

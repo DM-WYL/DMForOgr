@@ -19,7 +19,7 @@
 //! @cond Doxygen_Suppress
 
 /************************************************************************/
-/*          GDALRasterWriteAlgorithm::GDALRasterWriteAlgorithm()        */
+/*         GDALRasterWriteAlgorithm::GDALRasterWriteAlgorithm()         */
 /************************************************************************/
 
 GDALRasterWriteAlgorithm::GDALRasterWriteAlgorithm()
@@ -30,7 +30,7 @@ GDALRasterWriteAlgorithm::GDALRasterWriteAlgorithm()
 }
 
 /************************************************************************/
-/*                  GDALRasterWriteAlgorithm::RunStep()                 */
+/*                 GDALRasterWriteAlgorithm::RunStep()                  */
 /************************************************************************/
 
 bool GDALRasterWriteAlgorithm::RunStep(GDALPipelineStepRunContext &ctxt)
@@ -51,6 +51,11 @@ bool GDALRasterWriteAlgorithm::RunStep(GDALPipelineStepRunContext &ctxt)
     if (!m_overwrite)
     {
         aosOptions.AddString("--no-overwrite");
+    }
+    if (m_appendRaster)
+    {
+        aosOptions.AddString("-co");
+        aosOptions.AddString("APPEND_SUBDATASET=YES");
     }
     if (!m_format.empty())
     {

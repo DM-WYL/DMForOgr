@@ -11,6 +11,8 @@
  ****************************************************************************/
 
 #include "cpl_error.h"
+#include "cpl_multiproc.h"
+#include "gdal_frmts.h"
 #include "gdalexif.h"
 #include "gdaljp2metadata.h"
 #include "gdaljp2abstractdataset.h"
@@ -40,7 +42,7 @@ struct VSILFileReleaser
 constexpr float MIN_DISTANCE = 0.01f;
 
 /************************************************************************/
-/*                        JPEGXLDataset                                 */
+/*                            JPEGXLDataset                             */
 /************************************************************************/
 
 class JPEGXLDataset final : public GDALJP2AbstractDataset
@@ -77,10 +79,12 @@ class JPEGXLDataset final : public GDALJP2AbstractDataset
                      GSpacing, GDALRasterIOExtraArg *psExtraArg) override;
 
   public:
-    ~JPEGXLDataset();
+    ~JPEGXLDataset() override;
+
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
     char **GetMetadataDomainList() override;
-    char **GetMetadata(const char *pszDomain) override;
+    CSLConstList GetMetadata(const char *pszDomain) override;
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain) override;
 
@@ -100,13 +104,13 @@ class JPEGXLDataset final : public GDALJP2AbstractDataset
     static GDALDataset *OpenStatic(GDALOpenInfo *poOpenInfo);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
 
 /************************************************************************/
-/*                      JPEGXLRasterBand                                */
+/*                           JPEGXLRasterBand                           */
 /************************************************************************/
 
 class JPEGXLRasterBand final : public GDALPamRasterBand
@@ -125,17 +129,37 @@ class JPEGXLRasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                         ~JPEGXLDataset()                             */
+/*                           ~JPEGXLDataset()                           */
 /************************************************************************/
 
 JPEGXLDataset::~JPEGXLDataset()
 {
-    if (m_fp)
-        VSIFCloseL(m_fp);
+    JPEGXLDataset::Close();
 }
 
 /************************************************************************/
-/*                         JPEGXLRasterBand()                           */
+/*                               Close()                                */
+/************************************************************************/
+
+CPLErr JPEGXLDataset::Close(GDALProgressFunc, void *)
+{
+    CPLErr eErr = CE_None;
+
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        eErr = JPEGXLDataset::FlushCache(true);
+
+        if (m_fp != nullptr && VSIFCloseL(m_fp) != 0)
+            eErr = CE_Failure;
+        m_fp = nullptr;
+
+        eErr = GDAL::Combine(eErr, GDALPamDataset::Close());
+    }
+    return eErr;
+}
+
+/************************************************************************/
+/*                          JPEGXLRasterBand()                          */
 /************************************************************************/
 
 JPEGXLRasterBand::JPEGXLRasterBand(JPEGXLDataset *poDSIn, int nBandIn,
@@ -150,7 +174,7 @@ JPEGXLRasterBand::JPEGXLRasterBand(JPEGXLDataset *poDSIn, int nBandIn,
     nBlockXSize = poDS->GetRasterXSize();
     nBlockYSize = 1;
     SetColorInterpretation(eInterp);
-    if ((eDataType == GDT_Byte && nBitsPerSample < 8) ||
+    if ((eDataType == GDT_UInt8 && nBitsPerSample < 8) ||
         (eDataType == GDT_UInt16 && nBitsPerSample < 16))
     {
         SetMetadataItem("NBITS", CPLSPrintf("%d", nBitsPerSample),
@@ -197,7 +221,7 @@ CPLErr JPEGXLRasterBand::IReadBlock(int /*nBlockXOff*/, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                         Identify()                                   */
+/*                              Identify()                              */
 /************************************************************************/
 
 int JPEGXLDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -247,7 +271,7 @@ int JPEGXLDataset::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                             Open()                                   */
+/*                                Open()                                */
 /************************************************************************/
 
 bool JPEGXLDataset::Open(GDALOpenInfo *poOpenInfo)
@@ -336,7 +360,7 @@ bool JPEGXLDataset::Open(GDALOpenInfo *poOpenInfo)
 #else
                 const bool bSwab = abyBoxBuffer[4] == 0x49;
 #endif
-                constexpr int nTIFFHEADER = 0;
+                constexpr uint32_t nTIFFHEADER = 0;
                 uint32_t nTiffDirStart;
                 memcpy(&nTiffDirStart, abyBoxBuffer.data() + 8,
                        sizeof(uint32_t));
@@ -347,9 +371,9 @@ bool JPEGXLDataset::Open(GDALOpenInfo *poOpenInfo)
                 VSILFILE *fpEXIF =
                     VSIFileFromMemBuffer(nullptr, abyBoxBuffer.data() + 4,
                                          abyBoxBuffer.size() - 4, false);
-                int nExifOffset = 0;
-                int nInterOffset = 0;
-                int nGPSOffset = 0;
+                uint32_t nExifOffset = 0;
+                uint32_t nInterOffset = 0;
+                uint32_t nGPSOffset = 0;
                 char **papszEXIFMetadata = nullptr;
                 EXIFExtractMetadata(papszEXIFMetadata, fpEXIF, nTiffDirStart,
                                     bSwab, nTIFFHEADER, nExifOffset,
@@ -471,7 +495,7 @@ bool JPEGXLDataset::Open(GDALOpenInfo *poOpenInfo)
             if (info.exponent_bits_per_sample == 0)
             {
                 if (info.bits_per_sample <= 8)
-                    eDT = GDT_Byte;
+                    eDT = GDT_UInt8;
                 else if (info.bits_per_sample <= 16)
                     eDT = GDT_UInt16;
             }
@@ -583,7 +607,7 @@ bool JPEGXLDataset::Open(GDALOpenInfo *poOpenInfo)
 #ifdef HAVE_JxlDecoderDefaultPixelFormat
             JxlPixelFormat format = {
                 static_cast<uint32_t>(nBands),
-                eDT == GDT_Byte     ? JXL_TYPE_UINT8
+                eDT == GDT_UInt8    ? JXL_TYPE_UINT8
                 : eDT == GDT_UInt16 ? JXL_TYPE_UINT16
                                     : JXL_TYPE_FLOAT,
                 JXL_NATIVE_ENDIAN, 0 /* alignment */
@@ -909,7 +933,7 @@ bool JPEGXLDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                        GetDecodedImage()                             */
+/*                          GetDecodedImage()                           */
 /************************************************************************/
 
 const std::vector<GByte> &JPEGXLDataset::GetDecodedImage()
@@ -970,7 +994,7 @@ const std::vector<GByte> &JPEGXLDataset::GetDecodedImage()
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **JPEGXLDataset::GetMetadataDomainList()
@@ -983,7 +1007,7 @@ char **JPEGXLDataset::GetMetadataDomainList()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **JPEGXLDataset::GetMetadata(const char *pszDomain)
+CSLConstList JPEGXLDataset::GetMetadata(const char *pszDomain)
 {
 #ifdef HAVE_JXL_BOX_API
     if (pszDomain != nullptr && EQUAL(pszDomain, "xml:XMP") && !m_osXMP.empty())
@@ -1024,7 +1048,7 @@ CPLStringList JPEGXLDataset::GetCompressionFormats(int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                       ReadCompressedData()                           */
+/*                         ReadCompressedData()                         */
 /************************************************************************/
 
 CPLErr JPEGXLDataset::ReadCompressedData(const char *pszFormat, int nXOff,
@@ -1344,7 +1368,7 @@ const char *JPEGXLDataset::GetMetadataItem(const char *pszName,
 }
 
 /************************************************************************/
-/*                        GetDecodedImage()                             */
+/*                          GetDecodedImage()                           */
 /************************************************************************/
 
 void JPEGXLDataset::GetDecodedImage(void *pabyOutputData,
@@ -1405,7 +1429,7 @@ void JPEGXLDataset::GetDecodedImage(void *pabyOutputData,
         {
             JxlPixelFormat format = {
                 static_cast<uint32_t>(nBands - m_nNonAlphaExtraChannels),
-                eDT == GDT_Byte     ? JXL_TYPE_UINT8
+                eDT == GDT_UInt8    ? JXL_TYPE_UINT8
                 : eDT == GDT_UInt16 ? JXL_TYPE_UINT16
                                     : JXL_TYPE_FLOAT,
                 JXL_NATIVE_ENDIAN, 0 /* alignment */
@@ -1493,7 +1517,7 @@ void JPEGXLDataset::GetDecodedImage(void *pabyOutputData,
             const size_t nSamples =
                 static_cast<size_t>(nRasterXSize) * nRasterYSize * nChannels;
             const int nMaxVal = (1 << m_nBits) - 1;
-            if (eDT == GDT_Byte)
+            if (eDT == GDT_UInt8)
             {
                 const int nHalfMaxWidth = 127;
                 GByte *panData = static_cast<GByte *>(pBuffer);
@@ -1667,7 +1691,7 @@ CPLErr JPEGXLRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                          OpenStaticPAM()                             */
+/*                           OpenStaticPAM()                            */
 /************************************************************************/
 
 GDALPamDataset *JPEGXLDataset::OpenStaticPAM(GDALOpenInfo *poOpenInfo)
@@ -1683,7 +1707,7 @@ GDALPamDataset *JPEGXLDataset::OpenStaticPAM(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          OpenStatic()                                */
+/*                             OpenStatic()                             */
 /************************************************************************/
 
 GDALDataset *JPEGXLDataset::OpenStatic(GDALOpenInfo *poOpenInfo)
@@ -1715,12 +1739,12 @@ GDALDataset *JPEGXLDataset::OpenStatic(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                              CreateCopy()                            */
+/*                             CreateCopy()                             */
 /************************************************************************/
 
 GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
                                        GDALDataset *poSrcDS, int /*bStrict*/,
-                                       char **papszOptions,
+                                       CSLConstList papszOptions,
                                        GDALProgressFunc pfnProgress,
                                        void *pProgressData)
 
@@ -1736,11 +1760,11 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
     // to main domain.
     const bool bWriteExifMetadata =
         CPLFetchBool(papszOptions, "WRITE_EXIF_METADATA", true);
-    char **papszEXIF = poSrcDS->GetMetadata("EXIF");
+    CSLConstList papszEXIF = poSrcDS->GetMetadata("EXIF");
     bool bEXIFFromMainDomain = false;
     if (papszEXIF == nullptr && bWriteExifMetadata)
     {
-        char **papszMetadata = poSrcDS->GetMetadata();
+        CSLConstList papszMetadata = poSrcDS->GetMetadata();
         for (CSLConstList papszIter = papszMetadata; papszIter && *papszIter;
              ++papszIter)
         {
@@ -1755,14 +1779,14 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
 
     // Write "xml " box with xml:XMP metadata
     const bool bWriteXMP = CPLFetchBool(papszOptions, "WRITE_XMP", true);
-    char **papszXMP = poSrcDS->GetMetadata("xml:XMP");
+    CSLConstList papszXMP = poSrcDS->GetMetadata("xml:XMP");
 
     const bool bWriteGeoJP2 = CPLFetchBool(papszOptions, "WRITE_GEOJP2", true);
     GDALGeoTransform gt;
     const bool bHasGeoTransform = poSrcDS->GetGeoTransform(gt) == CE_None;
     const OGRSpatialReference *poSRS = poSrcDS->GetSpatialRef();
     const int nGCPCount = poSrcDS->GetGCPCount();
-    char **papszRPCMD = poSrcDS->GetMetadata("RPC");
+    CSLConstList papszRPCMD = poSrcDS->GetMetadata("RPC");
     std::unique_ptr<GDALJP2Box> poJUMBFBox;
     if (bWriteGeoJP2 &&
         (poSRS != nullptr || bHasGeoTransform || nGCPCount || papszRPCMD))
@@ -1945,10 +1969,11 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
                         abyData.insert(
                             abyData.begin() + nInsertPos, abySizeAndBoxName,
                             abySizeAndBoxName + sizeof(abySizeAndBoxName));
-                        abyData.insert(abyData.begin() + nInsertPos + 8,
-                                       reinterpret_cast<GByte *>(papszXMP[0]),
-                                       reinterpret_cast<GByte *>(papszXMP[0]) +
-                                           nXMPLen);
+                        abyData.insert(
+                            abyData.begin() + nInsertPos + 8,
+                            reinterpret_cast<const GByte *>(papszXMP[0]),
+                            reinterpret_cast<const GByte *>(papszXMP[0]) +
+                                nXMPLen);
                         nInsertPos += 8 + nXMPLen;
                     }
                     else
@@ -2073,7 +2098,7 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
     const auto eDT = poSrcDS->GetRasterBand(1)->GetRasterDataType();
     switch (eDT)
     {
-        case GDT_Byte:
+        case GDT_UInt8:
             format.data_type = JXL_TYPE_UINT8;
             break;
         case GDT_UInt16:
@@ -2185,7 +2210,7 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
         pszNBits = poSrcDS->GetRasterBand(1)->GetMetadataItem(
             "NBITS", "IMAGE_STRUCTURE");
     const int nBits =
-        ((eDT == GDT_Byte || eDT == GDT_UInt16) && pszNBits != nullptr)
+        ((eDT == GDT_UInt8 || eDT == GDT_UInt16) && pszNBits != nullptr)
             ? atoi(pszNBits)
             : GDALGetDataTypeSizeBits(eDT);
 
@@ -2850,7 +2875,7 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
         const auto Rescale = [eDT, nBits, poSrcDS](void *pBuffer, int nChannels)
         {
             // Rescale to 8-bits/16-bits
-            if ((eDT == GDT_Byte && nBits < 8) ||
+            if ((eDT == GDT_UInt8 && nBits < 8) ||
                 (eDT == GDT_UInt16 && nBits < 16))
             {
                 const size_t nSamples =
@@ -2858,7 +2883,7 @@ GDALDataset *JPEGXLDataset::CreateCopy(const char *pszFilename,
                     poSrcDS->GetRasterYSize() * nChannels;
                 const int nMaxVal = (1 << nBits) - 1;
                 const int nMavValHalf = nMaxVal / 2;
-                if (eDT == GDT_Byte)
+                if (eDT == GDT_UInt8)
                 {
                     uint8_t *panData = static_cast<uint8_t *>(pBuffer);
                     for (size_t i = 0; i < nSamples; ++i)

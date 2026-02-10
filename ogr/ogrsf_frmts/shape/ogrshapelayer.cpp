@@ -31,6 +31,7 @@
 #include "cpl_string.h"
 #include "cpl_time.h"
 #include "cpl_vsi.h"
+#include "cpl_vsi_virtual.h"
 #include "ogr_core.h"
 #include "ogr_feature.h"
 #include "ogr_geometry.h"
@@ -133,9 +134,13 @@ OGRShapeLayer::OGRShapeLayer(OGRShapeDataSource *poDSIn,
     }
     SetMetadataItem("SOURCE_ENCODING", m_osEncoding, "SHAPEFILE");
 
+    auto fpShpXML = VSIFilesystemHandler::OpenStatic(
+        CPLResetExtensionSafe(m_osFullName.c_str(), "shp.xml").c_str(), "rb");
+    m_bHasShpXML = fpShpXML != nullptr;
+
     m_poFeatureDefn = SHPReadOGRFeatureDefn(
         CPLGetBasenameSafe(m_osFullName.c_str()).c_str(), m_hSHP, m_hDBF,
-        m_osEncoding,
+        fpShpXML.get(), m_osEncoding,
         CPLFetchBool(m_poDS->GetOpenOptions(), "ADJUST_TYPE", false));
 
     // To make sure that
@@ -260,7 +265,7 @@ OGRShapeLayer::~OGRShapeLayer()
 }
 
 /************************************************************************/
-/*                       SetModificationDate()                          */
+/*                        SetModificationDate()                         */
 /************************************************************************/
 
 void OGRShapeLayer::SetModificationDate(const char *pszStr)
@@ -281,7 +286,7 @@ void OGRShapeLayer::SetModificationDate(const char *pszStr)
 }
 
 /************************************************************************/
-/*                       SetWriteDBFEOFChar()                           */
+/*                         SetWriteDBFEOFChar()                         */
 /************************************************************************/
 
 void OGRShapeLayer::SetWriteDBFEOFChar(bool b)
@@ -776,7 +781,7 @@ void OGRShapeLayer::ResetReading()
 }
 
 /************************************************************************/
-/*                        ClearMatchingFIDs()                           */
+/*                         ClearMatchingFIDs()                          */
 /************************************************************************/
 
 void OGRShapeLayer::ClearMatchingFIDs()
@@ -789,7 +794,7 @@ void OGRShapeLayer::ClearMatchingFIDs()
 }
 
 /************************************************************************/
-/*                        ClearSpatialFIDs()                           */
+/*                          ClearSpatialFIDs()                          */
 /************************************************************************/
 
 void OGRShapeLayer::ClearSpatialFIDs()
@@ -1051,7 +1056,7 @@ OGRFeature *OGRShapeLayer::GetFeature(GIntBig nFeatureId)
 }
 
 /************************************************************************/
-/*                             StartUpdate()                            */
+/*                            StartUpdate()                             */
 /************************************************************************/
 
 bool OGRShapeLayer::StartUpdate(const char *pszOperation)
@@ -1074,7 +1079,7 @@ bool OGRShapeLayer::StartUpdate(const char *pszOperation)
 }
 
 /************************************************************************/
-/*                             ISetFeature()                             */
+/*                            ISetFeature()                             */
 /************************************************************************/
 
 OGRErr OGRShapeLayer::ISetFeature(OGRFeature *poFeature)
@@ -1177,7 +1182,7 @@ OGRErr OGRShapeLayer::DeleteFeature(GIntBig nFID)
 }
 
 /************************************************************************/
-/*                           ICreateFeature()                            */
+/*                           ICreateFeature()                           */
 /************************************************************************/
 
 OGRErr OGRShapeLayer::ICreateFeature(OGRFeature *poFeature)
@@ -2118,7 +2123,6 @@ OGRErr OGRShapeLayer::CreateField(const OGRFieldDefn *poFieldDefn,
                      OGRFieldDefn::GetFieldTypeName(oModFieldDefn.GetType()));
 
             return OGRERR_FAILURE;
-            break;
     }
 
     oModFieldDefn.SetWidth(nWidth);
@@ -2502,7 +2506,14 @@ const OGRSpatialReference *OGRShapeGeomFieldDefn::GetSpatialRef() const
 
         if (poSRSNonConst)
         {
-            if (CPLTestBool(CPLGetConfigOption("USE_OSR_FIND_MATCHES", "YES")))
+            double adfTOWGS84[7];
+            const char *pszSRSName = poSRSNonConst->GetName();
+            if (CPLTestBool(
+                    CPLGetConfigOption("USE_OSR_FIND_MATCHES", "YES")) &&
+                // Below works around bug fixed in PROJ per
+                // https://github.com/OSGeo/PROJ/pull/4599
+                !(pszSRSName && strstr(pszSRSName, "NTF (Paris)") != nullptr &&
+                  poSRSNonConst->GetTOWGS84(adfTOWGS84) == OGRERR_NONE))
             {
                 auto poSRSMatch = poSRSNonConst->FindBestMatch();
                 if (poSRSMatch)
@@ -2757,7 +2768,7 @@ OGRErr OGRShapeLayer::CreateSpatialIndex(int nMaxDepth)
 }
 
 /************************************************************************/
-/*                       CheckFileDeletion()                            */
+/*                         CheckFileDeletion()                          */
 /************************************************************************/
 
 static void CheckFileDeletion(const CPLString &osFilename)
@@ -2776,7 +2787,7 @@ static void CheckFileDeletion(const CPLString &osFilename)
 }
 
 /************************************************************************/
-/*                         ForceDeleteFile()                            */
+/*                          ForceDeleteFile()                           */
 /************************************************************************/
 
 static void ForceDeleteFile(const CPLString &osFilename)
@@ -3465,7 +3476,7 @@ OGRErr OGRShapeLayer::ResizeDBF()
 }
 
 /************************************************************************/
-/*                          TruncateDBF()                               */
+/*                            TruncateDBF()                             */
 /************************************************************************/
 
 void OGRShapeLayer::TruncateDBF()
@@ -3585,7 +3596,7 @@ OGRErr OGRShapeLayer::RecomputeExtent()
 }
 
 /************************************************************************/
-/*                              TouchLayer()                            */
+/*                             TouchLayer()                             */
 /************************************************************************/
 
 bool OGRShapeLayer::TouchLayer()
@@ -3601,7 +3612,7 @@ bool OGRShapeLayer::TouchLayer()
 }
 
 /************************************************************************/
-/*                        ReopenFileDescriptors()                       */
+/*                       ReopenFileDescriptors()                        */
 /************************************************************************/
 
 bool OGRShapeLayer::ReopenFileDescriptors()
@@ -3676,7 +3687,7 @@ void OGRShapeLayer::CloseUnderlyingLayer()
 }
 
 /************************************************************************/
-/*                            AddToFileList()                           */
+/*                           AddToFileList()                            */
 /************************************************************************/
 
 void OGRShapeLayer::AddToFileList(CPLStringList &oFileList)
@@ -3738,10 +3749,18 @@ void OGRShapeLayer::AddToFileList(CPLStringList &oFileList)
                 VSIGetCanonicalFilename(osSBXFilename.c_str()));
         }
     }
+
+    if (m_bHasShpXML)
+    {
+        const std::string osSBXFilename =
+            CPLResetExtensionSafe(m_osFullName.c_str(), "shp.xml");
+        oFileList.AddStringDirectly(
+            VSIGetCanonicalFilename(osSBXFilename.c_str()));
+    }
 }
 
 /************************************************************************/
-/*                   UpdateFollowingDeOrRecompression()                 */
+/*                  UpdateFollowingDeOrRecompression()                  */
 /************************************************************************/
 
 void OGRShapeLayer::UpdateFollowingDeOrRecompression()
@@ -3770,7 +3789,7 @@ void OGRShapeLayer::UpdateFollowingDeOrRecompression()
 }
 
 /************************************************************************/
-/*                           Rename()                                   */
+/*                               Rename()                               */
 /************************************************************************/
 
 OGRErr OGRShapeLayer::Rename(const char *pszNewName)
@@ -3856,7 +3875,7 @@ OGRErr OGRShapeLayer::Rename(const char *pszNewName)
 }
 
 /************************************************************************/
-/*                          GetDataset()                                */
+/*                             GetDataset()                             */
 /************************************************************************/
 
 GDALDataset *OGRShapeLayer::GetDataset()
@@ -3865,7 +3884,7 @@ GDALDataset *OGRShapeLayer::GetDataset()
 }
 
 /************************************************************************/
-/*                        GetNextArrowArray()                           */
+/*                         GetNextArrowArray()                          */
 /************************************************************************/
 
 // Specialized implementation restricted to situations where only retrieving
@@ -3944,7 +3963,7 @@ int OGRShapeLayer::GetNextArrowArray(struct ArrowArrayStream *stream,
 }
 
 /************************************************************************/
-/*                        GetMetadataItem()                             */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *OGRShapeLayer::GetMetadataItem(const char *pszName,

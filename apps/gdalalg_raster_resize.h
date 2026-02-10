@@ -18,7 +18,7 @@
 //! @cond Doxygen_Suppress
 
 /************************************************************************/
-/*                     GDALRasterResizeAlgorithm                        */
+/*                      GDALRasterResizeAlgorithm                       */
 /************************************************************************/
 
 class GDALRasterResizeAlgorithm /* non final */
@@ -36,11 +36,12 @@ class GDALRasterResizeAlgorithm /* non final */
     bool RunStep(GDALPipelineStepRunContext &ctxt) override;
 
     std::vector<std::string> m_size{};
+    std::vector<double> m_resolution{};
     std::string m_resampling{};
 };
 
 /************************************************************************/
-/*                  GDALRasterResizeAlgorithmStandalone                 */
+/*                 GDALRasterResizeAlgorithmStandalone                  */
 /************************************************************************/
 
 class GDALRasterResizeAlgorithmStandalone final

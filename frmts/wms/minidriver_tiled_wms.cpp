@@ -46,6 +46,9 @@
 #include "wmsdriver.h"
 #include "minidriver_tiled_wms.h"
 
+#include "gdal_colortable.h"
+#include "gdal_cpp_functions.h"
+
 #include <set>
 
 static const char SIG[] = "GDAL_WMS TiledWMS: ";
@@ -76,7 +79,7 @@ static GDALColorEntry GetXMLColorEntry(const CPLXMLNode *p)
 }
 
 /************************************************************************/
-/*                           SearchXMLSiblings()                        */
+/*                         SearchXMLSiblings()                          */
 /************************************************************************/
 
 /*
@@ -489,7 +492,7 @@ CPLErr WMSMiniDriver_TiledWMS::Initialize(CPLXMLNode *config,
         GDALDataType dt =
             GDALGetDataTypeByName(CPLGetXMLValue(TG, "DataType", "Byte"));
         m_parent_dataset->WMSSetDataType(dt);
-        if (dt != GDT_Byte)
+        if (dt != GDT_UInt8)
             m_parent_dataset->SetTileOO("@DATATYPE", GDALGetDataTypeName(dt));
         // Let the TiledGroup override the projection
         pszProjection = CPLGetXMLValue(TG, "Projection", "");

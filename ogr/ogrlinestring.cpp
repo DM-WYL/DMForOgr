@@ -40,16 +40,11 @@ int DoubleToIntClamp(double dfValue)
 }  // namespace
 
 /************************************************************************/
-/*                OGRSimpleCurve( const OGRSimpleCurve& )               */
+/*               OGRSimpleCurve( const OGRSimpleCurve& )                */
 /************************************************************************/
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRSimpleCurve::OGRSimpleCurve(const OGRSimpleCurve &other)
@@ -61,7 +56,7 @@ OGRSimpleCurve::OGRSimpleCurve(const OGRSimpleCurve &other)
 }
 
 /************************************************************************/
-/*                OGRSimpleCurve( OGRSimpleCurve&& )                    */
+/*                  OGRSimpleCurve( OGRSimpleCurve&& )                  */
 /************************************************************************/
 
 /**
@@ -98,16 +93,11 @@ OGRSimpleCurve::~OGRSimpleCurve()
 }
 
 /************************************************************************/
-/*                 operator=(const OGRSimpleCurve &other)               */
+/*                operator=(const OGRSimpleCurve &other)                */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRSimpleCurve &OGRSimpleCurve::operator=(const OGRSimpleCurve &other)
@@ -124,7 +114,7 @@ OGRSimpleCurve &OGRSimpleCurve::operator=(const OGRSimpleCurve &other)
 }
 
 /************************************************************************/
-/*                     operator=(OGRSimpleCurve &&other)                */
+/*                  operator=(OGRSimpleCurve &&other)                   */
 /************************************************************************/
 
 /**
@@ -270,7 +260,7 @@ bool OGRSimpleCurve::Make3D()
 }
 
 /************************************************************************/
-/*                               RemoveM()                              */
+/*                              RemoveM()                               */
 /************************************************************************/
 
 void OGRSimpleCurve::RemoveM()
@@ -285,7 +275,7 @@ void OGRSimpleCurve::RemoveM()
 }
 
 /************************************************************************/
-/*                               AddM()                                 */
+/*                                AddM()                                */
 /************************************************************************/
 
 bool OGRSimpleCurve::AddM()
@@ -582,7 +572,7 @@ bool OGRSimpleCurve::setPoint(int iPoint, OGRPoint *poPoint)
 }
 
 /************************************************************************/
-/*                           CheckPointCount()                          */
+/*                          CheckPointCount()                           */
 /************************************************************************/
 
 static inline bool CheckPointCount(int iPoint)
@@ -1369,7 +1359,7 @@ bool OGRSimpleCurve::setPoints(int nPointsIn, const double *padfX,
 }
 
 /************************************************************************/
-/*                          getPoints()                                 */
+/*                             getPoints()                              */
 /************************************************************************/
 
 /**
@@ -1432,8 +1422,6 @@ void OGRSimpleCurve::getPoints(OGRRawPoint *paoPointsOut,
  * @param pabyM a buffer of at last size (nMStride * nPointCount) bytes, may be
  * NULL.
  * @param nMStride the number of bytes between 2 elements of pabyM.
- *
- * @since OGR 2.1.0
  */
 
 void OGRSimpleCurve::getPoints(void *pabyX, int nXStride, void *pabyY,
@@ -2244,7 +2232,6 @@ double OGRSimpleCurve::Project(const OGRPoint *poPoint) const
  * @return a newly allocated linestring now owned by the caller, or NULL on
  * failure.
  *
- * @since OGR 1.11.0
  */
 
 OGRLineString *OGRSimpleCurve::getSubLine(double dfDistanceFrom,
@@ -2646,7 +2633,7 @@ OGRErr OGRSimpleCurve::transform(OGRCoordinateTransformation *poCT)
 }
 
 /************************************************************************/
-/*                               IsEmpty()                              */
+/*                              IsEmpty()                               */
 /************************************************************************/
 
 OGRBoolean OGRSimpleCurve::IsEmpty() const
@@ -2847,7 +2834,7 @@ void OGRSimpleCurve::swapXY()
 }
 
 /************************************************************************/
-/*                       OGRSimpleCurvePointIterator                    */
+/*                     OGRSimpleCurvePointIterator                      */
 /************************************************************************/
 
 class OGRSimpleCurvePointIterator final : public OGRPointIterator
@@ -2880,7 +2867,7 @@ OGRBoolean OGRSimpleCurvePointIterator::getNextPoint(OGRPoint *p)
 }
 
 /************************************************************************/
-/*                         getPointIterator()                           */
+/*                          getPointIterator()                          */
 /************************************************************************/
 
 OGRPointIterator *OGRSimpleCurve::getPointIterator() const
@@ -2889,22 +2876,17 @@ OGRPointIterator *OGRSimpleCurve::getPointIterator() const
 }
 
 /************************************************************************/
-/*                  OGRLineString( const OGRLineString& )               */
+/*                OGRLineString( const OGRLineString& )                 */
 /************************************************************************/
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRLineString::OGRLineString(const OGRLineString &) = default;
 
 /************************************************************************/
-/*                  OGRLineString( OGRLineString&& )                    */
+/*                   OGRLineString( OGRLineString&& )                   */
 /************************************************************************/
 
 /**
@@ -2916,16 +2898,11 @@ OGRLineString::OGRLineString(const OGRLineString &) = default;
 OGRLineString::OGRLineString(OGRLineString &&) = default;
 
 /************************************************************************/
-/*                    operator=( const OGRLineString& )                 */
+/*                  operator=( const OGRLineString& )                   */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRLineString &OGRLineString::operator=(const OGRLineString &other)
@@ -2938,7 +2915,7 @@ OGRLineString &OGRLineString::operator=(const OGRLineString &other)
 }
 
 /************************************************************************/
-/*                    operator=( OGRLineString&& )                      */
+/*                     operator=( OGRLineString&& )                     */
 /************************************************************************/
 
 /**
@@ -2984,7 +2961,7 @@ const char *OGRLineString::getGeometryName() const
 }
 
 /************************************************************************/
-/*                          curveToLine()                               */
+/*                            curveToLine()                             */
 /************************************************************************/
 
 OGRLineString *OGRLineString::CurveToLine(
@@ -2995,7 +2972,7 @@ OGRLineString *OGRLineString::CurveToLine(
 }
 
 /************************************************************************/
-/*                          get_LinearArea()                            */
+/*                           get_LinearArea()                           */
 /************************************************************************/
 
 /**
@@ -3035,7 +3012,7 @@ double OGRSimpleCurve::get_LinearArea() const
 }
 
 /************************************************************************/
-/*                             getCurveGeometry()                       */
+/*                          getCurveGeometry()                          */
 /************************************************************************/
 
 OGRGeometry *
@@ -3045,7 +3022,7 @@ OGRLineString::getCurveGeometry(const char *const *papszOptions) const
 }
 
 /************************************************************************/
-/*                      TransferMembersAndDestroy()                     */
+/*                     TransferMembersAndDestroy()                      */
 /************************************************************************/
 //! @cond Doxygen_Suppress
 OGRLineString *OGRLineString::TransferMembersAndDestroy(OGRLineString *poSrc,
@@ -3072,7 +3049,7 @@ OGRLineString *OGRLineString::TransferMembersAndDestroy(OGRLineString *poSrc,
 
 //! @endcond
 /************************************************************************/
-/*                         CastToLinearRing()                           */
+/*                          CastToLinearRing()                          */
 /************************************************************************/
 
 /**
@@ -3120,7 +3097,7 @@ OGRLineString *OGRLineString::clone() const
 //! @cond Doxygen_Suppress
 
 /************************************************************************/
-/*                     GetCasterToLineString()                          */
+/*                       GetCasterToLineString()                        */
 /************************************************************************/
 
 static OGRLineString *CasterToLineString(OGRCurve *poCurve)
@@ -3134,7 +3111,7 @@ OGRCurveCasterToLineString OGRLineString::GetCasterToLineString() const
 }
 
 /************************************************************************/
-/*                        GetCasterToLinearRing()                       */
+/*                       GetCasterToLinearRing()                        */
 /************************************************************************/
 
 OGRLinearRing *OGRLineString::CasterToLinearRing(OGRCurve *poCurve)
@@ -3148,7 +3125,7 @@ OGRCurveCasterToLinearRing OGRLineString::GetCasterToLinearRing() const
 }
 
 /************************************************************************/
-/*                            get_Area()                                */
+/*                              get_Area()                              */
 /************************************************************************/
 
 double OGRLineString::get_Area() const
@@ -3157,7 +3134,7 @@ double OGRLineString::get_Area() const
 }
 
 /************************************************************************/
-/*                           GetGeodesicInputs()                        */
+/*                         GetGeodesicInputs()                          */
 /************************************************************************/
 
 static bool GetGeodesicInputs(const OGRLineString *poLS,
@@ -3244,7 +3221,7 @@ static bool GetGeodesicInputs(const OGRLineString *poLS,
 }
 
 /************************************************************************/
-/*                        get_GeodesicArea()                            */
+/*                          get_GeodesicArea()                          */
 /************************************************************************/
 
 double
@@ -3262,7 +3239,7 @@ OGRLineString::get_GeodesicArea(const OGRSpatialReference *poSRSOverride) const
 }
 
 /************************************************************************/
-/*                        get_GeodesicLength()                          */
+/*                         get_GeodesicLength()                         */
 /************************************************************************/
 
 double OGRLineString::get_GeodesicLength(
@@ -3285,7 +3262,7 @@ double OGRLineString::get_GeodesicLength(
 }
 
 /************************************************************************/
-/*                       get_AreaOfCurveSegments()                      */
+/*                      get_AreaOfCurveSegments()                       */
 /************************************************************************/
 
 double OGRLineString::get_AreaOfCurveSegments() const

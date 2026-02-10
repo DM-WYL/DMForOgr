@@ -52,7 +52,7 @@ enum class OGRArrowGeomEncoding
 };
 
 /************************************************************************/
-/*                        OGRArrowIsGeoArrowStruct()                    */
+/*                      OGRArrowIsGeoArrowStruct()                      */
 /************************************************************************/
 
 inline bool OGRArrowIsGeoArrowStruct(OGRArrowGeomEncoding eEncoding)
@@ -74,14 +74,31 @@ inline bool OGRArrowIsGeoArrowStruct(OGRArrowGeomEncoding eEncoding)
 }
 
 /************************************************************************/
-/*                         OGRArrowLayer                                */
+/*                            IOGRArrowLayer                            */
+/************************************************************************/
+
+class OGRArrowLayer;
+
+class IOGRArrowLayer CPL_NON_FINAL
+{
+  public:
+    IOGRArrowLayer() = default;
+    virtual ~IOGRArrowLayer();
+
+    virtual OGRLayer *GetLayer() = 0;
+    virtual OGRArrowLayer *GetUnderlyingArrowLayer() = 0;
+};
+
+/************************************************************************/
+/*                            OGRArrowLayer                             */
 /************************************************************************/
 
 class OGRArrowDataset;
 
 class OGRArrowLayer CPL_NON_FINAL
     : public OGRLayer,
-      public OGRGetNextFeatureThroughRaw<OGRArrowLayer>
+      public OGRGetNextFeatureThroughRaw<OGRArrowLayer>,
+      public IOGRArrowLayer
 {
   public:
     struct Constraint
@@ -124,6 +141,7 @@ class OGRArrowLayer CPL_NON_FINAL
 
   protected:
     OGRArrowDataset *m_poArrowDS = nullptr;
+    const bool m_bListsAsStringJson;
     arrow::MemoryPool *m_poMemoryPool = nullptr;
     OGRFeatureDefn *m_poFeatureDefn = nullptr;
     std::shared_ptr<arrow::Schema> m_poSchema{};
@@ -211,7 +229,8 @@ class OGRArrowLayer CPL_NON_FINAL
 
     void LoadGDALMetadata(const arrow::KeyValueMetadata *kv_metadata);
 
-    OGRArrowLayer(OGRArrowDataset *poDS, const char *pszLayerName);
+    OGRArrowLayer(OGRArrowDataset *poDS, const char *pszLayerName,
+                  bool bListsAsStringJson);
 
     virtual std::string GetDriverUCName() const = 0;
     static bool IsIntegerArrowType(arrow::Type::type typeId);
@@ -290,8 +309,18 @@ class OGRArrowLayer CPL_NON_FINAL
 
     void SanityCheckOfSetBatch() const;
 
+    OGRLayer *GetLayer() override
+    {
+        return this;
+    }
+
+    OGRArrowLayer *GetUnderlyingArrowLayer() override
+    {
+        return this;
+    }
+
   public:
-    virtual ~OGRArrowLayer() override;
+    ~OGRArrowLayer() override;
 
     const OGRFeatureDefn *GetLayerDefn() const override
     {
@@ -328,26 +357,31 @@ class OGRArrowLayer CPL_NON_FINAL
 };
 
 /************************************************************************/
-/*                         OGRArrowDataset                              */
+/*                           OGRArrowDataset                            */
 /************************************************************************/
 
 class OGRArrowDataset CPL_NON_FINAL : public GDALPamDataset
 {
     std::shared_ptr<arrow::MemoryPool> m_poMemoryPool{};
-    std::unique_ptr<OGRArrowLayer> m_poLayer{};
+    std::unique_ptr<IOGRArrowLayer> m_poLayer{};
     std::vector<std::string> m_aosDomainNames{};
     std::map<std::string, int> m_oMapDomainNameToCol{};
-
-  protected:
-    void close()
-    {
-        m_poLayer.reset();
-        m_poMemoryPool.reset();
-    }
 
   public:
     explicit OGRArrowDataset(
         const std::shared_ptr<arrow::MemoryPool> &poMemoryPool);
+
+    ~OGRArrowDataset() override
+    {
+        OGRArrowDataset::Close();
+    }
+
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override
+    {
+        m_poLayer.reset();
+        m_poMemoryPool.reset();
+        return GDALPamDataset::Close();
+    }
 
     inline arrow::MemoryPool *GetMemoryPool() const
     {
@@ -359,7 +393,7 @@ class OGRArrowDataset CPL_NON_FINAL : public GDALPamDataset
         return m_poMemoryPool;
     }
 
-    void SetLayer(std::unique_ptr<OGRArrowLayer> &&poLayer);
+    void SetLayer(std::unique_ptr<IOGRArrowLayer> &&poLayer);
 
     void RegisterDomainName(const std::string &osDomainName, int iFieldIndex);
 
@@ -374,7 +408,7 @@ class OGRArrowDataset CPL_NON_FINAL : public GDALPamDataset
 };
 
 /************************************************************************/
-/*                        OGRArrowWriterLayer                           */
+/*                         OGRArrowWriterLayer                          */
 /************************************************************************/
 
 class OGRArrowWriterLayer CPL_NON_FINAL : public OGRLayer
@@ -405,6 +439,10 @@ class OGRArrowWriterLayer CPL_NON_FINAL : public OGRLayer
     //! Whether to use a struct field with the values of the bounding box
     // of the geometries. Used by Parquet.
     bool m_bWriteBBoxStruct = false;
+
+    //! Name of the struct field for the bounding box. Only used if m_bWriteBBoxStruct
+    // is set. If not set, it defaults to {geometry_column_name}_bbox
+    std::string m_oBBoxStructFieldName{};
 
     //! Schema fields for bounding box of geometry columns.
     // Constraint: if not empty, m_apoFieldsBBOX.size() == m_poFeatureDefn->GetGeomFieldCount()
@@ -441,6 +479,8 @@ class OGRArrowWriterLayer CPL_NON_FINAL : public OGRLayer
 #if ARROW_VERSION_MAJOR >= 21
     bool m_bUseArrowWKBExtension = false;
 #endif
+
+    CPLStringList m_aosCreationOptions{};
 
     static OGRArrowGeomEncoding
     GetPreciseArrowGeomEncoding(OGRArrowGeomEncoding eEncodingType,

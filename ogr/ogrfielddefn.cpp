@@ -110,7 +110,7 @@ OGRFieldDefn::~OGRFieldDefn()
 }
 
 /************************************************************************/
-/*                             OGRFieldDefn::OGRFieldDefn()             */
+/*                     OGRFieldDefn::OGRFieldDefn()                     */
 /************************************************************************/
 
 /**
@@ -133,7 +133,7 @@ OGRFieldDefn::OGRFieldDefn(const OGRFieldDefn &oOther)
 }
 
 /************************************************************************/
-/*                           OGRFieldDefn::operator=()                  */
+/*                      OGRFieldDefn::operator=()                       */
 /************************************************************************/
 
 /**
@@ -283,7 +283,7 @@ const char *OGR_Fld_GetNameRef(OGRFieldDefnH hDefn)
 }
 
 /************************************************************************/
-/*                              SetAlternativeName()                    */
+/*                         SetAlternativeName()                         */
 /************************************************************************/
 
 /**
@@ -328,7 +328,7 @@ void OGRFieldDefn::SetAlternativeName(const char *pszAlternativeNameIn)
 }
 
 /************************************************************************/
-/*                          OGR_Fld_SetAlternativeName()                */
+/*                     OGR_Fld_SetAlternativeName()                     */
 /************************************************************************/
 /**
  * \brief Reset the alternative name (or "alias") for this field.
@@ -365,7 +365,7 @@ void OGR_Fld_SetAlternativeName(OGRFieldDefnH hDefn,
 }
 
 /************************************************************************/
-/*                             GetAlternativeNameRef()                  */
+/*                       GetAlternativeNameRef()                        */
 /************************************************************************/
 
 /**
@@ -390,7 +390,7 @@ void OGR_Fld_SetAlternativeName(OGRFieldDefnH hDefn,
  */
 
 /************************************************************************/
-/*                         OGR_Fld_GetAlternativeNameRef()              */
+/*                   OGR_Fld_GetAlternativeNameRef()                    */
 /************************************************************************/
 /**
  * \brief Fetch the alternative name (or "alias") for this field.
@@ -538,7 +538,6 @@ void OGR_Fld_SetType(OGRFieldDefnH hDefn, OGRFieldType eType)
  * This method is the same as the C function OGR_Fld_GetSubType().
  *
  * @return field subtype.
- * @since GDAL 2.0
  */
 
 /************************************************************************/
@@ -551,7 +550,6 @@ void OGR_Fld_SetType(OGRFieldDefnH hDefn, OGRFieldType eType)
  *
  * @param hDefn handle to the field definition to get subtype from.
  * @return field subtype.
- * @since GDAL 2.0
  */
 
 OGRFieldSubType OGR_Fld_GetSubType(OGRFieldDefnH hDefn)
@@ -584,7 +582,6 @@ OGRFieldSubType OGR_Fld_GetSubType(OGRFieldDefnH hDefn)
  * OGRFieldDefn, for drivers that support AlterFieldDefn.
  *
  * @param eSubTypeIn the new field subtype.
- * @since GDAL 2.0
  */
 void OGRFieldDefn::SetSubType(OGRFieldSubType eSubTypeIn)
 {
@@ -625,7 +622,6 @@ void OGRFieldDefn::SetSubType(OGRFieldSubType eSubTypeIn)
  *
  * @param hDefn handle to the field definition to set type to.
  * @param eSubType the new field subtype.
- * @since GDAL 2.0
  */
 
 void OGR_Fld_SetSubType(OGRFieldDefnH hDefn, OGRFieldSubType eSubType)
@@ -669,7 +665,6 @@ void OGR_Fld_SetSubType(OGRFieldDefnH hDefn, OGRFieldSubType eSubType)
  *
  * @param pszDefaultIn new default field value or NULL pointer.
  *
- * @since GDAL 2.0
  */
 
 void OGRFieldDefn::SetDefault(const char *pszDefaultIn)
@@ -750,7 +745,6 @@ void OGRFieldDefn::SetDefault(const char *pszDefaultIn)
  * @param hDefn handle to the field definition.
  * @param pszDefault new default field value or NULL pointer.
  *
- * @since GDAL 2.0
  */
 
 void CPL_DLL OGR_Fld_SetDefault(OGRFieldDefnH hDefn, const char *pszDefault)
@@ -768,7 +762,6 @@ void CPL_DLL OGR_Fld_SetDefault(OGRFieldDefnH hDefn, const char *pszDefault)
  * This function is the same as the C function OGR_Fld_GetDefault().
  *
  * @return default field value or NULL.
- * @since GDAL 2.0
  */
 
 const char *OGRFieldDefn::GetDefault() const
@@ -788,7 +781,6 @@ const char *OGRFieldDefn::GetDefault() const
  *
  * @param hDefn handle to the field definition.
  * @return default field value or NULL.
- * @since GDAL 2.0
  */
 
 const char *OGR_Fld_GetDefault(OGRFieldDefnH hDefn)
@@ -797,7 +789,7 @@ const char *OGR_Fld_GetDefault(OGRFieldDefnH hDefn)
 }
 
 /************************************************************************/
-/*                        IsDefaultDriverSpecific()                     */
+/*                      IsDefaultDriverSpecific()                       */
 /************************************************************************/
 
 /**
@@ -812,7 +804,6 @@ const char *OGR_Fld_GetDefault(OGRFieldDefnH hDefn)
  * OGR_Fld_IsDefaultDriverSpecific().
  *
  * @return TRUE if the default value is driver specific.
- * @since GDAL 2.0
  */
 
 int OGRFieldDefn::IsDefaultDriverSpecific() const
@@ -836,7 +827,7 @@ int OGRFieldDefn::IsDefaultDriverSpecific() const
 }
 
 /************************************************************************/
-/*                     OGR_Fld_IsDefaultDriverSpecific()                */
+/*                  OGR_Fld_IsDefaultDriverSpecific()                   */
 /************************************************************************/
 
 /**
@@ -852,7 +843,6 @@ int OGRFieldDefn::IsDefaultDriverSpecific() const
  *
  * @param hDefn handle to the field definition
  * @return TRUE if the default value is driver specific.
- * @since GDAL 2.0
  */
 
 int OGR_Fld_IsDefaultDriverSpecific(OGRFieldDefnH hDefn)
@@ -925,7 +915,7 @@ const char *OGRFieldDefn::GetFieldTypeName(OGRFieldType eType)
 }
 
 /************************************************************************/
-/*                          GetFieldTypeByName()                        */
+/*                         GetFieldTypeByName()                         */
 /************************************************************************/
 /**
  * \brief Fetch field type by name.
@@ -1014,7 +1004,6 @@ const char *OGR_GetFieldTypeName(OGRFieldType eType)
  * @return pointer to an internal static name string. It should not be
  * modified or freed.
  *
- * @since GDAL 2.0
  */
 
 const char *OGRFieldDefn::GetFieldSubTypeName(OGRFieldSubType eSubType)
@@ -1044,7 +1033,7 @@ const char *OGRFieldDefn::GetFieldSubTypeName(OGRFieldSubType eSubType)
 }
 
 /************************************************************************/
-/*                        GetFieldSubTypeByName()                       */
+/*                       GetFieldSubTypeByName()                        */
 /************************************************************************/
 /**
  * \brief Fetch field subtype by name.
@@ -1069,7 +1058,7 @@ OGRFieldSubType OGRFieldDefn::GetFieldSubTypeByName(const char *pszName)
 }
 
 /************************************************************************/
-/*                       OGR_GetFieldSubTypeByName()                    */
+/*                     OGR_GetFieldSubTypeByName()                      */
 /************************************************************************/
 /**
  * \brief Fetch field subtype by name.
@@ -1087,7 +1076,7 @@ OGRFieldSubType OGR_GetFieldSubTypeByName(const char *pszName)
 }
 
 /************************************************************************/
-/*                       OGR_GetFieldSubTypeName()                      */
+/*                      OGR_GetFieldSubTypeName()                       */
 /************************************************************************/
 /**
  * \brief Fetch human readable name for a field subtype.
@@ -1098,7 +1087,6 @@ OGRFieldSubType OGR_GetFieldSubTypeByName(const char *pszName)
  * @param eSubType the field subtype to get name for.
  * @return the name.
  *
- * @since GDAL 2.0
  */
 
 const char *OGR_GetFieldSubTypeName(OGRFieldSubType eSubType)
@@ -1108,7 +1096,7 @@ const char *OGR_GetFieldSubTypeName(OGRFieldSubType eSubType)
 }
 
 /************************************************************************/
-/*                       OGR_IsValidTypeAndSubType()                    */
+/*                     OGR_IsValidTypeAndSubType()                      */
 /************************************************************************/
 /**
  * \brief Return if type and subtype are compatible
@@ -1117,7 +1105,6 @@ const char *OGR_GetFieldSubTypeName(OGRFieldSubType eSubType)
  * @param eSubType the field subtype.
  * @return TRUE if type and subtype are compatible
  *
- * @since GDAL 2.0
  */
 
 int OGR_AreTypeSubTypeCompatible(OGRFieldType eType, OGRFieldSubType eSubType)
@@ -1384,7 +1371,7 @@ void OGR_Fld_SetPrecision(OGRFieldDefnH hDefn, int nPrecision)
 }
 
 /************************************************************************/
-/*                            GetTZFlag()                               */
+/*                             GetTZFlag()                              */
 /************************************************************************/
 
 /**
@@ -1404,7 +1391,7 @@ void OGR_Fld_SetPrecision(OGRFieldDefnH hDefn, int nPrecision)
  */
 
 /************************************************************************/
-/*                        OGR_Fld_GetTZFlag()                           */
+/*                         OGR_Fld_GetTZFlag()                          */
 /************************************************************************/
 /**
  * \brief Get the time zone flag.
@@ -1598,7 +1585,7 @@ int OGR_Fld_IsIgnored(OGRFieldDefnH hDefn)
 }
 
 /************************************************************************/
-/*                            SetIgnored()                              */
+/*                             SetIgnored()                             */
 /************************************************************************/
 
 /**
@@ -1616,7 +1603,7 @@ int OGR_Fld_IsIgnored(OGRFieldDefnH hDefn)
  */
 
 /************************************************************************/
-/*                        OGR_Fld_SetIgnored()                          */
+/*                         OGR_Fld_SetIgnored()                         */
 /************************************************************************/
 
 /**
@@ -1638,7 +1625,7 @@ void OGR_Fld_SetIgnored(OGRFieldDefnH hDefn, int ignore)
 }
 
 /************************************************************************/
-/*                             IsSame()                                 */
+/*                               IsSame()                               */
 /************************************************************************/
 
 /**
@@ -1681,7 +1668,6 @@ int OGRFieldDefn::IsSame(const OGRFieldDefn *poOtherFieldDefn) const
  * This method is the same as the C function OGR_Fld_IsNullable().
  *
  * @return TRUE if the field is authorized to be null.
- * @since GDAL 2.0
  */
 
 /************************************************************************/
@@ -1702,7 +1688,6 @@ int OGRFieldDefn::IsSame(const OGRFieldDefn *poOtherFieldDefn) const
  *
  * @param hDefn handle to the field definition
  * @return TRUE if the field is authorized to be null.
- * @since GDAL 2.0
  */
 
 int OGR_Fld_IsNullable(OGRFieldDefnH hDefn)
@@ -1734,7 +1719,6 @@ int OGR_Fld_IsNullable(OGRFieldDefnH hDefn)
  * OGRFieldDefn, for drivers that support AlterFieldDefn().
  *
  * @param bNullableIn FALSE if the field must have a not-null constraint.
- * @since GDAL 2.0
  */
 void OGRFieldDefn::SetNullable(int bNullableIn)
 {
@@ -1748,7 +1732,7 @@ void OGRFieldDefn::SetNullable(int bNullableIn)
 }
 
 /************************************************************************/
-/*                        OGR_Fld_SetNullable()                          */
+/*                        OGR_Fld_SetNullable()                         */
 /************************************************************************/
 
 /**
@@ -1770,7 +1754,6 @@ void OGRFieldDefn::SetNullable(int bNullableIn)
  *
  * @param hDefn handle to the field definition
  * @param bNullableIn FALSE if the field must have a not-null constraint.
- * @since GDAL 2.0
  */
 
 void OGR_Fld_SetNullable(OGRFieldDefnH hDefn, int bNullableIn)
@@ -1807,7 +1790,7 @@ void OGR_Fld_SetGenerated(OGRFieldDefnH hDefn, int bGeneratedIn)
 }
 
 /************************************************************************/
-/*                             OGR_Fld_IsGenerated()                    */
+/*                        OGR_Fld_IsGenerated()                         */
 /************************************************************************/
 
 /**
@@ -1828,7 +1811,7 @@ int OGR_Fld_IsGenerated(OGRFieldDefnH hDefn)
 }
 
 /************************************************************************/
-/*                             IsUnique()                               */
+/*                              IsUnique()                              */
 /************************************************************************/
 
 /**
@@ -1845,7 +1828,7 @@ int OGR_Fld_IsGenerated(OGRFieldDefnH hDefn)
  */
 
 /************************************************************************/
-/*                         OGR_Fld_IsUnique()                         */
+/*                          OGR_Fld_IsUnique()                          */
 /************************************************************************/
 
 /**
@@ -1901,7 +1884,7 @@ void OGRFieldDefn::SetUnique(int bUniqueIn)
 }
 
 /************************************************************************/
-/*                        OGR_Fld_SetUnique()                            */
+/*                         OGR_Fld_SetUnique()                          */
 /************************************************************************/
 
 /**
@@ -1953,7 +1936,7 @@ void OGR_Fld_SetUnique(OGRFieldDefnH hDefn, int bUniqueIn)
  */
 
 /************************************************************************/
-/*                      OGR_Fld_GetDomainName()                         */
+/*                       OGR_Fld_GetDomainName()                        */
 /************************************************************************/
 
 /**
@@ -2009,7 +1992,7 @@ void OGRFieldDefn::SetDomainName(const std::string &osDomainName)
 }
 
 /************************************************************************/
-/*                      OGR_Fld_SetDomainName()                         */
+/*                       OGR_Fld_SetDomainName()                        */
 /************************************************************************/
 
 /**
@@ -2037,7 +2020,7 @@ void OGR_Fld_SetDomainName(OGRFieldDefnH hDefn, const char *pszFieldName)
 }
 
 /************************************************************************/
-/*                           GetComment()                               */
+/*                             GetComment()                             */
 /************************************************************************/
 
 /**
@@ -2054,7 +2037,7 @@ void OGR_Fld_SetDomainName(OGRFieldDefnH hDefn, const char *pszFieldName)
  */
 
 /************************************************************************/
-/*                      OGR_Fld_GetComment()                            */
+/*                         OGR_Fld_GetComment()                         */
 /************************************************************************/
 
 /**
@@ -2075,7 +2058,7 @@ const char *OGR_Fld_GetComment(OGRFieldDefnH hDefn)
 }
 
 /************************************************************************/
-/*                           SetComment()                               */
+/*                             SetComment()                             */
 /************************************************************************/
 
 /**
@@ -2104,7 +2087,7 @@ void OGRFieldDefn::SetComment(const std::string &osComment)
 }
 
 /************************************************************************/
-/*                      OGR_Fld_SetComment()                            */
+/*                         OGR_Fld_SetComment()                         */
 /************************************************************************/
 
 /**
@@ -2129,7 +2112,7 @@ void OGR_Fld_SetComment(OGRFieldDefnH hDefn, const char *pszComment)
 }
 
 /************************************************************************/
-/*                        OGRUpdateFieldType()                          */
+/*                         OGRUpdateFieldType()                         */
 /************************************************************************/
 
 /**
@@ -2142,7 +2125,6 @@ void OGR_Fld_SetComment(OGRFieldDefnH hDefn, const char *pszComment)
  * @param poFDefn the field definition whose type must be updated.
  * @param eNewType the new field type to merge into the existing type.
  * @param eNewSubType the new field subtype to merge into the existing subtype.
- * @since GDAL 2.1
  */
 
 void OGRUpdateFieldType(OGRFieldDefn *poFDefn, OGRFieldType eNewType,
@@ -2281,7 +2263,7 @@ void OGRUpdateFieldType(OGRFieldDefn *poFDefn, OGRFieldType eNewType,
 }
 
 /************************************************************************/
-/*                        OGRFieldDefn::Seal()                          */
+/*                         OGRFieldDefn::Seal()                         */
 /************************************************************************/
 
 /** Seal a OGRFieldDefn.
@@ -2317,7 +2299,7 @@ void OGRFieldDefn::Unseal()
 }
 
 /************************************************************************/
-/*                    OGRFieldDefn::GetTemporaryUnsealer()              */
+/*                 OGRFieldDefn::GetTemporaryUnsealer()                 */
 /************************************************************************/
 
 /** Return an object that temporary unseals the OGRFieldDefn
@@ -2338,7 +2320,7 @@ OGRFieldDefn::TemporaryUnsealer OGRFieldDefn::GetTemporaryUnsealer()
 }
 
 /************************************************************************/
-/*                          OGRFieldDomain()                            */
+/*                           OGRFieldDomain()                           */
 /************************************************************************/
 
 /*! @cond Doxygen_Suppress */
@@ -2356,13 +2338,13 @@ OGRFieldDomain::OGRFieldDomain(const std::string &osName,
 /*! @endcond */
 
 /************************************************************************/
-/*                         ~OGRFieldDomain()                            */
+/*                          ~OGRFieldDomain()                           */
 /************************************************************************/
 
 OGRFieldDomain::~OGRFieldDomain() = default;
 
 /************************************************************************/
-/*                         ~OGRFieldDomain()                            */
+/*                          ~OGRFieldDomain()                           */
 /************************************************************************/
 
 /** Destroy a field domain.
@@ -2494,7 +2476,7 @@ OGRFieldDomainH OGR_CodedFldDomain_Create(const char *pszName,
 }
 
 /************************************************************************/
-/*                   OGRCodedFieldDomain::Clone()                       */
+/*                     OGRCodedFieldDomain::Clone()                     */
 /************************************************************************/
 
 OGRCodedFieldDomain *OGRCodedFieldDomain::Clone() const
@@ -2509,7 +2491,7 @@ OGRCodedFieldDomain *OGRCodedFieldDomain::Clone() const
 }
 
 /************************************************************************/
-/*                      ~OGRCodedFieldDomain()                          */
+/*                        ~OGRCodedFieldDomain()                        */
 /************************************************************************/
 
 OGRCodedFieldDomain::~OGRCodedFieldDomain()
@@ -2522,7 +2504,7 @@ OGRCodedFieldDomain::~OGRCodedFieldDomain()
 }
 
 /************************************************************************/
-/*                       OGRRangeFieldDomain()                          */
+/*                        OGRRangeFieldDomain()                         */
 /************************************************************************/
 
 // cppcheck-suppress uninitMemberVar
@@ -2590,7 +2572,7 @@ OGRFieldDomainH OGR_RangeFldDomain_Create(
 }
 
 /************************************************************************/
-/*                        OGRGlobFieldDomain()                          */
+/*                         OGRGlobFieldDomain()                         */
 /************************************************************************/
 
 OGRGlobFieldDomain::OGRGlobFieldDomain(const std::string &osName,
@@ -2605,7 +2587,7 @@ OGRGlobFieldDomain::OGRGlobFieldDomain(const std::string &osName,
 }
 
 /************************************************************************/
-/*                       OGR_GlobFldDomain_Create()                     */
+/*                      OGR_GlobFldDomain_Create()                      */
 /************************************************************************/
 
 /** Creates a new glob field domain.
@@ -2651,7 +2633,7 @@ const char *OGR_FldDomain_GetName(OGRFieldDomainH hFieldDomain)
 }
 
 /************************************************************************/
-/*                     OGR_FldDomain_GetDescription()                   */
+/*                    OGR_FldDomain_GetDescription()                    */
 /************************************************************************/
 
 /** Get the description of the field domain.
@@ -2668,7 +2650,7 @@ const char *OGR_FldDomain_GetDescription(OGRFieldDomainH hFieldDomain)
 }
 
 /************************************************************************/
-/*                     OGR_FldDomain_GetDomainType()                    */
+/*                    OGR_FldDomain_GetDomainType()                     */
 /************************************************************************/
 
 /** Get the type of the field domain.
@@ -2795,7 +2777,7 @@ void OGR_FldDomain_SetMergePolicy(OGRFieldDomainH hFieldDomain,
 }
 
 /************************************************************************/
-/*                  OGR_CodedFldDomain_GetEnumeration()                 */
+/*                 OGR_CodedFldDomain_GetEnumeration()                  */
 /************************************************************************/
 
 /** Get the enumeration as (code, value) pairs.

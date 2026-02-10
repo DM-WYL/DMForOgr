@@ -115,7 +115,7 @@ static CPL_INLINE void UnreadChar(ParseContext *psContext, char chToUnread)
 }
 
 /************************************************************************/
-/*                           ReallocToken()                             */
+/*                            ReallocToken()                            */
 /************************************************************************/
 
 static bool ReallocToken(ParseContext *psContext)
@@ -1430,7 +1430,7 @@ void CPLDestroyXMLNode(CPLXMLNode *psNode)
 }
 
 /************************************************************************/
-/*                           CPLSearchXMLNode()                         */
+/*                          CPLSearchXMLNode()                          */
 /************************************************************************/
 
 /**
@@ -1740,7 +1740,7 @@ void CPLAddXMLChild(CPLXMLNode *psParent, CPLXMLNode *psChild)
 }
 
 /************************************************************************/
-/*                        CPLRemoveXMLChild()                           */
+/*                         CPLRemoveXMLChild()                          */
 /************************************************************************/
 
 /**
@@ -1880,7 +1880,6 @@ CPLXMLNode *CPLCreateXMLElementAndValue(CPLXMLNode *psParent,
  * @param pszName the attribute name to create.
  * @param pszValue the text to attach to the attribute. Must not be NULL.
  *
- * @since GDAL 2.0
  */
 
 void CPLAddXMLAttributeAndValue(CPLXMLNode *psParent, const char *pszName,
@@ -2247,7 +2246,7 @@ void CPLCleanXMLElementName(char *pszTarget)
 }
 
 /************************************************************************/
-/*                     CPLXMLNodeGetRAMUsageEstimate()                  */
+/*                   CPLXMLNodeGetRAMUsageEstimate()                    */
 /************************************************************************/
 
 static size_t CPLXMLNodeGetRAMUsageEstimate(const CPLXMLNode *psNode,
@@ -2282,7 +2281,7 @@ size_t CPLXMLNodeGetRAMUsageEstimate(const CPLXMLNode *psNode)
 }
 
 /************************************************************************/
-/*            CPLXMLTreeCloser::getDocumentElement()                    */
+/*                CPLXMLTreeCloser::getDocumentElement()                */
 /************************************************************************/
 
 CPLXMLNode *CPLXMLTreeCloser::getDocumentElement()

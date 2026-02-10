@@ -76,7 +76,7 @@ struct GOA2ManagerCache
 };
 
 /************************************************************************/
-/*                    CPLIsMachineForSureGCEInstance()                  */
+/*                   CPLIsMachineForSureGCEInstance()                   */
 /************************************************************************/
 
 /** Returns whether the current machine is surely a Google Compute Engine
@@ -85,8 +85,10 @@ struct GOA2ManagerCache
  * This does a very quick check without network access.
  * Note: only works for Linux GCE instances.
  *
- * @return true if the current machine is surely a GCE instance.
- * @since GDAL 2.3
+ * Also detects Google Cloud Run services, jobs, and worker pools on all
+ * platforms.
+ *
+ * @return true if the current machine is surely a GCE instance or Cloud Run.
  */
 bool CPLIsMachineForSureGCEInstance()
 {
@@ -94,6 +96,15 @@ bool CPLIsMachineForSureGCEInstance()
     {
         return true;
     }
+
+    // Check for Google Cloud Run environment
+    if (CPLGetConfigOption("CLOUD_RUN_TIMEOUT_SECONDS", nullptr) != nullptr ||
+        CPLGetConfigOption("CLOUD_RUN_JOB", nullptr) != nullptr ||
+        CPLGetConfigOption("CLOUD_RUN_WORKER_POOL", nullptr) != nullptr)
+    {
+        return true;
+    }
+
 #ifdef __linux
     // If /sys/class/dmi/id/product_name exists, it contains "Google Compute
     // Engine"
@@ -132,11 +143,23 @@ bool CPLIsMachineForSureGCEInstance()
  * machine is effectively a GCE instance, metadata.google.internal must be
  * queried.
  *
- * @return true if the current machine is potentially a GCE instance.
- * @since GDAL 2.3
+ * Also detects Google Cloud Run services, jobs, and worker pools.
+ *
+ * @return true if the current machine is potentially a GCE instance or Cloud
+ * Run.
  */
 bool CPLIsMachinePotentiallyGCEInstance()
 {
+    // Check for Google Cloud Run environment first (platform-independent)
+    // This must be done before platform-specific checks to ensure Cloud Run
+    // detection works on all platforms.
+    if (CPLGetConfigOption("CLOUD_RUN_TIMEOUT_SECONDS", nullptr) != nullptr ||
+        CPLGetConfigOption("CLOUD_RUN_JOB", nullptr) != nullptr ||
+        CPLGetConfigOption("CLOUD_RUN_WORKER_POOL", nullptr) != nullptr)
+    {
+        return true;
+    }
+
 #ifdef __linux
     bool bIsMachinePotentialGCEInstance = true;
     if (CPLTestBool(CPLGetConfigOption("CPL_GCE_CHECK_LOCAL_FILES", "YES")))
@@ -238,7 +261,7 @@ VSIGSHandleHelper::VSIGSHandleHelper(const std::string &osEndpoint,
 }
 
 /************************************************************************/
-/*                        ~VSIGSHandleHelper()                          */
+/*                         ~VSIGSHandleHelper()                         */
 /************************************************************************/
 
 VSIGSHandleHelper::~VSIGSHandleHelper()
@@ -246,7 +269,7 @@ VSIGSHandleHelper::~VSIGSHandleHelper()
 }
 
 /************************************************************************/
-/*                GetConfigurationFromAWSConfigFiles()                  */
+/*                 GetConfigurationFromAWSConfigFiles()                 */
 /************************************************************************/
 
 bool VSIGSHandleHelper::GetConfigurationFromConfigFile(
@@ -332,7 +355,7 @@ bool VSIGSHandleHelper::GetConfigurationFromConfigFile(
 }
 
 /************************************************************************/
-/*                        GetConfiguration()                            */
+/*                          GetConfiguration()                          */
 /************************************************************************/
 
 bool VSIGSHandleHelper::GetConfiguration(const std::string &osPathForOption,
@@ -715,7 +738,7 @@ bool VSIGSHandleHelper::GetConfiguration(const std::string &osPathForOption,
 }
 
 /************************************************************************/
-/*                          BuildFromURI()                              */
+/*                            BuildFromURI()                            */
 /************************************************************************/
 
 VSIGSHandleHelper *VSIGSHandleHelper::BuildFromURI(
@@ -756,7 +779,7 @@ VSIGSHandleHelper *VSIGSHandleHelper::BuildFromURI(
 }
 
 /************************************************************************/
-/*                           RebuildURL()                               */
+/*                             RebuildURL()                             */
 /************************************************************************/
 
 void VSIGSHandleHelper::RebuildURL()
@@ -769,7 +792,7 @@ void VSIGSHandleHelper::RebuildURL()
 }
 
 /************************************************************************/
-/*                           UsesHMACKey()                              */
+/*                            UsesHMACKey()                             */
 /************************************************************************/
 
 bool VSIGSHandleHelper::UsesHMACKey() const
@@ -827,7 +850,7 @@ VSIGSHandleHelper::GetCurlHeaders(const std::string &osVerb,
 }
 
 /************************************************************************/
-/*                          ClearCache()                                */
+/*                             ClearCache()                             */
 /************************************************************************/
 
 void VSIGSHandleHelper::ClearCache()
@@ -837,7 +860,7 @@ void VSIGSHandleHelper::ClearCache()
 }
 
 /************************************************************************/
-/*                           GetSignedURL()                             */
+/*                            GetSignedURL()                            */
 /************************************************************************/
 
 std::string VSIGSHandleHelper::GetSignedURL(CSLConstList papszOptions)

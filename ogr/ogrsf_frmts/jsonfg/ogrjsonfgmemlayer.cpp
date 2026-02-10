@@ -26,13 +26,13 @@ OGRJSONFGMemLayer::OGRJSONFGMemLayer(GDALDataset *poDS, const char *pszName,
 }
 
 /************************************************************************/
-/*                OGRJSONFGMemLayer::~OGRJSONFGMemLayer()               */
+/*               OGRJSONFGMemLayer::~OGRJSONFGMemLayer()                */
 /************************************************************************/
 
 OGRJSONFGMemLayer::~OGRJSONFGMemLayer() = default;
 
 /************************************************************************/
-/*                           AddFeature                                 */
+/*                              AddFeature                              */
 /************************************************************************/
 
 void OGRJSONFGMemLayer::AddFeature(std::unique_ptr<OGRFeature> poFeature)
@@ -82,23 +82,7 @@ void OGRJSONFGMemLayer::AddFeature(std::unique_ptr<OGRFeature> poFeature)
 
     const bool bIsUpdatable = IsUpdatable();
     SetUpdatable(true);  // Temporary toggle on updatable flag.
-    CPL_IGNORE_RET_VAL(OGRMemLayer::SetFeature(poFeature.get()));
+    CPL_IGNORE_RET_VAL(OGRMemLayer::SetFeature(std::move(poFeature)));
     SetUpdatable(bIsUpdatable);
     SetUpdated(false);
-}
-
-/************************************************************************/
-/*                           TestCapability()                           */
-/************************************************************************/
-
-int OGRJSONFGMemLayer::TestCapability(const char *pszCap) const
-
-{
-    if (EQUAL(pszCap, OLCCurveGeometries))
-        return FALSE;
-
-    else if (EQUAL(pszCap, OLCMeasuredGeometries))
-        return FALSE;
-
-    return OGRMemLayer::TestCapability(pszCap);
 }

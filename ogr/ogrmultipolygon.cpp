@@ -24,26 +24,16 @@
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiPolygon::OGRMultiPolygon(const OGRMultiPolygon &) = default;
 
 /************************************************************************/
-/*                  operator=( const OGRMultiPolygon&)                    */
+/*                  operator=( const OGRMultiPolygon&)                  */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiPolygon &OGRMultiPolygon::operator=(const OGRMultiPolygon &other)
@@ -102,7 +92,7 @@ const char *OGRMultiPolygon::getGeometryName() const
 }
 
 /************************************************************************/
-/*                          isCompatibleSubType()                       */
+/*                        isCompatibleSubType()                         */
 /************************************************************************/
 
 OGRBoolean
@@ -161,7 +151,7 @@ std::string OGRMultiPolygon::exportToWkt(const OGRWktOptions &opts,
 }
 
 /************************************************************************/
-/*                         hasCurveGeometry()                           */
+/*                          hasCurveGeometry()                          */
 /************************************************************************/
 
 OGRBoolean OGRMultiPolygon::hasCurveGeometry(int /* bLookForNonLinear */) const
@@ -170,7 +160,7 @@ OGRBoolean OGRMultiPolygon::hasCurveGeometry(int /* bLookForNonLinear */) const
 }
 
 /************************************************************************/
-/*                          CastToMultiSurface()                        */
+/*                         CastToMultiSurface()                         */
 /************************************************************************/
 
 /**

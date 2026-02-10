@@ -84,6 +84,7 @@ def test_vsicurl_3():
 
 @pytest.mark.slow()
 @gdaltest.disable_exceptions()
+@pytest.mark.network
 def test_vsicurl_4():
 
     ds = ogr.Open(
@@ -154,6 +155,7 @@ def test_vsicurl_8():
 
 
 @pytest.mark.slow()
+@pytest.mark.network
 def test_vsicurl_9():
 
     ds = gdal.Open(
@@ -168,6 +170,7 @@ def test_vsicurl_9():
 
 
 @pytest.mark.slow()
+@pytest.mark.network
 def test_vsicurl_10():
 
     ds = gdal.Open(
@@ -181,6 +184,7 @@ def test_vsicurl_10():
 
 
 @pytest.mark.slow()
+@pytest.mark.network
 def test_vsicurl_11():
 
     f = gdal.VSIFOpenL(
@@ -293,7 +297,10 @@ def test_vsicurl_test_redirect(server, authorization_header_allowed):
 @pytest.mark.parametrize(
     "authorization_header_allowed", [None, "YES", "NO", "IF_SAME_HOST"]
 )
-def test_vsicurl_test_redirect_different_server(server, authorization_header_allowed):
+@pytest.mark.parametrize("redirect_code", [301, 302])
+def test_vsicurl_test_redirect_different_server(
+    server, authorization_header_allowed, redirect_code
+):
 
     gdal.VSICurlClearCache()
 
@@ -309,18 +316,42 @@ def test_vsicurl_test_redirect_different_server(server, authorization_header_all
     handler.add(
         "HEAD",
         "/test_redirect/test.bin",
-        301,
+        redirect_code,
         {"Location": "http://127.0.0.1:%d/redirected/test.bin" % server.port},
         expected_headers={"Authorization": "Bearer xxx"},
     )
-    handler.add(
-        "HEAD",
-        "/redirected/test.bin",
-        200,
-        {"Content-Length": "3"},
-        expected_headers=expected_headers,
-        unexpected_headers=unexpected_headers,
-    )
+    if redirect_code == 302 and authorization_header_allowed is None:
+        handler.add(
+            "HEAD",
+            "/redirected/test.bin",
+            403,
+            expected_headers=expected_headers,
+            unexpected_headers=unexpected_headers,
+        )
+        handler.add(
+            "GET",
+            "/redirected/test.bin",
+            200,
+            {"Content-Length": "3"},
+            b"xyz",
+        )
+    else:
+        handler.add(
+            "HEAD",
+            "/redirected/test.bin",
+            200,
+            {"Content-Length": "3"},
+            expected_headers=expected_headers,
+            unexpected_headers=unexpected_headers,
+        )
+    if redirect_code == 302:
+        handler.add(
+            "GET",
+            "/test_redirect/test.bin",
+            redirect_code,
+            {"Location": "http://127.0.0.1:%d/redirected/test.bin" % server.port},
+            expected_headers={"Authorization": "Bearer xxx"},
+        )
     handler.add(
         "GET",
         "/redirected/test.bin",
@@ -590,6 +621,9 @@ def test_vsicurl_test_redirect_x_amz(server):
     current_time = 1500
 
     def method(request):
+
+        assert request.headers["Authorization"] == "Bearer xxx"
+
         response = "HTTP/1.1 302 Found\r\n"
         response += "Server: foo\r\n"
         response += (
@@ -598,7 +632,7 @@ def test_vsicurl_test_redirect_x_amz(server):
             + "\r\n"
         )
         response += "Location: %s\r\n" % (
-            "http://localhost:%d/foo.s3.amazonaws.com/test_redirected/test.bin?X-Amz-Signature=foo&X-Amz-Expires=30&X-Amz-Date=%s"
+            "http://127.0.0.1:%d/foo.s3.amazonaws.com/test_redirected/test.bin?X-Amz-Signature=foo&X-Amz-Expires=30&X-Amz-Date=%s"
             % (
                 server.port,
                 time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(current_time)),
@@ -615,9 +649,13 @@ def test_vsicurl_test_redirect_x_amz(server):
         403,
         {"Server": "foo"},
         "",
+        unexpected_headers=["Authorization"],
     )
 
     def method(request):
+
+        assert "Authorization" not in request.headers
+
         if "Range" in request.headers:
             if request.headers["Range"] == "bytes=0-16383":
                 request.protocol_version = "HTTP/1.1"
@@ -660,10 +698,25 @@ def test_vsicurl_test_redirect_x_amz(server):
         custom_method=method,
     )
 
-    with webserver.install_http_handler(handler):
-        f = gdal.VSIFOpenL(
-            "/vsicurl/http://localhost:%d/test_redirect/test.bin" % server.port,
-            "rb",
+    gdal.SetPathSpecificOption(
+        "/vsicurl/http://localhost:%d/test_redirect" % server.port,
+        "GDAL_HTTP_AUTH",
+        "BEARER",
+    )
+    gdal.SetPathSpecificOption(
+        "/vsicurl/http://localhost:%d/test_redirect" % server.port,
+        "GDAL_HTTP_BEARER",
+        "xxx",
+    )
+    try:
+        with webserver.install_http_handler(handler):
+            f = gdal.VSIFOpenL(
+                "/vsicurl/http://localhost:%d/test_redirect/test.bin" % server.port,
+                "rb",
+            )
+    finally:
+        gdal.ClearPathSpecificOptions(
+            "/vsicurl/http://localhost:%d/test_redirect" % server.port
         )
     assert f is not None
 
@@ -926,6 +979,8 @@ def test_vsicurl_test_fallback_from_head_to_get(server):
 
 def test_vsicurl_test_parse_html_filelist_apache(server):
 
+    gdal.VSICurlClearCache()
+
     handler = webserver.SequentialHandler()
     handler.add(
         "GET",
@@ -969,6 +1024,43 @@ def test_vsicurl_test_parse_html_filelist_apache(server):
             )
             is None
         )
+
+
+###############################################################################
+
+
+def test_vsicurl_test_parse_html_filelist_nginx_cdn(server):
+
+    gdal.VSICurlClearCache()
+
+    # Format of https://cdn.star.nesdis.noaa.gov/GOES18/ABI/MESO/M1/GEOCOLOR/
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "GET",
+        "/mydir/",
+        200,
+        {},
+        """<html>
+<head><title>Index of /ma-cdn02/mydir/</title></head>
+<body>
+<h1>Index of /ma-cdn02/mydir/</h1><hr><pre><a href="../">../</a>
+<a href="1000x1000.jpg">1000x1000.jpg</a>                                      28-Oct-2025 18:48              665983
+<a href="2000x2000.jpg">2000x2000.jpg</a>                                      28-Oct-2025 18:48             2013236
+</pre><hr></body>
+</html>
+
+""",
+    )
+    with webserver.install_http_handler(handler):
+        fl = gdal.ReadDir("/vsicurl/http://localhost:%d/mydir" % server.port)
+    assert fl == ["1000x1000.jpg", "2000x2000.jpg"]
+
+    stat = gdal.VSIStatL(
+        "/vsicurl/http://localhost:%d/mydir/1000x1000.jpg" % server.port
+    )
+    assert stat
+    assert stat.size == 665983
 
 
 ###############################################################################
@@ -1678,3 +1770,52 @@ def test_vsicurl_GDAL_HTTP_MAX_TOTAL_CONNECTIONS(server):
         full_filename = f"/vsicurl/http://localhost:{server.port}/test.bin"
         statres = gdal.VSIStatL(full_filename)
         assert statres.size == 3
+
+
+###############################################################################
+# Test CACHE=NO file open option
+
+
+@gdaltest.enable_exceptions()
+def test_VSIFOpenExL_CACHE_NO(server):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add("HEAD", "/test.bin", 200, {"Content-Length": "3"})
+    handler.add("GET", "/test.bin", 200, {"Content-Length": "3"}, b"abc")
+    handler.add("HEAD", "/test.bin", 200, {"Content-Length": "4"})
+    handler.add("GET", "/test.bin", 200, {"Content-Length": "4"}, b"1234")
+
+    with webserver.install_http_handler(handler):
+        filename = f"/vsicurl/http://localhost:{server.port}/test.bin"
+
+        with gdal.VSIFile(filename, "rb", False, {"CACHE": "NO"}) as f:
+            assert f.read() == b"abc"
+
+        with gdal.VSIFile(filename, "rb", False, {"CACHE": "NO"}) as f:
+            assert f.read() == b"1234"
+
+
+###############################################################################
+# Test redirection to a URL ending with a slash, followed by a 403
+
+
+def test_vsicurl_test_redirect_301_to_url_ending_slash_and_then_403(server):
+
+    gdal.VSICurlClearCache()
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "HEAD",
+        "/test_redirect",
+        301,
+        {"Location": "http://localhost:%d/test_redirect/" % server.port},
+    )
+    handler.add("HEAD", "/test_redirect/", 403)
+
+    with webserver.install_http_handler(handler), gdal.quiet_errors():
+        assert (
+            gdal.VSIStatL("/vsicurl/http://localhost:%d/test_redirect" % server.port)
+            is None
+        )

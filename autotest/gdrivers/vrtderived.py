@@ -20,7 +20,7 @@ import threading
 import gdaltest
 import pytest
 
-from osgeo import gdal
+from osgeo import gdal, ogr
 
 pytestmark = pytest.mark.skipif(
     not gdaltest.vrt_has_open_support(),
@@ -75,7 +75,7 @@ def test_vrtderived_1(tmp_vsimem):
     options = [
         "subClass=VRTDerivedRasterBand",
     ]
-    vrt_ds.AddBand(gdal.GDT_Byte, options)
+    vrt_ds.AddBand(gdal.GDT_UInt8, options)
 
     simpleSourceXML = """    <SimpleSource>
       <SourceFilename>data/byte.tif</SourceFilename>
@@ -118,7 +118,7 @@ def test_vrtderived_2(tmp_vsimem):
         "PixelFunctionType=dummy",
         "PixelFunctionLanguage=Python",
     ]
-    vrt_ds.AddBand(gdal.GDT_Byte, options)
+    vrt_ds.AddBand(gdal.GDT_UInt8, options)
 
     simpleSourceXML = """    <SimpleSource>
       <SourceFilename>data/byte.tif</SourceFilename>
@@ -162,7 +162,7 @@ def test_vrtderived_3(tmp_vsimem):
         "PixelFunctionType=dummy",
         "SourceTransferType=Byte",
     ]
-    vrt_ds.AddBand(gdal.GDT_Byte, options)
+    vrt_ds.AddBand(gdal.GDT_UInt8, options)
 
     simpleSourceXML = """    <SimpleSource>
       <SourceFilename>data/byte.tif</SourceFilename>
@@ -198,7 +198,7 @@ def test_vrtderived_4(tmp_vsimem):
         "SourceTransferType=Invalid",
     ]
     with gdal.quiet_errors():
-        ret = vrt_ds.AddBand(gdal.GDT_Byte, options)
+        ret = vrt_ds.AddBand(gdal.GDT_UInt8, options)
     assert ret != 0, "invalid SourceTransferType value not detected"
 
 
@@ -239,10 +239,32 @@ def test_vrtderived_5():
     except (ImportError, AttributeError):
         pytest.skip()
 
-    with gdal.config_option("GDAL_VRT_ENABLE_PYTHON", "YES"):
+    def worker(args_dict):
         ds = gdal.Open("data/vrt/n43_hillshade.vrt")
-        cs = ds.GetRasterBand(1).Checksum()
-    assert cs == 50577, "invalid checksum"
+        for i in range(20):
+            ds.FlushCache()
+            with gdal.config_option("GDAL_VRT_ENABLE_PYTHON", "YES"):
+                cs = ds.GetRasterBand(1).Checksum()
+            if cs != 50577:
+                print("Got wrong cs", cs)
+                args_dict["ret"] = False
+
+    import threading
+
+    threads = []
+    args_array = []
+    num_threads = gdal.GetNumCPUs()
+    for i in range(num_threads):
+        args_dict = {"ret": True}
+        t = threading.Thread(target=worker, args=(args_dict,))
+        args_array.append(args_dict)
+        threads.append(t)
+        t.start()
+
+    for i in range(len(threads)):
+        threads[i].join()
+        if not args_array[i]:
+            assert False
 
 
 ###############################################################################
@@ -1231,6 +1253,13 @@ def vrt_expression_xml(tmpdir, expression, dialect, sources):
             ["muparser"],
             id="index substitution works correctly",
         ),
+        pytest.param(
+            "fmod(B, A)",
+            [("A", 2.2), ("B", 7.3)],
+            0.7,
+            ["muparser"],
+            id="fmod works correctly",
+        ),
     ],
 )
 @pytest.mark.parametrize("dialect", ("exprtk", "muparser"))
@@ -1411,6 +1440,234 @@ def test_vrt_pixelfn_constant_factor(tmp_vsimem, fn):
 
 
 ###############################################################################
+# Test "area" pixel function
+
+
+def test_vrt_pixelfn_area_geographic(tmp_vsimem):
+
+    pytest.importorskip("numpy")
+    gdaltest.importorskip_gdal_array()
+
+    xml = """
+    <VRTDataset rasterXSize="20" rasterYSize="10">
+      <GeoTransform>-72, 0.1, 0, 44, 0, -0.1</GeoTransform>
+      <SRS>EPSG:4326</SRS>
+      <VRTRasterBand dataType="Float64" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>area</PixelFunctionType>
+        <PixelFunctionArguments />
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    ds = gdal.Open(xml)
+    result = ds.ReadAsArray()
+
+    poly_ul = ogr.CreateGeometryFromWkt(
+        "POLYGON ((-72 43.9, -71.9 43.9, -71.9 44, -72 44, -72 43.9))",
+        reference=ds.GetSpatialRef(),
+    )
+    assert result[0, 0] == poly_ul.GeodesicArea()
+
+    poly_lr = ogr.CreateGeometryFromWkt(
+        "POLYGON ((-70.1 43, -70 43, -70 43.1, -70.1 43.1, -70.1 43))",
+        reference=ds.GetSpatialRef(),
+    )
+    assert result[-1, -1] == poly_lr.GeodesicArea()
+
+
+def test_vrt_pixelfn_area_projected(tmp_vsimem):
+
+    pytest.importorskip("numpy")
+    gdaltest.importorskip_gdal_array()
+
+    # the <PixelFunctionArguments crs="3" /> tag is just to test that a user
+    # cannot override a built-in argument. Since "crs" is a pointer, allowing
+    # a user to override it would permit abitrary memory access.
+    xml = """
+    <VRTDataset rasterXSize="20" rasterYSize="10">
+      <GeoTransform>441500, 10, 0, 216600, 0, -10</GeoTransform>
+      <SRS>EPSG:32145</SRS>
+      <VRTRasterBand dataType="Float64" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>area</PixelFunctionType>
+        <PixelFunctionArguments crs="3" />
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    ds = gdal.Open(xml)
+    result = ds.ReadAsArray()
+
+    poly_ul = ogr.CreateGeometryFromWkt(
+        "POLYGON ((441500 216590, 441510 216590, 441510 216600, 441500 216600, 441500 216590))",
+        reference=ds.GetSpatialRef(),
+    )
+    assert result[0, 0] == poly_ul.GeodesicArea()
+
+    poly_lr = ogr.CreateGeometryFromWkt(
+        "POLYGON ((441690 216500, 441700 216500, 441700 216510, 441690 216510, 441690 216500))",
+        reference=ds.GetSpatialRef(),
+    )
+    assert result[-1, -1] == poly_lr.GeodesicArea()
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_pixelfn_area_missing_crs():
+
+    xml = """
+    <VRTDataset rasterXSize="20" rasterYSize="20">
+      <GeoTransform>-72, 0.1, 0, 44, 0, -0.1</GeoTransform>
+      <VRTRasterBand dataType="Float64" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>area</PixelFunctionType>
+        <PixelFunctionArguments />
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    ds = gdal.Open(xml)
+
+    with pytest.raises(Exception, match="has no .SRS"):
+        ds.ReadRaster()
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_pixelfn_area_missing_geotransform():
+
+    xml = """
+    <VRTDataset rasterXSize="20" rasterYSize="20">
+      <SRS>EPSG:4326</SRS>
+      <VRTRasterBand dataType="Float64" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>area</PixelFunctionType>
+        <PixelFunctionArguments />
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    ds = gdal.Open(xml)
+
+    with pytest.raises(Exception, match="has no .GeoTransform"):
+        ds.ReadRaster()
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_pixelfn_area_unexpected_source():
+
+    xml = """
+    <VRTDataset rasterXSize="20" rasterYSize="20">
+      <GeoTransform>-72, 0.1, 0, 44, 0, -0.1</GeoTransform>
+      <SRS>EPSG:4326</SRS>
+      <VRTRasterBand dataType="Float64" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>area</PixelFunctionType>
+        <PixelFunctionArguments />
+        <SimpleSource>
+           <SourceFilename>data/byte.tif</SourceFilename>
+           <SourceBand>1</SourceBand>
+        </SimpleSource>
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    ds = gdal.Open(xml)
+
+    with pytest.raises(Exception, match="unexpected source band"):
+        ds.ReadRaster()
+
+
+###############################################################################
+# Test "quantile" pixel function
+
+
+@pytest.mark.parametrize(
+    "values,quantile",
+    [
+        ([6, 3, 5], 0.4),
+        ([4, 5, 11], 0.5),
+        ([9, 2], 0),
+        ([9, 2], 1),
+        ([100], 0),
+        ([100], 1),
+    ],
+)
+def test_vrt_pixelfn_quantile(tmp_vsimem, values, quantile):
+
+    np = pytest.importorskip("numpy")
+    gdaltest.importorskip_gdal_array()
+
+    with gdal.GetDriverByName("GTiff").Create(
+        tmp_vsimem / "src.tif", 1, 1, len(values), gdal.GDT_Float64
+    ) as src:
+        for i in range(len(values)):
+            src.GetRasterBand(i + 1).Fill(values[i])
+
+    xml = f"""
+    <VRTDataset rasterXSize="1" rasterYSize="1">
+      <VRTRasterBand dataType="Float64" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>quantile</PixelFunctionType>
+        <PixelFunctionArguments q="{quantile}" />
+        {"".join(f'<SimpleSource><SourceFilename>{tmp_vsimem / "src.tif"}</SourceFilename><SourceBand>{i + 1}</SourceBand></SimpleSource>' for i in range(len(values)))}
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    with gdal.Open(xml) as ds:
+        result = ds.ReadAsArray()[0, 0]
+        assert result == np.quantile(values, quantile)
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_pixelfn_quantile_missing():
+
+    xml = """
+    <VRTDataset rasterXSize="20" rasterYSize="20">
+      <VRTRasterBand dataType="Float32" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>quantile</PixelFunctionType>
+        <SimpleSource>
+           <SourceFilename>data/byte.tif</SourceFilename>
+           <SourceBand>1</SourceBand>
+        </SimpleSource>
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    with pytest.raises(Exception, match="q must be specified"):
+        with gdal.Open(xml) as ds:
+            ds.ReadRaster()
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_pixelfn_quantile_complex_input():
+
+    xml = """
+    <VRTDataset rasterXSize="20" rasterYSize="20">
+      <VRTRasterBand dataType="Float32" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>quantile</PixelFunctionType>
+        <PixelFunctionArguments q="0.3"/>
+        <SimpleSource>
+           <SourceFilename>../gcore/data/cfloat32.tif</SourceFilename>
+           <SourceBand>1</SourceBand>
+        </SimpleSource>
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    with pytest.raises(Exception, match="Complex data types not supported"):
+        with gdal.Open(xml) as ds:
+            ds.ReadRaster()
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize("q", (-3, float("nan"), float("inf"), "0.12.1"))
+def test_vrt_pixelfn_quantile_invalid(q):
+
+    xml = f"""
+    <VRTDataset rasterXSize="20" rasterYSize="20">
+      <VRTRasterBand dataType="Float32" band="1" subClass="VRTDerivedRasterBand">
+        <PixelFunctionType>quantile</PixelFunctionType>
+        <PixelFunctionArguments q="{q}"/>
+        <SimpleSource>
+           <SourceFilename>data/byte.tif</SourceFilename>
+           <SourceBand>1</SourceBand>
+        </SimpleSource>
+      </VRTRasterBand>
+    </VRTDataset>"""
+
+    with pytest.raises(Exception, match="q must be between 0 and 1"):
+        with gdal.Open(xml) as ds:
+            ds.ReadRaster()
+
+
+###############################################################################
 # Test reclassification
 
 
@@ -1572,6 +1829,7 @@ def test_vrt_pixelfn_reclassify_nan(tmp_vsimem):
     )
 
 
+@gdaltest.enable_exceptions()
 @pytest.mark.parametrize(
     "pixelfn,values,nodata_value,pixelfn_args,expected",
     [
@@ -1647,6 +1905,16 @@ def test_vrt_pixelfn_reclassify_nan(tmp_vsimem):
         ("norm_diff", [3, 7], 7, {}, 7),
         ("norm_diff", [7, 3], 7, {}, 7),
         ("pow", [7], 7, {"power": 10}, 7),
+        ("quantile", [7], 7, {"q": 0}, 7),
+        ("quantile", [7], 7, {"q": 1}, 7),
+        ("quantile", [7, 6, 1, 2], 7, {"q": 0.5}, 2),
+        ("quantile", [7, 6, 1, 2], 7, {"q": 0.5, "propagateNoData": True}, 7),
+        ("round", [7.1], 7.1, {}, 7.1),
+        ("round", [7.1], 7.2, {}, 7),
+        ("round", [3.14159], 7, {"digits": 3}, 3.142),
+        ("round", [6253], 7, {"digits": -2}, 6300),
+        ("round", [6253], 7, {"digits": "invalid"}, "Failed to parse .* digits"),
+        ("round", [3, 4], 7, {}, "input must be a single band"),
         ("scale", [7], 7, {"scale": 5, "offset": 10}, 7),
         ("sqrt", [7], 7, {}, 7),
         ("sum", [3, 7, 9], 7, {}, 12),
@@ -1661,7 +1929,7 @@ def test_vrt_pixelfn_nodata(
     gdaltest.importorskip_gdal_array()
 
     with gdal.GetDriverByName("GTiff").Create(
-        tmp_vsimem / "src.tif", 1, 1, len(values), gdal.GDT_Float32
+        tmp_vsimem / "src.tif", 1, 1, len(values), gdal.GDT_Float64
     ) as src:
         for i in range(len(values)):
             src.GetRasterBand(i + 1).Fill(values[i])
@@ -1676,9 +1944,51 @@ def test_vrt_pixelfn_nodata(
       </VRTRasterBand>
     </VRTDataset>"""
 
+    ds = gdal.Open(xml)
+
+    if type(expected) is str:
+        with pytest.raises(Exception, match=expected):
+            ds.ReadAsArray()
+    else:
+        result = ds.ReadAsArray()[0, 0]
+
+        assert result == pytest.approx(expected, nan_ok=True)
+
+
+@pytest.mark.parametrize("propagate", (True, False))
+def test_vrt_pixelfn_complexsource_nodata(tmp_vsimem, propagate):
+
+    pytest.importorskip("numpy")
+    gdaltest.importorskip_gdal_array()
+
+    values = [1, 2, 3, 4, 5]
+
+    src_nodata = 4
+    dst_nodata = 99
+
+    with gdal.GetDriverByName("GTiff").Create(
+        tmp_vsimem / "src.tif", 1, 1, len(values)
+    ) as src:
+        for i, value in enumerate(values):
+            src.GetRasterBand(i + 1).Fill(value)
+            src.GetRasterBand(i + 1).SetNoDataValue(src_nodata)
+
+    xml = f"""
+    <VRTDataset rasterXSize="1" rasterYSize="1">
+      <VRTRasterBand dataType="Float32" band="1" subclass="VRTDerivedRasterBand">
+        <NoDataValue>{dst_nodata}</NoDataValue>
+        <PixelFunctionType>sum</PixelFunctionType>
+        <PixelFunctionArguments propagateNoData="{propagate}" />
+        {"".join(f'<ComplexSource><NODATA>{src_nodata}</NODATA><SourceFilename>{tmp_vsimem / "src.tif"}</SourceFilename><SourceBand>{i + 1}</SourceBand></ComplexSource>' for i in range(len(values)))}
+      </VRTRasterBand>
+    </VRTDataset>"""
+
     result = gdal.Open(xml).ReadAsArray()[0, 0]
 
-    assert result == pytest.approx(expected, nan_ok=True)
+    if propagate:
+        assert result == dst_nodata
+    else:
+        assert result == 1 + 2 + 3 + 5
 
 
 @pytest.mark.parametrize(
@@ -1697,7 +2007,7 @@ def test_vrt_pixelfn_nodata(
 def test_vrt_pixelfn_mean_byte(tmp_vsimem, values):
 
     with gdal.GetDriverByName("GTiff").Create(
-        tmp_vsimem / "src.tif", 63, 1, len(values), gdal.GDT_Byte
+        tmp_vsimem / "src.tif", 63, 1, len(values), gdal.GDT_UInt8
     ) as src:
         for i in range(len(values)):
             src.GetRasterBand(i + 1).Fill(values[i])
@@ -2162,12 +2472,12 @@ def test_vrt_split_in_halves(tmp_vsimem):
     height = 500
 
     with gdal.GetDriverByName("GTiff").Create(
-        tmp_vsimem / "src1.tif", width, height, 1, gdal.GDT_Byte
+        tmp_vsimem / "src1.tif", width, height, 1, gdal.GDT_UInt8
     ) as src:
         src.WriteRaster(0, 0, width, height, b"\x01" * (width * height))
 
     with gdal.GetDriverByName("GTiff").Create(
-        tmp_vsimem / "src2.tif", width, height, 1, gdal.GDT_Byte
+        tmp_vsimem / "src2.tif", width, height, 1, gdal.GDT_UInt8
     ) as src:
         src.WriteRaster(0, 0, width, height, b"\x02" * (width * height))
 
@@ -2189,3 +2499,45 @@ def test_vrt_split_in_halves(tmp_vsimem):
     with gdal.config_option("VRT_DERIVED_DATASET_ALLOWED_RAM_USAGE", "1000"):
         got = gdal.Open(xml).ReadRaster()
         assert got == b"\x03" * (width * height)
+
+
+def test_vrt_derived_virtual_overviews(tmp_vsimem):
+
+    width = 2
+    height = 2
+
+    with gdal.GetDriverByName("GTiff").Create(
+        tmp_vsimem / "src1.tif", width, height, 1, gdal.GDT_UInt8
+    ) as src:
+        src.WriteRaster(0, 0, width, height, b"\x01" * (width * height))
+
+    with gdal.GetDriverByName("GTiff").Create(
+        tmp_vsimem / "src2.tif", width, height, 1, gdal.GDT_UInt8
+    ) as src:
+        src.WriteRaster(0, 0, width, height, b"\x02" * (width * height))
+
+    xml = f"""
+    <VRTDataset rasterXSize="{width}" rasterYSize="{height}">
+      <VRTRasterBand dataType="Byte" band="1">
+        <SimpleSource>
+          <SourceFilename>{tmp_vsimem / "src1.tif"}</SourceFilename>
+          <SourceBand>1</SourceBand>
+        </SimpleSource>
+      </VRTRasterBand>
+      <MaskBand>
+          <VRTRasterBand dataType="Byte" subclass="VRTDerivedRasterBand">
+            <PixelFunctionType>sum</PixelFunctionType>
+            <SimpleSource>
+              <SourceFilename>{tmp_vsimem / "src2.tif"}</SourceFilename>
+              <SourceBand>1</SourceBand>
+            </SimpleSource>
+          </VRTRasterBand>
+      </MaskBand>
+      <OverviewList>2</OverviewList>
+    </VRTDataset>"""
+
+    ds = gdal.Open(xml)
+    mask_band = ds.GetRasterBand(1).GetMaskBand()
+    with gdaltest.error_raised(gdal.CE_None):
+        got = mask_band.ReadRaster(0, 0, width, height, 1, 1)
+    assert got == b"\x02"

@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "cpl_conv.h"
+#include "cpl_error.h"
 #include "cpl_http.h"
 #include "cpl_string.h"
 #include "cpl_vsi_error.h"
@@ -37,7 +38,7 @@
 #include "memdataset.h"
 
 /************************************************************************/
-/*                   ReplaceSpaceByPct20IfNeeded()                      */
+/*                    ReplaceSpaceByPct20IfNeeded()                     */
 /************************************************************************/
 
 static CPLString ReplaceSpaceByPct20IfNeeded(const char *pszURL)
@@ -61,7 +62,7 @@ static CPLString ReplaceSpaceByPct20IfNeeded(const char *pszURL)
 }
 
 /************************************************************************/
-/*                         OGRGMLDataSource()                         */
+/*                          OGRGMLDataSource()                          */
 /************************************************************************/
 
 OGRGMLDataSource::OGRGMLDataSource()
@@ -81,7 +82,7 @@ OGRGMLDataSource::OGRGMLDataSource()
 }
 
 /************************************************************************/
-/*                          ~OGRGMLDataSource()                         */
+/*                         ~OGRGMLDataSource()                          */
 /************************************************************************/
 
 OGRGMLDataSource::~OGRGMLDataSource()
@@ -90,10 +91,10 @@ OGRGMLDataSource::~OGRGMLDataSource()
 }
 
 /************************************************************************/
-/*                                 Close()                              */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr OGRGMLDataSource::Close()
+CPLErr OGRGMLDataSource::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -120,7 +121,9 @@ CPLErr OGRGMLDataSource::Close()
             InsertHeader();
 
             if (!bFpOutputIsNonSeekable && nBoundedByLocation != -1 &&
-                VSIFSeekL(fpOutput, nBoundedByLocation, SEEK_SET) == 0)
+                VSIFSeekL(fpOutput,
+                          static_cast<vsi_l_offset>(nBoundedByLocation),
+                          SEEK_SET) == 0)
             {
                 if (m_bWriteGlobalSRS && sBoundingRect.IsInit() &&
                     IsGML3Output())
@@ -349,7 +352,7 @@ bool OGRGMLDataSource::CheckHeader(const char *pszStr)
 }
 
 /************************************************************************/
-/*                          ExtractSRSName()                            */
+/*                           ExtractSRSName()                           */
 /************************************************************************/
 
 static bool ExtractSRSName(const char *pszXML, char *szSRSName,
@@ -718,10 +721,9 @@ bool OGRGMLDataSource::Open(GDALOpenInfo *poOpenInfo)
             m_oStandaloneGeomSRS.IsEmpty() ? nullptr : &m_oStandaloneGeomSRS,
             m_poStandaloneGeom->getGeometryType());
         papoLayers[0] = poLayer;
-        OGRFeature *poFeature = new OGRFeature(poLayer->GetLayerDefn());
-        poFeature->SetGeometryDirectly(m_poStandaloneGeom.release());
-        CPL_IGNORE_RET_VAL(poLayer->CreateFeature(poFeature));
-        delete poFeature;
+        auto poFeature = std::make_unique<OGRFeature>(poLayer->GetLayerDefn());
+        poFeature->SetGeometry(std::move(m_poStandaloneGeom));
+        CPL_IGNORE_RET_VAL(poLayer->CreateFeature(std::move(poFeature)));
         poLayer->SetUpdatable(false);
         VSIFCloseL(fp);
         return true;
@@ -1481,7 +1483,7 @@ bool OGRGMLDataSource::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          BuildJointClassFromXSD()                    */
+/*                       BuildJointClassFromXSD()                       */
 /************************************************************************/
 
 void OGRGMLDataSource::BuildJointClassFromXSD()
@@ -1555,7 +1557,7 @@ void OGRGMLDataSource::BuildJointClassFromXSD()
 }
 
 /************************************************************************/
-/*                   BuildJointClassFromScannedSchema()                 */
+/*                  BuildJointClassFromScannedSchema()                  */
 /************************************************************************/
 
 void OGRGMLDataSource::BuildJointClassFromScannedSchema()
@@ -1840,7 +1842,7 @@ OGRLayer *OGRGMLDataSource::TranslateGMLSchema(GMLFeatureClass *poClass)
 }
 
 /************************************************************************/
-/*                         GetGlobalSRSName()                           */
+/*                          GetGlobalSRSName()                          */
 /************************************************************************/
 
 const char *OGRGMLDataSource::GetGlobalSRSName()
@@ -1855,7 +1857,8 @@ const char *OGRGMLDataSource::GetGlobalSRSName()
 /*                               Create()                               */
 /************************************************************************/
 
-bool OGRGMLDataSource::Create(const char *pszFilename, char **papszOptions)
+bool OGRGMLDataSource::Create(const char *pszFilename,
+                              CSLConstList papszOptions)
 
 {
     if (fpOutput != nullptr || poReader != nullptr)
@@ -2014,7 +2017,7 @@ bool OGRGMLDataSource::Create(const char *pszFilename, char **papszOptions)
 }
 
 /************************************************************************/
-/*                         WriteTopElements()                           */
+/*                          WriteTopElements()                          */
 /************************************************************************/
 
 void OGRGMLDataSource::WriteTopElements()
@@ -2068,14 +2071,13 @@ void OGRGMLDataSource::WriteTopElements()
 }
 
 /************************************************************************/
-/*                 DealWithOgrSchemaOpenOption()                        */
+/*                    DealWithOgrSchemaOpenOption()                     */
 /************************************************************************/
 
 bool OGRGMLDataSource::DealWithOgrSchemaOpenOption(
     const GDALOpenInfo *poOpenInfo)
 {
-
-    std::string osFieldsSchemaOverrideParam =
+    const std::string osFieldsSchemaOverrideParam =
         CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "OGR_SCHEMA", "");
 
     if (!osFieldsSchemaOverrideParam.empty())
@@ -2090,106 +2092,169 @@ bool OGRGMLDataSource::DealWithOgrSchemaOpenOption(
         }
 
         OGRSchemaOverride osSchemaOverride;
+        const auto nErrorCount = CPLGetErrorCounter();
         if (!osSchemaOverride.LoadFromJSON(osFieldsSchemaOverrideParam) ||
             !osSchemaOverride.IsValid())
         {
+            if (nErrorCount == CPLGetErrorCounter())
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Content of OGR_SCHEMA in %s is not valid",
+                         osFieldsSchemaOverrideParam.c_str());
+            }
             return false;
         }
 
         const auto &oLayerOverrides = osSchemaOverride.GetLayerOverrides();
-        for (const auto &oLayer : oLayerOverrides)
+        for (const auto &oLayerFieldOverride : oLayerOverrides)
         {
-            const auto &oLayerName = oLayer.first;
-            const auto &oLayerFieldOverride = oLayer.second;
+            const auto &osLayerName = oLayerFieldOverride.GetLayerName();
             const bool bIsFullOverride{oLayerFieldOverride.IsFullOverride()};
-            std::vector<GMLPropertyDefn *> aoProperties;
+            auto oNamedFieldOverrides =
+                oLayerFieldOverride.GetNamedFieldOverrides();
+            const auto &oUnnamedFieldOverrides =
+                oLayerFieldOverride.GetUnnamedFieldOverrides();
 
-            CPLDebug("GML", "Applying schema override for layer %s",
-                     oLayerName.c_str());
-
-            // Fail if the layer name does not exist
-            const auto oClass = poReader->GetClass(oLayerName.c_str());
-            if (oClass == nullptr)
+            const auto ProcessLayer =
+                [&osLayerName, &oNamedFieldOverrides, &oUnnamedFieldOverrides,
+                 bIsFullOverride](GMLFeatureClass *poClass)
             {
-                CPLError(CE_Failure, CPLE_AppDefined, "Layer %s not found",
-                         oLayerName.c_str());
-                return false;
-            }
-
-            const auto &oLayerFields = oLayerFieldOverride.GetFieldOverrides();
-            for (const auto &oFieldOverrideIt : oLayerFields)
-            {
-                const auto oProperty =
-                    oClass->GetProperty(oFieldOverrideIt.first.c_str());
-                if (oProperty == nullptr)
+                std::vector<GMLPropertyDefn *> aoProperties;
+                // Patch field definitions
+                for (int i = 0; i < poClass->GetPropertyCount(); i++)
                 {
-                    CPLError(CE_Failure, CPLE_AppDefined,
-                             "Field %s not found in layer %s",
-                             oFieldOverrideIt.first.c_str(),
-                             oLayerName.c_str());
-                    return false;
-                }
+                    auto poProperty = poClass->GetProperty(i);
 
-                const auto &oFieldOverride = oFieldOverrideIt.second;
-
-                const OGRFieldSubType eSubType =
-                    oFieldOverride.GetFieldSubType().value_or(OFSTNone);
-
-                if (oFieldOverride.GetFieldSubType().has_value())
-                {
-                    oProperty->SetSubType(eSubType);
-                }
-
-                if (oFieldOverride.GetFieldType().has_value())
-                {
-                    oProperty->SetType(GML_FromOGRFieldType(
-                        oFieldOverride.GetFieldType().value(), eSubType));
-                }
-
-                if (oFieldOverride.GetFieldName().has_value())
-                {
-                    oProperty->SetName(
-                        oFieldOverride.GetFieldName().value().c_str());
-                }
-
-                if (oFieldOverride.GetFieldWidth().has_value())
-                {
-                    oProperty->SetWidth(oFieldOverride.GetFieldWidth().value());
-                }
-
-                if (oFieldOverride.GetFieldPrecision().has_value())
-                {
-                    oProperty->SetPrecision(
-                        oFieldOverride.GetFieldPrecision().value());
-                }
-
-                if (bIsFullOverride)
-                {
-                    aoProperties.push_back(oProperty);
-                }
-            }
-
-            // Remove fields not in the override
-            if (bIsFullOverride &&
-                aoProperties.size() !=
-                    static_cast<size_t>(oClass->GetPropertyCount()))
-            {
-                for (int j = 0; j < oClass->GetPropertyCount(); ++j)
-                {
-                    const auto oProperty = oClass->GetProperty(j);
-                    if (std::find(aoProperties.begin(), aoProperties.end(),
-                                  oProperty) == aoProperties.end())
+                    const auto PatchProperty =
+                        [poProperty](const OGRFieldDefnOverride &oFieldOverride)
                     {
-                        delete (oProperty);
+                        const OGRFieldSubType eSubType =
+                            oFieldOverride.GetFieldSubType().value_or(OFSTNone);
+
+                        if (oFieldOverride.GetFieldSubType().has_value())
+                        {
+                            poProperty->SetSubType(eSubType);
+                        }
+
+                        if (oFieldOverride.GetFieldType().has_value())
+                        {
+                            poProperty->SetType(GML_FromOGRFieldType(
+                                oFieldOverride.GetFieldType().value(),
+                                eSubType));
+                        }
+                        if (oFieldOverride.GetFieldWidth().has_value())
+                        {
+                            poProperty->SetWidth(
+                                oFieldOverride.GetFieldWidth().value());
+                        }
+                        if (oFieldOverride.GetFieldPrecision().has_value())
+                        {
+                            poProperty->SetPrecision(
+                                oFieldOverride.GetFieldPrecision().value());
+                        }
+                        if (oFieldOverride.GetFieldName().has_value())
+                        {
+                            poProperty->SetName(
+                                oFieldOverride.GetFieldName().value().c_str());
+                        }
+                    };
+
+                    auto oFieldOverrideIter =
+                        oNamedFieldOverrides.find(poProperty->GetName());
+                    if (oFieldOverrideIter != oNamedFieldOverrides.cend())
+                    {
+                        const auto &oFieldOverride = oFieldOverrideIter->second;
+                        PatchProperty(oFieldOverride);
+
+                        if (bIsFullOverride)
+                        {
+                            aoProperties.push_back(poProperty);
+                        }
+                        oNamedFieldOverrides.erase(oFieldOverrideIter);
+                    }
+                    else
+                    {
+                        for (const auto &oFieldOverride :
+                             oUnnamedFieldOverrides)
+                        {
+                            OGRFieldSubType eSubType =
+                                oFieldOverride.GetFieldSubType().value_or(
+                                    OFSTNone);
+                            if ((!oFieldOverride.GetSrcFieldType()
+                                      .has_value() ||
+                                 GML_FromOGRFieldType(
+                                     oFieldOverride.GetSrcFieldType().value(),
+                                     eSubType) == poProperty->GetType()) &&
+                                (!oFieldOverride.GetSrcFieldSubType()
+                                      .has_value() ||
+                                 oFieldOverride.GetSrcFieldSubType().value() ==
+                                     poProperty->GetSubType()))
+                            {
+                                PatchProperty(oFieldOverride);
+                                break;
+                            }
+                        }
                     }
                 }
 
-                oClass->StealProperties();
-
-                for (const auto &oProperty : aoProperties)
+                // Error if any field override is not found
+                if (!oNamedFieldOverrides.empty())
                 {
-                    oClass->AddProperty(oProperty);
+                    CPLError(CE_Failure, CPLE_AppDefined,
+                             "Field %s not found in layer %s",
+                             oNamedFieldOverrides.cbegin()->first.c_str(),
+                             osLayerName.c_str());
+                    return false;
                 }
+
+                // Remove fields not in the override
+                if (bIsFullOverride)
+                {
+                    for (int j = 0; j < poClass->GetPropertyCount(); ++j)
+                    {
+                        const auto oProperty = poClass->GetProperty(j);
+                        if (std::find(aoProperties.begin(), aoProperties.end(),
+                                      oProperty) == aoProperties.end())
+                        {
+                            delete (oProperty);
+                        }
+                    }
+
+                    poClass->StealProperties();
+
+                    for (const auto &oProperty : aoProperties)
+                    {
+                        poClass->AddProperty(oProperty);
+                    }
+                }
+
+                return true;
+            };
+
+            CPLDebug("GML", "Applying schema override for layer %s",
+                     osLayerName.c_str());
+
+            if (osLayerName == "*")
+            {
+                for (int iClass = 0; iClass < poReader->GetClassCount();
+                     ++iClass)
+                {
+                    if (!ProcessLayer(poReader->GetClass(iClass)))
+                        return false;
+                }
+            }
+            else
+            {
+                // Fail if the layer name does not exist
+                const auto oClass = poReader->GetClass(osLayerName.c_str());
+                if (oClass == nullptr)
+                {
+                    CPLError(CE_Failure, CPLE_AppDefined,
+                             "Layer %s not found in", osLayerName.c_str());
+                    return false;
+                }
+                if (!ProcessLayer(oClass))
+                    return false;
             }
         }
     }
@@ -2239,7 +2304,7 @@ void OGRGMLDataSource::DeclareNewWriteSRS(const OGRSpatialReference *poSRS)
 }
 
 /************************************************************************/
-/*                           ICreateLayer()                             */
+/*                            ICreateLayer()                            */
 /************************************************************************/
 
 OGRLayer *
@@ -3103,7 +3168,7 @@ void OGRGMLDataSource::InsertHeader()
         int nSchemaSize = static_cast<int>(VSIFTellL(fpSchema) - nSchemaStart);
         char *pszSchema = static_cast<char *>(CPLMalloc(nSchemaSize + 1));
 
-        VSIFSeekL(fpSchema, nSchemaStart, SEEK_SET);
+        VSIFSeekL(fpSchema, static_cast<vsi_l_offset>(nSchemaStart), SEEK_SET);
 
         VSIFReadL(pszSchema, 1, nSchemaSize, fpSchema);
         pszSchema[nSchemaSize] = '\0';
@@ -3131,7 +3196,8 @@ void OGRGMLDataSource::InsertHeader()
         CPLFree(pszChunk);
 
         // Write the schema in the opened slot.
-        VSIFSeekL(fpSchema, nSchemaInsertLocation, SEEK_SET);
+        VSIFSeekL(fpSchema, static_cast<vsi_l_offset>(nSchemaInsertLocation),
+                  SEEK_SET);
         VSIFWriteL(pszSchema, 1, nSchemaSize, fpSchema);
 
         VSIFSeekL(fpSchema, 0, SEEK_END);
@@ -3148,7 +3214,7 @@ void OGRGMLDataSource::InsertHeader()
 }
 
 /************************************************************************/
-/*                            PrintLine()                               */
+/*                             PrintLine()                              */
 /************************************************************************/
 
 void OGRGMLDataSource::PrintLine(VSILFILE *fp, const char *fmt, ...)
@@ -3176,7 +3242,7 @@ void OGRGMLDataSource::PrintLine(VSILFILE *fp, const char *fmt, ...)
 }
 
 /************************************************************************/
-/*                     OGRGMLSingleFeatureLayer                         */
+/*                       OGRGMLSingleFeatureLayer                       */
 /************************************************************************/
 
 class OGRGMLSingleFeatureLayer final : public OGRLayer
@@ -3191,17 +3257,17 @@ class OGRGMLSingleFeatureLayer final : public OGRLayer
   public:
     explicit OGRGMLSingleFeatureLayer(int nVal);
 
-    virtual ~OGRGMLSingleFeatureLayer()
+    ~OGRGMLSingleFeatureLayer() override
     {
         poFeatureDefn->Release();
     }
 
-    virtual void ResetReading() override
+    void ResetReading() override
     {
         iNextShapeId = 0;
     }
 
-    virtual OGRFeature *GetNextFeature() override;
+    OGRFeature *GetNextFeature() override;
 
     const OGRFeatureDefn *GetLayerDefn() const override
     {
@@ -3242,7 +3308,7 @@ OGRFeature *OGRGMLSingleFeatureLayer::GetNextFeature()
 }
 
 /************************************************************************/
-/*                            ExecuteSQL()                              */
+/*                             ExecuteSQL()                             */
 /************************************************************************/
 
 OGRLayer *OGRGMLDataSource::ExecuteSQL(const char *pszSQLCommand,
@@ -3352,8 +3418,13 @@ void OGRGMLDataSource::FindAndParseTopElements(VSILFILE *fp)
                 CPLErrorReset();
                 if (psTree)
                 {
-                    m_poStandaloneGeom.reset(GML2OGRGeometry_XMLNode(
-                        psTree, false, 0, 0, false, true, false));
+                    std::unique_ptr<OGRGML_SRSCache,
+                                    decltype(&OGRGML_SRSCache_Destroy)>
+                        srsCache{OGRGML_SRSCache_Create(),
+                                 OGRGML_SRSCache_Destroy};
+                    m_poStandaloneGeom.reset(
+                        GML2OGRGeometry_XMLNode(psTree, false, srsCache.get(),
+                                                0, 0, false, true, false));
 
                     if (m_poStandaloneGeom)
                     {
@@ -3553,7 +3624,7 @@ void OGRGMLDataSource::SetExtents(double dfMinX, double dfMinY, double dfMaxX,
 }
 
 /************************************************************************/
-/*                             GetAppPrefix()                           */
+/*                            GetAppPrefix()                            */
 /************************************************************************/
 
 const char *OGRGMLDataSource::GetAppPrefix() const
@@ -3562,7 +3633,7 @@ const char *OGRGMLDataSource::GetAppPrefix() const
 }
 
 /************************************************************************/
-/*                            RemoveAppPrefix()                         */
+/*                          RemoveAppPrefix()                           */
 /************************************************************************/
 
 bool OGRGMLDataSource::RemoveAppPrefix() const
@@ -3575,7 +3646,7 @@ bool OGRGMLDataSource::RemoveAppPrefix() const
 }
 
 /************************************************************************/
-/*                        WriteFeatureBoundedBy()                       */
+/*                       WriteFeatureBoundedBy()                        */
 /************************************************************************/
 
 bool OGRGMLDataSource::WriteFeatureBoundedBy() const
@@ -3585,7 +3656,7 @@ bool OGRGMLDataSource::WriteFeatureBoundedBy() const
 }
 
 /************************************************************************/
-/*                          GetSRSDimensionLoc()                        */
+/*                         GetSRSDimensionLoc()                         */
 /************************************************************************/
 
 const char *OGRGMLDataSource::GetSRSDimensionLoc() const
@@ -3594,7 +3665,7 @@ const char *OGRGMLDataSource::GetSRSDimensionLoc() const
 }
 
 /************************************************************************/
-/*                        GMLFeatureCollection()                     */
+/*                        GMLFeatureCollection()                        */
 /************************************************************************/
 
 bool OGRGMLDataSource::GMLFeatureCollection() const

@@ -11,17 +11,17 @@
 
 #include "ogrmiramon.h"
 
-/****************************************************************************/
-/*                          OGRMiraMonDataSource()                          */
-/****************************************************************************/
+/************************************************************************/
+/*                        OGRMiraMonDataSource()                        */
+/************************************************************************/
 OGRMiraMonDataSource::OGRMiraMonDataSource()
 {
     memset(&m_MMMap, 0, sizeof(m_MMMap));
 }
 
-/****************************************************************************/
-/*                         ~OGRMiraMonDataSource()                          */
-/****************************************************************************/
+/************************************************************************/
+/*                       ~OGRMiraMonDataSource()                        */
+/************************************************************************/
 
 OGRMiraMonDataSource::~OGRMiraMonDataSource()
 
@@ -32,9 +32,9 @@ OGRMiraMonDataSource::~OGRMiraMonDataSource()
         VSIFCloseL(m_MMMap.fMMMap);
 }
 
-/****************************************************************************/
-/*                                Open()                                    */
-/****************************************************************************/
+/************************************************************************/
+/*                                Open()                                */
+/************************************************************************/
 
 bool OGRMiraMonDataSource::Open(const char *pszFilename, VSILFILE *fp,
                                 const OGRSpatialReference *poSRS,
@@ -76,14 +76,23 @@ bool OGRMiraMonDataSource::Open(const char *pszFilename, VSILFILE *fp,
                 }
                 else
                 {
+                    char *pszChaiCP1252;
+
                     VSIFPrintfL(m_MMMap.fMMMap, "[VERSIO]\n");
                     VSIFPrintfL(m_MMMap.fMMMap, "Vers=2\n");
                     VSIFPrintfL(m_MMMap.fMMMap, "SubVers=0\n");
                     VSIFPrintfL(m_MMMap.fMMMap, "variant=b\n");
                     VSIFPrintfL(m_MMMap.fMMMap, "\n");
                     VSIFPrintfL(m_MMMap.fMMMap, "[DOCUMENT]\n");
-                    VSIFPrintfL(m_MMMap.fMMMap, "Titol= %s(map)\n",
-                                CPLGetBasenameSafe(poLayer->GetName()).c_str());
+                    pszChaiCP1252 = CPLRecode(
+                        CPLGetBasenameSafe(poLayer->GetName()).c_str(),
+                        CPL_ENC_UTF8, "CP1252");
+                    VSIFPrintfL(
+                        m_MMMap.fMMMap, "Titol= %s(map)\n",
+                        pszChaiCP1252
+                            ? pszChaiCP1252
+                            : CPLGetBasenameSafe(poLayer->GetName()).c_str());
+                    CPLFree(pszChaiCP1252);
                     VSIFPrintfL(m_MMMap.fMMMap, "\n");
                 }
             }
@@ -116,9 +125,9 @@ bool OGRMiraMonDataSource::Create(const char *pszDataSetName,
     return true;
 }
 
-/****************************************************************************/
-/*                           ICreateLayer()                                 */
-/****************************************************************************/
+/************************************************************************/
+/*                            ICreateLayer()                            */
+/************************************************************************/
 
 OGRLayer *
 OGRMiraMonDataSource::ICreateLayer(const char *pszLayerName,
@@ -207,9 +216,9 @@ OGRMiraMonDataSource::ICreateLayer(const char *pszLayerName,
     return nullptr;
 }
 
-/****************************************************************************/
-/*                           TestCapability()                               */
-/****************************************************************************/
+/************************************************************************/
+/*                           TestCapability()                           */
+/************************************************************************/
 
 int OGRMiraMonDataSource::TestCapability(const char *pszCap) const
 
@@ -222,9 +231,9 @@ int OGRMiraMonDataSource::TestCapability(const char *pszCap) const
     return FALSE;
 }
 
-/****************************************************************************/
-/*                              GetLayer()                                  */
-/****************************************************************************/
+/************************************************************************/
+/*                              GetLayer()                              */
+/************************************************************************/
 
 const OGRLayer *OGRMiraMonDataSource::GetLayer(int iLayer) const
 

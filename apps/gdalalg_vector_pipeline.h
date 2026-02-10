@@ -20,13 +20,16 @@
 #include "ogrlayerwithtranslatefeature.h"
 
 #include <map>
+#include <tuple>
 #include <vector>
 
 //! @cond Doxygen_Suppress
 
 /************************************************************************/
-/*                GDALVectorPipelineStepAlgorithm                       */
+/*                   GDALVectorPipelineStepAlgorithm                    */
 /************************************************************************/
+
+class GDALRasterAlgorithmStepRegistry;
 
 class GDALVectorPipelineStepAlgorithm /* non final */
     : public GDALPipelineStepAlgorithm
@@ -46,7 +49,6 @@ class GDALVectorPipelineStepAlgorithm /* non final */
                                     const ConstructorOptions &options);
 
     friend class GDALVectorPipelineAlgorithm;
-    friend class GDALAbstractPipelineAlgorithm<GDALVectorPipelineStepAlgorithm>;
     friend class GDALVectorConcatAlgorithm;
 
     int GetInputType() const override
@@ -61,17 +63,38 @@ class GDALVectorPipelineStepAlgorithm /* non final */
 };
 
 /************************************************************************/
+/*                   GDALVectorAlgorithmStepRegistry                    */
+/************************************************************************/
+
+class GDALVectorAlgorithmStepRegistry : public virtual GDALAlgorithmRegistry
+{
+  public:
+    GDALVectorAlgorithmStepRegistry() = default;
+    ~GDALVectorAlgorithmStepRegistry() override;
+
+    /** Register the algorithm of type MyAlgorithm.
+     */
+    template <class MyAlgorithm>
+    bool Register(const std::string &name = std::string())
+    {
+        static_assert(
+            std::is_base_of_v<GDALVectorPipelineStepAlgorithm, MyAlgorithm>,
+            "Algorithm is not a GDALVectorPipelineStepAlgorithm");
+
+        AlgInfo info;
+        info.m_name = name.empty() ? MyAlgorithm::NAME : name;
+        info.m_aliases = MyAlgorithm::GetAliasesStatic();
+        info.m_creationFunc = []() -> std::unique_ptr<GDALAlgorithm>
+        { return std::make_unique<MyAlgorithm>(); };
+        return GDALAlgorithmRegistry::Register(info);
+    }
+};
+
+/************************************************************************/
 /*                     GDALVectorPipelineAlgorithm                      */
 /************************************************************************/
 
-// This is an easter egg to pay tribute to PROJ pipeline syntax
-// We accept "gdal vector +gdal=pipeline +step +gdal=read +input=poly.gpkg +step +gdal=reproject +dst-crs=EPSG:32632 +step +gdal=write +output=out.gpkg +overwrite"
-// as an alternative to (recommended):
-// "gdal vector pipeline ! read poly.gpkg ! reproject--dst-crs=EPSG:32632 ! write out.gpkg --overwrite"
-#define GDAL_PIPELINE_PROJ_NOSTALGIA
-
-class GDALVectorPipelineAlgorithm final
-    : public GDALAbstractPipelineAlgorithm<GDALVectorPipelineStepAlgorithm>
+class GDALVectorPipelineAlgorithm final : public GDALAbstractPipelineAlgorithm
 {
   public:
     static constexpr const char *NAME = "pipeline";
@@ -93,18 +116,178 @@ class GDALVectorPipelineAlgorithm final
 
     GDALVectorPipelineAlgorithm();
 
-    bool
-    ParseCommandLineArguments(const std::vector<std::string> &args) override;
-
     std::string GetUsageForCLI(bool shortUsage,
                                const UsageOptions &usageOptions) const override;
 
-    static void RegisterAlgorithms(GDALAlgorithmRegistry &registry,
+    static void RegisterAlgorithms(GDALVectorAlgorithmStepRegistry &registry,
                                    bool forMixedPipeline);
+
+    int GetInputType() const override
+    {
+        return GDAL_OF_VECTOR;
+    }
+
+    int GetOutputType() const override
+    {
+        return GDAL_OF_VECTOR;
+    }
+
+  protected:
+    GDALVectorAlgorithmStepRegistry m_stepRegistry{};
+
+    GDALAlgorithmRegistry &GetStepRegistry() override
+    {
+        return m_stepRegistry;
+    }
+
+    const GDALAlgorithmRegistry &GetStepRegistry() const override
+    {
+        return m_stepRegistry;
+    }
+
+  private:
+    std::unique_ptr<GDALAbstractPipelineAlgorithm>
+    CreateNestedPipeline() const override
+    {
+        auto pipeline = std::make_unique<GDALVectorPipelineAlgorithm>();
+        pipeline->m_bInnerPipeline = true;
+        return pipeline;
+    }
 };
 
 /************************************************************************/
-/*                  GDALVectorPipelineOutputLayer                       */
+/*                       GDALVectorOutputDataset                        */
+/************************************************************************/
+
+class GDALVectorOutputDataset final : public GDALDataset
+{
+
+  public:
+    int GetLayerCount() const override
+    {
+        return static_cast<int>(m_layers.size());
+    }
+
+    const OGRLayer *GetLayer(int idx) const override
+    {
+        return m_layers[idx].get();
+    }
+
+    int TestCapability(const char *) const override;
+
+    void AddLayer(std::unique_ptr<OGRLayer> layer)
+    {
+        m_layers.emplace_back(std::move(layer));
+    }
+
+  private:
+    std::vector<std::unique_ptr<OGRLayer>> m_layers{};
+};
+
+/************************************************************************/
+/*                GDALVectorAlgorithmLayerProgressHelper                */
+/************************************************************************/
+
+/**
+ * This class helps doing progress report for algorithm iterating over layers
+ * of the source dataset.
+ */
+class GDALVectorAlgorithmLayerProgressHelper
+{
+  public:
+    /** Constructor */
+    GDALVectorAlgorithmLayerProgressHelper(GDALProgressFunc pfnProgress,
+                                           void *pProgressData);
+    /** Constructor */
+    explicit GDALVectorAlgorithmLayerProgressHelper(
+        const GDALPipelineStepRunContext &ctxt);
+
+    /** Register the passed layer as a layer that will be processed. */
+    void AddProcessedLayer(OGRLayer &srcLayer);
+
+    /** Register the passed layer as a layer that will be forwarded without
+     * processing. */
+    void AddPassThroughLayer(OGRLayer &srcLayer);
+
+    //! @cond Doxygen_Suppress
+    class iterator
+    {
+      public:
+        explicit iterator(const GDALVectorAlgorithmLayerProgressHelper &helper,
+                          bool start)
+            : m_helper(helper),
+              m_nLayerIdx(start ? 0 : m_helper.m_apoSrcLayers.size())
+        {
+        }
+
+        inline bool operator==(const iterator &other) const
+        {
+            return m_nLayerIdx == other.m_nLayerIdx;
+        }
+
+        inline bool operator!=(const iterator &other) const
+        {
+            return m_nLayerIdx != other.m_nLayerIdx;
+        }
+
+        inline iterator &operator++()
+        {
+            if (!m_helper.m_anFeatures.empty())
+                m_nFeatureIdx += m_helper.m_anFeatures[m_nProcessedLayerIdx];
+            if (m_helper.m_apoSrcLayers[m_nLayerIdx].second)
+                ++m_nProcessedLayerIdx;
+            ++m_nLayerIdx;
+            return *this;
+        }
+
+        using progress_data_unique_ptr =
+            std::unique_ptr<void, decltype(&GDALDestroyScaledProgress)>;
+        using value_type = std::tuple<OGRLayer *, bool, GDALProgressFunc,
+                                      progress_data_unique_ptr>;
+
+        value_type operator*() const;
+
+      private:
+        const GDALVectorAlgorithmLayerProgressHelper &m_helper;
+        size_t m_nLayerIdx = 0;
+        size_t m_nProcessedLayerIdx = 0;
+        GIntBig m_nFeatureIdx = 0;
+    };
+
+    //! @endcond
+
+    /** Start of an iterator over layers registered with AddProcessedLayer()
+     * and AddUnprocessedLayer() */
+    iterator begin() const
+    {
+        return iterator(*this, true);
+    }
+
+    /** End of an iterator over layers registered with AddProcessedLayer()
+     * and AddUnprocessedLayer() */
+    iterator end() const
+    {
+        return iterator(*this, false);
+    }
+
+    /** Return if AddProcessedLayer() has been called at least once. */
+    bool HasProcessedLayers() const
+    {
+        return !m_anFeatures.empty();
+    }
+
+  private:
+    GDALProgressFunc m_pfnProgress = nullptr;
+    void *m_pProgressData = nullptr;
+    int64_t m_nTotalFeatures = 0;
+    std::vector<std::pair<OGRLayer *, bool>> m_apoSrcLayers{};
+    std::vector<int64_t> m_anFeatures{};
+
+    CPL_DISALLOW_COPY_ASSIGN(GDALVectorAlgorithmLayerProgressHelper)
+};
+
+/************************************************************************/
+/*                    GDALVectorPipelineOutputLayer                     */
 /************************************************************************/
 
 /** Class that implements GetNextFeature() by forwarding to
@@ -117,11 +300,16 @@ class GDALVectorPipelineOutputLayer /* non final */
 {
   protected:
     explicit GDALVectorPipelineOutputLayer(OGRLayer &oSrcLayer);
-    ~GDALVectorPipelineOutputLayer();
+    ~GDALVectorPipelineOutputLayer() override;
 
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(GDALVectorPipelineOutputLayer)
 
     OGRLayer &m_srcLayer;
+
+    void FailTranslation()
+    {
+        m_translateError = true;
+    }
 
   public:
     void ResetReading() override;
@@ -130,6 +318,7 @@ class GDALVectorPipelineOutputLayer /* non final */
   private:
     std::vector<std::unique_ptr<OGRFeature>> m_pendingFeatures{};
     size_t m_idxInPendingFeatures = 0;
+    bool m_translateError = false;
 };
 
 /************************************************************************/
@@ -155,6 +344,18 @@ class GDALVectorPipelinePassthroughLayer /* non final */
         return m_srcLayer.TestCapability(pszCap);
     }
 
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override
+    {
+        return m_srcLayer.GetExtent(iGeomField, psExtent, bForce);
+    }
+
+    OGRErr IGetExtent3D(int iGeomField, OGREnvelope3D *psExtent,
+                        bool bForce) override
+    {
+        return m_srcLayer.GetExtent3D(iGeomField, psExtent, bForce);
+    }
+
     void TranslateFeature(
         std::unique_ptr<OGRFeature> poSrcFeature,
         std::vector<std::unique_ptr<OGRFeature>> &apoOutFeatures) override
@@ -164,10 +365,51 @@ class GDALVectorPipelinePassthroughLayer /* non final */
 };
 
 /************************************************************************/
-/*                 GDALVectorNonStreamingAlgorithmDataset               */
+/*                 GDALVectorNonStreamingAlgorithmLayer                 */
 /************************************************************************/
 
-class MEMDataset;
+/**
+ * This class represents a layer for algorithms that process vector data
+ * in a non-streaming manner.
+ *
+ * Implementations must override the following methods:
+ * - Process(), which is called when the first feature is read
+ * - GetNextProcessedFeature() method which provides features in sequential order
+ */
+class GDALVectorNonStreamingAlgorithmLayer
+    : public OGRLayer,
+      public OGRGetNextFeatureThroughRaw<GDALVectorNonStreamingAlgorithmLayer>
+{
+  public:
+    GDALVectorNonStreamingAlgorithmLayer(OGRLayer &srcLayer,
+                                         int geomFieldIndex);
+
+    ~GDALVectorNonStreamingAlgorithmLayer() override;
+
+    const char *GetDescription() const override
+    {
+        return GetName();
+    }
+
+    virtual bool Process(GDALProgressFunc pfnProgress, void *pProgressData) = 0;
+
+    virtual std::unique_ptr<OGRFeature> GetNextProcessedFeature() = 0;
+
+    OGRFeature *GetNextRawFeature();
+
+    DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(GDALVectorNonStreamingAlgorithmLayer)
+
+  protected:
+    OGRLayer &m_srcLayer;
+    int m_geomFieldIndex{0};
+
+  private:
+    CPL_DISALLOW_COPY_ASSIGN(GDALVectorNonStreamingAlgorithmLayer)
+};
+
+/************************************************************************/
+/*                GDALVectorNonStreamingAlgorithmDataset                */
+/************************************************************************/
 
 /**
  * Dataset used to read all input features into memory and perform some
@@ -178,25 +420,26 @@ class GDALVectorNonStreamingAlgorithmDataset /* non final */
 {
   public:
     GDALVectorNonStreamingAlgorithmDataset();
-    ~GDALVectorNonStreamingAlgorithmDataset();
+    ~GDALVectorNonStreamingAlgorithmDataset() override;
 
-    virtual bool Process(OGRLayer &srcLayer, OGRLayer &dstLayer) = 0;
+    /** Add a layer to the dataset and perform the associated processing. */
+    bool AddProcessedLayer(
+        std::unique_ptr<GDALVectorNonStreamingAlgorithmLayer> srcLayer,
+        GDALProgressFunc progressFunc, void *progressData);
 
-    bool AddProcessedLayer(OGRLayer &srcLayer);
-    bool AddProcessedLayer(OGRLayer &srcLayer, OGRFeatureDefn &dstDefn);
     void AddPassThroughLayer(OGRLayer &oLayer);
+
     int GetLayerCount() const final override;
     OGRLayer *GetLayer(int idx) const final override;
     int TestCapability(const char *pszCap) const override;
 
   private:
-    std::vector<std::unique_ptr<OGRLayer>> m_passthrough_layers{};
+    std::vector<std::unique_ptr<OGRLayer>> m_owned_layers{};
     std::vector<OGRLayer *> m_layers{};
-    std::unique_ptr<MEMDataset> m_ds{};
 };
 
 /************************************************************************/
-/*                 GDALVectorPipelineOutputDataset                      */
+/*                   GDALVectorPipelineOutputDataset                    */
 /************************************************************************/
 
 /** Class used by vector pipeline steps to create an output on-the-fly
@@ -219,7 +462,6 @@ class GDALVectorPipelineOutputDataset final : public GDALDataset
 
   public:
     explicit GDALVectorPipelineOutputDataset(GDALDataset &oSrcDS);
-    ~GDALVectorPipelineOutputDataset();
 
     void AddLayer(OGRLayer &oSrcLayer,
                   std::unique_ptr<OGRLayerWithTranslateFeature> poNewLayer);

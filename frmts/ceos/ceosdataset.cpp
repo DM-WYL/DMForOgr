@@ -14,6 +14,10 @@
 #include "ceosopen.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 /************************************************************************/
 /* ==================================================================== */
@@ -33,7 +37,7 @@ class CEOSDataset final : public GDALPamDataset
 
   public:
     CEOSDataset();
-    ~CEOSDataset();
+    ~CEOSDataset() override;
     static GDALDataset *Open(GDALOpenInfo *);
 };
 
@@ -54,7 +58,7 @@ class CEOSRasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                           CEOSRasterBand()                            */
+/*                           CEOSRasterBand()                           */
 /************************************************************************/
 
 CEOSRasterBand::CEOSRasterBand(CEOSDataset *poDSIn, int nBandIn)
@@ -63,7 +67,7 @@ CEOSRasterBand::CEOSRasterBand(CEOSDataset *poDSIn, int nBandIn)
     poDS = poDSIn;
     nBand = nBandIn;
 
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     nBlockXSize = poDS->GetRasterXSize();
     nBlockYSize = 1;
@@ -196,7 +200,7 @@ GDALDataset *CEOSDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          GDALRegister_GTiff()                        */
+/*                         GDALRegister_GTiff()                         */
 /************************************************************************/
 
 void GDALRegister_CEOS()

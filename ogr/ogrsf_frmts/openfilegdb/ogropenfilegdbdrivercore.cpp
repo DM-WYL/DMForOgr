@@ -11,6 +11,7 @@
  ****************************************************************************/
 
 #include "ogrsf_frmts.h"
+#include "gdalplugindriverproxy.h"
 
 #include "ogropenfilegdbdrivercore.h"
 
@@ -18,7 +19,7 @@
     (strLen >= strlen(end) && EQUAL(str + strLen - strlen(end), end))
 
 /************************************************************************/
-/*                         OGROpenFileGDBDriverIdentify()               */
+/*                    OGROpenFileGDBDriverIdentify()                    */
 /************************************************************************/
 
 GDALIdentifyEnum OGROpenFileGDBDriverIdentify(GDALOpenInfo *poOpenInfo,
@@ -148,7 +149,7 @@ static int OGROpenFileGDBDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                 OGROpenFileGDBDriverSetCommonMetadata()              */
+/*               OGROpenFileGDBDriverSetCommonMetadata()                */
 /************************************************************************/
 
 void OGROpenFileGDBDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -311,7 +312,7 @@ void OGROpenFileGDBDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                 DeclareDeferredOGROpenFileGDBPlugin()                */
+/*                DeclareDeferredOGROpenFileGDBPlugin()                 */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

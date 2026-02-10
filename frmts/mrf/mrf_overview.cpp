@@ -247,7 +247,7 @@ template <> void AverageByFour<float>(float *buff, int xsz, int ysz, float ndv)
 #define use(valp)                                                              \
     if (*valp != ndv)                                                          \
     {                                                                          \
-        acc += *valp;                                                          \
+        acc += double(*valp);                                                  \
         count += 1.0;                                                          \
     };                                                                         \
     valp++;
@@ -258,7 +258,7 @@ template <> void AverageByFour<float>(float *buff, int xsz, int ysz, float ndv)
 #undef use
             // Output value is eiher accumulator divided by count or the
             // NoDataValue
-            *obuff++ = float((count != 0.0) ? acc / count : ndv);
+            *obuff++ = (count != 0.0) ? float(acc / count) : ndv;
         }
         evenline += xsz * 2;  // Skips every other line
     }
@@ -479,7 +479,7 @@ CPLErr MRFDataset::PatchOverview(int BlockX, int BlockY, int Width, int Height,
 
                     switch (eDataType)
                     {
-                        case GDT_Byte:
+                        case GDT_UInt8:
                             resample(GByte);
                         case GDT_Int8:
                             resample(GInt8);
@@ -524,7 +524,7 @@ CPLErr MRFDataset::PatchOverview(int BlockX, int BlockY, int Width, int Height,
     break;
                     switch (eDataType)
                     {
-                        case GDT_Byte:
+                        case GDT_UInt8:
                             resample(GByte);
                         case GDT_Int8:
                             resample(GInt8);

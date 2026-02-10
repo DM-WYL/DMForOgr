@@ -11,7 +11,10 @@
  ****************************************************************************/
 
 #include "zarrdrivercore.h"
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
 
+#include "cpl_string.h"
 #include "vsikerchunk.h"
 #include "vsikerchunk_inline.hpp"
 
@@ -42,13 +45,15 @@ static bool CheckExistenceOfOneZarrFile(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                   ZARRIsLikelyKerchunkJSONRef()                      */
+/*                    ZARRIsLikelyKerchunkJSONRef()                     */
 /************************************************************************/
 
 bool ZARRIsLikelyKerchunkJSONRef(const GDALOpenInfo *poOpenInfo)
 {
     if (poOpenInfo->nHeaderBytes > 0 && poOpenInfo->eAccess == GA_ReadOnly &&
-        poOpenInfo->IsExtensionEqualToCI("json"))
+        (poOpenInfo->IsExtensionEqualToCI("json") ||
+         // e.g. like in https://noaa-nodd-kerchunk-pds.s3.amazonaws.com/nos/cbofs/cbofs.fields.best.nc.zarr
+         poOpenInfo->IsExtensionEqualToCI("zarr")))
     {
         const char *pszHeader =
             reinterpret_cast<const char *>(poOpenInfo->pabyHeader);
@@ -62,14 +67,15 @@ bool ZARRIsLikelyKerchunkJSONRef(const GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                     ZARRDriverIdentify()                             */
+/*                         ZARRDriverIdentify()                         */
 /************************************************************************/
 
 int ZARRDriverIdentify(GDALOpenInfo *poOpenInfo)
 
 {
-    if (STARTS_WITH(poOpenInfo->pszFilename, "ZARR:") ||
-        STARTS_WITH(poOpenInfo->pszFilename, "ZARR_DUMMY:"))
+    const std::string_view osvFilename(poOpenInfo->pszFilename);
+    if (cpl::starts_with(osvFilename, "ZARR:") ||
+        cpl::starts_with(osvFilename, "ZARR_DUMMY:"))
     {
         return TRUE;
     }
@@ -78,11 +84,18 @@ int ZARRDriverIdentify(GDALOpenInfo *poOpenInfo)
     {
         return TRUE;
     }
-    if (STARTS_WITH(poOpenInfo->pszFilename, JSON_REF_FS_PREFIX))
+    if (cpl::starts_with(osvFilename, JSON_REF_FS_PREFIX))
     {
         return -1;
     }
-
+    for (const char *pszFile :
+         {".zarray", ".zgroup", ".zmetadata", "zarr.json"})
+    {
+        if (cpl::ends_with(osvFilename, pszFile))
+        {
+            return TRUE;
+        }
+    }
     if (!poOpenInfo->bIsDirectory)
     {
         return FALSE;
@@ -92,7 +105,7 @@ int ZARRDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                     ZARRDriverSetCommonMetadata()                    */
+/*                    ZARRDriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void ZARRDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -116,8 +129,9 @@ void ZARRDriverSetCommonMetadata(GDALDriver *poDriver)
         "   <Option name='LIST_ALL_ARRAYS' type='boolean' "
         "description='Whether to list all arrays, and not only those whose "
         "dimension count is 2 or more' default='NO'/>"
-        "   <Option name='USE_ZMETADATA' type='boolean' description='Whether "
-        "to use consolidated metadata from .zmetadata' default='YES'/>"
+        "   <Option name='USE_CONSOLIDATED_METADATA' alias='USE_ZMETADATA' "
+        "type='boolean' description='Whether "
+        "to use consolidated metadata' default='YES'/>"
         "   <Option name='CACHE_TILE_PRESENCE' type='boolean' "
         "description='Whether to establish an initial listing of present "
         "tiles' default='NO'/>"
@@ -145,9 +159,9 @@ void ZARRDriverSetCommonMetadata(GDALDriver *poDriver)
         "     <Value>ZARR_V2</Value>"
         "     <Value>ZARR_V3</Value>"
         "   </Option>"
-        "   <Option name='CREATE_ZMETADATA' type='boolean' "
-        "description='Whether to create consolidated metadata into .zmetadata "
-        "(Zarr V2 only)' default='YES'/>"
+        "   <Option name='CREATE_CONSOLIDATED_METADATA' "
+        "alias='CREATE_ZMETADATA' type='boolean' "
+        "description='Whether to create consolidated metadata' default='YES'/>"
         "</MultiDimDatasetCreationOptionList>");
 
     poDriver->pfnIdentify = ZARRDriverIdentify;
@@ -164,7 +178,7 @@ void ZARRDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                    DeclareDeferredZarrPlugin()                       */
+/*                     DeclareDeferredZarrPlugin()                      */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

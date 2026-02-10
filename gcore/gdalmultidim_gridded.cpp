@@ -14,7 +14,7 @@
 #include "gdal_alg.h"
 #include "gdalgrid.h"
 #include "gdal_priv.h"
-#include "gdal_pam.h"
+#include "gdal_pam_multidim.h"
 #include "ogrsf_frmts.h"
 #include "memdataset.h"
 
@@ -24,7 +24,7 @@
 #include <new>
 
 /************************************************************************/
-/*                         GDALMDArrayGridded                           */
+/*                          GDALMDArrayGridded                          */
 /************************************************************************/
 
 class GDALMDArrayGridded final : public GDALPamMDArray
@@ -157,7 +157,7 @@ class GDALMDArrayGridded final : public GDALPamMDArray
 };
 
 /************************************************************************/
-/*                             IRead()                                  */
+/*                               IRead()                                */
 /************************************************************************/
 
 bool GDALMDArrayGridded::IRead(const GUInt64 *arrayStartIdx,
@@ -363,7 +363,7 @@ bool GDALMDArrayGridded::IRead(const GUInt64 *arrayStartIdx,
 }
 
 /************************************************************************/
-/*                            GetGridded()                              */
+/*                             GetGridded()                             */
 /************************************************************************/
 
 /** Return a gridded array from scattered point data, that is from an array
@@ -655,8 +655,8 @@ GDALMDArray::GetGridded(const std::string &osGridOptions,
     if (!poLyr)
         return nullptr;
     OGRFieldDefn oFieldDefn("IDX", OFTInteger64);
-    poLyr->CreateField(&oFieldDefn);
-    if (poLyr->StartTransaction() != OGRERR_NONE)
+    if (poLyr->CreateField(&oFieldDefn) != OGRERR_NONE ||
+        poLyr->StartTransaction() != OGRERR_NONE)
         return nullptr;
     OGRFeature oFeat(poLyr->GetLayerDefn());
     for (size_t i = 0; i < adfXVals.size(); ++i)

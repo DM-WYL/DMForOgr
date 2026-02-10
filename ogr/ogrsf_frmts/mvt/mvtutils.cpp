@@ -14,7 +14,7 @@
 #include "ogr_api.h"
 
 /************************************************************************/
-/*                        OGRMVTInitFields()                            */
+/*                          OGRMVTInitFields()                          */
 /************************************************************************/
 
 void OGRMVTInitFields(OGRFeatureDefn *poFeatureDefn,
@@ -61,6 +61,27 @@ void OGRMVTInitFields(OGRFeatureDefn *poFeatureDefn,
                             {
                                 oFieldDefn.SetType(OFTInteger64);
                             }
+                            if (oFieldDefn.GetType() != OFTReal)
+                            {
+                                const auto oValues =
+                                    oAttributesFromTileStats[i].GetObj(
+                                        "values");
+                                if (oValues.GetType() ==
+                                    CPLJSONObject::Type::Array)
+                                {
+                                    const auto oValuesArray = oValues.ToArray();
+                                    for (int iVal = 0;
+                                         iVal < oValuesArray.Size(); ++iVal)
+                                    {
+                                        if (oValuesArray[iVal].GetType() ==
+                                            CPLJSONObject::Type::Double)
+                                        {
+                                            oFieldDefn.SetType(OFTReal);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                             break;
                         }
                     }
@@ -92,7 +113,7 @@ void OGRMVTInitFields(OGRFeatureDefn *poFeatureDefn,
 }
 
 /************************************************************************/
-/*                     OGRMVTFindGeomTypeFromTileStat()                 */
+/*                   OGRMVTFindGeomTypeFromTileStat()                   */
 /************************************************************************/
 
 OGRwkbGeometryType
@@ -136,7 +157,7 @@ OGRMVTFindGeomTypeFromTileStat(const CPLJSONArray &oTileStatLayers,
 }
 
 /************************************************************************/
-/*                     OGRMVTFindAttributesFromTileStat()               */
+/*                  OGRMVTFindAttributesFromTileStat()                  */
 /************************************************************************/
 
 CPLJSONArray
@@ -167,7 +188,7 @@ OGRMVTFindAttributesFromTileStat(const CPLJSONArray &oTileStatLayers,
 }
 
 /************************************************************************/
-/*                     OGRMVTCreateFeatureFrom()                        */
+/*                      OGRMVTCreateFeatureFrom()                       */
 /************************************************************************/
 
 OGRFeature *OGRMVTCreateFeatureFrom(OGRFeature *poSrcFeature,

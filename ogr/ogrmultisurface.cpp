@@ -27,26 +27,16 @@
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiSurface::OGRMultiSurface(const OGRMultiSurface &) = default;
 
 /************************************************************************/
-/*                  operator=( const OGRMultiCurve&)                    */
+/*                   operator=( const OGRMultiCurve&)                   */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRMultiSurface &OGRMultiSurface::operator=(const OGRMultiSurface &other)
@@ -115,7 +105,7 @@ const char *OGRMultiSurface::getGeometryName() const
 }
 
 /************************************************************************/
-/*                          isCompatibleSubType()                       */
+/*                        isCompatibleSubType()                         */
 /************************************************************************/
 
 OGRBoolean
@@ -264,7 +254,7 @@ std::string OGRMultiSurface::exportToWkt(const OGRWktOptions &opts,
 }
 
 /************************************************************************/
-/*                         hasCurveGeometry()                           */
+/*                          hasCurveGeometry()                          */
 /************************************************************************/
 
 OGRBoolean OGRMultiSurface::hasCurveGeometry(int bLookForNonLinear) const
@@ -275,7 +265,7 @@ OGRBoolean OGRMultiSurface::hasCurveGeometry(int bLookForNonLinear) const
 }
 
 /************************************************************************/
-/*                            PointOnSurface()                          */
+/*                           PointOnSurface()                           */
 /************************************************************************/
 
 /** \brief This method relates to the SFCOM

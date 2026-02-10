@@ -31,6 +31,7 @@
 #include "gdal_alg_priv.h"
 #include "gdal.h"
 #include "gdal_pam.h"
+#include "gdalplugindriverproxy.h"
 #include "gdal_version_full/gdal_version.h"
 #include "gdal_thread_pool.h"
 #include "ogr_srs_api.h"
@@ -358,7 +359,7 @@ int GDALDriverManager::GetDriverCount(bool bIncludeHidden) const
 //! @endcond
 
 /************************************************************************/
-/*                            IsKnownDriver()                           */
+/*                           IsKnownDriver()                            */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -378,7 +379,7 @@ bool GDALDriverManager::IsKnownDriver(const char *pszDriverName) const
 //! @endcond
 
 /************************************************************************/
-/*                        GetHiddenDriverByName()                       */
+/*                       GetHiddenDriverByName()                        */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -483,7 +484,7 @@ GDALDriverH CPL_STDCALL GDALGetDriver(int iDriver)
  *
  * @param poDriver the driver to register.
  *
- * @return the index of the new installed driver.
+ * @return the index of the new installed driver, or -1 in case of error
  */
 
 int GDALDriverManager::RegisterDriver(GDALDriver *poDriver)
@@ -495,12 +496,29 @@ int GDALDriverManager::RegisterDriver(GDALDriver *poDriver, bool bHidden)
 {
     CPLMutexHolderD(&hDMMutex);
 
+    const char *pszDriverName = poDriver->GetDescription();
+    if (pszDriverName[0] == 0)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "Cannot register driver with empty name");
+        return -1;
+    }
+    if (pszDriverName[0] == '-')
+    {
+        // Because GDALDataset::Open() considers that strings in the allowed
+        // drivers list starting with dash mean to exclude a driver.
+        CPLError(
+            CE_Failure, CPLE_AppDefined,
+            "Cannot register driver whose name starts with a dash character");
+        return -1;
+    }
+
     /* -------------------------------------------------------------------- */
     /*      If it is already registered, just return the existing           */
     /*      index.                                                          */
     /* -------------------------------------------------------------------- */
     if (!m_bInDeferredDriverLoading &&
-        GetDriverByName_unlocked(poDriver->GetDescription()) != nullptr)
+        GetDriverByName_unlocked(pszDriverName) != nullptr)
     {
         for (int i = 0; i < nDrivers; ++i)
         {
@@ -535,39 +553,38 @@ int GDALDriverManager::RegisterDriver(GDALDriver *poDriver, bool bHidden)
         poDriver->GetMetadataItem(GDAL_DCAP_GNM) == nullptr)
     {
         CPLDebug("GDAL", "Assuming DCAP_RASTER for driver %s. Please fix it.",
-                 poDriver->GetDescription());
+                 pszDriverName);
         poDriver->SetMetadataItem(GDAL_DCAP_RASTER, "YES");
     }
 
     if (poDriver->GetMetadataItem(GDAL_DMD_OPENOPTIONLIST) != nullptr &&
         poDriver->pfnIdentify == nullptr &&
         poDriver->pfnIdentifyEx == nullptr &&
-        !STARTS_WITH_CI(poDriver->GetDescription(), "Interlis"))
+        !STARTS_WITH_CI(pszDriverName, "Interlis"))
     {
         CPLDebug("GDAL",
                  "Driver %s that defines GDAL_DMD_OPENOPTIONLIST must also "
                  "implement Identify(), so that it can be used",
-                 poDriver->GetDescription());
+                 pszDriverName);
     }
 
     if (poDriver->pfnVectorTranslateFrom != nullptr)
         poDriver->SetMetadataItem(GDAL_DCAP_VECTOR_TRANSLATE_FROM, "YES");
 
     if (m_bInDeferredDriverLoading &&
-        cpl::contains(oMapNameToDrivers,
-                      CPLString(poDriver->GetDescription()).toupper()))
+        cpl::contains(oMapNameToDrivers, CPLString(pszDriverName).toupper()))
     {
-        if (cpl::contains(m_oMapRealDrivers, poDriver->GetDescription()))
+        if (cpl::contains(m_oMapRealDrivers, pszDriverName))
         {
             CPLError(
                 CE_Failure, CPLE_AppDefined,
                 "RegisterDriver() in m_bInDeferredDriverLoading: %s already "
                 "registered!",
-                poDriver->GetDescription());
+                pszDriverName);
             delete poDriver;
             return -1;
         }
-        m_oMapRealDrivers[poDriver->GetDescription()] =
+        m_oMapRealDrivers[pszDriverName] =
             std::unique_ptr<GDALDriver>(poDriver);
         return -1;
     }
@@ -591,10 +608,9 @@ int GDALDriverManager::RegisterDriver(GDALDriver *poDriver, bool bHidden)
     papoDrivers[nDrivers] = poDriver;
     ++nDrivers;
 
-    oMapNameToDrivers[CPLString(poDriver->GetDescription()).toupper()] =
-        poDriver;
+    oMapNameToDrivers[CPLString(pszDriverName).toupper()] = poDriver;
 
-    if (EQUAL(poDriver->GetDescription(), "MEM") &&
+    if (EQUAL(pszDriverName, "MEM") &&
         oMapNameToDrivers.find("MEMORY") == oMapNameToDrivers.end())
     {
         // Instantiate a Memory driver, that is the same as the MEM one,
@@ -830,7 +846,7 @@ void GDALDriverManager::AutoSkipDrivers()
 }
 
 /************************************************************************/
-/*                          GetSearchPaths()                            */
+/*                           GetSearchPaths()                           */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -894,7 +910,7 @@ char **GDALDriverManager::GetSearchPaths(const char *pszGDAL_DRIVER_PATH)
 //! @endcond
 
 /************************************************************************/
-/*                          LoadPlugin()                                */
+/*                             LoadPlugin()                             */
 /************************************************************************/
 
 /**
@@ -1288,7 +1304,7 @@ void GDALDriverManager::ReorderDrivers()
 }
 
 /************************************************************************/
-/*                       GDALPluginDriverProxy                          */
+/*                        GDALPluginDriverProxy                         */
 /************************************************************************/
 
 /** Constructor for a plugin driver proxy.
@@ -1324,7 +1340,7 @@ DEFINE_DRIVER_METHOD_GET_CALLBACK(GetInstantiateAlgorithmCallback,
 
 //! @endcond
 
-char **GDALPluginDriverProxy::GetMetadata(const char *pszDomain)
+CSLConstList GDALPluginDriverProxy::GetMetadata(const char *pszDomain)
 {
     auto poRealDriver = GetRealDriver();
     if (!poRealDriver)
@@ -1359,6 +1375,7 @@ static const char *const apszProxyMetadataItems[] = {
     GDAL_DCAP_CREATE,
     GDAL_DCAP_CREATE_MULTIDIMENSIONAL,
     GDAL_DCAP_CREATECOPY,
+    GDAL_DCAP_UPDATE,
     GDAL_DMD_SUBDATASETS,
     GDAL_DCAP_MULTIPLE_VECTOR_LAYERS,
     GDAL_DCAP_NONSPATIAL,
@@ -1629,7 +1646,7 @@ GDALDriver *GDALPluginDriverProxy::GetRealDriver()
 }
 
 /************************************************************************/
-/*                        GetPluginFullPath()                           */
+/*                         GetPluginFullPath()                          */
 /************************************************************************/
 
 std::string GDALDriverManager::GetPluginFullPath(const char *pszFilename) const
@@ -1699,7 +1716,7 @@ std::string GDALDriverManager::GetPluginFullPath(const char *pszFilename) const
 }
 
 /************************************************************************/
-/*                      DeclareDeferredPluginDriver()                   */
+/*                    DeclareDeferredPluginDriver()                     */
 /************************************************************************/
 
 /** Declare a driver that will be loaded as a plugin, when actually needed.

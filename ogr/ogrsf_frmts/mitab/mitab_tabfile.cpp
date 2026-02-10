@@ -179,7 +179,7 @@ TABFile::~TABFile()
 }
 
 /************************************************************************/
-/*                         GetFeatureCount()                          */
+/*                          GetFeatureCount()                           */
 /************************************************************************/
 
 GIntBig TABFile::GetFeatureCount(int bForce)
@@ -534,6 +534,17 @@ int TABFile::Open(const char *pszFname, TABAccess eAccess,
             CPLErrorReset();
 
         return -1;
+    }
+
+    /*-----------------------------------------------------------------
+     * Set BOUNDS metadata
+     *----------------------------------------------------------------*/
+    {
+        OGREnvelope e;
+        GetBounds(e.MinX, e.MinY, e.MaxX, e.MaxY, 1);
+        const char *pszBounds = CPLSPrintf("%.17g,%.17g,%.17g,%.17g", e.MinX,
+                                           e.MinY, e.MaxX, e.MaxY);
+        SetMetadataItem("BOUNDS", pszBounds);
     }
 
     /*-----------------------------------------------------------------
@@ -2474,6 +2485,17 @@ int TABFile::SetBounds(double dXMin, double dYMin, double dXMax, double dYMax)
     {
         m_poMAPFile->SetCoordsysBounds(dXMin, dYMin, dXMax, dYMax);
 
+        /*-----------------------------------------------------------------
+         * Set BOUNDS metadata
+         *----------------------------------------------------------------*/
+        {
+            OGREnvelope e;
+            GetBounds(e.MinX, e.MinY, e.MaxX, e.MaxY, 1);
+            const char *pszBounds = CPLSPrintf("%.17g,%.17g,%.17g,%.17g",
+                                               e.MinX, e.MinY, e.MaxX, e.MaxY);
+            SetMetadataItem("BOUNDS", pszBounds);
+        }
+
         m_bBoundsSet = TRUE;
     }
     else
@@ -2890,7 +2912,7 @@ OGRErr TABFile::AlterFieldDefn(int iField, OGRFieldDefn *poNewFieldDefn,
 }
 
 /************************************************************************/
-/*                            SyncToDisk()                             */
+/*                             SyncToDisk()                             */
 /************************************************************************/
 
 OGRErr TABFile::SyncToDisk()

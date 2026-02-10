@@ -11,8 +11,14 @@
 
 #include "avifdrivercore.h"
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 /************************************************************************/
-/*                        AVIFDriverIdentify()                          */
+/*                         AVIFDriverIdentify()                         */
 /************************************************************************/
 
 int AVIFDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -29,7 +35,7 @@ int AVIFDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                     AVIFDriverSetCommonMetadata()                    */
+/*                    AVIFDriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void AVIFDriverSetCommonMetadata(GDALDriver *poDriver,

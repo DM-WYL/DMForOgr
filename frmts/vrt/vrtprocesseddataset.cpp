@@ -12,16 +12,18 @@
 
 #include "cpl_minixml.h"
 #include "cpl_string.h"
+#include "gdal_priv.h"
 #include "gdal_utils.h"
 #include "vrtdataset.h"
 
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <set>
 #include <vector>
 
 /************************************************************************/
-/*                        VRTProcessedDatasetFunc                       */
+/*                       VRTProcessedDatasetFunc                        */
 /************************************************************************/
 
 //! Structure holding information for a VRTProcessedDataset function.
@@ -71,7 +73,7 @@ struct VRTProcessedDatasetFunc
 };
 
 /************************************************************************/
-/*                      GetGlobalMapProcessedDatasetFunc()              */
+/*                  GetGlobalMapProcessedDatasetFunc()                  */
 /************************************************************************/
 
 /** Return the registry of VRTProcessedDatasetFunc functions */
@@ -95,7 +97,7 @@ VRTProcessedDataset::Step::~Step()
 }
 
 /************************************************************************/
-/*                           Step::deinit()                             */
+/*                            Step::deinit()                            */
 /************************************************************************/
 
 /** Free pWorkingData */
@@ -123,7 +125,7 @@ void VRTProcessedDataset::Step::deinit()
 }
 
 /************************************************************************/
-/*                        Step::Step(Step&& other)                      */
+/*                       Step::Step(Step&& other)                       */
 /************************************************************************/
 
 /** Move constructor */
@@ -138,7 +140,7 @@ VRTProcessedDataset::Step::Step(Step &&other)
 }
 
 /************************************************************************/
-/*                      Step operator=(Step&& other)                    */
+/*                     Step operator=(Step&& other)                     */
 /************************************************************************/
 
 /** Move assignment operator */
@@ -171,7 +173,7 @@ VRTProcessedDataset::VRTProcessedDataset(int nXSize, int nYSize)
 }
 
 /************************************************************************/
-/*                       ~VRTProcessedDataset()                         */
+/*                        ~VRTProcessedDataset()                        */
 /************************************************************************/
 
 VRTProcessedDataset::~VRTProcessedDataset()
@@ -767,7 +769,7 @@ CPLErr VRTProcessedDataset::Init(const CPLXMLNode *psTree,
 }
 
 /************************************************************************/
-/*                            ParseStep()                               */
+/*                             ParseStep()                              */
 /************************************************************************/
 
 /** Parse the current Step node and create a corresponding entry in m_aoSteps.
@@ -1197,7 +1199,7 @@ void VRTProcessedDataset::GetBlockSize(int *pnBlockXSize,
 }
 
 /************************************************************************/
-/*                            ProcessRegion()                           */
+/*                           ProcessRegion()                            */
 /************************************************************************/
 
 /** Compute pixel values for the specified region.
@@ -1401,7 +1403,7 @@ bool VRTProcessedDataset::ProcessRegion(int nXOff, int nYOff, int nBufXSize,
 }
 
 /************************************************************************/
-/*                        VRTProcessedRasterBand()                      */
+/*                       VRTProcessedRasterBand()                       */
 /************************************************************************/
 
 /** Constructor */
@@ -1420,7 +1422,7 @@ VRTProcessedRasterBand::VRTProcessedRasterBand(VRTProcessedDataset *poDSIn,
 }
 
 /************************************************************************/
-/*                           GetOverviewCount()                         */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int VRTProcessedRasterBand::GetOverviewCount()
@@ -1430,7 +1432,7 @@ int VRTProcessedRasterBand::GetOverviewCount()
 }
 
 /************************************************************************/
-/*                              GetOverview()                           */
+/*                            GetOverview()                             */
 /************************************************************************/
 
 GDALRasterBand *VRTProcessedRasterBand::GetOverview(int iOvr)
@@ -1513,7 +1515,7 @@ CPLErr VRTProcessedRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                VRTProcessedDataset::IRasterIO()                      */
+/*                   VRTProcessedDataset::IRasterIO()                   */
 /************************************************************************/
 
 CPLErr VRTProcessedDataset::IRasterIO(

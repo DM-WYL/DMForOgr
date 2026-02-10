@@ -13,6 +13,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_spatialref.h"
 #include "rawdataset.h"
 
@@ -34,7 +35,7 @@ class NDFDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(NDFDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     NDFDataset();
@@ -54,7 +55,7 @@ class NDFDataset final : public RawDataset
 };
 
 /************************************************************************/
-/*                            NDFDataset()                             */
+/*                             NDFDataset()                             */
 /************************************************************************/
 
 NDFDataset::NDFDataset() : papszExtraFiles(nullptr), papszHeader(nullptr)
@@ -73,10 +74,10 @@ NDFDataset::~NDFDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr NDFDataset::Close()
+CPLErr NDFDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -138,7 +139,7 @@ char **NDFDataset::GetFileList()
 }
 
 /************************************************************************/
-/*                            Identify()                                */
+/*                              Identify()                              */
 /************************************************************************/
 
 int NDFDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -301,7 +302,7 @@ GDALDataset *NDFDataset::Open(GDALOpenInfo *poOpenInfo)
         poDS->papszExtraFiles = CSLAddString(poDS->papszExtraFiles, osFilename);
 
         auto poBand = RawRasterBand::Create(
-            poDS.get(), iBand + 1, fpRaw, 0, 1, poDS->nRasterXSize, GDT_Byte,
+            poDS.get(), iBand + 1, fpRaw, 0, 1, poDS->nRasterXSize, GDT_UInt8,
             RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN,
             RawRasterBand::OwnFP::YES);
         if (!poBand)

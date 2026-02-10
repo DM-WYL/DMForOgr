@@ -366,7 +366,7 @@ CPLErr GDALWarpNoDataMasker(void *pMaskFuncArg, int nBandCount,
 
     switch (eType)
     {
-        case GDT_Byte:
+        case GDT_UInt8:
             return GDALWarpNoDataMaskerT(padfNoData, nPixels,
                                          *ppImageData,  // Already a GByte *.
                                          panValidityMask, pbOutAllValid);
@@ -540,7 +540,7 @@ CPLErr GDALWarpSrcAlphaMasker(void *pMaskFuncArg, int /* nBandCount */,
     GDALDataType eDT = GDALGetRasterDataType(hAlphaBand);
     // Make sure that pafMask is at least 8-byte aligned, which should
     // normally be always the case if being a ptr returned by malloc().
-    if ((eDT == GDT_Byte || eDT == GDT_UInt16) && CPL_IS_ALIGNED(pafMask, 8))
+    if ((eDT == GDT_UInt8 || eDT == GDT_UInt16) && CPL_IS_ALIGNED(pafMask, 8))
     {
         // Read data.
         eErr = GDALRasterIOEx(
@@ -554,7 +554,7 @@ CPLErr GDALWarpSrcAlphaMasker(void *pMaskFuncArg, int /* nBandCount */,
         // Make sure we have the correct alignment before doing SSE
         // On Linux x86_64, the alignment should be always correct due
         // the alignment of malloc() being 16 byte.
-        const GUInt32 mask = (eDT == GDT_Byte) ? 0xff : 0xffff;
+        const GUInt32 mask = (eDT == GDT_UInt8) ? 0xff : 0xffff;
         if (!CPL_IS_ALIGNED(pafMask, 16))
         {
             pafMask[iPixel] =
@@ -752,7 +752,7 @@ CPLErr GDALWarpSrcMaskMasker(void *pMaskFuncArg, int /* nBandCount */,
     /*      Read the mask band.                                             */
     /* -------------------------------------------------------------------- */
     CPLErr eErr = GDALRasterIO(hMaskBand, GF_Read, nXOff, nYOff, nXSize, nYSize,
-                               pabySrcMask, nXSize, nYSize, GDT_Byte, 0, 0);
+                               pabySrcMask, nXSize, nYSize, GDT_UInt8, 0, 0);
 
     if (eErr != CE_None)
     {
@@ -840,7 +840,7 @@ CPLErr GDALWarpDstAlphaMasker(void *pMaskFuncArg, int nBandCount,
         const GDALDataType eDT = GDALGetRasterDataType(hAlphaBand);
         // Make sure that pafMask is at least 8-byte aligned, which should
         // normally be always the case if being a ptr returned by malloc().
-        if ((eDT == GDT_Byte || eDT == GDT_UInt16) &&
+        if ((eDT == GDT_UInt8 || eDT == GDT_UInt16) &&
             CPL_IS_ALIGNED(pafMask, 8))
         {
             // Read data.
@@ -855,7 +855,7 @@ CPLErr GDALWarpDstAlphaMasker(void *pMaskFuncArg, int nBandCount,
             // Make sure we have the correct alignment before doing SSE
             // On Linux x86_64, the alignment should be always correct due
             // the alignment of malloc() being 16 byte.
-            const GUInt32 mask = (eDT == GDT_Byte) ? 0xff : 0xffff;
+            const GUInt32 mask = (eDT == GDT_UInt8) ? 0xff : 0xffff;
             if (!CPL_IS_ALIGNED(pafMask, 16))
             {
                 pafMask[iPixel] =
@@ -958,7 +958,7 @@ CPLErr GDALWarpDstAlphaMasker(void *pMaskFuncArg, int nBandCount,
         const float cst_alpha_max =
             static_cast<float>(CPLAtof(CSLFetchNameValueDef(
                 psWO->papszWarpOptions, "DST_ALPHA_MAX", "255"))) +
-            ((eDT == GDT_Byte || eDT == GDT_Int16 || eDT == GDT_UInt16 ||
+            ((eDT == GDT_UInt8 || eDT == GDT_Int16 || eDT == GDT_UInt16 ||
               eDT == GDT_Int32 || eDT == GDT_UInt32)
                  ? 0.1f
                  : 0.0f);
@@ -968,7 +968,7 @@ CPLErr GDALWarpDstAlphaMasker(void *pMaskFuncArg, int nBandCount,
 #if (defined(__x86_64) || defined(_M_X64))
         // Make sure that pafMask is at least 8-byte aligned, which should
         // normally be always the case if being a ptr returned by malloc()
-        if ((eDT == GDT_Byte || eDT == GDT_Int16 || eDT == GDT_UInt16) &&
+        if ((eDT == GDT_UInt8 || eDT == GDT_Int16 || eDT == GDT_UInt16) &&
             CPL_IS_ALIGNED(pafMask, 8))
         {
             // Make sure we have the correct alignment before doing SSE
@@ -1066,7 +1066,7 @@ CPLErr GDALWarpDstAlphaMasker(void *pMaskFuncArg, int nBandCount,
 }
 
 /************************************************************************/
-/*                      GDALWarpGetOptionList()                         */
+/*                       GDALWarpGetOptionList()                        */
 /************************************************************************/
 
 /** Return a XML string describing options accepted by
@@ -1081,8 +1081,14 @@ const char *GDALWarpGetOptionList(void)
            "Numeric value or NO_DATA. This option forces the destination image "
            "to be initialized to the indicated value (for all bands) "
            "or indicates that it should be initialized to the NO_DATA value in "
-           "padfDstNoDataReal/padfDstNoDataImag. If this value is not set the "
+           "padfDstNoDataReal/padfDstNoDataImag. If this value is not set, the "
            "destination image will be read and overlaid.'/>"
+           "<Option name='RESET_DEST_PIXELS' type='boolean' description='"
+           "Whether the whole destination image must be re-initialized to the "
+           "destination nodata value of padfDstNoDataReal/padfDstNoDataImag "
+           "if set, or 0 otherwise. The main difference with INIT_DEST is that "
+           "it also affects regions not related to the source dataset.' "
+           "default='NO'/>"
            "<Option name='WRITE_FLUSH' type='boolean' description='"
            "This option forces a flush to disk of data after "
            "each chunk is processed. In some cases this helps ensure a serial "
@@ -1292,6 +1298,14 @@ const char *GDALWarpGetOptionList(void)
  * padfDstNoDataReal/padfDstNoDataImag. If this value isn't set the
  * destination image will be read and overlaid.</li>
  *
+ * <li>RESET_DEST_PIXELS=YES/NO (since GDAL 3.13): Defaults to NO.
+ * Whether the whole destination image must be re-initialized to the
+ * destination nodata value of padfDstNoDataReal/padfDstNoDataImag if set,
+ * or 0 otherwise.
+ * The main difference with INIT_DEST is that it also affects regions
+ * not related to the source dataset.
+ * </li>
+ *
  * <li>WRITE_FLUSH=YES/NO: This option forces a flush to disk of data after
  * each chunk is processed. In some cases this helps ensure a serial
  * writing of the output data otherwise a block of data may be written to disk
@@ -1303,7 +1317,7 @@ const char *GDALWarpGetOptionList(void)
  * is no corresponding input data. This will disable initializing the
  * destination (INIT_DEST) and all other processing, and so should be used
  * carefully.  Mostly useful to short circuit a lot of extra work in mosaicing
- * situations. Starting with GDAL 2.4, gdalwarp will automatically enable this
+ * situations. gdalwarp will automatically enable this
  * option when it is assumed to be safe to do so.</li>
  *
  * <li>UNIFIED_SRC_NODATA=YES/NO/PARTIAL: This setting determines
@@ -1399,7 +1413,7 @@ const char *GDALWarpGetOptionList(void)
  * set the number of threads to use to parallelize the computation part of the
  * warping. If not set, computation will be done in a single thread.</li>
  *
- * <li>STREAMABLE_OUTPUT: (GDAL >= 2.0) This defaults to FALSE, but may
+ * <li>STREAMABLE_OUTPUT: This defaults to FALSE, but may
  * be set to TRUE typically when writing to a streamed file. The
  * gdalwarp utility automatically sets this option when writing to
  * /vsistdout/ or a named pipe (on Unix).  This option has performance
@@ -1407,7 +1421,7 @@ const char *GDALWarpGetOptionList(void)
  * not currently supported by the warping algorithm in a streamable
  * compatible way.</li>
  *
- * <li>SRC_COORD_PRECISION: (GDAL >= 2.0). Advanced setting. This
+ * <li>SRC_COORD_PRECISION: Advanced setting. This
  * defaults to 0, to indicate that no rounding of computing source
  * image coordinates corresponding to the target image must be
  * done. If greater than 0 (and typically below 1), this value,
@@ -1421,13 +1435,13 @@ const char *GDALWarpGetOptionList(void)
  * reprojections must statistically be done with a frequency of
  * 4*error_threshold/SRC_COORD_PRECISION.</li>
  *
- * <li>SRC_ALPHA_MAX: (GDAL >= 2.2). Maximum value for the alpha band of the
+ * <li>SRC_ALPHA_MAX: Maximum value for the alpha band of the
  * source dataset. If the value is not set and the alpha band has a NBITS
  * metadata item, it is used to set SRC_ALPHA_MAX = 2^NBITS-1. Otherwise, if the
  * value is not set and the alpha band is of type UInt16 (resp Int16), 65535
  * (resp 32767) is used. Otherwise, 255 is used.</li>
  *
- * <li>DST_ALPHA_MAX: (GDAL >= 2.2). Maximum value for the alpha band of the
+ * <li>DST_ALPHA_MAX: Maximum value for the alpha band of the
  * destination dataset. If the value is not set and the alpha band has a NBITS
  * metadata item, it is used to set DST_ALPHA_MAX = 2^NBITS-1. Otherwise, if the
  * value is not set and the alpha band is of type UInt16 (resp Int16), 65535
@@ -1633,7 +1647,7 @@ void InitNoData(int nBandCount, double **ppdNoDataReal, double dDataReal)
 }  // namespace
 
 /************************************************************************/
-/*                      GDALWarpInitDstNoDataReal()                     */
+/*                     GDALWarpInitDstNoDataReal()                      */
 /************************************************************************/
 
 /**
@@ -1652,7 +1666,7 @@ void CPL_STDCALL GDALWarpInitDstNoDataReal(GDALWarpOptions *psOptionsIn,
 }
 
 /************************************************************************/
-/*                      GDALWarpInitSrcNoDataReal()                     */
+/*                     GDALWarpInitSrcNoDataReal()                      */
 /************************************************************************/
 
 /**
@@ -1671,7 +1685,7 @@ void CPL_STDCALL GDALWarpInitSrcNoDataReal(GDALWarpOptions *psOptionsIn,
 }
 
 /************************************************************************/
-/*                      GDALWarpInitNoDataReal()                        */
+/*                       GDALWarpInitNoDataReal()                       */
 /************************************************************************/
 
 /**
@@ -1690,7 +1704,7 @@ void CPL_STDCALL GDALWarpInitNoDataReal(GDALWarpOptions *psOptionsIn,
 }
 
 /************************************************************************/
-/*                      GDALWarpInitDstNoDataImag()                     */
+/*                     GDALWarpInitDstNoDataImag()                      */
 /************************************************************************/
 
 /**
@@ -1709,7 +1723,7 @@ void CPL_STDCALL GDALWarpInitDstNoDataImag(GDALWarpOptions *psOptionsIn,
 }
 
 /************************************************************************/
-/*                      GDALWarpInitSrcNoDataImag()                     */
+/*                     GDALWarpInitSrcNoDataImag()                      */
 /************************************************************************/
 
 /**
@@ -1728,7 +1742,7 @@ void CPL_STDCALL GDALWarpInitSrcNoDataImag(GDALWarpOptions *psOptionsIn,
 }
 
 /************************************************************************/
-/*                      GDALWarpResolveWorkingDataType()                */
+/*                   GDALWarpResolveWorkingDataType()                   */
 /************************************************************************/
 
 /**
@@ -1756,7 +1770,7 @@ void CPL_STDCALL GDALWarpResolveWorkingDataType(GDALWarpOptions *psOptions)
         return;
     }
 
-    psOptions->eWorkingDataType = GDT_Byte;
+    psOptions->eWorkingDataType = GDT_UInt8;
 
     // If none of the provided input nodata values can be represented in the
     // data type of the corresponding source band, ignore them.
@@ -1859,7 +1873,7 @@ void CPL_STDCALL GDALWarpResolveWorkingDataType(GDALWarpOptions *psOptions)
 }
 
 /************************************************************************/
-/*                      GDALWarpInitDefaultBandMapping()                */
+/*                   GDALWarpInitDefaultBandMapping()                   */
 /************************************************************************/
 
 /**
@@ -2311,17 +2325,21 @@ GDALWarpOptions *CPL_STDCALL GDALDeserializeWarpOptions(CPLXMLNode *psTree)
                                        GDALDataType eDataType) -> double
         {
             if (eDataType == GDT_Float32 &&
-                CPLString().Printf(
-                    "%.16g", -std::numeric_limits<float>::max()) == pszValueIn)
+                CPLString().Printf("%.16g",
+                                   static_cast<double>(
+                                       std::numeric_limits<float>::lowest())) ==
+                    pszValueIn)
             {
-                return std::numeric_limits<float>::lowest();
+                return static_cast<double>(
+                    std::numeric_limits<float>::lowest());
             }
             else if (eDataType == GDT_Float32 &&
-                     CPLString().Printf("%.16g",
-                                        std::numeric_limits<float>::max()) ==
+                     CPLString().Printf(
+                         "%.16g", static_cast<double>(
+                                      std::numeric_limits<float>::max())) ==
                          pszValueIn)
             {
-                return std::numeric_limits<float>::max();
+                return static_cast<double>(std::numeric_limits<float>::max());
             }
             else
             {
@@ -2433,7 +2451,7 @@ GDALWarpOptions *CPL_STDCALL GDALDeserializeWarpOptions(CPLXMLNode *psTree)
 }
 
 /************************************************************************/
-/*                        GDALGetWarpResampleAlg()                      */
+/*                       GDALGetWarpResampleAlg()                       */
 /************************************************************************/
 
 /** Return a GDALResampleAlg from a string */

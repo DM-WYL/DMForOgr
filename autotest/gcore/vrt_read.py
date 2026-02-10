@@ -106,13 +106,13 @@ def test_vrt_read_3(tmp_vsimem, tmp_path):
     gdal.CopyFile("data/test_mosaic2.vrt", tmp_vsimem / "test_mosaic2.vrt")
 
     output_dst = driver_tif.Create(
-        tmp_vsimem / "test_mosaic1.tif", 100, 100, 3, gdal.GDT_Byte
+        tmp_vsimem / "test_mosaic1.tif", 100, 100, 3, gdal.GDT_UInt8
     )
     output_dst.GetRasterBand(1).Fill(255)
     output_dst = None
 
     output_dst = driver_tif.Create(
-        tmp_vsimem / "test_mosaic2.tif", 100, 100, 3, gdal.GDT_Byte
+        tmp_vsimem / "test_mosaic2.tif", 100, 100, 3, gdal.GDT_UInt8
     )
     output_dst.GetRasterBand(1).Fill(127)
     output_dst = None
@@ -1274,7 +1274,7 @@ dy           1
     )
 
     ds = gdal.Translate(
-        "", tmp_vsimem / "in.asc", outputType=gdal.GDT_Byte, format="VRT"
+        "", tmp_vsimem / "in.asc", outputType=gdal.GDT_UInt8, format="VRT"
     )
 
     data = ds.GetRasterBand(1).ReadRaster(0, 0, 2, 2, buf_type=gdal.GDT_Float32)
@@ -1764,6 +1764,156 @@ def test_vrt_protocol_transpose_option():
         match=r"'sd' is mutually exclusive with option 'transpose'",
     ):
         gdal.Open("vrt://../gdrivers/data/hdf5/fwhm.h5?sd=1&transpose=/MyDataField:1,0")
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_protocol_block_option(tmp_vsimem):
+    """Test vrt:// protocol block option for accessing natural blocks."""
+
+    gdaltest.importorskip_gdal_array()
+    np = pytest.importorskip("numpy")
+
+    # Create a tiled test file with known block size
+    src_filename = tmp_vsimem / "block_test.tif"
+    ds = gdal.GetDriverByName("GTiff").Create(
+        src_filename,
+        100,
+        80,
+        1,
+        gdal.GDT_Byte,
+        options=["TILED=YES", "BLOCKXSIZE=32", "BLOCKYSIZE=32"],
+    )
+    # Fill with pattern: pixel value = (x + y) % 256
+
+    data = np.zeros((80, 100), dtype=np.uint8)
+    for y in range(80):
+        for x in range(100):
+            data[y, x] = (x + y) % 256
+    ds.GetRasterBand(1).WriteArray(data)
+    ds = None
+
+    # Test block 0,0 (top-left, full 32x32)
+    ds = gdal.Open(f"vrt://{src_filename}?block=0,0")
+    assert ds.RasterXSize == 32
+    assert ds.RasterYSize == 32
+    arr = ds.GetRasterBand(1).ReadAsArray()
+    assert arr[0, 0] == 0  # (0+0) % 256
+    assert arr[0, 31] == 31  # (31+0) % 256
+    assert arr[31, 0] == 31  # (0+31) % 256
+    ds = None
+
+    # Test block 1,0 (second column, full 32x32)
+    ds = gdal.Open(f"vrt://{src_filename}?block=1,0")
+    assert ds.RasterXSize == 32
+    assert ds.RasterYSize == 32
+    arr = ds.GetRasterBand(1).ReadAsArray()
+    assert arr[0, 0] == 32  # pixel at x=32, y=0 -> (32+0) % 256
+    ds = None
+
+    # Test block 3,0 (marginal block in X direction: 100 - 3*32 = 4 pixels wide)
+    ds = gdal.Open(f"vrt://{src_filename}?block=3,0")
+    assert ds.RasterXSize == 4  # 100 - 96 = 4
+    assert ds.RasterYSize == 32
+    ds = None
+
+    # Test block 0,2 (marginal block in Y direction: 80 - 2*32 = 16 pixels tall)
+    ds = gdal.Open(f"vrt://{src_filename}?block=0,2")
+    assert ds.RasterXSize == 32
+    assert ds.RasterYSize == 16  # 80 - 64 = 16
+    ds = None
+
+    # Test block 3,2 (corner marginal block: 4x16)
+    ds = gdal.Open(f"vrt://{src_filename}?block=3,2")
+    assert ds.RasterXSize == 4
+    assert ds.RasterYSize == 16
+    ds = None
+
+    # Test with bands option (should work together)
+    ds = gdal.GetDriverByName("GTiff").Create(
+        tmp_vsimem / "block_test_3band.tif",
+        100,
+        80,
+        3,
+        gdal.GDT_Byte,
+        options=["TILED=YES", "BLOCKXSIZE=32", "BLOCKYSIZE=32"],
+    )
+    ds.GetRasterBand(1).Fill(10)
+    ds.GetRasterBand(2).Fill(20)
+    ds.GetRasterBand(3).Fill(30)
+    ds = None
+
+    ds = gdal.Open(f"vrt://{tmp_vsimem / 'block_test_3band.tif'}?block=0,0&bands=3,1")
+    assert ds.RasterCount == 2
+    assert ds.RasterXSize == 32
+    assert ds.RasterYSize == 32
+    assert ds.GetRasterBand(1).ReadAsArray()[0, 0] == 30
+    assert ds.GetRasterBand(2).ReadAsArray()[0, 0] == 10
+    ds = None
+
+    # Test error: wrong number of values
+    with pytest.raises(Exception, match="must be two values"):
+        gdal.Open(f"vrt://{src_filename}?block=0")
+
+    with pytest.raises(Exception, match="must be two values"):
+        gdal.Open(f"vrt://{src_filename}?block=0,0,0")
+
+    # Test error: non-numeric values
+    # Test scientific notation works (1e0 = 1)
+    ds = gdal.Open(f"vrt://{src_filename}?block=1e0,0")
+    assert ds.RasterXSize == 32
+    ds = None
+
+    # Test error: non-numeric values
+    with pytest.raises(Exception, match="not a valid non-negative integer"):
+        gdal.Open(f"vrt://{src_filename}?block=abc,0")
+
+    with pytest.raises(Exception, match="not a valid non-negative integer"):
+        gdal.Open(f"vrt://{src_filename}?block=0,xyz")
+
+    # Test error: non-integer float values
+    with pytest.raises(Exception, match="not a valid non-negative integer"):
+        gdal.Open(f"vrt://{src_filename}?block=1.5,0")
+
+    with pytest.raises(Exception, match="not a valid non-negative integer"):
+        gdal.Open(f"vrt://{src_filename}?block=0,2.7")
+
+    # Test error: negative values
+    with pytest.raises(Exception, match="not a valid non-negative integer"):
+        gdal.Open(f"vrt://{src_filename}?block=-1,0")
+
+    with pytest.raises(Exception, match="not a valid non-negative integer"):
+        gdal.Open(f"vrt://{src_filename}?block=0,-1")
+
+    # Test error: out of range (max X block is 3, max Y block is 2)
+    with pytest.raises(Exception, match="Invalid block indices"):
+        gdal.Open(f"vrt://{src_filename}?block=4,0")
+
+    with pytest.raises(Exception, match="Invalid block indices"):
+        gdal.Open(f"vrt://{src_filename}?block=0,3")
+
+    # Test mutual exclusivity with srcwin
+    with pytest.raises(Exception, match="mutually exclusive"):
+        gdal.Open(f"vrt://{src_filename}?block=0,0&srcwin=0,0,10,10")
+
+    # Test mutual exclusivity with projwin
+    with pytest.raises(Exception, match="mutually exclusive"):
+        gdal.Open(f"vrt://{src_filename}?block=0,0&projwin=0,100,100,0")
+
+    # Test mutual exclusivity with outsize
+    with pytest.raises(Exception, match="mutually exclusive"):
+        gdal.Open(f"vrt://{src_filename}?block=0,0&outsize=50,50")
+
+    # Test mutual exclusivity with tr
+    with pytest.raises(Exception, match="mutually exclusive"):
+        gdal.Open(f"vrt://{src_filename}?block=0,0&tr=2,2")
+
+    # Test mutual exclusivity with r (resampling)
+    with pytest.raises(Exception, match="mutually exclusive"):
+        gdal.Open(f"vrt://{src_filename}?block=0,0&r=bilinear")
+
+    # Test mutual exclusivity with ovr (overview level)
+    with pytest.raises(Exception, match="mutually exclusive"):
+        gdal.Open(f"vrt://{src_filename}?block=0,0&ovr=0")
 
 
 def test_vrt_source_no_dstrect():
@@ -2446,7 +2596,7 @@ def test_vrt_read_compute_statistics_mosaic_optimization_single_source(tmp_vsime
 
 @pytest.mark.parametrize("obj_type", ["ds", "band"])
 @pytest.mark.parametrize(
-    "struct_type,gdal_type ", [("B", gdal.GDT_Byte), ("i", gdal.GDT_Int32)]
+    "struct_type,gdal_type ", [("B", gdal.GDT_UInt8), ("i", gdal.GDT_Int32)]
 )
 def test_vrt_read_complex_source_use_band_data_type_constraint(
     obj_type, struct_type, gdal_type
@@ -2495,12 +2645,12 @@ def test_vrt_read_top_and_bottom_strips_average():
 @pytest.mark.parametrize(
     "input_datatype,vrt_type,nodata,vrt_nodata,request_type",
     [
-        (gdal.GDT_Byte, "Byte", 0, 255, gdal.GDT_Byte),
-        (gdal.GDT_Byte, "Byte", 254, 255, gdal.GDT_Byte),
-        (gdal.GDT_Byte, "Int8", 254, 255, gdal.GDT_Byte),
-        (gdal.GDT_Byte, "Byte", 254, 127, gdal.GDT_Int8),
-        (gdal.GDT_Byte, "UInt16", 254, 255, gdal.GDT_Byte),
-        (gdal.GDT_Byte, "Byte", 254, 255, gdal.GDT_UInt16),
+        (gdal.GDT_UInt8, "Byte", 0, 255, gdal.GDT_UInt8),
+        (gdal.GDT_UInt8, "Byte", 254, 255, gdal.GDT_UInt8),
+        (gdal.GDT_UInt8, "Int8", 254, 255, gdal.GDT_UInt8),
+        (gdal.GDT_UInt8, "Byte", 254, 127, gdal.GDT_Int8),
+        (gdal.GDT_UInt8, "UInt16", 254, 255, gdal.GDT_UInt8),
+        (gdal.GDT_UInt8, "Byte", 254, 255, gdal.GDT_UInt16),
         (gdal.GDT_Int8, "Int8", 0, 127, gdal.GDT_Int8),
         (gdal.GDT_Int8, "Int16", 0, 127, gdal.GDT_Int8),
         (gdal.GDT_UInt16, "UInt16", 0, 65535, gdal.GDT_UInt16),
@@ -2524,7 +2674,7 @@ def test_vrt_read_complex_source_nodata(
 ):
     def get_array_type(dt):
         m = {
-            gdal.GDT_Byte: "B",
+            gdal.GDT_UInt8: "B",
             gdal.GDT_Int8: "b",
             gdal.GDT_UInt16: "H",
             gdal.GDT_Int16: "h",
@@ -2640,10 +2790,10 @@ def test_vrt_read_complex_source_nodata(
 ###############################################################################
 
 
-@pytest.mark.parametrize("data_type", [gdal.GDT_Byte, gdal.GDT_UInt16, gdal.GDT_Int16])
+@pytest.mark.parametrize("data_type", [gdal.GDT_UInt8, gdal.GDT_UInt16, gdal.GDT_Int16])
 def test_vrt_read_complex_source_nodata_out_of_range(tmp_vsimem, data_type):
 
-    if data_type == gdal.GDT_Byte:
+    if data_type == gdal.GDT_UInt8:
         array_type = "B"
     elif data_type == gdal.GDT_UInt16:
         array_type = "H"
@@ -3024,3 +3174,90 @@ def test_vrt_read_CheckCompatibleForDatasetIO():
     assert (
         another_vrt.GetMetadataItem("CheckCompatibleForDatasetIO()", "__DEBUG__") == "1"
     )
+
+
+###############################################################################
+# Fixes https://github.com/OSGeo/gdal/issues/13464
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_read_multithreaded_non_integer_coordinates_nearest(tmp_vsimem):
+
+    gdal.Translate(
+        tmp_vsimem / "test.tif",
+        "data/byte.tif",
+        creationOptions={"BLOCKYSIZE": "1", "COMPRESS": "DEFLATE"},
+    )
+    gdal.Translate(
+        tmp_vsimem / "test.vrt", tmp_vsimem / "test.tif", srcWin=[0.5, 0.5, 10, 10]
+    )
+
+    with gdal.Open(tmp_vsimem / "test.vrt") as ds:
+        expected = ds.GetRasterBand(1).ReadRaster()
+
+    with gdal.config_option("GDAL_NUM_THREADS", "2"):
+        with gdal.Open(tmp_vsimem / "test.vrt") as ds:
+            assert ds.GetRasterBand(1).ReadRaster() == expected
+
+
+###############################################################################
+# Fixes https://github.com/OSGeo/gdal/issues/13464
+
+
+@gdaltest.enable_exceptions()
+def test_vrt_read_multithreaded_non_integer_coordinates_nearest_two_sources(tmp_vsimem):
+
+    gdal.Translate(
+        tmp_vsimem / "test1.tif",
+        "data/byte.tif",
+        srcWin=[0, 0, 10, 20],
+        width=502,
+        height=1002,
+        creationOptions={"BLOCKYSIZE": "1", "COMPRESS": "DEFLATE"},
+    )
+    gdal.Translate(
+        tmp_vsimem / "test2.tif",
+        "data/byte.tif",
+        srcWin=[10, 0, 10, 20],
+        width=502,
+        height=1002,
+        creationOptions={"BLOCKYSIZE": "1", "COMPRESS": "DEFLATE"},
+    )
+
+    ds = gdal.Open("data/byte.tif")
+    gt = ds.GetGeoTransform()
+    extent = [
+        gt[0],
+        gt[3] + ds.RasterYSize * gt[5],
+        gt[0] + ds.RasterXSize * gt[1],
+        gt[3],
+    ]
+    ds = None
+
+    ds = gdal.Open(tmp_vsimem / "test1.tif")
+    gt = ds.GetGeoTransform()
+    res_big = gt[1]
+    ds = None
+
+    gdal.BuildVRT(
+        tmp_vsimem / "test.vrt",
+        [tmp_vsimem / "test1.tif", tmp_vsimem / "test2.tif"],
+        outputBounds=[
+            extent[0] + res_big / 2,
+            extent[1] + res_big / 2,
+            extent[2] - res_big / 2,
+            extent[3] - res_big / 2,
+        ],
+    )
+
+    with gdal.Open(tmp_vsimem / "test.vrt") as ds:
+        expected = ds.GetRasterBand(1).ReadRaster()
+
+    with gdal.config_option("GDAL_NUM_THREADS", "2"):
+        with gdal.Open(tmp_vsimem / "test.vrt") as ds:
+            assert ds.GetRasterBand(1).ReadRaster() == expected
+
+            assert (
+                ds.GetMetadataItem("MULTI_THREADED_RASTERIO_LAST_USED", "__DEBUG__")
+                == "0"
+            )

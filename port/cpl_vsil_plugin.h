@@ -24,7 +24,7 @@ namespace cpl
 {
 
 /************************************************************************/
-/*                     VSIPluginFilesystemHandler                         */
+/*                      VSIPluginFilesystemHandler                      */
 /************************************************************************/
 
 class VSIPluginHandle;
@@ -46,7 +46,7 @@ class VSIPluginFilesystemHandler : public VSIFilesystemHandler
 
     vsi_l_offset Tell(void *pFile);
     int Seek(void *pFile, vsi_l_offset nOffset, int nWhence);
-    size_t Read(void *pFile, void *pBuffer, size_t nSize, size_t nCount);
+    size_t Read(void *pFile, void *pBuffer, size_t nBytes);
     int ReadMultiRange(void *pFile, int nRanges, void **ppData,
                        const vsi_l_offset *panOffsets, const size_t *panSizes);
     void AdviseRead(void *pFile, int nRanges, const vsi_l_offset *panOffsets,
@@ -56,7 +56,7 @@ class VSIPluginFilesystemHandler : public VSIFilesystemHandler
     int Eof(void *pFile);
     int Error(void *pFile);
     void ClearErr(void *pFile);
-    size_t Write(void *pFile, const void *pBuffer, size_t nSize, size_t nCount);
+    size_t Write(void *pFile, const void *pBuffer, size_t nBytes);
     int Flush(void *pFile);
     int Truncate(void *pFile, vsi_l_offset nNewSize);
     int Close(void *pFile);
@@ -83,10 +83,10 @@ class VSIPluginFilesystemHandler : public VSIFilesystemHandler
 };
 
 /************************************************************************/
-/*                           VSIPluginHandle                              */
+/*                           VSIPluginHandle                            */
 /************************************************************************/
 
-class VSIPluginHandle : public VSIVirtualHandle
+class VSIPluginHandle final : public VSIVirtualHandle
 {
     CPL_DISALLOW_COPY_ASSIGN(VSIPluginHandle)
 
@@ -100,7 +100,7 @@ class VSIPluginHandle : public VSIVirtualHandle
 
     vsi_l_offset Tell() override;
     int Seek(vsi_l_offset nOffset, int nWhence) override;
-    size_t Read(void *pBuffer, size_t nSize, size_t nCount) override;
+    size_t Read(void *pBuffer, size_t nBytes) override;
     int ReadMultiRange(int nRanges, void **ppData,
                        const vsi_l_offset *panOffsets,
                        const size_t *panSizes) override;
@@ -111,7 +111,7 @@ class VSIPluginHandle : public VSIVirtualHandle
     void ClearErr() override;
     int Eof() override;
     int Error() override;
-    size_t Write(const void *pBuffer, size_t nSize, size_t nCount) override;
+    size_t Write(const void *pBuffer, size_t nBytes) override;
     int Flush() override;
     int Truncate(vsi_l_offset nNewSize) override;
     int Close() override;

@@ -71,15 +71,15 @@ class RPFTOCDataset final : public GDALPamDataset
         m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     }
 
-    virtual ~RPFTOCDataset()
+    ~RPFTOCDataset() override
     {
         CSLDestroy(papszSubDatasets);
         CSLDestroy(papszFileList);
     }
 
-    virtual char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
 
-    virtual char **GetFileList() override
+    char **GetFileList() override
     {
         return CSLDuplicate(papszFileList);
     }
@@ -92,7 +92,7 @@ class RPFTOCDataset final : public GDALPamDataset
         nRasterYSize = rasterYSize;
     }
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override
     {
         if (bGotGeoTransform)
         {
@@ -102,7 +102,7 @@ class RPFTOCDataset final : public GDALPamDataset
         return CE_Failure;
     }
 
-    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override
     {
         bGotGeoTransform = TRUE;
         m_gt = gt;
@@ -159,7 +159,7 @@ class RPFTOCSubDataset final : public VRTDataset
 
     ~RPFTOCSubDataset() override;
 
-    virtual char **GetFileList() override
+    char **GetFileList() override
     {
         return CSLDuplicate(papszFileList);
     }
@@ -296,23 +296,22 @@ class RPFTOCProxyRasterBandRGBA final : public GDALPamRasterBand
         nRasterYSize = poDSIn->GetRasterYSize();
         this->nBlockXSize = nBlockXSizeIn;
         this->nBlockYSize = nBlockYSizeIn;
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
         this->nBand = nBandIn;
         blockByteSize = nBlockXSize * nBlockYSize;
     }
 
-    virtual GDALColorInterp GetColorInterpretation() override
+    GDALColorInterp GetColorInterpretation() override
     {
         return static_cast<GDALColorInterp>(GCI_RedBand + nBand - 1);
     }
 
   protected:
-    virtual CPLErr IReadBlock(int nBlockXOff, int nBlockYOff,
-                              void *pImage) override;
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage) override;
 };
 
 /************************************************************************/
-/*                    Expand()                                          */
+/*                               Expand()                               */
 /************************************************************************/
 
 /* Expand the  array or indexed colors to an array of their corresponding R,G,B
@@ -346,7 +345,7 @@ void RPFTOCProxyRasterBandRGBA::Expand(void *pImage, const void *srcImage)
 }
 
 /************************************************************************/
-/*                    IReadBlock()                                      */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr RPFTOCProxyRasterBandRGBA::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -474,23 +473,23 @@ class RPFTOCProxyRasterBandPalette final : public GDALPamRasterBand
         nRasterYSize = poDSIn->GetRasterYSize();
         this->nBlockXSize = nBlockXSizeIn;
         this->nBlockYSize = nBlockYSizeIn;
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
         this->nBand = nBandIn;
         memset(remapLUT, 0, sizeof(remapLUT));
     }
 
-    virtual GDALColorInterp GetColorInterpretation() override
+    GDALColorInterp GetColorInterpretation() override
     {
         return GCI_PaletteIndex;
     }
 
-    virtual double GetNoDataValue(int *bHasNoDataValue) override
+    double GetNoDataValue(int *bHasNoDataValue) override
     {
         return (reinterpret_cast<RPFTOCProxyRasterDataSet *>(poDS))
             ->GetNoDataValue(bHasNoDataValue);
     }
 
-    virtual GDALColorTable *GetColorTable() override
+    GDALColorTable *GetColorTable() override
     {
         // TODO: This casting is a bit scary.
         return const_cast<GDALColorTable *>(
@@ -499,12 +498,11 @@ class RPFTOCProxyRasterBandPalette final : public GDALPamRasterBand
     }
 
   protected:
-    virtual CPLErr IReadBlock(int nBlockXOff, int nBlockYOff,
-                              void *pImage) override;
+    CPLErr IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage) override;
 };
 
 /************************************************************************/
-/*                    IReadBlock()                                      */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr RPFTOCProxyRasterBandPalette::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -569,7 +567,7 @@ CPLErr RPFTOCProxyRasterBandPalette::IReadBlock(int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                    RPFTOCProxyRasterDataSet()                         */
+/*                      RPFTOCProxyRasterDataSet()                      */
 /************************************************************************/
 
 RPFTOCProxyRasterDataSet::RPFTOCProxyRasterDataSet(
@@ -598,7 +596,7 @@ RPFTOCProxyRasterDataSet::RPFTOCProxyRasterDataSet(
 }
 
 /************************************************************************/
-/*                    SanityCheckOK()                                   */
+/*                           SanityCheckOK()                            */
 /************************************************************************/
 
 #define WARN_ON_FAIL(x)                                                        \
@@ -651,13 +649,13 @@ int RPFTOCProxyRasterDataSet::SanityCheckOK(GDALDataset *sourceDS)
     ERROR_ON_FAIL(src_nBlockYSize == nBlockYSize);
     WARN_ON_FAIL(sourceDS->GetRasterBand(1)->GetColorInterpretation() ==
                  GCI_PaletteIndex);
-    WARN_ON_FAIL(sourceDS->GetRasterBand(1)->GetRasterDataType() == GDT_Byte);
+    WARN_ON_FAIL(sourceDS->GetRasterBand(1)->GetRasterDataType() == GDT_UInt8);
 
     return checkOK;
 }
 
 /************************************************************************/
-/*                           MakeTOCEntryName()                         */
+/*                          MakeTOCEntryName()                          */
 /************************************************************************/
 
 static const char *MakeTOCEntryName(RPFTocEntry *tocEntry)
@@ -716,7 +714,7 @@ void RPFTOCDataset::AddSubDataset(const char *pszFilename,
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **RPFTOCDataset::GetMetadata(const char *pszDomain)
+CSLConstList RPFTOCDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "SUBDATASETS"))
@@ -844,7 +842,7 @@ GDALDataset *RPFTOCSubDataset::CreateDataSetFromTocEntry(
                 poSrcDS->GetRasterBand(1)->GetColorInterpretation() ==
                 GCI_PaletteIndex);
             ASSERT_CREATE_VRT(poSrcDS->GetRasterBand(1)->GetRasterDataType() ==
-                              GDT_Byte);
+                              GDT_UInt8);
             GDALClose(poSrcDS);
         }
 
@@ -885,7 +883,7 @@ GDALDataset *RPFTOCSubDataset::CreateDataSetFromTocEntry(
     /* option through the config option RPFTOC_FORCE_RGBA */
     if (isRGBA == FALSE)
     {
-        poVirtualDS->AddBand(GDT_Byte, nullptr);
+        poVirtualDS->AddBand(GDT_UInt8, nullptr);
         GDALRasterBand *poBand = poVirtualDS->GetRasterBand(1);
         poBand->SetColorInterpretation(GCI_PaletteIndex);
         nBands = 1;
@@ -954,7 +952,7 @@ GDALDataset *RPFTOCSubDataset::CreateDataSetFromTocEntry(
     {
         for (int i = 0; i < 4; i++)
         {
-            poVirtualDS->AddBand(GDT_Byte, nullptr);
+            poVirtualDS->AddBand(GDT_UInt8, nullptr);
             GDALRasterBand *poBand = poVirtualDS->GetRasterBand(i + 1);
             poBand->SetColorInterpretation(
                 static_cast<GDALColorInterp>(GCI_RedBand + i));
@@ -1049,7 +1047,7 @@ GDALDataset *RPFTOCSubDataset::CreateDataSetFromTocEntry(
 }
 
 /************************************************************************/
-/*                             IsNITFFileTOC()                          */
+/*                           IsNITFFileTOC()                            */
 /************************************************************************/
 
 /* Check whether this NITF file is a TOC file */
@@ -1069,7 +1067,7 @@ int RPFTOCDataset::IsNITFFileTOC(NITFFile *psFile)
 }
 
 /************************************************************************/
-/*                                OpenFileTOC()                         */
+/*                            OpenFileTOC()                             */
 /************************************************************************/
 
 /* Create a dataset from a TOC file */
@@ -1321,7 +1319,7 @@ GDALDataset *RPFTOCDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          GDALRegister_RPFTOC()                       */
+/*                        GDALRegister_RPFTOC()                         */
 /************************************************************************/
 
 void GDALRegister_RPFTOC()

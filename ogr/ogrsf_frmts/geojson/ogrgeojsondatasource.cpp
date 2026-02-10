@@ -23,6 +23,7 @@
 #include "cpl_conv.h"
 #include "cpl_error.h"
 #include "cpl_http.h"
+#include "cpl_multiproc.h"  // CPLSleep()
 #include "cpl_string.h"
 #include "cpl_vsi.h"
 #include "cpl_vsi_error.h"
@@ -45,7 +46,7 @@
 // #include "symbol_renames.h"
 
 /************************************************************************/
-/*                           OGRGeoJSONDataSource()                     */
+/*                        OGRGeoJSONDataSource()                        */
 /************************************************************************/
 
 OGRGeoJSONDataSource::OGRGeoJSONDataSource()
@@ -59,7 +60,7 @@ OGRGeoJSONDataSource::OGRGeoJSONDataSource()
 }
 
 /************************************************************************/
-/*                           ~OGRGeoJSONDataSource()                    */
+/*                       ~OGRGeoJSONDataSource()                        */
 /************************************************************************/
 
 OGRGeoJSONDataSource::~OGRGeoJSONDataSource()
@@ -68,10 +69,10 @@ OGRGeoJSONDataSource::~OGRGeoJSONDataSource()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr OGRGeoJSONDataSource::Close()
+CPLErr OGRGeoJSONDataSource::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -89,14 +90,13 @@ CPLErr OGRGeoJSONDataSource::Close()
 }
 
 /************************************************************************/
-/*                 DealWithOgrSchemaOpenOption()                       */
+/*                    DealWithOgrSchemaOpenOption()                     */
 /************************************************************************/
 
 bool OGRGeoJSONDataSource::DealWithOgrSchemaOpenOption(
     const GDALOpenInfo *poOpenInfo)
 {
-
-    std::string osFieldsSchemaOverrideParam =
+    const std::string osFieldsSchemaOverrideParam =
         CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "OGR_SCHEMA", "");
 
     if (!osFieldsSchemaOverrideParam.empty())
@@ -109,106 +109,28 @@ bool OGRGeoJSONDataSource::DealWithOgrSchemaOpenOption(
             return false;
         }
 
-        OGRSchemaOverride osSchemaOverride;
-        if (!osSchemaOverride.LoadFromJSON(osFieldsSchemaOverrideParam) ||
-            !osSchemaOverride.IsValid())
+        OGRSchemaOverride oSchemaOverride;
+        const auto nErrorCount = CPLGetErrorCounter();
+        if (!oSchemaOverride.LoadFromJSON(osFieldsSchemaOverrideParam) ||
+            !oSchemaOverride.IsValid())
         {
+            if (nErrorCount == CPLGetErrorCounter())
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Content of OGR_SCHEMA in %s is not valid",
+                         osFieldsSchemaOverrideParam.c_str());
+            }
             return false;
         }
 
-        const auto &oLayerOverrides = osSchemaOverride.GetLayerOverrides();
-        for (const auto &oLayer : oLayerOverrides)
-        {
-            const auto &oLayerName = oLayer.first;
-            const auto &oLayerFieldOverride = oLayer.second;
-            const bool bIsFullOverride{oLayerFieldOverride.IsFullOverride()};
-            auto oFieldOverrides = oLayerFieldOverride.GetFieldOverrides();
-            std::vector<OGRFieldDefn *> aoFields;
-
-            CPLDebug("GeoJSON", "Applying schema override for layer %s",
-                     oLayerName.c_str());
-
-            // Fail if the layer name does not exist
-            auto poLayer = GetLayerByName(oLayerName.c_str());
-            if (poLayer == nullptr)
-            {
-                CPLError(CE_Failure, CPLE_AppDefined,
-                         "Layer %s not found in GeoJSON file",
-                         oLayerName.c_str());
-                return false;
-            }
-
-            // Patch field definitions
-            auto poLayerDefn = poLayer->GetLayerDefn();
-            for (int i = 0; i < poLayerDefn->GetFieldCount(); i++)
-            {
-                auto poFieldDefn = poLayerDefn->GetFieldDefn(i);
-                auto oFieldOverride =
-                    oFieldOverrides.find(poFieldDefn->GetNameRef());
-                if (oFieldOverride != oFieldOverrides.cend())
-                {
-                    if (oFieldOverride->second.GetFieldType().has_value())
-                        whileUnsealing(poFieldDefn)
-                            ->SetType(
-                                oFieldOverride->second.GetFieldType().value());
-                    if (oFieldOverride->second.GetFieldWidth().has_value())
-                        whileUnsealing(poFieldDefn)
-                            ->SetWidth(
-                                oFieldOverride->second.GetFieldWidth().value());
-                    if (oFieldOverride->second.GetFieldPrecision().has_value())
-                        whileUnsealing(poFieldDefn)
-                            ->SetPrecision(
-                                oFieldOverride->second.GetFieldPrecision()
-                                    .value());
-                    if (oFieldOverride->second.GetFieldSubType().has_value())
-                        whileUnsealing(poFieldDefn)
-                            ->SetSubType(
-                                oFieldOverride->second.GetFieldSubType()
-                                    .value());
-                    if (oFieldOverride->second.GetFieldName().has_value())
-                        whileUnsealing(poFieldDefn)
-                            ->SetName(oFieldOverride->second.GetFieldName()
-                                          .value()
-                                          .c_str());
-
-                    if (bIsFullOverride)
-                    {
-                        aoFields.push_back(poFieldDefn);
-                    }
-                    oFieldOverrides.erase(oFieldOverride);
-                }
-            }
-
-            // Error if any field override is not found
-            if (!oFieldOverrides.empty())
-            {
-                CPLError(CE_Failure, CPLE_AppDefined,
-                         "Field %s not found in layer %s",
-                         oFieldOverrides.cbegin()->first.c_str(),
-                         oLayerName.c_str());
-                return false;
-            }
-
-            // Remove fields not in the override
-            if (bIsFullOverride)
-            {
-                for (int i = poLayerDefn->GetFieldCount() - 1; i >= 0; i--)
-                {
-                    auto poFieldDefn = poLayerDefn->GetFieldDefn(i);
-                    if (std::find(aoFields.begin(), aoFields.end(),
-                                  poFieldDefn) == aoFields.end())
-                    {
-                        whileUnsealing(poLayerDefn)->DeleteFieldDefn(i);
-                    }
-                }
-            }
-        }
+        if (!oSchemaOverride.DefaultApply(this, "GeoJSON"))
+            return false;
     }
     return true;
 }
 
 /************************************************************************/
-/*                           Open()                                     */
+/*                                Open()                                */
 /************************************************************************/
 
 int OGRGeoJSONDataSource::Open(GDALOpenInfo *poOpenInfo,
@@ -340,7 +262,7 @@ int OGRGeoJSONDataSource::GetLayerCount() const
 }
 
 /************************************************************************/
-/*                           GetLayer()                                 */
+/*                              GetLayer()                              */
 /************************************************************************/
 
 const OGRLayer *OGRGeoJSONDataSource::GetLayer(int nLayer) const
@@ -357,7 +279,7 @@ const OGRLayer *OGRGeoJSONDataSource::GetLayer(int nLayer) const
 }
 
 /************************************************************************/
-/*                           ICreateLayer()                             */
+/*                            ICreateLayer()                            */
 /************************************************************************/
 
 OGRLayer *
@@ -761,11 +683,11 @@ int OGRGeoJSONDataSource::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                              Create()                                */
+/*                               Create()                               */
 /************************************************************************/
 
 int OGRGeoJSONDataSource::Create(const char *pszName,
-                                 char ** /* papszOptions */)
+                                 CSLConstList /* papszOptions */)
 {
     CPLAssert(nullptr == fpOut_);
 
@@ -805,7 +727,7 @@ int OGRGeoJSONDataSource::Create(const char *pszName,
 }
 
 /************************************************************************/
-/*                           SetGeometryTranslation()                   */
+/*                       SetGeometryTranslation()                       */
 /************************************************************************/
 
 void OGRGeoJSONDataSource::SetGeometryTranslation(GeometryTranslation type)
@@ -814,7 +736,7 @@ void OGRGeoJSONDataSource::SetGeometryTranslation(GeometryTranslation type)
 }
 
 /************************************************************************/
-/*                           SetAttributesTranslation()                 */
+/*                      SetAttributesTranslation()                      */
 /************************************************************************/
 
 void OGRGeoJSONDataSource::SetAttributesTranslation(AttributesTranslation type)
@@ -823,7 +745,7 @@ void OGRGeoJSONDataSource::SetAttributesTranslation(AttributesTranslation type)
 }
 
 /************************************************************************/
-/*                  PRIVATE FUNCTIONS IMPLEMENTATION                    */
+/*                   PRIVATE FUNCTIONS IMPLEMENTATION                   */
 /************************************************************************/
 
 bool OGRGeoJSONDataSource::Clear()
@@ -860,7 +782,7 @@ bool OGRGeoJSONDataSource::Clear()
 }
 
 /************************************************************************/
-/*                           ReadFromFile()                             */
+/*                            ReadFromFile()                            */
 /************************************************************************/
 
 int OGRGeoJSONDataSource::ReadFromFile(GDALOpenInfo *poOpenInfo,
@@ -902,7 +824,7 @@ int OGRGeoJSONDataSource::ReadFromFile(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                           ReadFromService()                          */
+/*                          ReadFromService()                           */
 /************************************************************************/
 
 int OGRGeoJSONDataSource::ReadFromService(GDALOpenInfo *poOpenInfo,
@@ -995,7 +917,7 @@ int OGRGeoJSONDataSource::ReadFromService(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                       RemoveJSonPStuff()                             */
+/*                          RemoveJSonPStuff()                          */
 /************************************************************************/
 
 void OGRGeoJSONDataSource::RemoveJSonPStuff()
@@ -1020,7 +942,7 @@ void OGRGeoJSONDataSource::RemoveJSonPStuff()
 }
 
 /************************************************************************/
-/*                           LoadLayers()                               */
+/*                             LoadLayers()                             */
 /************************************************************************/
 
 void OGRGeoJSONDataSource::LoadLayers(GDALOpenInfo *poOpenInfo,
@@ -1191,7 +1113,7 @@ void OGRGeoJSONDataSource::LoadLayers(GDALOpenInfo *poOpenInfo,
 }
 
 /************************************************************************/
-/*                          SetOptionsOnReader()                        */
+/*                         SetOptionsOnReader()                         */
 /************************************************************************/
 
 void OGRGeoJSONDataSource::SetOptionsOnReader(GDALOpenInfo *poOpenInfo,
@@ -1283,7 +1205,7 @@ void OGRGeoJSONDataSource::CheckExceededTransferLimit(json_object *poObj)
 }
 
 /************************************************************************/
-/*                            AddLayer()                                */
+/*                              AddLayer()                              */
 /************************************************************************/
 
 void OGRGeoJSONDataSource::AddLayer(OGRGeoJSONLayer *poLayer)
@@ -1300,7 +1222,7 @@ void OGRGeoJSONDataSource::AddLayer(OGRGeoJSONLayer *poLayer)
 }
 
 /************************************************************************/
-/*                            FlushCache()                              */
+/*                             FlushCache()                             */
 /************************************************************************/
 
 CPLErr OGRGeoJSONDataSource::FlushCache(bool /*bAtClosing*/)

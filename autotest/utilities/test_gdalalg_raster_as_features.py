@@ -32,8 +32,16 @@ def test_gdalalg_raster_as_features_multiple_bands(alg, tmp_vsimem):
     alg["output"] = tmp_vsimem / "out.gpkg"
     alg["geometry-type"] = "point"
 
-    assert alg.Run()
+    tab_pct = [0]
+
+    def my_progress(pct, msg, user_data):
+        assert pct >= tab_pct[0]
+        tab_pct[0] = pct
+        return True
+
+    assert alg.Run(my_progress)
     assert alg.Finalize()
+    assert tab_pct[0] == 1
 
     with gdal.OpenEx(tmp_vsimem / "out.gpkg", gdal.OF_VECTOR) as ds:
         assert ds.GetLayerCount() == 1
@@ -168,20 +176,30 @@ def test_gdalalg_raster_as_features_geom_type_invalid(alg):
         alg["geometry-type"] = "LineString"
 
 
-@pytest.mark.require_driver("GPKG")
 def test_gdalalg_raster_as_features_layer_name(alg, tmp_vsimem):
 
     alg["input"] = "../gcore/data/byte.tif"
-    alg["output"] = tmp_vsimem / "out.gpkg"
-    alg["input-layer"] = "layer123"
+    alg["output-format"] = "stream"
+    alg["output-layer"] = "layer123"
 
     assert alg.Run()
 
     assert alg["output"]
     ds = alg["output"].GetDataset()
     lyr = ds.GetLayer("layer123")
-
     assert lyr is not None
+    assert lyr.GetLayerDefn().GetName() == "layer123"
+
+
+def test_gdalalg_raster_as_features_layer_name_pipeline(alg, tmp_vsimem):
+
+    with gdal.alg.pipeline(
+        pipeline="read ../gcore/data/byte.tif ! as-features --output-layer layer123"
+    ) as alg:
+        ds = alg["output"].GetDataset()
+        lyr = ds.GetLayer("layer123")
+        assert lyr is not None
+        assert lyr.GetLayerDefn().GetName() == "layer123"
 
 
 def test_gdalalg_raster_as_features_zero_bands(alg, tmp_vsimem):

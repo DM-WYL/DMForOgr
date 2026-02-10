@@ -13,6 +13,9 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "rcmdrivercore.h"
 
 int RCMDatasetIdentify(GDALOpenInfo *poOpenInfo)
@@ -97,7 +100,7 @@ int RCMDatasetIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                    RCMDriverSetCommonMetadata()                      */
+/*                     RCMDriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void RCMDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -114,7 +117,7 @@ void RCMDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                     DeclareDeferredRCMPlugin()                       */
+/*                      DeclareDeferredRCMPlugin()                      */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

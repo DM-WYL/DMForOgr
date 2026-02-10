@@ -138,7 +138,7 @@ def test_gdalalg_vector_convert_progress(tmp_vsimem):
 def test_gdalalg_vector_wrong_layer_name(tmp_vsimem):
 
     convert = get_convert_alg()
-    with pytest.raises(Exception, match="Couldn't fetch requested layer"):
+    with pytest.raises(Exception, match="Cannot find source layer 'invalid'"):
         convert.ParseRunAndFinalize(
             [
                 "../ogr/data/poly.shp",
@@ -235,7 +235,8 @@ def test_gdalalg_vector_convert_overwrite_non_dataset_file(tmp_vsimem):
     assert convert.Run()
 
 
-def test_gdalalg_vector_convert_skip_errors(tmp_vsimem):
+@pytest.mark.parametrize("skip_errors", (True, False))
+def test_gdalalg_vector_convert_skip_errors(tmp_vsimem, skip_errors):
 
     src_ds = gdal.GetDriverByName("MEM").CreateVector("")
     lyr = src_ds.CreateLayer("test")
@@ -252,11 +253,18 @@ def test_gdalalg_vector_convert_skip_errors(tmp_vsimem):
     convert = get_convert_alg()
     convert["input"] = src_ds
     convert["output"] = tmp_vsimem / "out.shp"
-    convert["skip-errors"] = True
-    assert convert.Run()
+    convert["skip-errors"] = skip_errors
 
-    out_ds = convert["output"].GetDataset()
-    assert out_ds.GetLayer(0).GetFeatureCount() == 2
+    if skip_errors:
+        assert convert.Run()
+
+        out_ds = convert["output"].GetDataset()
+        assert out_ds.GetLayer(0).GetFeatureCount() == 2
+    else:
+        with pytest.raises(
+            Exception, match="Failed to write layer 'test'. Use --skip-errors"
+        ):
+            convert.Run()
 
 
 def test_gdalalg_vector_convert_to_non_available_db_driver():
@@ -289,6 +297,44 @@ def test_gdalalg_vector_convert_output_format_not_guessed(tmp_vsimem):
         convert.Run()
 
 
+@pytest.mark.parametrize(
+    "driver", ("GeoJSON", "GPKG", "ESRI Shapefile", "CSV", "MapInfo File")
+)
+def test_gdalalg_vector_convert_output_format_multiple_layers(tmp_vsimem, driver):
+
+    if not gdal.GetDriverByName(driver):
+        pytest.skip(f"Driver {driver} not available")
+
+    ext = {
+        "GeoJSON": ".geojson",
+        "GPKG": ".gpkg",
+        "ESRI Shapefile": "",
+        "CSV": "",
+        "MapInfo File": "",
+    }
+
+    src_ds = gdal.GetDriverByName("MEM").CreateVector("")
+    with gdal.OpenEx("../ogr/data/poly.shp") as poly_ds:
+        src_ds.CopyLayer(poly_ds.GetLayer(0), "poly_1")
+        src_ds.CopyLayer(poly_ds.GetLayer(0), "poly_2")
+
+    dst_fname = tmp_vsimem / f"out{ext[driver]}"
+
+    convert = get_convert_alg()
+    convert["input"] = src_ds
+    convert["output"] = dst_fname
+    convert["output-format"] = driver
+
+    if driver == "GeoJSON":
+        with pytest.raises(
+            Exception, match="GeoJSON driver does not support multiple layers"
+        ):
+            convert.Run()
+        assert gdal.VSIStatL(dst_fname) is None
+    else:
+        assert convert.Run()
+
+
 @pytest.mark.require_driver("GeoJSON")
 def test_gdalalg_vector_convert_to_stdout():
 
@@ -306,3 +352,89 @@ def test_gdalalg_vector_convert_to_stdout():
 
     with ogr.Open(out) as ds:
         assert ds.GetLayer(0).GetFeatureCount() == 1
+
+
+###############################################################################
+
+
+def _get_sqlite_version():
+
+    if gdal.GetDriverByName("GPKG") is None:
+        return (0, 0, 0)
+
+    ds = ogr.Open(":memory:")
+    sql_lyr = ds.ExecuteSQL("SELECT sqlite_version()")
+    f = sql_lyr.GetNextFeature()
+    version = f.GetField(0)
+    ds.ReleaseResultSet(sql_lyr)
+    return tuple([int(x) for x in version.split(".")[0:3]])
+
+
+@pytest.mark.skipif(
+    _get_sqlite_version() < (3, 24, 0),
+    reason="sqlite >= 3.24 needed",
+)
+@pytest.mark.parametrize("output_format", ["GPKG", "SQLite"])
+def test_gdalalg_vector_convert_upsert(tmp_vsimem, output_format):
+
+    filename = tmp_vsimem / (
+        "test_ogr_gpkg_upsert_without_fid." + output_format.lower()
+    )
+
+    def create_gpkg_file():
+        ds = gdal.GetDriverByName(output_format).Create(
+            filename, 0, 0, 0, gdal.GDT_Unknown
+        )
+        lyr = ds.CreateLayer("foo")
+        assert lyr.CreateField(ogr.FieldDefn("other", ogr.OFTString)) == ogr.OGRERR_NONE
+        unique_field = ogr.FieldDefn("unique_field", ogr.OFTString)
+        unique_field.SetUnique(True)
+        assert lyr.CreateField(unique_field) == ogr.OGRERR_NONE
+        for i in range(5):
+            f = ogr.Feature(lyr.GetLayerDefn())
+            f.SetField("unique_field", i + 1)
+            f.SetGeometryDirectly(ogr.CreateGeometryFromWkt("POINT (%d %d)" % (i, i)))
+            assert lyr.CreateFeature(f) == ogr.OGRERR_NONE
+        ds = None
+
+    create_gpkg_file()
+
+    def create_src_file():
+        src_filename = tmp_vsimem / "test_ogr_gpkg_upsert_src.gpkg"
+        srcDS = gdal.GetDriverByName("GPKG").Create(
+            src_filename, 0, 0, 0, gdal.GDT_Unknown
+        )
+        lyr = srcDS.CreateLayer("foo")
+        assert lyr.CreateField(ogr.FieldDefn("other", ogr.OFTString)) == ogr.OGRERR_NONE
+        unique_field = ogr.FieldDefn("unique_field", ogr.OFTString)
+        unique_field.SetUnique(True)
+        assert lyr.CreateField(unique_field) == ogr.OGRERR_NONE
+
+        f = ogr.Feature(lyr.GetLayerDefn())
+        f.SetField("unique_field", "2")
+        f.SetField("other", "foo")
+        f.SetGeometryDirectly(ogr.CreateGeometryFromWkt("POINT (10 10)"))
+        lyr.CreateFeature(f)
+        return srcDS
+
+    if output_format == "SQLite":
+        with pytest.raises(Exception, match="SQLite driver doest not support upsert"):
+            gdal.Run(
+                "vector",
+                "convert",
+                input=create_src_file(),
+                output=filename,
+                upsert=True,
+            )
+    else:
+        gdal.Run(
+            "vector", "convert", input=create_src_file(), output=filename, upsert=True
+        )
+
+        ds = ogr.Open(filename)
+        lyr = ds.GetLayer(0)
+        f = lyr.GetFeature(2)
+        assert f["unique_field"] == "2"
+        assert f["other"] == "foo"
+        assert f.GetGeometryRef().ExportToWkt() == "POINT (10 10)"
+        ds = None

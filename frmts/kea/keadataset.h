@@ -24,12 +24,12 @@ class KEADataset final : public GDALDataset
 {
     static H5::H5File *CreateLL(const char *pszFilename, int nXSize, int nYSize,
                                 int nBands, GDALDataType eType,
-                                char **papszParamList);
+                                CSLConstList papszParamList);
 
   public:
     // constructor/destructor
     KEADataset(H5::H5File *keaImgH5File, GDALAccess eAccess);
-    ~KEADataset();
+    ~KEADataset() override;
 
     // static methods that handle open and creation
     // the driver class has pointers to these
@@ -37,9 +37,9 @@ class KEADataset final : public GDALDataset
     static int Identify(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBands, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
     static GDALDataset *CreateCopy(const char *pszFilename, GDALDataset *pSrcDs,
-                                   int bStrict, char **papszParamList,
+                                   int bStrict, CSLConstList papszParamList,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 
@@ -59,12 +59,13 @@ class KEADataset final : public GDALDataset
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain = "") override;
 
-    char **GetMetadata(const char *pszDomain = "") override;
-    CPLErr SetMetadata(char **papszMetadata,
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
+    CPLErr SetMetadata(CSLConstList papszMetadata,
                        const char *pszDomain = "") override;
 
     // virtual method for adding new image bands
-    CPLErr AddBand(GDALDataType eType, char **papszOptions = nullptr) override;
+    CPLErr AddBand(GDALDataType eType,
+                   CSLConstList papszOptions = nullptr) override;
 
     // GCPs
     int GetGCPCount() override;
@@ -75,12 +76,11 @@ class KEADataset final : public GDALDataset
 
   protected:
     // this method builds overviews for the specified bands.
-    virtual CPLErr IBuildOverviews(const char *pszResampling, int nOverviews,
-                                   const int *panOverviewList, int nListBands,
-                                   const int *panBandList,
-                                   GDALProgressFunc pfnProgress,
-                                   void *pProgressData,
-                                   CSLConstList papszOptions) override;
+    CPLErr IBuildOverviews(const char *pszResampling, int nOverviews,
+                           const int *panOverviewList, int nListBands,
+                           const int *panBandList, GDALProgressFunc pfnProgress,
+                           void *pProgressData,
+                           CSLConstList papszOptions) override;
 
     // internal method to update m_papszMetadataList
     void UpdateMetadataList();

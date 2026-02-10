@@ -61,6 +61,7 @@ add_library(
   gdal_thread_pool.cpp
   nasakeywordhandler.cpp
   tiff_common.cpp
+  enviutils.cpp
 )
 
 add_library(gcore_gdal_misc OBJECT gdal_misc.cpp)
@@ -77,7 +78,7 @@ if (USE_PRECOMPILED_HEADERS)
     target_precompile_headers(gcore REUSE_FROM gdal_priv_header)
 endif()
 add_dependencies(gcore generate_gdal_version_h)
-target_compile_options(gcore PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX})
+target_compile_options(gcore PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX} ${WFLAG_DOUBLE_PROMOTION})
 target_include_directories(
   gcore
   PRIVATE $<TARGET_PROPERTY:ogrsf_generic,SOURCE_DIR> $<TARGET_PROPERTY:gdal_MEM,SOURCE_DIR>
@@ -211,6 +212,33 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   gdal_target_link_libraries(gcore PRIVATE psapi)
 endif ()
 
+if (GDAL_USE_OPENMP AND OpenMP_C_LIBRARIES)
+    gdal_target_link_libraries(gcore PRIVATE ${OpenMP_C_LIBRARIES})
+endif()
+
+# Build some files with AVX2 and FMA, if those are not by default enabled,
+# and detect at runtime if we can use them
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$" AND
+    (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" OR
+     CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+     (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)) AND
+    HAVE_AVX2_AT_COMPILE_TIME AND
+    HAVE_FMA_AT_COMPILE_TIME AND
+    (NOT HAVE_AVX2_FMA_WITHOUT_FLAG) AND
+    (NOT "${GDAL_AVX2_FLAG}" STREQUAL "") AND (NOT "${GDAL_FMA_FLAG}" STREQUAL ""))
+
+  target_compile_definitions(gcore PRIVATE CAN_DETECT_AVX2_FMA_AT_RUNTIME)
+
+  add_library(gcore_avx2_fma OBJECT gdal_matrix_avx2_fma.cpp)
+  add_dependencies(gcore_avx2_fma generate_gdal_version_h)
+  target_compile_options(gcore_avx2_fma PRIVATE ${WFLAG_DOUBLE_PROMOTION})
+  gdal_standard_includes(gcore_avx2_fma)
+  set_property(TARGET gcore_avx2_fma PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
+  set_property(TARGET gcore_avx2_fma PROPERTY COMPILE_FLAGS ${GDAL_AVX2_FLAG})
+  set_property(TARGET gcore_avx2_fma PROPERTY COMPILE_FLAGS ${GDAL_FMA_FLAG})
+  target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:gcore_avx2_fma>)
+endif ()
+
 include(TargetPublicHeader)
 target_public_header(
   TARGET
@@ -218,12 +246,36 @@ target_public_header(
   HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/gdal_version_full/gdal_version.h
   gdal.h
+  gdal_raster_cpp.h
+  gdal_multidim_cpp.h
+  gdal_vector_cpp.h
+  gdal_multidomainmetadata.h
+  gdal_majorobject.h
+  gdal_defaultoverviews.h
+  gdal_openinfo.h
+  gdal_gcp.h
+  gdal_geotransform.h
+  gdal_dataset.h
+  gdal_rasterblock.h
+  gdal_colortable.h
+  gdal_rasterband.h
+  gdal_computedrasterband.h
+  gdal_maskbands.h
+  gdal_driver.h
+  gdal_drivermanager.h
+  gdal_asyncreader.h
+  gdal_multidim.h
+  gdal_relationship.h
+  gdal_cpp_functions.h
   gdal_fwd.h
   gdalalgorithm.h
+  gdalalgorithm_c.h
+  gdalalgorithm_cpp.h
   gdaljp2metadata.h
   gdaljp2abstractdataset.h
   gdal_frmts.h
   gdal_pam.h
+  gdal_pam_multidim.h
   gdal_priv.h
   gdal_proxy.h
   gdal_rat.h

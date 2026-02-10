@@ -20,6 +20,7 @@
 #include "gmlutils.h"
 
 #include <memory>
+#include <set>
 #include <vector>
 
 class OGRGMLDataSource;
@@ -32,16 +33,17 @@ typedef enum
 } ReadMode;
 
 /************************************************************************/
-/*                            OGRGMLLayer                               */
+/*                             OGRGMLLayer                              */
 /************************************************************************/
 
 class OGRGMLLayer final : public OGRLayer
 {
     OGRFeatureDefn *poFeatureDefn;
 
-    GIntBig iNextGMLId;
-    bool bInvalidFIDFound;
-    char *pszFIDPrefix;
+    GIntBig m_iNextGMLId = 0;
+    bool m_bInvalidFIDFound = false;
+    char *m_pszFIDPrefix = nullptr;
+    std::set<GIntBig> m_oSetFIDs{};
 
     bool bWriter;
 
@@ -49,7 +51,8 @@ class OGRGMLLayer final : public OGRLayer
 
     GMLFeatureClass *poFClass;
 
-    void *hCacheSRS;
+    std::unique_ptr<OGRGML_SRSCache, decltype(&OGRGML_SRSCache_Destroy)>
+        m_srsCache{OGRGML_SRSCache_Create(), OGRGML_SRSCache_Destroy};
 
     bool bUseOldFIDFormat;
 
@@ -60,7 +63,7 @@ class OGRGMLLayer final : public OGRLayer
   public:
     OGRGMLLayer(const char *pszName, bool bWriter, OGRGMLDataSource *poDS);
 
-    virtual ~OGRGMLLayer();
+    ~OGRGMLLayer() override;
 
     GDALDataset *GetDataset() override;
 
@@ -171,11 +174,11 @@ class OGRGMLDataSource final : public GDALDataset
 
   public:
     OGRGMLDataSource();
-    virtual ~OGRGMLDataSource();
+    ~OGRGMLDataSource() override;
 
     bool Open(GDALOpenInfo *poOpenInfo);
-    CPLErr Close() override;
-    bool Create(const char *pszFile, char **papszOptions);
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
+    bool Create(const char *pszFile, CSLConstList papszOptions);
 
     int GetLayerCount() const override
     {
@@ -300,10 +303,10 @@ class OGRGMLDataSource final : public GDALDataset
         return m_bWriteGlobalSRS;
     }
 
-    virtual OGRLayer *ExecuteSQL(const char *pszSQLCommand,
-                                 OGRGeometry *poSpatialFilter,
-                                 const char *pszDialect) override;
-    virtual void ReleaseResultSet(OGRLayer *poResultsSet) override;
+    OGRLayer *ExecuteSQL(const char *pszSQLCommand,
+                         OGRGeometry *poSpatialFilter,
+                         const char *pszDialect) override;
+    void ReleaseResultSet(OGRLayer *poResultsSet) override;
 
     static bool CheckHeader(const char *pszStr);
 };

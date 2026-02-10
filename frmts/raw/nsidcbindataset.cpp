@@ -12,6 +12,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_spatialref.h"
 #include "rawdataset.h"
 
@@ -150,7 +151,7 @@ NSIDCbinRasterBand::NSIDCbinRasterBand(GDALDataset *poDSIn, int nBandIn,
 }
 
 /************************************************************************/
-/*                           ~NSIDCbinRasterBand()                      */
+/*                        ~NSIDCbinRasterBand()                         */
 /************************************************************************/
 
 NSIDCbinRasterBand::~NSIDCbinRasterBand()
@@ -189,7 +190,7 @@ double NSIDCbinRasterBand::GetScale(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                            NSIDCbinDataset()                         */
+/*                          NSIDCbinDataset()                           */
 /************************************************************************/
 
 NSIDCbinDataset::NSIDCbinDataset() : fp(nullptr), m_oSRS(OGRSpatialReference())
@@ -197,7 +198,7 @@ NSIDCbinDataset::NSIDCbinDataset() : fp(nullptr), m_oSRS(OGRSpatialReference())
 }
 
 /************************************************************************/
-/*                            ~NSIDCbinDataset()                        */
+/*                          ~NSIDCbinDataset()                          */
 /************************************************************************/
 
 NSIDCbinDataset::~NSIDCbinDataset()
@@ -307,7 +308,7 @@ GDALDataset *NSIDCbinDataset::Open(GDALOpenInfo *poOpenInfo)
 
     auto poBand = std::make_unique<NSIDCbinRasterBand>(
         poDS.get(), 1, poDS->fp, 300, nBytesPerSample, poDS->nRasterXSize,
-        GDT_Byte);
+        GDT_UInt8);
     if (!poBand->IsValid())
         return nullptr;
     poDS->SetBand(1, std::move(poBand));
@@ -420,7 +421,7 @@ CPLErr NSIDCbinDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                             GetUnitType()                            */
+/*                            GetUnitType()                             */
 /************************************************************************/
 
 const char *NSIDCbinRasterBand::GetUnitType()
@@ -436,7 +437,7 @@ const char *NSIDCbinRasterBand::GetUnitType()
 }
 
 /************************************************************************/
-/*                          GDALRegister_NSIDCbin()                        */
+/*                       GDALRegister_NSIDCbin()                        */
 /************************************************************************/
 
 void GDALRegister_NSIDCbin()

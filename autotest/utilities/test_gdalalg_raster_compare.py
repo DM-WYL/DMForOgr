@@ -417,9 +417,9 @@ def test_gdalalg_raster_compare_geotransform():
 @pytest.mark.parametrize(
     "dt,stype,v1,v2",
     [
-        (gdal.GDT_Byte, "B", 255, 255),
-        (gdal.GDT_Byte, "B", 255, 0),
-        (gdal.GDT_Byte, "B", 0, 255),
+        (gdal.GDT_UInt8, "B", 255, 255),
+        (gdal.GDT_UInt8, "B", 255, 0),
+        (gdal.GDT_UInt8, "B", 0, 255),
         (gdal.GDT_Int8, "b", 127, 127),
         (gdal.GDT_Int8, "b", -128, -128),
         (gdal.GDT_Int8, "b", 127, -128),
@@ -554,10 +554,193 @@ def test_gdalalg_raster_compare_pixel(dt, stype, v1, v2, band_interleaved):
             assert str(abs(v1 - v2)) in alg["output-string"]
 
 
+def test_gdalalg_raster_compare_float_a_one_b_one():
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(1)
+    ds_b = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(1)
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        assert alg["output-string"] == ""
+
+
+def test_gdalalg_raster_compare_float_a_one_b_two():
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(1)
+    ds_b = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(2)
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 17" in alg["output-string"]
+        assert "maximum pixel value difference: 1.0" in alg["output-string"]
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_b,
+        reference=ds_a,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 17" in alg["output-string"]
+        assert "maximum pixel value difference: 1.0" in alg["output-string"]
+
+
+def test_gdalalg_raster_compare_float_a_nan_b_one():
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(float("nan"))
+    ds_b = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(1)
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 17" in alg["output-string"]
+        assert "maximum pixel value difference: 0.0" in alg["output-string"]
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_b,
+        reference=ds_a,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 17" in alg["output-string"]
+        assert "maximum pixel value difference: 0.0" in alg["output-string"]
+
+
+@pytest.mark.parametrize("idx", [i for i in range(5)])
+def test_gdalalg_raster_compare_float_a_nan_b_one_but_at_one_index(idx):
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 5, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(float("nan"))
+    ds_a.GetRasterBand(1).WriteRaster(idx, 0, 1, 1, b"\x00\x00\x00\x00")
+    ds_b = gdal.GetDriverByName("MEM").Create("", 5, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(1)
+    ds_b.GetRasterBand(1).WriteRaster(idx, 0, 1, 1, b"\x00\x00\x00\x00")
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 4" in alg["output-string"]
+        assert "maximum pixel value difference: 0.0" in alg["output-string"]
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_b,
+        reference=ds_a,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 4" in alg["output-string"]
+        assert "maximum pixel value difference: 0.0" in alg["output-string"]
+
+
+def test_gdalalg_raster_compare_float_a_nan_b_minus_nan():
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(float("nan"))
+    ds_b = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(-float("nan"))
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        assert alg["output-string"] == ""
+
+
+def test_gdalalg_raster_compare_float_zero_and_minus_zero():
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(0)
+    ds_b = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(-0)
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        alg["output-string"] == ""
+
+
+def test_gdalalg_raster_compare_float_inf():
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(float("inf"))
+    ds_b = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(float("inf"))
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        assert alg["output-string"] == ""
+
+
+def test_gdalalg_raster_compare_float_inf_and_minus_inf():
+
+    ds_a = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_a.GetRasterBand(1).Fill(float("inf"))
+    ds_b = gdal.GetDriverByName("MEM").Create("", 17, 1, 1, gdal.GDT_Float32)
+    ds_b.GetRasterBand(1).Fill(float("-inf"))
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_a,
+        reference=ds_b,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 17" in alg["output-string"]
+        assert "maximum pixel value difference: inf" in alg["output-string"]
+
+    with gdal.Run(
+        "raster",
+        "compare",
+        input=ds_b,
+        reference=ds_a,
+        skip_binary=True,
+    ) as alg:
+        assert "pixels differing: 17" in alg["output-string"]
+        assert "maximum pixel value difference: inf" in alg["output-string"]
+
+
 def test_gdalalg_raster_compare_pixel_interleaved_progress():
 
     ds = gdal.GetDriverByName("MEM").Create(
-        "", 1, 1, 16, gdal.GDT_Byte, options=["INTERLEAVE=PIXEL"]
+        "", 1, 1, 16, gdal.GDT_UInt8, options=["INTERLEAVE=PIXEL"]
     )
 
     tab_pct = [0]
@@ -582,7 +765,7 @@ def test_gdalalg_raster_compare_pixel_interleaved_progress():
 def test_gdalalg_raster_compare_pixel_interleaved_progress_interrupted():
 
     ds = gdal.GetDriverByName("MEM").Create(
-        "", 1, 1, 16, gdal.GDT_Byte, options=["INTERLEAVE=PIXEL"]
+        "", 1, 1, 16, gdal.GDT_UInt8, options=["INTERLEAVE=PIXEL"]
     )
 
     tab_pct = [0]
@@ -659,7 +842,7 @@ def test_gdalalg_raster_compare_height():
 
 def test_gdalalg_raster_compare_type():
 
-    input_ds = gdal.GetDriverByName("MEM").Create("", 1, 1, 1, gdal.GDT_Byte)
+    input_ds = gdal.GetDriverByName("MEM").Create("", 1, 1, 1, gdal.GDT_UInt8)
     ref_ds = gdal.GetDriverByName("MEM").Create("", 1, 1, 1, gdal.GDT_Int16)
 
     with gdal.Run(
@@ -1155,3 +1338,12 @@ def test_gdalalg_raster_compare_subdataset_progress():
         assert alg["output-string"] == ""
 
     assert tab_pct[0] == 1.0
+
+
+def test_gdalalg_raster_compare_same_file_pipeline():
+
+    with gdal.alg.raster.pipeline(
+        input="../gcore/data/byte.tif",
+        pipeline="read ! compare --reference ../gcore/data/byte.tif",
+    ) as alg:
+        assert alg["output-string"] == ""

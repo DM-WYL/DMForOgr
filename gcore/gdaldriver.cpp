@@ -28,6 +28,7 @@
 #include "cpl_conv.h"
 #include "cpl_error.h"
 #include "cpl_minixml.h"
+#include "cpl_multiproc.h"
 #include "cpl_progress.h"
 #include "cpl_string.h"
 #include "cpl_vsi.h"
@@ -53,7 +54,7 @@ GDALDriver::~GDALDriver()
 }
 
 /************************************************************************/
-/*                         GDALCreateDriver()                           */
+/*                          GDALCreateDriver()                          */
 /************************************************************************/
 
 /**
@@ -89,7 +90,7 @@ void CPL_STDCALL GDALDestroyDriver(GDALDriverH hDriver)
 }
 
 /************************************************************************/
-/*                               Open()                                 */
+/*                                Open()                                */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -172,7 +173,7 @@ GDALDataset *GDALDriver::Open(GDALOpenInfo *poOpenInfo, bool bSetOpenOptions)
  * file handle, but also ensures that all the data and metadata has been written
  * to the dataset (GDALFlushCache() is not sufficient for that purpose).
  *
- * In GDAL 2, the arguments nXSize, nYSize and nBands can be passed to 0 when
+ * The arguments nXSize, nYSize and nBands can be passed to 0 when
  * creating a vector-only dataset for a compatible driver.
  *
  * Equivalent of the C function GDALCreate().
@@ -413,7 +414,7 @@ GDALDriver::CreateMultiDimensional(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                       GDALCreateMultiDimensional()                   */
+/*                     GDALCreateMultiDimensional()                     */
 /************************************************************************/
 
 /** \brief Create a new multidimensional dataset with this driver.
@@ -433,7 +434,7 @@ GDALDatasetH GDALCreateMultiDimensional(GDALDriverH hDriver,
 }
 
 /************************************************************************/
-/*                  DefaultCreateCopyMultiDimensional()                 */
+/*                 DefaultCreateCopyMultiDimensional()                  */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -906,7 +907,7 @@ GDALDataset *GDALDriver::DefaultCreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                       DefaultCopyMetadata()                          */
+/*                        DefaultCopyMetadata()                         */
 /************************************************************************/
 
 void GDALDriver::DefaultCopyMetadata(GDALDataset *poSrcDS, GDALDataset *poDstDS,
@@ -939,7 +940,7 @@ void GDALDriver::DefaultCopyMetadata(GDALDataset *poSrcDS, GDALDataset *poDstDS,
             if ((!papszSrcMDD || CSLFindString(papszSrcMDD, pszDomain) >= 0) &&
                 CSLFindString(papszExcludedDomains, pszDomain) < 0)
             {
-                char **papszMD = poSrcDS->GetMetadata(pszDomain);
+                CSLConstList papszMD = poSrcDS->GetMetadata(pszDomain);
                 if (papszMD)
                     poDstDS->SetMetadata(papszMD, pszDomain);
             }
@@ -1422,7 +1423,7 @@ GDALDatasetH CPL_STDCALL GDALCreateCopy(GDALDriverH hDriver,
 }
 
 /************************************************************************/
-/*                      CanVectorTranslateFrom()                        */
+/*                       CanVectorTranslateFrom()                       */
 /************************************************************************/
 
 /** Returns whether the driver can translate from a vector dataset,
@@ -1501,7 +1502,7 @@ bool GDALDriver::HasOpenOption(const char *pszOpenOptionName) const
 }
 
 /************************************************************************/
-/*                         VectorTranslateFrom()                        */
+/*                        VectorTranslateFrom()                         */
 /************************************************************************/
 
 /** Create a copy of a vector dataset, using the arguments passed to
@@ -1671,7 +1672,8 @@ CPLErr GDALDriver::Delete(const char *pszFilename)
     /* -------------------------------------------------------------------- */
     /*      Collect file list.                                              */
     /* -------------------------------------------------------------------- */
-    GDALDatasetH hDS = GDALOpenEx(pszFilename, 0, nullptr, nullptr, nullptr);
+    GDALDatasetH hDS = GDALOpenEx(pszFilename, GDAL_OF_VERBOSE_ERROR, nullptr,
+                                  nullptr, nullptr);
 
     if (hDS == nullptr)
     {
@@ -1682,26 +1684,67 @@ CPLErr GDALDriver::Delete(const char *pszFilename)
         return CE_Failure;
     }
 
-    char **papszFileList = GDALGetFileList(hDS);
+    const CPLStringList aosFileList(GDALGetFileList(hDS));
 
     GDALClose(hDS);
     hDS = nullptr;
 
-    if (CSLCount(papszFileList) == 0)
+    if (aosFileList.empty())
     {
         CPLError(CE_Failure, CPLE_NotSupported,
                  "Unable to determine files associated with %s, "
                  "delete fails.",
                  pszFilename);
-        CSLDestroy(papszFileList);
         return CE_Failure;
+    }
+
+    return Delete(nullptr, aosFileList.List());
+}
+
+/************************************************************************/
+/*                               Delete()                               */
+/************************************************************************/
+
+/**
+ * \brief Delete a currently opened dataset
+ *
+ * The driver will attempt to delete the passed dataset in a driver specific
+ * fashion.  Full featured drivers will delete all associated files,
+ * database objects, or whatever is appropriate.  The default behavior when
+ * no driver specific behavior is provided is to attempt to delete all the
+ * files that are returned by GDALGetFileList() on the dataset handle.
+ *
+ * Note that this will generally not work on Windows systems that don't accept
+ * deleting opened files.
+ *
+ * At least one of poDS or papszFileList must not be NULL
+ *
+ * @param poDS dataset to delete, or NULL
+ * @param papszFileList File list to delete, typically obtained with
+ *                      poDS->GetFileList(), or NULL
+ *
+ * @return CE_None on success, or CE_Failure if the operation fails.
+ *
+ * @since 3.12
+ */
+
+CPLErr GDALDriver::Delete(GDALDataset *poDS, CSLConstList papszFileList)
+
+{
+    if (poDS)
+    {
+        pfnDelete = GetDeleteCallback();
+        if (pfnDelete != nullptr)
+            return pfnDelete(poDS->GetDescription());
+        else if (pfnDeleteDataSource != nullptr)
+            return pfnDeleteDataSource(this, poDS->GetDescription());
     }
 
     /* -------------------------------------------------------------------- */
     /*      Delete all files.                                               */
     /* -------------------------------------------------------------------- */
     CPLErr eErr = CE_None;
-    for (int i = 0; papszFileList[i] != nullptr; ++i)
+    for (int i = 0; papszFileList && papszFileList[i]; ++i)
     {
         if (VSIUnlink(papszFileList[i]) != 0)
         {
@@ -1710,8 +1753,6 @@ CPLErr GDALDriver::Delete(const char *pszFilename)
             eErr = CE_Failure;
         }
     }
-
-    CSLDestroy(papszFileList);
 
     return eErr;
 }
@@ -2011,7 +2052,7 @@ CPLErr CPL_STDCALL GDALCopyDatasetFiles(GDALDriverH hDriver,
 }
 
 /************************************************************************/
-/*                       GDALDriverHasOpenOption()                      */
+/*                      GDALDriverHasOpenOption()                       */
 /************************************************************************/
 
 /**
@@ -2105,7 +2146,7 @@ const char *CPL_STDCALL GDALGetDriverHelpTopic(GDALDriverH hDriver)
 }
 
 /************************************************************************/
-/*                   GDALGetDriverCreationOptionList()                  */
+/*                  GDALGetDriverCreationOptionList()                   */
 /************************************************************************/
 
 /**
@@ -2136,7 +2177,7 @@ const char *CPL_STDCALL GDALGetDriverCreationOptionList(GDALDriverH hDriver)
 }
 
 /************************************************************************/
-/*                   GDALValidateCreationOptions()                      */
+/*                    GDALValidateCreationOptions()                     */
 /************************************************************************/
 
 /**
@@ -2217,7 +2258,7 @@ int CPL_STDCALL GDALValidateCreationOptions(GDALDriverH hDriver,
 }
 
 /************************************************************************/
-/*                     GDALValidateOpenOptions()                        */
+/*                      GDALValidateOpenOptions()                       */
 /************************************************************************/
 
 int GDALValidateOpenOptions(GDALDriverH hDriver,
@@ -2235,7 +2276,7 @@ int GDALValidateOpenOptions(GDALDriverH hDriver,
 }
 
 /************************************************************************/
-/*                           GDALValidateOptions()                      */
+/*                        GDALValidateOptions()                         */
 /************************************************************************/
 
 int GDALValidateOptions(const char *pszOptionList,
@@ -2338,14 +2379,23 @@ int GDALValidateOptions(const char *pszOptionList,
                 {
                     break;
                 }
-                const char *pszAlias = CPLGetXMLValue(
-                    psChildNode, "alias",
-                    CPLGetXMLValue(psChildNode, "deprecated_alias", ""));
-                if (EQUAL(pszAlias, pszKey))
+                const char *pszAlias =
+                    CPLGetXMLValue(psChildNode, "alias", nullptr);
+                const char *pszDeprecatedAlias =
+                    pszAlias ? nullptr
+                             : CPLGetXMLValue(psChildNode, "deprecated_alias",
+                                              nullptr);
+                if (!pszAlias && pszDeprecatedAlias)
+                    pszAlias = pszDeprecatedAlias;
+                if (pszAlias && EQUAL(pszAlias, pszKey))
                 {
-                    CPLDebug("GDAL",
-                             "Using deprecated alias '%s'. New name is '%s'",
-                             pszAlias, pszOptionName);
+                    if (pszDeprecatedAlias)
+                    {
+                        CPLDebug(
+                            "GDAL",
+                            "Using deprecated alias '%s'. New name is '%s'",
+                            pszAlias, pszOptionName);
+                    }
                     break;
                 }
             }
@@ -2657,7 +2707,7 @@ GDALDriverH CPL_STDCALL GDALIdentifyDriver(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                         GDALIdentifyDriverEx()                       */
+/*                        GDALIdentifyDriverEx()                        */
 /************************************************************************/
 
 /**
@@ -2694,8 +2744,6 @@ GDALDriverH CPL_STDCALL GDALIdentifyDriver(const char *pszFilename,
  *
  * @return A GDALDriverH handle or NULL on failure.  For C++ applications
  * this handle can be cast to a GDALDriver *.
- *
- * @since GDAL 2.2
  */
 
 GDALDriverH CPL_STDCALL GDALIdentifyDriverEx(
@@ -2842,6 +2890,41 @@ GDALDriverH CPL_STDCALL GDALIdentifyDriverEx(
 }
 
 /************************************************************************/
+/*                          GetMetadataItem()                           */
+/************************************************************************/
+
+const char *GDALDriver::GetMetadataItem(const char *pszName,
+                                        const char *pszDomain)
+{
+    if (pszDomain == nullptr || pszDomain[0] == '\0')
+    {
+        if (EQUAL(pszName, GDAL_DMD_OVERVIEW_CREATIONOPTIONLIST))
+        {
+            const char *pszVal = GDALMajorObject::GetMetadataItem(pszName, "");
+            if (pszVal)
+                return pszVal;
+            if (GetMetadataItem(GDAL_DCAP_RASTER))
+            {
+                auto poDM = GetGDALDriverManager();
+                auto poGTiffDrv = poDM->GetDriverByName("GTiff");
+                if (poGTiffDrv)
+                {
+                    const char *pszXML =
+                        poGTiffDrv->GetMetadataItem(pszName, "");
+                    if (pszXML)
+                    {
+                        CPLString osXML(pszXML);
+                        osXML.replaceAll("<Value>INTERNAL</Value>", "");
+                        return CPLSPrintf("%s", osXML.c_str());
+                    }
+                }
+            }
+        }
+    }
+    return GDALMajorObject::GetMetadataItem(pszName, pszDomain);
+}
+
+/************************************************************************/
 /*                          SetMetadataItem()                           */
 /************************************************************************/
 
@@ -2870,7 +2953,7 @@ CPLErr GDALDriver::SetMetadataItem(const char *pszName, const char *pszValue,
 }
 
 /************************************************************************/
-/*                         InstantiateAlgorithm()                       */
+/*                        InstantiateAlgorithm()                        */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -2885,7 +2968,7 @@ GDALDriver::InstantiateAlgorithm(const std::vector<std::string> &aosPath)
 }
 
 /************************************************************************/
-/*                        DeclareAlgorithm()                            */
+/*                          DeclareAlgorithm()                          */
 /************************************************************************/
 
 void GDALDriver::DeclareAlgorithm(const std::vector<std::string> &aosPath)
@@ -2949,7 +3032,7 @@ void GDALDriver::DeclareAlgorithm(const std::vector<std::string> &aosPath)
 //! @endcond
 
 /************************************************************************/
-/*                   DoesDriverHandleExtension()                        */
+/*                     DoesDriverHandleExtension()                      */
 /************************************************************************/
 
 static bool DoesDriverHandleExtension(GDALDriverH hDriver, const char *pszExt)
@@ -2974,7 +3057,7 @@ static bool DoesDriverHandleExtension(GDALDriverH hDriver, const char *pszExt)
 }
 
 /************************************************************************/
-/*                     IsOnlyExpectedGDBDrivers()                       */
+/*                      IsOnlyExpectedGDBDrivers()                      */
 /************************************************************************/
 
 static bool IsOnlyExpectedGDBDrivers(const CPLStringList &aosDriverNames)
@@ -2991,20 +3074,20 @@ static bool IsOnlyExpectedGDBDrivers(const CPLStringList &aosDriverNames)
 }
 
 /************************************************************************/
-/*                  GDALGetOutputDriversForDatasetName()                */
+/*                 GDALGetOutputDriversForDatasetName()                 */
 /************************************************************************/
 
 /** Return a list of driver short names that are likely candidates for the
  * provided output file name.
  *
  * @param pszDestDataset Output dataset name (might not exist).
- * @param nFlagRasterVector GDAL_OF_RASTER, GDAL_OF_VECTOR or
- *                          binary-or'ed combination of both
+ * @param nDatasetTypeFlag GDAL_OF_RASTER, GDAL_OF_VECTOR, GDAL_OF_MULTIDIM_RASTER
+ *                         or a binary-or'ed combination of them
  * @param bSingleMatch Whether a single match is desired, that is to say the
  *                     returned list will contain at most one item, which will
  *                     be the first driver in the order they are registered to
  *                     match the output dataset name. Note that in this mode, if
- *                     nFlagRasterVector==GDAL_OF_RASTER and pszDestDataset has
+ *                     nDatasetTypeFlag==GDAL_OF_RASTER and pszDestDataset has
  *                     no extension, GTiff will be selected.
  * @param bEmitWarning Whether a warning should be emitted when bSingleMatch is
  *                     true and there are more than 2 candidates.
@@ -3013,7 +3096,7 @@ static bool IsOnlyExpectedGDBDrivers(const CPLStringList &aosDriverNames)
  * @since 3.9
  */
 char **GDALGetOutputDriversForDatasetName(const char *pszDestDataset,
-                                          int nFlagRasterVector,
+                                          int nDatasetTypeFlag,
                                           bool bSingleMatch, bool bEmitWarning)
 {
     CPLStringList aosDriverNames;
@@ -3050,15 +3133,17 @@ char **GDALGetOutputDriversForDatasetName(const char *pszDestDataset,
         if ((poDriver->GetMetadataItem(GDAL_DCAP_CREATE) != nullptr ||
              poDriver->GetMetadataItem(GDAL_DCAP_CREATECOPY) != nullptr ||
              poDriver->GetMetadataItem(GDAL_DCAP_UPDATE) != nullptr) &&
-            (((nFlagRasterVector & GDAL_OF_RASTER) &&
+            (((nDatasetTypeFlag & GDAL_OF_RASTER) &&
               poDriver->GetMetadataItem(GDAL_DCAP_RASTER) != nullptr) ||
-             ((nFlagRasterVector & GDAL_OF_VECTOR) &&
-              poDriver->GetMetadataItem(GDAL_DCAP_VECTOR) != nullptr)))
+             ((nDatasetTypeFlag & GDAL_OF_VECTOR) &&
+              poDriver->GetMetadataItem(GDAL_DCAP_VECTOR) != nullptr) ||
+             ((nDatasetTypeFlag & GDAL_OF_MULTIDIM_RASTER) &&
+              poDriver->GetMetadataItem(GDAL_DCAP_MULTIDIM_RASTER) != nullptr)))
         {
             bOk = true;
         }
         else if (poDriver->GetMetadataItem(GDAL_DCAP_VECTOR_TRANSLATE_FROM) &&
-                 (nFlagRasterVector & GDAL_OF_VECTOR) != 0)
+                 (nDatasetTypeFlag & GDAL_OF_VECTOR) != 0)
         {
             bOk = true;
         }
@@ -3108,7 +3193,7 @@ char **GDALGetOutputDriversForDatasetName(const char *pszDestDataset,
 
     if (bSingleMatch)
     {
-        if (nFlagRasterVector == GDAL_OF_RASTER)
+        if (nDatasetTypeFlag == GDAL_OF_RASTER)
         {
             if (aosDriverNames.empty())
             {
@@ -3192,7 +3277,7 @@ char **GDALGetOutputDriversForDatasetName(const char *pszDestDataset,
 }
 
 /************************************************************************/
-/*                GDALGetMessageAboutMissingPluginDriver()              */
+/*               GDALGetMessageAboutMissingPluginDriver()               */
 /************************************************************************/
 
 std::string
@@ -3243,4 +3328,37 @@ GDALGetMessageAboutMissingPluginDriver(GDALDriver *poMissingPluginDriver)
         }
     }
     return osMsg;
+}
+
+/************************************************************************/
+/*                       GDALClearMemoryCaches()                        */
+/************************************************************************/
+
+/**
+ * \brief Clear all GDAL-controlled in-memory caches.
+ *
+ * Iterates registered drivers and calls their pfnClearCaches callback if set,
+ * then calls VSICurlClearCache() to clear /vsicurl/ and related caches.
+ *
+ * Note that neither the global raster block cache or caches specific to open
+ * dataset objects are not cleared by this function (in its current implementation).
+ *
+ * Useful when remote datasets may have changed during the lifetime of a
+ * process.
+ *
+ * @since GDAL 3.13
+ */
+void GDALClearMemoryCaches()
+{
+    auto *poDM = GetGDALDriverManager();
+    if (poDM)
+    {
+        for (int i = 0; i < poDM->GetDriverCount(); i++)
+        {
+            auto *poDriver = poDM->GetDriver(i);
+            if (poDriver && poDriver->pfnClearCaches)
+                poDriver->pfnClearCaches(poDriver);
+        }
+    }
+    VSICurlClearCache();
 }

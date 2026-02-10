@@ -10,6 +10,7 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdalsubdatasetinfo.h"
 #include "ogr_geopackage.h"
 
 #include "tilematrixset.hpp"
@@ -27,7 +28,7 @@ static inline bool ENDS_WITH_CI(const char *a, const char *b)
 }
 
 /************************************************************************/
-/*                       OGRGeoPackageDriverIdentify()                  */
+/*                    OGRGeoPackageDriverIdentify()                     */
 /************************************************************************/
 
 static int OGRGeoPackageDriverIdentify(GDALOpenInfo *poOpenInfo,
@@ -247,10 +248,10 @@ static int OGRGeoPackageDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                    OGRGeoPackageDriverGetSubdatasetInfo()            */
+/*                OGRGeoPackageDriverGetSubdatasetInfo()                */
 /************************************************************************/
 
-struct OGRGeoPackageDriverSubdatasetInfo : public GDALSubdatasetInfo
+struct OGRGeoPackageDriverSubdatasetInfo final : public GDALSubdatasetInfo
 {
   public:
     explicit OGRGeoPackageDriverSubdatasetInfo(const std::string &fileName)
@@ -354,7 +355,7 @@ static GDALDataset *OGRGeoPackageDriverOpen(GDALOpenInfo *poOpenInfo)
 static GDALDataset *OGRGeoPackageDriverCreate(const char *pszFilename,
                                               int nXSize, int nYSize,
                                               int nBands, GDALDataType eDT,
-                                              char **papszOptions)
+                                              CSLConstList papszOptions)
 {
     if (strcmp(pszFilename, ":memory:") != 0)
     {
@@ -413,12 +414,12 @@ static CPLErr OGRGeoPackageDriverDelete(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                          GDALGPKGDriver                              */
+/*                            GDALGPKGDriver                            */
 /************************************************************************/
 
 class GDALGPKGDriver final : public GDALDriver
 {
-    std::mutex m_oMutex{};
+    std::recursive_mutex m_oMutex{};
     bool m_bInitialized = false;
 
     void InitializeCreationOptionList();
@@ -429,7 +430,7 @@ class GDALGPKGDriver final : public GDALDriver
     const char *GetMetadataItem(const char *pszName,
                                 const char *pszDomain) override;
 
-    char **GetMetadata(const char *pszDomain) override
+    CSLConstList GetMetadata(const char *pszDomain) override
     {
         std::lock_guard oLock(m_oMutex);
         InitializeCreationOptionList();
@@ -588,7 +589,7 @@ void GDALGPKGDriver::InitializeCreationOptionList()
 }
 
 /************************************************************************/
-/*                    OGRGeoPackageRepackAlgorithm                      */
+/*                     OGRGeoPackageRepackAlgorithm                     */
 /************************************************************************/
 
 #ifndef _
@@ -633,7 +634,7 @@ bool OGRGeoPackageRepackAlgorithm::RunImpl(GDALProgressFunc, void *)
 }
 
 /************************************************************************/
-/*               OGRGeoPackageDriverInstantiateAlgorithm()              */
+/*              OGRGeoPackageDriverInstantiateAlgorithm()               */
 /************************************************************************/
 
 static GDALAlgorithm *
@@ -650,7 +651,7 @@ OGRGeoPackageDriverInstantiateAlgorithm(const std::vector<std::string> &aosPath)
 }
 
 /************************************************************************/
-/*                         RegisterOGRGeoPackage()                       */
+/*                       RegisterOGRGeoPackage()                        */
 /************************************************************************/
 
 void RegisterOGRGeoPackage()
@@ -671,6 +672,7 @@ void RegisterOGRGeoPackage()
     poDriver->SetMetadataItem(GDAL_DCAP_CURVE_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_MEASURED_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_Z_GEOMETRIES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CAN_READ_AFTER_DELETE, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_SUBDATASETS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_SUBDATASETS, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS,
@@ -727,6 +729,9 @@ void RegisterOGRGeoPackage()
         "  <Option name='IMMUTABLE' type='boolean' description='Whether the "
         "database should be opened in immutable mode'/>"
         "</OpenOptionList>");
+    poDriver->SetMetadataItem(GDAL_DMD_OVERVIEW_CREATIONOPTIONLIST,
+                              "<OverviewCreationOptionList>"
+                              "</OverviewCreationOptionList>");
 
     poDriver->SetMetadataItem(
         GDAL_DS_LAYER_CREATIONOPTIONLIST,
@@ -803,6 +808,7 @@ void RegisterOGRGeoPackage()
     poDriver->SetMetadataItem(GDAL_DCAP_DELETE_RELATIONSHIP, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_UPDATE_RELATIONSHIP, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_FLUSHCACHE_CONSISTENT_STATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_UPSERT, "YES");
 
     poDriver->SetMetadataItem(GDAL_DMD_RELATIONSHIP_FLAGS,
                               "ManyToMany Association");

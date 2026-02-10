@@ -13,6 +13,10 @@
 #include "cpl_string.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #include <cstdlib>
@@ -44,16 +48,16 @@ class HF2Dataset final : public GDALPamDataset
 
   public:
     HF2Dataset();
-    virtual ~HF2Dataset();
+    ~HF2Dataset() override;
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
@@ -73,9 +77,9 @@ class HF2RasterBand final : public GDALPamRasterBand
 
   public:
     HF2RasterBand(HF2Dataset *, int, GDALDataType);
-    virtual ~HF2RasterBand();
+    ~HF2RasterBand() override;
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
 };
 
 /************************************************************************/
@@ -95,7 +99,7 @@ HF2RasterBand::HF2RasterBand(HF2Dataset *poDSIn, int nBandIn, GDALDataType eDT)
 }
 
 /************************************************************************/
-/*                          ~HF2RasterBand()                            */
+/*                           ~HF2RasterBand()                           */
 /************************************************************************/
 
 HF2RasterBand::~HF2RasterBand()
@@ -203,8 +207,8 @@ CPLErr HF2RasterBand::IReadBlock(int nBlockXOff, int nLineYOff, void *pImage)
                 double dfVal = nVal * (double)fScale + fOff;
                 if (dfVal > std::numeric_limits<float>::max())
                     dfVal = std::numeric_limits<float>::max();
-                else if (dfVal < std::numeric_limits<float>::min())
-                    dfVal = std::numeric_limits<float>::min();
+                else if (dfVal < std::numeric_limits<float>::lowest())
+                    dfVal = std::numeric_limits<float>::lowest();
                 pafBlockData[nxoff * nBlockXSize + j * nRasterXSize + 0] =
                     static_cast<float>(dfVal);
                 for (int i = 1; i < nTileWidth; i++)
@@ -228,8 +232,8 @@ CPLErr HF2RasterBand::IReadBlock(int nBlockXOff, int nLineYOff, void *pImage)
                     dfVal = nVal * (double)fScale + fOff;
                     if (dfVal > std::numeric_limits<float>::max())
                         dfVal = std::numeric_limits<float>::max();
-                    else if (dfVal < std::numeric_limits<float>::min())
-                        dfVal = std::numeric_limits<float>::min();
+                    else if (dfVal < std::numeric_limits<float>::lowest())
+                        dfVal = std::numeric_limits<float>::lowest();
                     pafBlockData[nxoff * nBlockXSize + j * nRasterXSize + i] =
                         static_cast<float>(dfVal);
                 }
@@ -249,7 +253,7 @@ CPLErr HF2RasterBand::IReadBlock(int nBlockXOff, int nLineYOff, void *pImage)
 }
 
 /************************************************************************/
-/*                            ~HF2Dataset()                            */
+/*                            ~HF2Dataset()                             */
 /************************************************************************/
 
 HF2Dataset::HF2Dataset()
@@ -260,7 +264,7 @@ HF2Dataset::HF2Dataset()
 }
 
 /************************************************************************/
-/*                            ~HF2Dataset()                            */
+/*                            ~HF2Dataset()                             */
 /************************************************************************/
 
 HF2Dataset::~HF2Dataset()
@@ -353,7 +357,7 @@ int HF2Dataset::LoadBlockMap()
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *HF2Dataset::GetSpatialRef() const
@@ -365,7 +369,7 @@ const OGRSpatialReference *HF2Dataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                             Identify()                               */
+/*                              Identify()                              */
 /************************************************************************/
 
 int HF2Dataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -576,7 +580,7 @@ GDALDataset *HF2Dataset::Open(GDALOpenInfo *poOpenInfo)
         else
         {
             CPLDebug("HF2", "Skipping block %s", szBlockName);
-            VSIFSeekL(fp, nBlockSize, SEEK_CUR);
+            VSIFSeekL(fp, static_cast<vsi_l_offset>(nBlockSize), SEEK_CUR);
         }
     }
 
@@ -713,7 +717,7 @@ static void WriteDouble(VSILFILE *fp, double val)
 
 GDALDataset *HF2Dataset::CreateCopy(const char *pszFilename,
                                     GDALDataset *poSrcDS, int bStrict,
-                                    char **papszOptions,
+                                    CSLConstList papszOptions,
                                     GDALProgressFunc pfnProgress,
                                     void *pProgressData)
 {
@@ -761,7 +765,7 @@ GDALDataset *HF2Dataset::CreateCopy(const char *pszFilename,
     GDALDataType eSrcDT = poSrcDS->GetRasterBand(1)->GetRasterDataType();
     GDALDataType eReqDT;
     float fVertPres = (float)0.01;
-    if (eSrcDT == GDT_Byte || eSrcDT == GDT_Int16)
+    if (eSrcDT == GDT_UInt8 || eSrcDT == GDT_Int16)
     {
         fVertPres = 1;
         eReqDT = GDT_Int16;
@@ -1170,7 +1174,7 @@ GDALDataset *HF2Dataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                         GDALRegister_HF2()                           */
+/*                          GDALRegister_HF2()                          */
 /************************************************************************/
 
 void GDALRegister_HF2()

@@ -110,7 +110,9 @@ int (*PyBuffer_FillInfo)(Py_buffer *view, PyObject *obj, void *buf, size_t len,
                          int readonly, int infoflags) = nullptr;
 PyObject *(*PyMemoryView_FromBuffer)(Py_buffer *view) = nullptr;
 
-PyObject *(*PyModule_Create2)(struct PyModuleDef *, int) = nullptr;
+PyObject *(*PyCFunction_New)(const PyMethodDef *ml, PyObject *self) = nullptr;
+int (*PyModule_AddObject)(PyObject *mod, const char *name,
+                          PyObject *value) = nullptr;
 }  // namespace GDALPy
 
 /* MinGW32 might define HAVE_DLFCN_H, so skip the unix implementation */
@@ -160,7 +162,7 @@ typedef HMODULE LibraryHandle;
 #define LOAD(libHandle, x) LOAD_WITH_NAME(libHandle, x, STRINGIFY(x))
 
 /************************************************************************/
-/*                          LoadPythonAPI()                             */
+/*                           LoadPythonAPI()                            */
 /************************************************************************/
 
 /** Load the subset of the Python C API that we need */
@@ -713,7 +715,8 @@ static bool LoadPythonAPI()
     LOAD(libHandle, PyBytes_FromObject);
     LOAD(libHandle, PyBytes_FromStringAndSize);
 
-    LOAD(libHandle, PyModule_Create2);
+    LOAD(libHandle, PyCFunction_New);
+    LOAD(libHandle, PyModule_AddObject);
 
     LOAD_NOCHECK_WITH_NAME(libHandle, PyUnicode_FromString,
                            "PyUnicode_FromString");
@@ -827,7 +830,7 @@ bool GDALPythonInitialize()
 }
 
 /************************************************************************/
-/*                        GDALPythonFinalize()                          */
+/*                         GDALPythonFinalize()                         */
 /************************************************************************/
 
 /** To be called by GDALDestroy() */
@@ -847,7 +850,7 @@ namespace GDALPy
 {
 
 /************************************************************************/
-/*                            GIL_Holder()                              */
+/*                             GIL_Holder()                             */
 /************************************************************************/
 
 GIL_Holder::GIL_Holder(bool bExclusiveLock) : m_bExclusiveLock(bExclusiveLock)
@@ -860,7 +863,7 @@ GIL_Holder::GIL_Holder(bool bExclusiveLock) : m_bExclusiveLock(bExclusiveLock)
 }
 
 /************************************************************************/
-/*                           ~GIL_Holder()                              */
+/*                            ~GIL_Holder()                             */
 /************************************************************************/
 
 GIL_Holder::~GIL_Holder()
@@ -899,7 +902,7 @@ CPLString GetString(PyObject *obj, bool bEmitError)
 }
 
 /************************************************************************/
-/*                      GetPyExceptionString()                          */
+/*                        GetPyExceptionString()                        */
 /************************************************************************/
 
 CPLString GetPyExceptionString()

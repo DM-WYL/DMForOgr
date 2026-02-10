@@ -10,11 +10,14 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "ktx2drivercore.h"
 #include "commoncore.h"
 
 /************************************************************************/
-/*                     KTX2DriverIdentify()                             */
+/*                         KTX2DriverIdentify()                         */
 /************************************************************************/
 
 int KTX2DriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -32,7 +35,7 @@ int KTX2DriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                      KTX2DriverSetCommonMetadata()                   */
+/*                    KTX2DriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void KTX2DriverSetCommonMetadata(GDALDriver *poDriver)

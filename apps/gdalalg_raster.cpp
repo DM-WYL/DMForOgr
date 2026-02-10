@@ -10,15 +10,17 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
-#include "gdalalgorithm.h"
+//! @cond Doxygen_Suppress
+
+#include "gdalalg_raster.h"
 
 #include "gdalalg_raster_info.h"
 #include "gdalalg_raster_aspect.h"
+#include "gdalalg_raster_blend.h"
 #include "gdalalg_raster_calc.h"
 #include "gdalalg_raster_clip.h"
 #include "gdalalg_raster_clean_collar.h"
 #include "gdalalg_raster_color_map.h"
-#include "gdalalg_raster_color_merge.h"
 #include "gdalalg_raster_compare.h"
 #include "gdalalg_raster_convert.h"
 #include "gdalalg_raster_create.h"
@@ -30,6 +32,7 @@
 #include "gdalalg_raster_hillshade.h"
 #include "gdalalg_raster_index.h"
 #include "gdalalg_raster_mosaic.h"
+#include "gdalalg_raster_neighbors.h"
 #include "gdalalg_raster_nodata_to_alpha.h"
 #include "gdalalg_raster_overview.h"
 #include "gdalalg_raster_pansharpen.h"
@@ -54,6 +57,7 @@
 #include "gdalalg_raster_unscale.h"
 #include "gdalalg_raster_update.h"
 #include "gdalalg_raster_viewshed.h"
+#include "gdalalg_raster_zonal_stats.h"
 
 #include "gdal_priv.h"
 
@@ -65,70 +69,59 @@
 /*                         GDALRasterAlgorithm                          */
 /************************************************************************/
 
-class GDALRasterAlgorithm final : public GDALAlgorithm
+GDALRasterAlgorithm::GDALRasterAlgorithm()
+    : GDALAlgorithm(NAME, DESCRIPTION, HELP_URL)
 {
-  public:
-    static constexpr const char *NAME = "raster";
-    static constexpr const char *DESCRIPTION = "Raster commands.";
-    static constexpr const char *HELP_URL = "/programs/gdal_raster.html";
+    AddArg("drivers", 0, _("Display raster driver list as JSON document"),
+           &m_drivers);
 
-    GDALRasterAlgorithm() : GDALAlgorithm(NAME, DESCRIPTION, HELP_URL)
-    {
-        AddArg("drivers", 0, _("Display raster driver list as JSON document"),
-               &m_drivers);
+    AddOutputStringArg(&m_output);
 
-        AddOutputStringArg(&m_output);
-
-        RegisterSubAlgorithm<GDALRasterInfoAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterAsFeaturesAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterAspectAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterCalcAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterCleanCollarAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterClipAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterColorMapAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterColorMergeAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterCompareAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterConvertAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterCreateAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterEditAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterFootprintAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterHillshadeAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterFillNodataAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterIndexAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterOverviewAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterPipelineAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterPixelInfoAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterProximityAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterRGBToPaletteAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterReclassifyAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterReprojectAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterMosaicAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterNoDataToAlphaAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterPansharpenAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterPolygonizeAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterResizeAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterRoughnessAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterContourAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterScaleAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterSelectAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterSetTypeAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterSieveAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterSlopeAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterStackAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterTileAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterTPIAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterTRIAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterUnscaleAlgorithmStandalone>();
-        RegisterSubAlgorithm<GDALRasterUpdateAlgorithm>();
-        RegisterSubAlgorithm<GDALRasterViewshedAlgorithmStandalone>();
-    }
-
-  private:
-    std::string m_output{};
-    bool m_drivers = false;
-
-    bool RunImpl(GDALProgressFunc, void *) override;
-};
+    RegisterSubAlgorithm<GDALRasterInfoAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterAsFeaturesAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterAspectAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterBlendAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterCalcAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterCleanCollarAlgorithm>();
+    RegisterSubAlgorithm<GDALRasterClipAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterColorMapAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterCompareAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterConvertAlgorithm>();
+    RegisterSubAlgorithm<GDALRasterCreateAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterEditAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterFootprintAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterHillshadeAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterFillNodataAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterIndexAlgorithm>();
+    RegisterSubAlgorithm<GDALRasterNeighborsAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterOverviewAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterPipelineAlgorithm>();
+    RegisterSubAlgorithm<GDALRasterPixelInfoAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterProximityAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterRGBToPaletteAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterReclassifyAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterReprojectAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterMosaicAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterNoDataToAlphaAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterPansharpenAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterPolygonizeAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterResizeAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterRoughnessAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterContourAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterScaleAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterSelectAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterSetTypeAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterSieveAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterSlopeAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterStackAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterTileAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterTPIAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterTRIAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterUnscaleAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterUpdateAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterViewshedAlgorithmStandalone>();
+    RegisterSubAlgorithm<GDALRasterZonalStatsAlgorithmStandalone>();
+}
 
 bool GDALRasterAlgorithm::RunImpl(GDALProgressFunc, void *)
 {
@@ -146,4 +139,4 @@ bool GDALRasterAlgorithm::RunImpl(GDALProgressFunc, void *)
     }
 }
 
-GDAL_STATIC_REGISTER_ALG(GDALRasterAlgorithm);
+//! @endcond

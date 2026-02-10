@@ -38,6 +38,13 @@
 #include "ogr_core.h"
 #include "ogr_p.h"
 
+#ifdef HAVE_WFLAG_UNREACHABLE_CODE_AGGRESSIVE
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+#endif
+#endif
+
 constexpr int SHPP_TRISTRIP = 0;
 constexpr int SHPP_TRIFAN = 1;
 constexpr int SHPP_OUTERRING = 2;
@@ -128,7 +135,7 @@ constexpr int EXT_SHAPE_ELLIPSE_MINOR = 0x1000;
 constexpr int EXT_SHAPE_ELLIPSE_COMPLETE = 0x2000;
 
 /************************************************************************/
-/*                  OGRCreateFromMultiPatchPart()                       */
+/*                    OGRCreateFromMultiPatchPart()                     */
 /************************************************************************/
 
 static void OGRCreateFromMultiPatchPart(OGRGeometryCollection *poGC,
@@ -840,7 +847,7 @@ id,WKT
         }
 
         // Swap if needed. Shape doubles always LSB.
-        if (OGR_SWAP(wkbNDR))
+        if constexpr (OGR_SWAP(wkbNDR))
         {
             CPL_SWAPDOUBLE(pabyPtr);
             CPL_SWAPDOUBLE(pabyPtr + 8);
@@ -864,7 +871,7 @@ id,WKT
     memcpy(pabyPtr + 8 + 8 + 8, &(envelope.MaxY), 8);
 
     // Swap box if needed. Shape doubles are always LSB.
-    if (OGR_SWAP(wkbNDR))
+    if constexpr (OGR_SWAP(wkbNDR))
     {
         for (int i = 0; i < 4; i++)
             CPL_SWAPDOUBLE(pabyPtr + 8 * i);
@@ -878,7 +885,7 @@ id,WKT
         memcpy(pabyPtrZ + 8, &(envelope.MaxZ), 8);
 
         // Swap Z bounds if necessary.
-        if (OGR_SWAP(wkbNDR))
+        if constexpr (OGR_SWAP(wkbNDR))
         {
             for (int i = 0; i < 2; i++)
                 CPL_SWAPDOUBLE(pabyPtrZ + 8 * i);
@@ -935,7 +942,7 @@ id,WKT
         }
 
         // Swap if necessary.
-        if (OGR_SWAP(wkbNDR))
+        if constexpr (OGR_SWAP(wkbNDR))
         {
             for (GUInt32 k = 0; k < nPoints; k++)
             {
@@ -1031,7 +1038,7 @@ id,WKT
             }
 
             // Swap if necessary.
-            if (OGR_SWAP(wkbNDR))
+            if constexpr (OGR_SWAP(wkbNDR))
             {
                 for (int k = 0; k < nRingNumPoints; k++)
                 {
@@ -1102,7 +1109,7 @@ id,WKT
             }
 
             // Swap if necessary.
-            if (OGR_SWAP(wkbNDR))
+            if constexpr (OGR_SWAP(wkbNDR))
             {
                 CPL_SWAPDOUBLE(pabyPtr);
                 CPL_SWAPDOUBLE(pabyPtr + 8);
@@ -1172,7 +1179,7 @@ id,WKT
             }
 
             // Swap if necessary.
-            if (OGR_SWAP(wkbNDR))
+            if constexpr (OGR_SWAP(wkbNDR))
             {
                 for (int k = 0; k < nLineNumPoints; k++)
                 {
@@ -1285,7 +1292,7 @@ id,WKT
                 }
 
                 // Swap if necessary.
-                if (OGR_SWAP(wkbNDR))
+                if constexpr (OGR_SWAP(wkbNDR))
                 {
                     for (int k = 0; k < nRingNumPoints; k++)
                     {
@@ -1321,7 +1328,7 @@ id,WKT
         memcpy(pabyPtrMBounds + 8, &(dfMaxM), 8);
 
         // Swap M bounds if necessary.
-        if (OGR_SWAP(wkbNDR))
+        if constexpr (OGR_SWAP(wkbNDR))
         {
             for (int i = 0; i < 2; i++)
                 CPL_SWAPDOUBLE(pabyPtrMBounds + 8 * i);
@@ -1332,7 +1339,7 @@ id,WKT
 }
 
 /************************************************************************/
-/*                         OGRCreateMultiPatch()                        */
+/*                        OGRCreateMultiPatch()                         */
 /************************************************************************/
 
 OGRErr OGRCreateMultiPatch(const OGRGeometry *poGeomConst,
@@ -1512,7 +1519,7 @@ OGRErr OGRCreateMultiPatch(const OGRGeometry *poGeomConst,
 }
 
 /************************************************************************/
-/*                   OGRWriteMultiPatchToShapeBin()                     */
+/*                    OGRWriteMultiPatchToShapeBin()                    */
 /************************************************************************/
 
 OGRErr OGRWriteMultiPatchToShapeBin(const OGRGeometry *poGeom,
@@ -1565,7 +1572,7 @@ OGRErr OGRWriteMultiPatchToShapeBin(const OGRGeometry *poGeom,
     memcpy(pabyPtr + 8 + 8 + 8, &(envelope.MaxY), 8);
 
     // Swap box if needed. Shape doubles are always LSB.
-    if (OGR_SWAP(wkbNDR))
+    if constexpr (OGR_SWAP(wkbNDR))
     {
         for (int i = 0; i < 4; i++)
             CPL_SWAPDOUBLE(pabyPtr + 8 * i);
@@ -1599,7 +1606,7 @@ OGRErr OGRWriteMultiPatchToShapeBin(const OGRGeometry *poGeom,
         memcpy(pabyPtr, aoPoints.data(), 2 * 8 * nPoints);
 
     // Swap box if needed. Shape doubles are always LSB.
-    if (OGR_SWAP(wkbNDR))
+    if constexpr (OGR_SWAP(wkbNDR))
     {
         for (int i = 0; i < 2 * nPoints; i++)
             CPL_SWAPDOUBLE(pabyPtr + 8 * i);
@@ -1610,7 +1617,7 @@ OGRErr OGRWriteMultiPatchToShapeBin(const OGRGeometry *poGeom,
     {
         memcpy(pabyPtr, &(envelope.MinZ), 8);
         memcpy(pabyPtr + 8, &(envelope.MaxZ), 8);
-        if (OGR_SWAP(wkbNDR))
+        if constexpr (OGR_SWAP(wkbNDR))
         {
             for (int i = 0; i < 2; i++)
                 CPL_SWAPDOUBLE(pabyPtr + 8 * i);
@@ -1620,7 +1627,7 @@ OGRErr OGRWriteMultiPatchToShapeBin(const OGRGeometry *poGeom,
         if (!adfZ.empty())
             memcpy(pabyPtr, adfZ.data(), 8 * nPoints);
         // Swap box if needed. Shape doubles are always LSB.
-        if (OGR_SWAP(wkbNDR))
+        if constexpr (OGR_SWAP(wkbNDR))
         {
             for (int i = 0; i < nPoints; i++)
                 CPL_SWAPDOUBLE(pabyPtr + 8 * i);
@@ -1632,7 +1639,7 @@ OGRErr OGRWriteMultiPatchToShapeBin(const OGRGeometry *poGeom,
 }
 
 /************************************************************************/
-/*                           GetAngleOnEllipse()                        */
+/*                         GetAngleOnEllipse()                          */
 /************************************************************************/
 
 // Return the angle in deg [0, 360] of dfArcX,dfArcY regarding the
@@ -2702,45 +2709,38 @@ OGRErr OGRCreateFromShapeBin(GByte *pabyShape, OGRGeometry **ppoGeom,
                 }
                 else
                 {
-                    OGRGeometry *poOGR = nullptr;
-                    OGRCurvePolygon **tabPolygons =
-                        new OGRCurvePolygon *[nParts];
-
+                    std::vector<std::unique_ptr<OGRGeometry>> apoPolygons;
                     int iCurveIdx = 0;
                     for (int i = 0; i < nParts; i++)
                     {
-                        tabPolygons[i] = new OGRCurvePolygon();
+                        auto poPoly = std::make_unique<OGRCurvePolygon>();
                         const int nVerticesInThisPart =
                             i == nParts - 1
                                 ? nPoints - panPartStart[i]
                                 : panPartStart[i + 1] - panPartStart[i];
 
-                        OGRCurve *poRing = OGRShapeCreateCompoundCurve(
-                            panPartStart[i], nVerticesInThisPart, pasCurves,
-                            nCurves, iCurveIdx, padfX, padfY,
-                            bHasZ ? padfZ : nullptr, padfM, &iCurveIdx);
+                        auto poRing = std::unique_ptr<OGRCurve>(
+                            OGRShapeCreateCompoundCurve(
+                                panPartStart[i], nVerticesInThisPart, pasCurves,
+                                nCurves, iCurveIdx, padfX, padfY,
+                                bHasZ ? padfZ : nullptr, padfM, &iCurveIdx));
                         if (poRing == nullptr ||
-                            tabPolygons[i]->addRingDirectly(poRing) !=
-                                OGRERR_NONE)
+                            poPoly->addRing(std::move(poRing)) != OGRERR_NONE)
                         {
-                            delete poRing;
-                            for (; i >= 0; --i)
-                                delete tabPolygons[i];
-                            delete[] tabPolygons;
-                            tabPolygons = nullptr;
+                            apoPolygons.clear();
                             *ppoGeom = nullptr;
                             break;
                         }
+                        apoPolygons.push_back(std::move(poPoly));
                     }
 
-                    if (tabPolygons != nullptr)
+                    if (!apoPolygons.empty())
                     {
-                        int isValidGeometry = FALSE;
-                        const char *papszOptions[] = {"METHOD=ONLY_CCW",
-                                                      nullptr};
-                        poOGR = OGRGeometryFactory::organizePolygons(
-                            reinterpret_cast<OGRGeometry **>(tabPolygons),
-                            nParts, &isValidGeometry, papszOptions);
+                        bool isValidGeometry = false;
+                        const char *const apszOptions[] = {"METHOD=ONLY_CCW",
+                                                           nullptr};
+                        auto poOGR = OGRGeometryFactory::organizePolygons(
+                            apoPolygons, &isValidGeometry, apszOptions);
 
                         if (!isValidGeometry)
                         {
@@ -2750,8 +2750,7 @@ OGRErr OGRCreateFromShapeBin(GByte *pabyShape, OGRGeometry **ppoGeom,
                                      "be contained in a multipolygon.");
                         }
 
-                        *ppoGeom = poOGR;
-                        delete[] tabPolygons;
+                        *ppoGeom = poOGR.release();
                     }
                 }
             }
@@ -2778,13 +2777,11 @@ OGRErr OGRCreateFromShapeBin(GByte *pabyShape, OGRGeometry **ppoGeom,
                 }
                 else
                 {
-                    OGRGeometry *poOGR = nullptr;
-                    OGRPolygon **tabPolygons = new OGRPolygon *[nParts];
-
+                    std::vector<std::unique_ptr<OGRGeometry>> apoPolygons;
+                    apoPolygons.reserve(nParts);
                     for (int i = 0; i < nParts; i++)
                     {
-                        tabPolygons[i] = new OGRPolygon();
-                        OGRLinearRing *poRing = new OGRLinearRing;
+                        auto poRing = std::make_unique<OGRLinearRing>();
                         const int nVerticesInThisPart =
                             i == nParts - 1
                                 ? nPoints - panPartStart[i]
@@ -2795,32 +2792,31 @@ OGRErr OGRCreateFromShapeBin(GByte *pabyShape, OGRGeometry **ppoGeom,
                             padfY + panPartStart[i], padfZ + panPartStart[i],
                             padfM != nullptr ? padfM + panPartStart[i]
                                              : nullptr);
-                        if (tabPolygons[i]->addRingDirectly(poRing) !=
-                            OGRERR_NONE)
+                        auto poPoly = std::make_unique<OGRPolygon>();
+                        if (poPoly->addRing(std::move(poRing)) != OGRERR_NONE)
                         {
-                            delete poRing;
-                            for (; i >= 0; --i)
-                                delete tabPolygons[i];
-                            delete[] tabPolygons;
-                            tabPolygons = nullptr;
+                            apoPolygons.clear();
                             *ppoGeom = nullptr;
                             break;
                         }
+                        apoPolygons.push_back(std::move(poPoly));
                     }
 
-                    if (tabPolygons != nullptr)
+                    if (!apoPolygons.empty())
                     {
-                        int isValidGeometry = FALSE;
+                        bool isValidGeometry = false;
                         // The outer ring is supposed to be clockwise oriented
                         // If it is not, then use the default/slow method.
-                        const char *papszOptions[] = {
-                            !(tabPolygons[0]->getExteriorRing()->isClockwise())
+                        const char *const apszOptions[] = {
+                            !(apoPolygons.front()
+                                  ->toPolygon()
+                                  ->getExteriorRing()
+                                  ->isClockwise())
                                 ? "METHOD=DEFAULT"
                                 : "METHOD=ONLY_CCW",
                             nullptr};
-                        poOGR = OGRGeometryFactory::organizePolygons(
-                            reinterpret_cast<OGRGeometry **>(tabPolygons),
-                            nParts, &isValidGeometry, papszOptions);
+                        auto poOGR = OGRGeometryFactory::organizePolygons(
+                            apoPolygons, &isValidGeometry, apszOptions);
 
                         if (!isValidGeometry)
                         {
@@ -2830,8 +2826,7 @@ OGRErr OGRCreateFromShapeBin(GByte *pabyShape, OGRGeometry **ppoGeom,
                                      "contained in a multipolygon.");
                         }
 
-                        *ppoGeom = poOGR;
-                        delete[] tabPolygons;
+                        *ppoGeom = poOGR.release();
                     }
                 }
             }
@@ -3003,3 +2998,9 @@ OGRErr OGRCreateFromShapeBin(GByte *pabyShape, OGRGeometry **ppoGeom,
 
     return OGRERR_FAILURE;
 }
+
+#ifdef HAVE_WFLAG_UNREACHABLE_CODE_AGGRESSIVE
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+#endif

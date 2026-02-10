@@ -10,7 +10,9 @@
  * SPDX-License-Identifier: MIT
  *****************************************************************************/
 #include "../vrt/vrtdataset.h"
+#include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_priv.h"
 #include "derivedlist.h"
 
 class DerivedDataset final : public VRTDataset
@@ -18,7 +20,7 @@ class DerivedDataset final : public VRTDataset
   public:
     DerivedDataset(int nXSize, int nYSize);
 
-    ~DerivedDataset();
+    ~DerivedDataset() override;
 
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
@@ -128,7 +130,7 @@ GDALDataset *DerivedDataset::Open(GDALOpenInfo *poOpenInfo)
     // Transfer metadata
     poDS->SetMetadata(poTmpDS->GetMetadata());
 
-    char **papszRPC = poTmpDS->GetMetadata("RPC");
+    CSLConstList papszRPC = poTmpDS->GetMetadata("RPC");
     if (papszRPC)
     {
         poDS->SetMetadata(papszRPC, "RPC");

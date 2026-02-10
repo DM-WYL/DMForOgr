@@ -27,20 +27,37 @@ MMRBand::MMRBand(MMRRel &fRel, const CPLString &osBandSectionIn)
       m_osBandSection(osBandSectionIn)
 
 {
-    // Getting band and band file name from metadata
-    if (!m_pfRel->GetMetadataValue(SECTION_ATTRIBUTE_DATA, osBandSectionIn,
-                                   KEY_NomFitxer, m_osRawBandFileName) ||
+    // Getting band and band file name from metadata.
+    CPLString osNomFitxer;
+    osNomFitxer = SECTION_ATTRIBUTE_DATA;
+    osNomFitxer.append(":");
+    osNomFitxer.append(osBandSectionIn);
+    if (!m_pfRel->GetMetadataValue(osNomFitxer, KEY_NomFitxer,
+                                   m_osRawBandFileName) ||
         m_osRawBandFileName.empty())
     {
-        m_osBandFileName =
-            m_pfRel->MMRGetFileNameFromRelName(m_pfRel->GetRELName());
+        // A band name may be empty only if it is the only band present
+        // in the REL file. Otherwise, inferring the band name from the
+        // REL filename is considered an error.
+        // Consequently, for a REL file containing exactly one band, if
+        // the band name is empty, it shall be inferred from the REL
+        // filename.
+        // Example: REL: testI.rel  -->  IMG: test.img
+        if (m_pfRel->GetNBands() >= 1)
+            m_osBandFileName = "";
+        else
+        {
+            m_osBandFileName =
+                m_pfRel->MMRGetFileNameFromRelName(m_pfRel->GetRELName());
+        }
+
         if (m_osBandFileName.empty())
         {
             m_nWidth = 0;
             m_nHeight = 0;
             CPLError(CE_Failure, CPLE_AssertionFailed,
                      "The REL file '%s' contains a documented \
-                band with no explicit name. Section [%s] or [%s:%s].",
+                band with no explicit or wrong name. Section [%s] or [%s:%s].",
                      m_pfRel->GetRELNameChar(), SECTION_ATTRIBUTE_DATA,
                      SECTION_ATTRIBUTE_DATA, m_osBandSection.c_str());
             return;
@@ -54,6 +71,11 @@ MMRBand::MMRBand(MMRRel &fRel, const CPLString &osBandSectionIn)
         CPLString osAux = CPLGetPathSafe(m_pfRel->GetRELNameChar());
         m_osBandFileName =
             CPLFormFilenameSafe(osAux.c_str(), m_osRawBandFileName.c_str(), "");
+
+        CPLString osExtension =
+            CPLString(CPLGetExtensionSafe(m_osBandFileName).c_str());
+        if (!EQUAL(osExtension, pszExtRaster + 1))
+            return;
     }
 
     // There is a band file documented?
@@ -213,8 +235,7 @@ CPLErr MMRBand::GetRasterBlock(int /*nXBlock*/, int nYBlock, void *pData,
     // Calculate block offset in case we have spill file. Use predefined
     // block map otherwise.
 
-    if (nDataSize != -1 &&
-        (nGDALBlockSize > INT_MAX || nGDALBlockSize > nDataSize))
+    if (nDataSize != -1 && nGDALBlockSize > nDataSize)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "Invalid block size: %d",
                  nGDALBlockSize);
@@ -258,7 +279,7 @@ void MMRBand::UpdateGeoTransform()
 }
 
 /************************************************************************/
-/*                      Other functions                                 */
+/*                           Other functions                            */
 /************************************************************************/
 
 // [ATTRIBUTE_DATA:xxxx] or [OVERVIEW:ASPECTES_TECNICS]
@@ -508,14 +529,18 @@ void MMRBand::UpdateMinMaxVisuValuesFromREL(const CPLString &osSection)
 
 void MMRBand::UpdateFriendlyDescriptionFromREL(const CPLString &osSection)
 {
-    m_pfRel->GetMetadataValue(SECTION_ATTRIBUTE_DATA, osSection, "descriptor",
-                              m_osFriendlyDescription);
+    // This "if" is due to CID 1620830 in Coverity Scan
+    if (!m_pfRel->GetMetadataValue(SECTION_ATTRIBUTE_DATA, osSection,
+                                   "descriptor", m_osFriendlyDescription))
+        m_osFriendlyDescription = "";
 }
 
 void MMRBand::UpdateReferenceSystemFromREL()
 {
-    m_pfRel->GetMetadataValue("SPATIAL_REFERENCE_SYSTEM:HORIZONTAL",
-                              "HorizontalSystemIdentifier", m_osRefSystem);
+    // This "if" is due to CID 1620842 in Coverity Scan
+    if (!m_pfRel->GetMetadataValue("SPATIAL_REFERENCE_SYSTEM:HORIZONTAL",
+                                   "HorizontalSystemIdentifier", m_osRefSystem))
+        m_osRefSystem = "";
 }
 
 void MMRBand::UpdateBoundingBoxFromREL(const CPLString &osSection)
@@ -581,7 +606,7 @@ void MMRBand::UpdateBoundingBoxFromREL(const CPLString &osSection)
 }
 
 /************************************************************************/
-/*          Functions that read bytes from IMG file band                */
+/*             Functions that read bytes from IMG file band             */
 /************************************************************************/
 template <typename TYPE>
 CPLErr MMRBand::UncompressRow(void *rowBuffer, size_t nCompressedRawSize)
@@ -598,6 +623,12 @@ CPLErr MMRBand::UncompressRow(void *rowBuffer, size_t nCompressedRawSize)
 
     if (nCompressedRawSize != SIZE_MAX)
     {
+        if (nCompressedRawSize > 1000 * 1000 &&
+            GetFileSize() < nCompressedRawSize)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined, "Too small file");
+            return CE_Failure;
+        }
         try
         {
             aCompressedRow.resize(nCompressedRawSize);
@@ -936,8 +967,25 @@ int MMRBand::PositionAtStartOfRowOffsetsInFile()
 }  // Fi de PositionAtStartOfRowOffsetsInFile()
 
 /************************************************************************/
-/*                              FillRowOffsets()                         */
+/*                            GetFileSize()                             */
 /************************************************************************/
+
+vsi_l_offset MMRBand::GetFileSize()
+{
+    if (m_nFileSize == 0)
+    {
+        const auto nCurPos = VSIFTellL(m_pfIMG);
+        VSIFSeekL(m_pfIMG, 0, SEEK_END);
+        m_nFileSize = VSIFTellL(m_pfIMG);
+        VSIFSeekL(m_pfIMG, nCurPos, SEEK_SET);
+    }
+    return m_nFileSize;
+}
+
+/************************************************************************/
+/*                           FillRowOffsets()                           */
+/************************************************************************/
+
 bool MMRBand::FillRowOffsets()
 {
     vsi_l_offset nStartOffset;
@@ -956,11 +1004,7 @@ bool MMRBand::FillRowOffsets()
     // Sanity check to avoid attempting huge memory allocation
     if (m_nHeight > 1000 * 1000)
     {
-        const auto nCurPos = VSIFTellL(m_pfIMG);
-        VSIFSeekL(m_pfIMG, 0, SEEK_END);
-        const auto nFileSize = VSIFTellL(m_pfIMG);
-        VSIFSeekL(m_pfIMG, nCurPos, SEEK_SET);
-        if (nFileSize < static_cast<vsi_l_offset>(m_nHeight))
+        if (GetFileSize() < static_cast<vsi_l_offset>(m_nHeight))
         {
             CPLError(CE_Failure, CPLE_AppDefined, "Too small file");
             return false;

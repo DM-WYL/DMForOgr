@@ -16,6 +16,7 @@
 #include "cpl_float.h"
 
 #include <algorithm>
+#include <limits>
 #include <set>
 #include <utility>
 
@@ -23,7 +24,7 @@ namespace GDAL
 {
 
 /************************************************************************/
-/*                               HDF5Group                              */
+/*                              HDF5Group                               */
 /************************************************************************/
 
 class HDF5Group final : public GDALGroup
@@ -84,7 +85,7 @@ class HDF5Group final : public GDALGroup
         return poGroup;
     }
 
-    ~HDF5Group()
+    ~HDF5Group() override
     {
         H5Gclose(m_hGroup);
     }
@@ -113,7 +114,7 @@ class HDF5Group final : public GDALGroup
 };
 
 /************************************************************************/
-/*                             HDF5Dimension                            */
+/*                            HDF5Dimension                             */
 /************************************************************************/
 
 class HDF5Dimension final : public GDALDimension
@@ -231,7 +232,7 @@ BuildDataType(hid_t hDataType, bool &bHasString, bool &bNonNativeDataType,
 }
 
 /************************************************************************/
-/*                    GetDataTypesInGroup()                             */
+/*                        GetDataTypesInGroup()                         */
 /************************************************************************/
 
 static void
@@ -265,7 +266,7 @@ GetDataTypesInGroup(hid_t hHDF5, const std::string &osGroupFullName,
 }
 
 /************************************************************************/
-/*                            HDF5Array                                 */
+/*                              HDF5Array                               */
 /************************************************************************/
 
 class HDF5Array final : public GDALMDArray
@@ -313,7 +314,7 @@ class HDF5Array final : public GDALMDArray
                void *pDstBuffer) const override;
 
   public:
-    ~HDF5Array();
+    ~HDF5Array() override;
 
     static std::shared_ptr<HDF5Array>
     Create(const std::string &osParentName, const std::string &osName,
@@ -392,10 +393,13 @@ class HDF5Array final : public GDALMDArray
     {
         return m_poShared->GetRootGroup();
     }
+
+    bool GetRawBlockInfo(const uint64_t *panBlockCoordinates,
+                         GDALMDArrayRawBlockInfo &info) const override;
 };
 
 /************************************************************************/
-/*                           HDF5Attribute                              */
+/*                            HDF5Attribute                             */
 /************************************************************************/
 
 class HDF5Attribute final : public GDALAttribute
@@ -468,7 +472,7 @@ class HDF5Attribute final : public GDALAttribute
                void *pDstBuffer) const override;
 
   public:
-    ~HDF5Attribute();
+    ~HDF5Attribute() override;
 
     static std::shared_ptr<HDF5Attribute>
     Create(const std::string &osGroupFullName, const std::string &osParentName,
@@ -523,7 +527,7 @@ HDF5SharedResources::~HDF5SharedResources()
 }
 
 /************************************************************************/
-/*                          Create()                                    */
+/*                               Create()                               */
 /************************************************************************/
 
 std::shared_ptr<HDF5SharedResources>
@@ -536,7 +540,7 @@ HDF5SharedResources::Create(const std::string &osFilename)
 }
 
 /************************************************************************/
-/*                           GetRootGroup()                             */
+/*                            GetRootGroup()                            */
 /************************************************************************/
 
 std::shared_ptr<HDF5Group> HDF5SharedResources::GetRootGroup()
@@ -560,7 +564,7 @@ std::shared_ptr<HDF5Group> HDF5SharedResources::GetRootGroup()
 }
 
 /************************************************************************/
-/*                         GetDimensions()                              */
+/*                           GetDimensions()                            */
 /************************************************************************/
 
 std::vector<std::shared_ptr<GDALDimension>>
@@ -831,7 +835,7 @@ HDF5Group::GetDimensions(CSLConstList) const
 }
 
 /************************************************************************/
-/*                          GetGroupNamesCallback()                     */
+/*                       GetGroupNamesCallback()                        */
 /************************************************************************/
 
 herr_t HDF5Group::GetGroupNamesCallback(hid_t hGroup, const char *pszObjName,
@@ -863,7 +867,7 @@ herr_t HDF5Group::GetGroupNamesCallback(hid_t hGroup, const char *pszObjName,
 }
 
 /************************************************************************/
-/*                            GetGroupNames()                           */
+/*                           GetGroupNames()                            */
 /************************************************************************/
 
 std::vector<std::string> HDF5Group::GetGroupNames(CSLConstList) const
@@ -908,7 +912,7 @@ std::shared_ptr<GDALGroup> HDF5Group::OpenGroup(const std::string &osName,
 }
 
 /************************************************************************/
-/*                          GetArrayNamesCallback()                     */
+/*                       GetArrayNamesCallback()                        */
 /************************************************************************/
 
 herr_t HDF5Group::GetArrayNamesCallback(hid_t hGroup, const char *pszObjName,
@@ -949,7 +953,7 @@ herr_t HDF5Group::GetArrayNamesCallback(hid_t hGroup, const char *pszObjName,
 }
 
 /************************************************************************/
-/*                         GetMDArrayNames()                            */
+/*                          GetMDArrayNames()                           */
 /************************************************************************/
 
 std::vector<std::string> HDF5Group::GetMDArrayNames(CSLConstList) const
@@ -970,7 +974,7 @@ std::vector<std::string> HDF5Group::GetMDArrayNames(CSLConstList) const
 }
 
 /************************************************************************/
-/*                           OpenMDArray()                              */
+/*                            OpenMDArray()                             */
 /************************************************************************/
 
 std::shared_ptr<GDALMDArray> HDF5Group::OpenMDArray(const std::string &osName,
@@ -1000,7 +1004,7 @@ std::shared_ptr<GDALMDArray> HDF5Group::OpenMDArray(const std::string &osName,
 }
 
 /************************************************************************/
-/*                          GetAttributesCallback()                     */
+/*                       GetAttributesCallback()                        */
 /************************************************************************/
 
 herr_t HDF5Group::GetAttributesCallback(hid_t hGroup, const char *pszObjName,
@@ -1043,7 +1047,7 @@ HDF5Group::GetAttributes(CSLConstList papszOptions) const
 }
 
 /************************************************************************/
-/*                               ~HDF5Array()                           */
+/*                             ~HDF5Array()                             */
 /************************************************************************/
 
 HDF5Array::~HDF5Array()
@@ -1059,7 +1063,7 @@ HDF5Array::~HDF5Array()
 }
 
 /************************************************************************/
-/*                                HDF5Array()                           */
+/*                             HDF5Array()                              */
 /************************************************************************/
 
 HDF5Array::HDF5Array(const std::string &osParentName, const std::string &osName,
@@ -1243,7 +1247,7 @@ HDF5Array::HDF5Array(const std::string &osParentName, const std::string &osName,
         m_dt.GetComponents()[0]->GetType().GetNumericDataType() ==
             GDT_Float32 &&
         // In theory should be Byte, but 104US00_ches_dcf2_20190606T12Z.h5 uses Int32
-        (m_dt.GetComponents()[1]->GetType().GetNumericDataType() == GDT_Byte ||
+        (m_dt.GetComponents()[1]->GetType().GetNumericDataType() == GDT_UInt8 ||
          m_dt.GetComponents()[1]->GetType().GetNumericDataType() == GDT_Int32))
     {
         m_abyNoData.resize(m_dt.GetSize());
@@ -1380,7 +1384,7 @@ HDF5Array::HDF5Array(const std::string &osParentName, const std::string &osName,
 }
 
 /************************************************************************/
-/*                        InstantiateDimensions()                       */
+/*                       InstantiateDimensions()                        */
 /************************************************************************/
 
 void HDF5Array::InstantiateDimensions(const std::string &osParentName,
@@ -1500,9 +1504,7 @@ void HDF5Array::InstantiateDimensions(const std::string &osParentName,
         // Use HDF-EOS5 metadata if available to create dimensions
 
         HDF5EOSParser::GridDataFieldMetadata oGridDataFieldMetadata;
-        HDF5EOSParser::SwathDataFieldMetadata oSwathDataFieldMetadata;
-        HDF5EOSParser::SwathGeolocationFieldMetadata
-            oSwathGeolocationFieldMetadata;
+        HDF5EOSParser::SwathFieldMetadata oSwathFieldMetadata;
         const auto poHDF5EOSParser = m_poShared->GetHDF5EOSParser();
         // Build a "classic" subdataset name from group and array names
         const std::string osSubdatasetName(
@@ -1558,19 +1560,19 @@ void HDF5Array::InstantiateDimensions(const std::string &osParentName,
             return;
         }
         else if (poHDF5EOSParser &&
-                 poHDF5EOSParser->GetSwathDataFieldMetadata(
-                     osSubdatasetName.c_str(), oSwathDataFieldMetadata) &&
-                 oSwathDataFieldMetadata.aoDimensions.size() ==
+                 poHDF5EOSParser->GetSwathFieldMetadata(
+                     osSubdatasetName.c_str(), oSwathFieldMetadata) &&
+                 oSwathFieldMetadata.aoDimensions.size() ==
                      static_cast<size_t>(nDims))
         {
             std::map<std::string, std::shared_ptr<GDALDimension>> oMap;
             const auto groupDims = m_poShared->GetEOSSwathDimensions(
-                oSwathDataFieldMetadata.poSwathMetadata->osSwathName);
+                oSwathFieldMetadata.poSwathMetadata->osSwathName);
             for (const auto &dim : groupDims)
             {
                 oMap[dim->GetName()] = dim;
             }
-            for (const auto &oDim : oSwathDataFieldMetadata.aoDimensions)
+            for (const auto &oDim : oSwathFieldMetadata.aoDimensions)
             {
                 auto oIter = oMap.find(oDim.osName);
                 // HDF5EOSParser guarantees that
@@ -1579,30 +1581,6 @@ void HDF5Array::InstantiateDimensions(const std::string &osParentName,
                 m_dims.emplace_back(poDim);
             }
 
-            return;
-        }
-        else if (poHDF5EOSParser &&
-                 poHDF5EOSParser->GetSwathGeolocationFieldMetadata(
-                     osSubdatasetName.c_str(),
-                     oSwathGeolocationFieldMetadata) &&
-                 oSwathGeolocationFieldMetadata.aoDimensions.size() ==
-                     static_cast<size_t>(nDims))
-        {
-            std::map<std::string, std::shared_ptr<GDALDimension>> oMap;
-            const auto groupDims = m_poShared->GetEOSSwathDimensions(
-                oSwathGeolocationFieldMetadata.poSwathMetadata->osSwathName);
-            for (const auto &dim : groupDims)
-            {
-                oMap[dim->GetName()] = dim;
-            }
-            for (const auto &oDim : oSwathGeolocationFieldMetadata.aoDimensions)
-            {
-                auto oIter = oMap.find(oDim.osName);
-                // HDF5EOSParser guarantees that
-                CPLAssert(oIter != oMap.end());
-                const auto &poDim = oIter->second;
-                m_dims.emplace_back(poDim);
-            }
             return;
         }
 
@@ -1737,7 +1715,7 @@ void HDF5Array::InstantiateDimensions(const std::string &osParentName,
 }
 
 /************************************************************************/
-/*                      GetCoordinateVariables()                        */
+/*                       GetCoordinateVariables()                       */
 /************************************************************************/
 
 std::vector<std::shared_ptr<GDALMDArray>>
@@ -1745,34 +1723,35 @@ HDF5Array::GetCoordinateVariables() const
 {
     std::vector<std::shared_ptr<GDALMDArray>> ret;
 
-    HDF5EOSParser::SwathDataFieldMetadata oSwathDataFieldMetadata;
+    HDF5EOSParser::SwathFieldMetadata oSwathFieldMetadata;
     const auto poHDF5EOSParser = m_poShared->GetHDF5EOSParser();
     // Build a "classic" subdataset name from group and array names
     const std::string osSubdatasetName(
-        "/" +
-        CPLString(GetFullName()).replaceAll("Data Fields", "Data_Fields"));
+        "/" + CPLString(GetFullName())
+                  .replaceAll("Data Fields", "Data_Fields")
+                  .replaceAll("Geolocation Fields", "Geolocation_Fields"));
     if (poHDF5EOSParser &&
-        poHDF5EOSParser->GetSwathDataFieldMetadata(osSubdatasetName.c_str(),
-                                                   oSwathDataFieldMetadata) &&
-        oSwathDataFieldMetadata.aoDimensions.size() == GetDimensionCount())
+        poHDF5EOSParser->GetSwathFieldMetadata(osSubdatasetName.c_str(),
+                                               oSwathFieldMetadata) &&
+        oSwathFieldMetadata.aoDimensions.size() == GetDimensionCount())
     {
-        if (!oSwathDataFieldMetadata.osLongitudeSubdataset.empty() &&
-            oSwathDataFieldMetadata.nPixelOffset == 0 &&
-            oSwathDataFieldMetadata.nLineOffset == 0 &&
-            oSwathDataFieldMetadata.nPixelStep == 1 &&
-            oSwathDataFieldMetadata.nLineStep == 1)
+        if (!oSwathFieldMetadata.osLongitudeSubdataset.empty() &&
+            oSwathFieldMetadata.nPixelOffset == 0 &&
+            oSwathFieldMetadata.nLineOffset == 0 &&
+            oSwathFieldMetadata.nPixelStep == 1 &&
+            oSwathFieldMetadata.nLineStep == 1)
         {
             auto poRootGroup = m_poShared->GetRootGroup();
             if (poRootGroup)
             {
                 auto poLongitude = poRootGroup->OpenMDArrayFromFullname(
                     CPLString(
-                        oSwathDataFieldMetadata.osLongitudeSubdataset.substr(1))
+                        oSwathFieldMetadata.osLongitudeSubdataset.substr(1))
                         .replaceAll("Geolocation_Fields",
                                     "Geolocation Fields"));
                 auto poLatitude = poRootGroup->OpenMDArrayFromFullname(
                     CPLString(
-                        oSwathDataFieldMetadata.osLatitudeSubdataset.substr(1))
+                        oSwathFieldMetadata.osLatitudeSubdataset.substr(1))
                         .replaceAll("Geolocation_Fields",
                                     "Geolocation Fields"));
                 if (poLongitude && poLatitude)
@@ -1788,7 +1767,235 @@ HDF5Array::GetCoordinateVariables() const
 }
 
 /************************************************************************/
-/*                          GetAttributesCallback()                     */
+/*                           GetFilterInfo()                            */
+/************************************************************************/
+
+static CPLStringList GetFilterInfo(hid_t hArray, unsigned nFilterMask)
+{
+    static const struct
+    {
+        int nFilterId;
+        const char *pszName;
+    } gasHDF5Filters[] = {
+        // { H5Z_FILTER_DEFLATE, "DEFLATE" },
+        {H5Z_FILTER_SHUFFLE, "SHUFFLE"},
+        {H5Z_FILTER_FLETCHER32, "FLETCHER32"},
+        // { H5Z_FILTER_SZIP, "SZIP" },
+        {H5Z_FILTER_NBIT, "NBIT"},
+        {H5Z_FILTER_SCALEOFFSET, "SCALEOFFSET"},
+        // Below from netcdf_filter.h
+        {/*H5Z_FILTER_ZSTD */ 32015, "ZSTD"},
+        {/*H5Z_FILTER_BZIP2 */ 307, "BZIP2"},
+        {/*H5Z_FILTER_BLOSC */ 32001, "BLOSC"},
+    };
+
+    CPLStringList aosInfo;
+    const hid_t nListId = H5Dget_create_plist(hArray);
+    if (nListId > 0)
+    {
+        const int nFilters = H5Pget_nfilters(nListId);
+        const char *pszCompression = nullptr;
+        std::string osFilters;
+        for (int i = 0; i < nFilters; ++i)
+        {
+            unsigned int flags = 0;
+            size_t cd_nelmts = 0;
+            char szName[64 + 1] = {0};
+            const auto eFilter =
+                H5Pget_filter(nListId, i, &flags, &cd_nelmts, nullptr,
+                              sizeof(szName) - 1, szName);
+            if ((flags & nFilterMask) == 0)
+            {
+                if (eFilter == H5Z_FILTER_DEFLATE)
+                {
+                    pszCompression = "DEFLATE";
+                }
+                else if (eFilter == H5Z_FILTER_SZIP)
+                {
+                    pszCompression = "SZIP";
+                }
+                else
+                {
+                    bool bFound = false;
+                    if (!osFilters.empty())
+                        osFilters += ',';
+                    for (const auto &sFilterInfo : gasHDF5Filters)
+                    {
+                        if (sFilterInfo.nFilterId == eFilter)
+                        {
+                            bFound = true;
+                            osFilters += sFilterInfo.pszName;
+                            break;
+                        }
+                    }
+                    if (!bFound)
+                        osFilters += szName;
+                }
+            }
+        }
+        H5Pclose(nListId);
+        if (pszCompression)
+            aosInfo.SetNameValue("COMPRESSION", pszCompression);
+        if (!osFilters.empty())
+            aosInfo.SetNameValue("FILTER", osFilters.c_str());
+    }
+    return aosInfo;
+}
+
+/************************************************************************/
+/*                     HDF5Array::GetRawBlockInfo()                     */
+/************************************************************************/
+
+bool HDF5Array::GetRawBlockInfo(const uint64_t *panBlockCoordinates,
+                                GDALMDArrayRawBlockInfo &info) const
+{
+    info.clear();
+
+    const auto anBlockSize = GetBlockSize();
+    CPLAssert(anBlockSize.size() == m_dims.size());
+
+    const auto AddExtraInfo = [this, &info]()
+    {
+        if (m_dt.GetSize() > 1)
+        {
+            const hid_t hDataType = H5Dget_type(m_hArray);
+            switch (H5Tget_order(hDataType))
+            {
+                case H5T_ORDER_LE:
+                    info.papszInfo =
+                        CSLSetNameValue(info.papszInfo, "ENDIANNESS", "LITTLE");
+                    break;
+                case H5T_ORDER_BE:
+                    info.papszInfo =
+                        CSLSetNameValue(info.papszInfo, "ENDIANNESS", "BIG");
+                    break;
+                case H5T_ORDER_VAX:
+                    info.papszInfo =
+                        CSLSetNameValue(info.papszInfo, "ENDIANNESS", "VAX");
+                    break;
+                case H5T_ORDER_MIXED:
+                    info.papszInfo =
+                        CSLSetNameValue(info.papszInfo, "ENDIANNESS", "MIXED");
+                    break;
+                case H5T_ORDER_NONE:
+                case H5T_ORDER_ERROR:
+                    break;
+            }
+            H5Tclose(hDataType);
+        }
+    };
+
+    if (!anBlockSize.empty() && anBlockSize[0] == 0)
+    {
+        HDF5_GLOBAL_LOCK();
+        const auto nOffset = H5Dget_offset(m_hArray);
+        if (nOffset != HADDR_UNDEF)
+        {
+            bool bAllZeroes = true;
+            for (size_t i = 0; i < m_dims.size() && bAllZeroes; ++i)
+                bAllZeroes = panBlockCoordinates[i] == 0;
+            if (bAllZeroes)
+            {
+                info.pszFilename = CPLStrdup(m_poShared->GetFilename().c_str());
+                info.nOffset = nOffset;
+                info.nSize = H5Dget_storage_size(m_hArray);
+                info.papszInfo =
+                    GetFilterInfo(m_hArray, /* nFilterMask = */ 0).StealList();
+                AddExtraInfo();
+                return true;
+            }
+            else
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "GetRawBlockInfo() failed: invalid block coordinates. "
+                         "Should be all 0");
+                return false;
+            }
+        }
+        else
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "GetRawBlockInfo() failed: array %s is not chunked or "
+                     "contiguous",
+                     GetName().c_str());
+            return false;
+        }
+    }
+
+#if (defined(H5_VERS_MAJOR) &&                                                 \
+     (H5_VERS_MAJOR >= 2 || (H5_VERS_MAJOR == 1 && H5_VERS_MINOR > 10) ||      \
+      (H5_VERS_MAJOR == 1 && H5_VERS_MINOR == 10 && H5_VERS_RELEASE >= 5)))
+    // Compute the block index from the coordinates
+    hsize_t nBlockIdx = 0;
+    hsize_t nMult = 1;
+    for (size_t nDimIdx = anBlockSize.size(); nDimIdx > 0;)
+    {
+        --nDimIdx;
+        const auto nBlockSize = anBlockSize[nDimIdx];
+        const auto nBlockCount =
+            cpl::div_round_up(m_dims[nDimIdx]->GetSize(), nBlockSize);
+        if (panBlockCoordinates[nDimIdx] >= nBlockCount)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "GetRawBlockInfo() failed: array %s: "
+                     "invalid block coordinate (%u) for dimension %u",
+                     GetName().c_str(),
+                     static_cast<unsigned>(panBlockCoordinates[nDimIdx]),
+                     static_cast<unsigned>(nDimIdx));
+            return false;
+        }
+        nBlockIdx += panBlockCoordinates[nDimIdx] * nMult;
+        nMult *= nBlockCount;
+    }
+
+    HDF5_GLOBAL_LOCK();
+    std::vector<hsize_t> anOffset(GetDimensionCount());
+    unsigned nFilterMask = 0;
+    haddr_t nChunkOffset = 0;
+    hsize_t nChunkSize = 0;
+    if (H5Dget_chunk_info(m_hArray, m_hDataSpace, nBlockIdx, anOffset.data(),
+                          &nFilterMask, &nChunkOffset, &nChunkSize) < 0)
+    {
+        CPLError(
+            CE_Failure, CPLE_AppDefined,
+            "GetRawBlockInfo() failed: array %s: H5Dget_chunk_info() failed",
+            GetName().c_str());
+        return false;
+    }
+
+    info.pszFilename = CPLStrdup(m_poShared->GetFilename().c_str());
+    info.nOffset = nChunkOffset == HADDR_UNDEF ? 0 : nChunkOffset;
+
+#if !(defined(H5_VERS_MAJOR) &&                                                \
+      (H5_VERS_MAJOR >= 2 ||                                                   \
+       (H5_VERS_MAJOR == 1 && H5_VERS_MINOR == 14 && H5_VERS_RELEASE >= 4)))
+    // Before HDF5 1.14.4, H5Dget_chunk_info() doesn't take into account the
+    // user block
+    const hid_t nListId = H5Fget_create_plist(m_poShared->GetHDF5());
+    if (nListId > 0)
+    {
+        hsize_t nUserBlockSize = 0;
+        if (H5Pget_userblock(nListId, &nUserBlockSize) >= 0)
+        {
+            info.nOffset += nUserBlockSize;
+        }
+        H5Pclose(nListId);
+    }
+#endif
+
+    info.nSize = nChunkSize;
+    info.papszInfo = GetFilterInfo(m_hArray, nFilterMask).StealList();
+    AddExtraInfo();
+
+    return true;
+#else
+    CPLDebug("HDF5", "H5Dget_chunk_info() only available in HDF5 >= 1.10.5");
+    return false;
+#endif
+}
+
+/************************************************************************/
+/*                       GetAttributesCallback()                        */
 /************************************************************************/
 
 herr_t HDF5Array::GetAttributesCallback(hid_t hArray, const char *pszObjName,
@@ -1901,7 +2108,7 @@ herr_t HDF5Array::GetAttributesCallback(hid_t hArray, const char *pszObjName,
 }
 
 /************************************************************************/
-/*                       GetAttributeFromAttributes()                   */
+/*                     GetAttributeFromAttributes()                     */
 /************************************************************************/
 
 /** Possible fallback implementation for GetAttribute() using GetAttributes().
@@ -1938,7 +2145,7 @@ HDF5Array::GetAttributes(CSLConstList papszOptions) const
 }
 
 /************************************************************************/
-/*                           GetBlockSize()                             */
+/*                            GetBlockSize()                            */
 /************************************************************************/
 
 std::vector<GUInt64> HDF5Array::GetBlockSize() const
@@ -1982,42 +2189,13 @@ CSLConstList HDF5Array::GetStructuralInfo() const
     if (m_aosStructuralInfo.empty())
     {
         HDF5_GLOBAL_LOCK();
-        const hid_t nListId = H5Dget_create_plist(m_hArray);
-        if (nListId > 0)
-        {
-            const int nFilters = H5Pget_nfilters(nListId);
-            for (int i = 0; i < nFilters; ++i)
-            {
-                unsigned int flags = 0;
-                size_t cd_nelmts = 0;
-                char szName[64 + 1] = {0};
-                const auto eFilter = H5Pget_filter(
-                    nListId, i, &flags, &cd_nelmts, nullptr, 64, szName);
-                if (eFilter == H5Z_FILTER_DEFLATE)
-                {
-                    m_aosStructuralInfo.SetNameValue("COMPRESSION", "DEFLATE");
-                }
-                else if (eFilter == H5Z_FILTER_SZIP)
-                {
-                    m_aosStructuralInfo.SetNameValue("COMPRESSION", "SZIP");
-                }
-                else if (eFilter == H5Z_FILTER_SHUFFLE)
-                {
-                    m_aosStructuralInfo.SetNameValue("FILTER", "SHUFFLE");
-                }
-                else
-                {
-                    CPLDebug("HDF5", "Filter used: %s", szName);
-                }
-            }
-            H5Pclose(nListId);
-        }
+        m_aosStructuralInfo = GetFilterInfo(m_hArray, /* nFilterMask = */ 0);
     }
     return m_aosStructuralInfo.List();
 }
 
 /************************************************************************/
-/*                           CopyBuffer()                               */
+/*                             CopyBuffer()                             */
 /************************************************************************/
 
 static void CopyBuffer(size_t nDims, const size_t *count,
@@ -2065,8 +2243,12 @@ lbl_next_depth:
             --anStackCount[iDim];
             if (anStackCount[iDim] == 0)
                 break;
-            pabyDstBufferStack[iDim] +=
-                bufferStride[iDim] * nBufferDataTypeSize;
+            if (bufferStride[iDim] >= 0)
+                pabyDstBufferStack[iDim] +=
+                    bufferStride[iDim] * nBufferDataTypeSize;
+            else
+                pabyDstBufferStack[iDim] -=
+                    (-bufferStride[iDim]) * nBufferDataTypeSize;
             pabySrcBufferStack[iDim] += anSrcStride[iDim];
         }
     }
@@ -2075,7 +2257,7 @@ lbl_next_depth:
 }
 
 /************************************************************************/
-/*                             ReadSlow()                               */
+/*                              ReadSlow()                              */
 /************************************************************************/
 
 bool HDF5Array::ReadSlow(const GUInt64 *arrayStartIdx, const size_t *count,
@@ -2235,7 +2417,7 @@ lbl_next_depth:
 }
 
 /************************************************************************/
-/*                    IngestFixedLengthStrings()                        */
+/*                      IngestFixedLengthStrings()                      */
 /************************************************************************/
 
 static void IngestFixedLengthStrings(void *pDstBuffer, const void *pTemp,
@@ -2292,7 +2474,7 @@ lbl_next_depth:
 }
 
 /************************************************************************/
-/*                   GetHDF5DataTypeFromGDALDataType()                  */
+/*                  GetHDF5DataTypeFromGDALDataType()                   */
 /************************************************************************/
 
 static hid_t
@@ -2302,7 +2484,7 @@ GetHDF5DataTypeFromGDALDataType(const GDALExtendedDataType &dt, hid_t hNativeDT,
     hid_t hBufferType = H5I_INVALID_HID;
     switch (bufferDataType.GetNumericDataType())
     {
-        case GDT_Byte:
+        case GDT_UInt8:
             hBufferType = H5Tcopy(H5T_NATIVE_UCHAR);
             break;
         case GDT_Int8:
@@ -2361,7 +2543,7 @@ GetHDF5DataTypeFromGDALDataType(const GDALExtendedDataType &dt, hid_t hNativeDT,
 }
 
 /************************************************************************/
-/*                        FreeDynamicMemory()                           */
+/*                         FreeDynamicMemory()                          */
 /************************************************************************/
 
 static void FreeDynamicMemory(GByte *pabyPtr, hid_t hDataType)
@@ -2424,7 +2606,7 @@ CreateMapTargetComponentsToSrc(hid_t hSrcDataType,
 }
 
 /************************************************************************/
-/*                            CopyValue()                               */
+/*                             CopyValue()                              */
 /************************************************************************/
 
 static void CopyValue(const GByte *pabySrcBuffer, hid_t hSrcDataType,
@@ -2556,7 +2738,7 @@ static void CopyValue(const GByte *pabySrcBuffer, hid_t hSrcDataType,
 }
 
 /************************************************************************/
-/*                        CopyToFinalBuffer()                           */
+/*                         CopyToFinalBuffer()                          */
 /************************************************************************/
 
 static void CopyToFinalBuffer(void *pDstBuffer, const void *pTemp, size_t nDims,
@@ -3049,7 +3231,7 @@ bool HDF5Attribute::IRead(const GUInt64 *arrayStartIdx, const size_t *count,
 }
 
 /************************************************************************/
-/*                         GetIndexingVariable()                        */
+/*                        GetIndexingVariable()                         */
 /************************************************************************/
 
 std::shared_ptr<GDALMDArray> HDF5Dimension::GetIndexingVariable() const
@@ -3086,7 +3268,7 @@ std::shared_ptr<GDALMDArray> HDF5Dimension::GetIndexingVariable() const
 }  // namespace GDAL
 
 /************************************************************************/
-/*                           OpenMultiDim()                             */
+/*                            OpenMultiDim()                            */
 /************************************************************************/
 
 GDALDataset *HDF5Dataset::OpenMultiDim(GDALOpenInfo *poOpenInfo)
@@ -3125,7 +3307,7 @@ GDALDataset *HDF5Dataset::OpenMultiDim(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            OpenGroup()                               */
+/*                             OpenGroup()                              */
 /************************************************************************/
 
 std::shared_ptr<GDALGroup> HDF5Dataset::OpenGroup(

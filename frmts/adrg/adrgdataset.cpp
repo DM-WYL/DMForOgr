@@ -12,6 +12,10 @@
 #include "cpl_string.h"
 #include "gdal_pam.h"
 #include "gdal_frmts.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "iso8211.h"
 #include "ogr_spatialref.h"
 
@@ -62,7 +66,7 @@ class ADRGDataset final : public GDALPamDataset
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     char **GetMetadataDomainList() override;
-    char **GetMetadata(const char *pszDomain = "") override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
 
     char **GetFileList() override;
 
@@ -97,7 +101,7 @@ class ADRGRasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                           ADRGRasterBand()                            */
+/*                           ADRGRasterBand()                           */
 /************************************************************************/
 
 ADRGRasterBand::ADRGRasterBand(ADRGDataset *poDSIn, int nBandIn)
@@ -106,14 +110,14 @@ ADRGRasterBand::ADRGRasterBand(ADRGDataset *poDSIn, int nBandIn)
     poDS = poDSIn;
     nBand = nBandIn;
 
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     nBlockXSize = 128;
     nBlockYSize = 128;
 }
 
 /************************************************************************/
-/*                            GetNoDataValue()                          */
+/*                           GetNoDataValue()                           */
 /************************************************************************/
 
 double ADRGRasterBand::GetNoDataValue(int *pbSuccess)
@@ -193,7 +197,7 @@ CPLErr ADRGRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
 }
 
 /************************************************************************/
-/*                          ADRGDataset()                               */
+/*                            ADRGDataset()                             */
 /************************************************************************/
 
 ADRGDataset::ADRGDataset()
@@ -204,7 +208,7 @@ ADRGDataset::ADRGDataset()
 }
 
 /************************************************************************/
-/*                          ~ADRGDataset()                              */
+/*                            ~ADRGDataset()                            */
 /************************************************************************/
 
 ADRGDataset::~ADRGDataset()
@@ -279,7 +283,7 @@ void ADRGDataset::AddSubDataset(const char *pszGENFileName,
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **ADRGDataset::GetMetadataDomainList()
@@ -292,7 +296,7 @@ char **ADRGDataset::GetMetadataDomainList()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **ADRGDataset::GetMetadata(const char *pszDomain)
+CSLConstList ADRGDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "SUBDATASETS"))
@@ -302,7 +306,7 @@ char **ADRGDataset::GetMetadata(const char *pszDomain)
 }
 
 /************************************************************************/
-/*                        GetSpatialRef()                               */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *ADRGDataset::GetSpatialRef() const
@@ -311,7 +315,7 @@ const OGRSpatialReference *ADRGDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                        GetGeoTransform()                             */
+/*                          GetGeoTransform()                           */
 /************************************************************************/
 
 CPLErr ADRGDataset::GetGeoTransform(GDALGeoTransform &gt) const
@@ -325,7 +329,7 @@ CPLErr ADRGDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                     GetLongitudeFromString()                         */
+/*                       GetLongitudeFromString()                       */
 /************************************************************************/
 
 double ADRGDataset::GetLongitudeFromString(const char *str)
@@ -344,7 +348,7 @@ double ADRGDataset::GetLongitudeFromString(const char *str)
 }
 
 /************************************************************************/
-/*                      GetLatitudeFromString()                         */
+/*                       GetLatitudeFromString()                        */
 /************************************************************************/
 
 double ADRGDataset::GetLatitudeFromString(const char *str)
@@ -363,7 +367,7 @@ double ADRGDataset::GetLatitudeFromString(const char *str)
 }
 
 /************************************************************************/
-/*                      FindRecordInGENForIMG()                         */
+/*                       FindRecordInGENForIMG()                        */
 /************************************************************************/
 
 DDFRecord *ADRGDataset::FindRecordInGENForIMG(DDFModule &module,
@@ -434,7 +438,7 @@ DDFRecord *ADRGDataset::FindRecordInGENForIMG(DDFModule &module,
 }
 
 /************************************************************************/
-/*                           OpenDataset()                              */
+/*                            OpenDataset()                             */
 /************************************************************************/
 
 ADRGDataset *ADRGDataset::OpenDataset(const char *pszGENFileName,
@@ -826,7 +830,7 @@ ADRGDataset *ADRGDataset::OpenDataset(const char *pszGENFileName,
 }
 
 /************************************************************************/
-/*                          GetGENListFromTHF()                         */
+/*                         GetGENListFromTHF()                          */
 /************************************************************************/
 
 char **ADRGDataset::GetGENListFromTHF(const char *pszFileName)
@@ -941,7 +945,7 @@ char **ADRGDataset::GetGENListFromTHF(const char *pszFileName)
 }
 
 /************************************************************************/
-/*                          GetIMGListFromGEN()                         */
+/*                         GetIMGListFromGEN()                          */
 /************************************************************************/
 
 char **ADRGDataset::GetIMGListFromGEN(const char *pszFileName,

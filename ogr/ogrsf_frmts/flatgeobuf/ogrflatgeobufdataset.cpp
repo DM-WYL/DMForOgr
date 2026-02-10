@@ -60,7 +60,7 @@ static int OGRFlatGeobufDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                           Delete()                                   */
+/*                               Delete()                               */
 /************************************************************************/
 
 static CPLErr OGRFlatGoBufDriverDelete(const char *pszDataSource)
@@ -127,6 +127,8 @@ void RegisterOGRFlatGeobuf()
     poDriver->SetMetadataItem(GDAL_DCAP_CURVE_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_MEASURED_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_Z_GEOMETRIES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_REOPEN_AFTER_WRITE_REQUIRED, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CAN_READ_AFTER_DELETE, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_LONGNAME, "FlatGeobuf");
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "fgb");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC,
@@ -172,7 +174,7 @@ void RegisterOGRFlatGeobuf()
 }
 
 /************************************************************************/
-/*                         OGRFlatGeobufDataset()                       */
+/*                        OGRFlatGeobufDataset()                        */
 /************************************************************************/
 
 OGRFlatGeobufDataset::OGRFlatGeobufDataset(const char *pszName, bool bIsDir,
@@ -183,7 +185,7 @@ OGRFlatGeobufDataset::OGRFlatGeobufDataset(const char *pszName, bool bIsDir,
 }
 
 /************************************************************************/
-/*                         ~OGRFlatGeobufDataset()                      */
+/*                       ~OGRFlatGeobufDataset()                        */
 /************************************************************************/
 
 OGRFlatGeobufDataset::~OGRFlatGeobufDataset()
@@ -192,10 +194,10 @@ OGRFlatGeobufDataset::~OGRFlatGeobufDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr OGRFlatGeobufDataset::Close()
+CPLErr OGRFlatGeobufDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -235,8 +237,8 @@ GDALDataset *OGRFlatGeobufDataset::Open(GDALOpenInfo *poOpenInfo)
         return nullptr;
     }
 
-    auto poDS = std::unique_ptr<OGRFlatGeobufDataset>(new OGRFlatGeobufDataset(
-        poOpenInfo->pszFilename, isDir, false, bUpdate));
+    auto poDS = std::make_unique<OGRFlatGeobufDataset>(poOpenInfo->pszFilename,
+                                                       isDir, false, bUpdate);
 
     if (poOpenInfo->bIsDirectory)
     {
@@ -290,7 +292,7 @@ GDALDataset *OGRFlatGeobufDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                           OpenFile()                                 */
+/*                              OpenFile()                              */
 /************************************************************************/
 
 bool OGRFlatGeobufDataset::OpenFile(const char *pszFilename, VSILFILE *fp,
@@ -322,7 +324,7 @@ GDALDataset *OGRFlatGeobufDataset::Create(const char *pszName, int /* nBands */,
                                           CPL_UNUSED int nXSize,
                                           CPL_UNUSED int nYSize,
                                           CPL_UNUSED GDALDataType eDT,
-                                          char ** /* papszOptions */)
+                                          CSLConstList /* papszOptions */)
 {
     // First, ensure there isn't any such file yet.
     VSIStatBufL sStatBuf;
@@ -376,7 +378,7 @@ int OGRFlatGeobufDataset::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                        LaunderLayerName()                            */
+/*                          LaunderLayerName()                          */
 /************************************************************************/
 
 static CPLString LaunderLayerName(const char *pszLayerName)

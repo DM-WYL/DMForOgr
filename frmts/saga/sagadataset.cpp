@@ -19,6 +19,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #ifndef INT_MAX
@@ -27,7 +31,7 @@
 
 /* NODATA Values */
 // #define SG_NODATA_GDT_Bit 0.0
-constexpr GByte SG_NODATA_GDT_Byte = 255;
+constexpr GByte SG_NODATA_GDT_UInt8 = 255;
 #define SG_NODATA_GDT_UInt16 65535
 #define SG_NODATA_GDT_Int16 -32767
 #define SG_NODATA_GDT_UInt32 4294967295U
@@ -58,22 +62,22 @@ class SAGADataset final : public GDALPamDataset
 
   public:
     SAGADataset();
-    virtual ~SAGADataset();
+    ~SAGADataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
 
-    virtual char **GetFileList() override;
+    char **GetFileList() override;
 
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
@@ -348,7 +352,7 @@ char **SAGADataset::GetFileList()
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *SAGADataset::GetSpatialRef() const
@@ -593,17 +597,17 @@ GDALDataset *SAGADataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     if (EQUAL(szDataFormat, "BIT"))
     {
-        poBand->SetDataType(GDT_Byte);
+        poBand->SetDataType(GDT_UInt8);
         poBand->m_nBits = 8;
     }
     else if (EQUAL(szDataFormat, "BYTE_UNSIGNED"))
     {
-        poBand->SetDataType(GDT_Byte);
+        poBand->SetDataType(GDT_UInt8);
         poBand->m_nBits = 8;
     }
     else if (EQUAL(szDataFormat, "BYTE"))
     {
-        poBand->SetDataType(GDT_Byte);
+        poBand->SetDataType(GDT_UInt8);
         poBand->m_nBits = 8;
     }
     else if (EQUAL(szDataFormat, "SHORTINT_UNSIGNED"))
@@ -765,7 +769,7 @@ CPLErr SAGADataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                             WriteHeader()                            */
+/*                            WriteHeader()                             */
 /************************************************************************/
 
 CPLErr SAGADataset::WriteHeader(const CPLString &osHDRFilename,
@@ -797,7 +801,7 @@ CPLErr SAGADataset::WriteHeader(const CPLString &osHDRFilename,
         VSIFPrintfL(fp, "DATAFORMAT\t= SHORTINT\n");
     else if (eType == GDT_UInt16)
         VSIFPrintfL(fp, "DATAFORMAT\t= SHORTINT_UNSIGNED\n");
-    else if (eType == GDT_Byte)
+    else if (eType == GDT_UInt8)
         VSIFPrintfL(fp, "DATAFORMAT\t= BYTE_UNSIGNED\n");
     else if (eType == GDT_Float32)
         VSIFPrintfL(fp, "DATAFORMAT\t= FLOAT\n");
@@ -832,7 +836,7 @@ CPLErr SAGADataset::WriteHeader(const CPLString &osHDRFilename,
 
 GDALDataset *SAGADataset::Create(const char *pszFilename, int nXSize,
                                  int nYSize, int nBandsIn, GDALDataType eType,
-                                 char **papszParamList)
+                                 CSLConstList papszParamList)
 
 {
     if (nXSize <= 0 || nYSize <= 0)
@@ -851,7 +855,7 @@ GDALDataset *SAGADataset::Create(const char *pszFilename, int nXSize,
         return nullptr;
     }
 
-    if (eType != GDT_Byte && eType != GDT_UInt16 && eType != GDT_Int16 &&
+    if (eType != GDT_UInt8 && eType != GDT_UInt16 && eType != GDT_Int16 &&
         eType != GDT_UInt32 && eType != GDT_Int32 && eType != GDT_Float32 &&
         eType != GDT_Float64)
     {
@@ -883,11 +887,11 @@ GDALDataset *SAGADataset::Create(const char *pszFilename, int nXSize,
     }
     else
     {
-        switch (eType) /* GDT_Byte, GDT_UInt16, GDT_Int16, GDT_UInt32  */
+        switch (eType) /* GDT_UInt8, GDT_UInt16, GDT_Int16, GDT_UInt32  */
         {              /* GDT_Int32, GDT_Float32, GDT_Float64 */
-            case (GDT_Byte):
+            case (GDT_UInt8):
             {
-                dfNoDataVal = SG_NODATA_GDT_Byte;
+                dfNoDataVal = SG_NODATA_GDT_UInt8;
                 break;
             }
             case (GDT_UInt16):
@@ -982,7 +986,7 @@ GDALDataset *SAGADataset::Create(const char *pszFilename, int nXSize,
 
 GDALDataset *SAGADataset::CreateCopy(const char *pszFilename,
                                      GDALDataset *poSrcDS, int bStrict,
-                                     CPL_UNUSED char **papszOptions,
+                                     CPL_UNUSED CSLConstList papszOptions,
                                      GDALProgressFunc pfnProgress,
                                      void *pProgressData)
 {
@@ -1055,7 +1059,7 @@ GDALDataset *SAGADataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                          GDALRegister_SAGA()                         */
+/*                         GDALRegister_SAGA()                          */
 /************************************************************************/
 
 void GDALRegister_SAGA()

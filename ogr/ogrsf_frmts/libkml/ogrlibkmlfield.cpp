@@ -14,6 +14,7 @@
 #include "libkml_headers.h"
 #include "ogrlibkmlfield.h"
 
+#include <set>
 #include <string>
 
 #include "ogr_feature.h"
@@ -202,7 +203,7 @@ static void ogr2tessellate_rec(bool bTessellate,
 }
 
 /************************************************************************/
-/*                 OGRLIBKMLSanitizeUTF8String()                        */
+/*                    OGRLIBKMLSanitizeUTF8String()                     */
 /************************************************************************/
 
 static char *OGRLIBKMLSanitizeUTF8String(const char *pszString)
@@ -1065,7 +1066,7 @@ static bool kml2tessellate_rec(GeometryPtr poKmlGeometry, int *pnTessellate)
 }
 
 /************************************************************************/
-/*                     ogrkmlSetAltitudeMode()                          */
+/*                       ogrkmlSetAltitudeMode()                        */
 /************************************************************************/
 
 static void ogrkmlSetAltitudeMode(OGRFeature *poOgrFeat, int iField,
@@ -1104,7 +1105,7 @@ static void ogrkmlSetAltitudeMode(OGRFeature *poOgrFeat, int iField,
 }
 
 /************************************************************************/
-/*                            TrimSpaces()                              */
+/*                             TrimSpaces()                             */
 /************************************************************************/
 
 static const char *TrimSpaces(CPLString &oText)
@@ -1128,7 +1129,7 @@ static const char *TrimSpaces(CPLString &oText)
 }
 
 /************************************************************************/
-/*                            kmldatetime2ogr()                         */
+/*                          kmldatetime2ogr()                           */
 /************************************************************************/
 
 static void kmldatetime2ogr(OGRFeature *poOgrFeat, const char *pszOGRField,
@@ -1150,7 +1151,8 @@ static void kmldatetime2ogr(OGRFeature *poOgrFeat, const char *pszOGRField,
 ******************************************************************************/
 
 void kml2field(OGRFeature *poOgrFeat, FeaturePtr poKmlFeature,
-               const fieldconfig &oFC)
+               const fieldconfig &oFC,
+               const std::map<std::string, int> &mapSimpleFieldNameToOgrFieldIx)
 {
     /***** id *****/
 
@@ -1504,9 +1506,10 @@ void kml2field(OGRFeature *poOgrFeat, FeaturePtr poKmlFeature,
                 if (poKmlSimpleData->has_name())
                 {
                     const string oName = poKmlSimpleData->get_name();
-                    const char *pszName = oName.c_str();
-
-                    iField = poOgrFeat->GetFieldIndex(pszName);
+                    const auto oIter =
+                        mapSimpleFieldNameToOgrFieldIx.find(oName);
+                    if (oIter != mapSimpleFieldNameToOgrFieldIx.end())
+                        iField = oIter->second;
                 }
 
                 /***** if it has trxt set the field *****/
@@ -1658,7 +1661,9 @@ SimpleFieldPtr FieldDef2kml(const OGRFieldDefn *poOgrFieldDef,
  function to add the simpleFields in a schema to a featuredefn
 ******************************************************************************/
 
-void kml2FeatureDef(SchemaPtr poKmlSchema, OGRFeatureDefn *poOgrFeatureDefn)
+void kml2FeatureDef(SchemaPtr poKmlSchema, OGRFeatureDefn *poOgrFeatureDefn,
+                    std::map<std::string, int> &mapSimpleFieldNameToOgrFieldIx,
+                    std::set<std::string> &oSetSimpleFields)
 {
     const size_t nSimpleFields = poKmlSchema->get_simplefield_array_size();
 
@@ -1668,7 +1673,6 @@ void kml2FeatureDef(SchemaPtr poKmlSchema, OGRFeatureDefn *poOgrFeatureDefn)
             poKmlSchema->get_simplefield_array_at(iSimpleField);
 
         const char *pszType = "string";
-        string osName = "Unknown";
         string osType;
 
         if (poKmlSimpleField->has_type())
@@ -1678,55 +1682,59 @@ void kml2FeatureDef(SchemaPtr poKmlSchema, OGRFeatureDefn *poOgrFeatureDefn)
             pszType = osType.c_str();
         }
 
-        // TODO: We cannot set displayname as the field name because in
-        // kml2field() we make the lookup on fields based on their name. We
-        // would need some map if we really want to use displayname, but that
-        // might not be a good idea because displayname may have HTML
-        // formatting, which makes it impractical when converting to other
-        // drivers or to make requests.
-        // Example: http://www.jasonbirch.com/files/newt_combined.kml
-
-        // if( poKmlSimpleField->has_displayname() )
-        //   {
-        //       osName = poKmlSimpleField->get_displayname();
-        //   }
-        //   else
+        std::string osName;
         if (poKmlSimpleField->has_name())
         {
             osName = poKmlSimpleField->get_name();
         }
-        if (poOgrFeatureDefn->GetFieldIndex(osName.c_str()) < 0)
+        else
+            continue;
+
+        int counter = 2;
+        const std::string osNameRadix = osName;
+        const CPLString osNameLower = CPLString(osName).tolower();
+        if (cpl::contains(oSetSimpleFields, osNameLower))
+            continue;
+        oSetSimpleFields.insert(osNameLower);
+
+        mapSimpleFieldNameToOgrFieldIx[osNameRadix] =
+            poOgrFeatureDefn->GetFieldCount();
+
+        while (poOgrFeatureDefn->GetFieldIndex(osName.c_str()) >= 0)
         {
-            if (EQUAL(pszType, "bool") || EQUAL(pszType, "boolean"))
-            {
-                OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTInteger);
-                ogrFieldDefn.SetSubType(OFSTBoolean);
-                poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
-            }
-            else if (EQUAL(pszType, "int") || EQUAL(pszType, "short") ||
-                     EQUAL(pszType, "ushort"))
-            {
-                OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTInteger);
-                poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
-            }
-            else if (EQUAL(pszType, "uint"))
-            {
-                OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTInteger64);
-                poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
-            }
-            else if (EQUAL(pszType, "float") || EQUAL(pszType, "double"))
-            {
-                // We write correctly 'double' for 64-bit since GDAL 3.11.1.
-                // In prior versions we wrote 'float', so it is premature
-                // on reading to set OFSTFloat32 when reading 'float'
-                OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTReal);
-                poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
-            }
-            else  // string, or any other unrecognized type.
-            {
-                OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTString);
-                poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
-            }
+            osName = osNameRadix + std::to_string(counter);
+            ++counter;
+        }
+
+        if (EQUAL(pszType, "bool") || EQUAL(pszType, "boolean"))
+        {
+            OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTInteger);
+            ogrFieldDefn.SetSubType(OFSTBoolean);
+            poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
+        }
+        else if (EQUAL(pszType, "int") || EQUAL(pszType, "short") ||
+                 EQUAL(pszType, "ushort"))
+        {
+            OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTInteger);
+            poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
+        }
+        else if (EQUAL(pszType, "uint"))
+        {
+            OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTInteger64);
+            poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
+        }
+        else if (EQUAL(pszType, "float") || EQUAL(pszType, "double"))
+        {
+            // We write correctly 'double' for 64-bit since GDAL 3.11.1.
+            // In prior versions we wrote 'float', so it is premature
+            // on reading to set OFSTFloat32 when reading 'float'
+            OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTReal);
+            poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
+        }
+        else  // string, or any other unrecognized type.
+        {
+            OGRFieldDefn ogrFieldDefn(osName.c_str(), OFTString);
+            poOgrFeatureDefn->AddFieldDefn(&ogrFieldDefn);
         }
     }
 }
@@ -1818,7 +1826,7 @@ void get_fieldconfig(struct fieldconfig *oFC)
 }
 
 /************************************************************************/
-/*                 kmlAltitudeModeFromString()                          */
+/*                     kmlAltitudeModeFromString()                      */
 /************************************************************************/
 
 int kmlAltitudeModeFromString(const char *pszAltitudeMode, int &isGX)

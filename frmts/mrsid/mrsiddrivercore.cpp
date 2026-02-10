@@ -12,6 +12,11 @@
 
 #include "mrsiddrivercore.h"
 
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+#include "gdal_frmts.h"
+
 #include "mrsiddataset_headers_include.h"
 
 /************************************************************************/
@@ -64,7 +69,7 @@ int MrSIDJP2Identify(GDALOpenInfo *poOpenInfo)
 #endif
 
 /************************************************************************/
-/*                     MrSIDDriverSetCommonMetadata()                   */
+/*                    MrSIDDriverSetCommonMetadata()                    */
 /************************************************************************/
 
 void MrSIDDriverSetCommonMetadata(GDALDriver *poDriver)

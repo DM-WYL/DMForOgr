@@ -17,6 +17,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "AWS_CONTAINER_AUTHORIZATION_TOKEN", // from cpl_aws.cpp
    "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", // from cpl_aws.cpp
    "AWS_CONTAINER_CREDENTIALS_FULL_URI", // from cpl_aws.cpp
+   "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", // from cpl_aws.cpp
    "AWS_DEFAULT_PROFILE", // from cpl_aws.cpp
    "AWS_DEFAULT_REGION", // from cpl_aws.cpp
    "AWS_HTTPS", // from cpl_aws.cpp
@@ -77,6 +78,9 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "CENTER_LONG", // from ogrct.cpp
    "CHECK_DISK_FREE_SPACE", // from gtiffdataset_write.cpp
    "CHECK_WITH_INVERT_PROJ", // from gdaltransformer.cpp, gdalwarp_lib.cpp, gdalwarpoperation.cpp, ogrct.cpp
+   "CLOUD_RUN_JOB", // from cpl_google_cloud.cpp
+   "CLOUD_RUN_TIMEOUT_SECONDS", // from cpl_google_cloud.cpp
+   "CLOUD_RUN_WORKER_POOL", // from cpl_google_cloud.cpp
    "COG_DELETE_TEMP_FILES", // from cogdriver.cpp
    "COG_TMP_COMPRESSION", // from cogdriver.cpp
    "COMPRESS_GEOM", // from ogrsqlitelayer.cpp
@@ -103,7 +107,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "CPL_CURL_VERBOSE", // from cpl_http.cpp, cpl_vsil_curl.cpp
    "CPL_CURL_VERBOSE_DATA_IN", // from cpl_http.cpp
    "CPL_CURL_VSIMEM_PRINT_HEADERS", // from cpl_http.cpp
-   "CPL_DEBUG", // from cpl_conv.cpp, cpl_error.cpp, gdalinfo_bin.cpp, gdalsrsinfo.cpp, gdalwarp_bin.cpp, gmlutils.cpp
+   "CPL_DEBUG", // from cpl_conv.cpp, cpl_error.cpp, e57driver.cpp, gdalinfo_bin.cpp, gdalsrsinfo.cpp, gdalwarp_bin.cpp, gmlutils.cpp
    "CPL_ENABLE_PATH_TRAVERSAL_DETECTION", // from cpl_path.cpp
    "CPL_ENABLE_USERFAULTFD", // from cpl_userfaultfd.cpp
    "CPL_ERROR_SEPARATOR", // from cpl_error.cpp
@@ -153,6 +157,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE", // from cpl_vsil_s3.cpp, ogrgeopackagedatasource.cpp, ogrlibkmldatasource.cpp, ogrsqlitedatasource.cpp
    "CPL_VSIL_ZIP_ALLOWED_EXTENSIONS", // from cpl_vsil_gzip.cpp
    "CPL_VSIS3_CREATE_DIR_OBJECT", // from cpl_vsil_s3.cpp
+   "CPL_VSIS3_LIST_OBJECTS_VERSION", // from cpl_vsil_s3.cpp
    "CPL_VSIS3_LIST_UPLOADS_MAX", // from cpl_vsil_s3.cpp
    "CPL_VSIS3_UNLINK_BATCH_SIZE", // from cpl_vsil_s3.cpp
    "CPL_VSIS3_USE_BASE_RMDIR_RECURSIVE", // from cpl_vsil_s3.cpp
@@ -225,6 +230,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "ESRI_XML_PAM", // from gtiffdataset.cpp, gtiffdataset_write.cpp
    "FGDB_STRING_WIDTH", // from FGdbUtils.cpp
    "FORCE_BLOCKSIZE", // from hfaopen.cpp
+   "GDAL_ALGORITHM_ALLOW_WRITES_IN_STREAM", // from gdalalg_abstract_pipeline.cpp
    "GDAL_ALLOW_LARGE_LIBJPEG_MEM_ALLOC", // from JPEG_band.cpp, jpgdataset.cpp
    "GDAL_ALLOW_REMOTE_RESOURCE_TO_ACCESS_LOCAL_FILE", // from vsikerchunk.cpp
    "GDAL_BAG_BLOCK_SIZE", // from bagdataset.cpp
@@ -303,6 +309,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "GDAL_HTTP_MULTIRANGE", // from cpl_vsil_curl.cpp
    "GDAL_HTTP_NETRC", // from cpl_http.cpp
    "GDAL_HTTP_NETRC_FILE", // from cpl_http.cpp
+   "GDAL_HTTP_PATH_VERBATIM", // from cpl_http.cpp, cpl_vsil_s3.cpp
    "GDAL_HTTP_PROXY", // from cpl_http.cpp
    "GDAL_HTTP_PROXYUSERPWD", // from cpl_http.cpp
    "GDAL_HTTP_RETRY_CODES", // from cpl_http.cpp
@@ -343,7 +350,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "GDAL_NETCDF_REPORT_EXTRA_DIM_VALUES", // from netcdfdataset.cpp
    "GDAL_NETCDF_VERIFY_DIMS", // from netcdfdataset.cpp
    "GDAL_NO_COSTLY_OVERVIEW", // from rasterio.cpp
-   "GDAL_NUM_THREADS", // from avifdataset.cpp, common.cpp, cpl_vsil_gzip.cpp, gdal_tps.cpp, gdalalgorithm.cpp, gdalgrid.cpp, gdalpansharpen.cpp, gdaltileindexdataset.cpp, gdalwarpkernel.cpp, gtiffdataset_write.cpp, jpegxl.cpp, libertiffdataset.cpp, ogr2ogr_lib.cpp, ogrmvtdataset.cpp, ogrparquetlayer.cpp, osm_parser.cpp, overview.cpp, rmfdataset.cpp, vrtdataset.cpp, zarr_array.cpp
+   "GDAL_NUM_THREADS", // from avifdataset.cpp, common.cpp, cpl_vsil_gzip.cpp, gdal_tps.cpp, gdalalgorithm.cpp, gdaldataset.cpp, gdalgrid.cpp, gdalpansharpen.cpp, gdalrasterband.cpp, gdaltileindexdataset.cpp, gdalwarpkernel.cpp, gtiffdataset_write.cpp, jpegxl.cpp, libertiffdataset.cpp, ogr2ogr_lib.cpp, ogrmvtdataset.cpp, ogrparquetlayer.cpp, osm_parser.cpp, overview.cpp, rmfdataset.cpp, vrtdataset.cpp, zarr_array.cpp
    "GDAL_OGCAPI_TILEMATRIXSET_LIMITS", // from gdalogcapidataset.cpp
    "GDAL_ONE_BIG_READ", // from jp2kakdataset.cpp, jpipkakdataset.cpp, mrsiddataset.cpp, rawdataset.cpp, wcsdataset.cpp
    "GDAL_OPEN_AFTER_COPY", // from jpgdataset.cpp, pngdataset.cpp
@@ -378,6 +385,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "GDAL_PNG_WHOLE_IMAGE_OPTIM", // from pngdataset.cpp
    "GDAL_PROXY_AUTH", // from cpl_http.cpp
    "GDAL_PYTHON_DRIVER_PATH", // from gdalpythondriverloader.cpp
+   "GDAL_RASTER_INDEX_BATCH_SIZE", // from gdaltindex_lib.cpp
    "GDAL_RASTER_PIPELINE_USE_GTIFF_FOR_TEMP_DATASET", // from gdalalg_raster_pipeline.cpp
    "GDAL_RASTER_TILE_EMIT_SPURIOUS_CHARS", // from gdalalg_raster_tile.cpp
    "GDAL_RASTER_TILE_HTML_PREC", // from gdalalg_raster_tile.cpp
@@ -399,6 +407,9 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "GDAL_SIMUL_MEM_ALLOC_FAILURE_NODATA_MASK_BAND", // from gdalnodatamaskband.cpp
    "GDAL_SKIP", // from gdaldrivermanager.cpp
    "GDAL_STACTA_SKIP_MISSING_METATILE", // from stactadataset.cpp
+   "GDAL_STATS_USE_FLOAT32_OPTIM", // from gdalrasterband.cpp
+   "GDAL_STATS_USE_FLOAT64_OPTIM", // from gdalrasterband.cpp
+   "GDAL_STATS_USE_INTEGER_STATS", // from gdalrasterband.cpp
    "GDAL_SWATH_SIZE", // from gdalmultidim.cpp, rasterio.cpp
    "GDAL_TEMP_DRIVER_NAME", // from nearblack_lib_floodfill.cpp
    "GDAL_TERM_PROGRESS_OSC_9_4", // from cpl_progress.cpp
@@ -535,7 +546,9 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "GTIFF_USE_MMAP", // from tifvsi.cpp
    "GTIFF_VIRTUAL_MEM_IO", // from gtiffdataset.cpp
    "GTIFF_WRITE_ANGULAR_PARAMS_IN_DEGREE", // from gt_wkt_srs.cpp
+   "GTIFF_WRITE_COG_GHOST_AREA", // from gtiffdataset_write.cpp
    "GTIFF_WRITE_IMAGE_STRUCTURE_METADATA", // from gtiffdataset_write.cpp
+   "GTIFF_WRITE_RAT_TO_PAM", // from gtiffdataset_write.cpp, gtiffrasterband_write.cpp
    "GTIFF_WRITE_TOWGS84", // from gt_wkt_srs.cpp
    "GXF_DATATYPE", // from gxfdataset.cpp
    "HDF4_BLOCK_PIXELS", // from hdf4imagedataset.cpp
@@ -766,11 +779,11 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "OGR_OPENFILEGDB_WRITE_EMPTY_GEOMETRY", // from ogropenfilegdblayer_write.cpp
    "OGR_ORGANIZE_POLYGONS", // from filegdbtable.cpp, ogrgeometryfactory.cpp
    "OGR_PARQUET_BATCH_READ_AHEAD", // from ogrparquetdatasetlayer.cpp
-   "OGR_PARQUET_BATCH_SIZE", // from ogrparquetdatasetlayer.cpp, ogrparquetdriver.cpp
+   "OGR_PARQUET_BATCH_SIZE", // from ogrparquetdataset.cpp, ogrparquetdatasetlayer.cpp
    "OGR_PARQUET_COMPUTE_GEOMETRY_TYPE", // from ogrparquetlayer.cpp
    "OGR_PARQUET_CRS_ENCODING", // from ogrparquetwriterlayer.cpp
    "OGR_PARQUET_CRS_OMIT_IF_WGS84", // from ogrparquetwriterlayer.cpp
-   "OGR_PARQUET_ENABLE_ARROW_EXTENSIONS", // from ogrparquetdriver.cpp
+   "OGR_PARQUET_ENABLE_ARROW_EXTENSIONS", // from ogrparquetdataset.cpp, ogrparquetdriver.cpp
    "OGR_PARQUET_FRAGMENT_READ_AHEAD", // from ogrparquetdatasetlayer.cpp
    "OGR_PARQUET_GEO_METADATA", // from ogrparquetwriterlayer.cpp
    "OGR_PARQUET_LOAD_FILE_SYSTEM_FACTORIES", // from ogrparquetdriver.cpp
@@ -781,8 +794,8 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "OGR_PARQUET_USE_BBOX", // from ogrparquetdatasetlayer.cpp, ogrparquetlayer.cpp
    "OGR_PARQUET_USE_METADATA_FILE", // from ogrparquetdriver.cpp
    "OGR_PARQUET_USE_STATISTICS", // from ogrparquetdataset.cpp
-   "OGR_PARQUET_USE_THREADS", // from ogrparquetdatasetlayer.cpp, ogrparquetdriver.cpp
-   "OGR_PARQUET_USE_VSI", // from ogrparquetdriver.cpp
+   "OGR_PARQUET_USE_THREADS", // from ogrparquetdataset.cpp, ogrparquetdatasetlayer.cpp
+   "OGR_PARQUET_USE_VSI", // from ogrparquetdataset.cpp, ogrparquetdriver.cpp
    "OGR_PARQUET_WRITE_ARROW_EXTENSION_NAME", // from ogrparquetwriterlayer.cpp
    "OGR_PARQUET_WRITE_ARROW_SCHEMA", // from ogrparquetwriterlayer.cpp
    "OGR_PARQUET_WRITE_BBOX", // from ogrparquetwriterlayer.cpp
@@ -988,6 +1001,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "RMF_SET_VERTCS", // from rmfdataset.cpp
    "RPC_INVERSE_LOG", // from gdal_rpc.cpp
    "RPC_INVERSE_VERBOSE", // from gdal_rpc.cpp
+   "RPF_SHOW_ALL_ATTRIBUTES", // from nitfimage.c
    "RPFTOC_FORCE_RGBA", // from rpftocdataset.cpp
    "RPFTOC_MAX_FRAME_COUNT", // from rpftocfile.cpp
    "S57_CSV", // from s57classregistrar.cpp

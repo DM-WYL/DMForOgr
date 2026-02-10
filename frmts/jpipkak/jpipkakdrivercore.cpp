@@ -10,6 +10,9 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "jpipkakdrivercore.h"
 
 /************************************************************************/
@@ -40,7 +43,7 @@ void JPIPKAKDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredJPIPKAKPlugin()                     */
+/*                    DeclareDeferredJPIPKAKPlugin()                    */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

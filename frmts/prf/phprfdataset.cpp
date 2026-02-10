@@ -9,6 +9,7 @@
 
 #include "cpl_minixml.h"
 #include "gdal.h"
+#include "gdal_frmts.h"
 #include "gdal_priv.h"
 #include "gdal_proxy.h"
 #include "../vrt/vrtdataset.h"
@@ -324,7 +325,7 @@ static GDALDataType ParseChannelsInfo(const CPLXMLNode *psElt)
         switch (nDataTypeSize)
         {
             case 1:
-                return GDT_Byte;
+                return GDT_UInt8;
             case 2:
                 return GDT_UInt16;
             case 4:

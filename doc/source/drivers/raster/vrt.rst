@@ -527,6 +527,11 @@ normalized (defaults to false=0).  The size must always be an odd number,
 and the Coefs must have Size * Size entries separated by spaces.  For now
 kernel is not applied to sub-sampled or over-sampled data.
 
+At the top edge, the values of the first row are replicated to virtually extend
+the source window by a number of rows equal to the radius of the kernel. And
+similarly for the bottom, left and right edges. This strategy may potentially
+lead to unexpected results depending on the applied kernel.
+
 .. code-block:: xml
 
     <KernelFilteredSource>
@@ -538,7 +543,7 @@ kernel is not applied to sub-sampled or over-sampled data.
       </Kernel>
     </KernelFilteredSource>
 
-Starting with GDAL 2.3, a separable kernel may also be used.  In this case the
+A separable kernel may also be used.  In this case the
 number of Coefs entries should correspond to the Size.  The Coefs specify a
 one-dimensional kernel which is applied along each axis in succession, resulting
 in far quicker execution. Many common image-processing filters are separable.
@@ -553,6 +558,26 @@ For example, a Gaussian blur:
         <Size>13</Size>
         <Coefs>0.01111 0.04394 0.13534 0.32465 0.60653 0.8825 1.0 0.8825 0.60653 0.32465 0.13534 0.04394 0.01111</Coefs>
       </Kernel>
+    </KernelFilteredSource>
+
+
+Starting with GDAL 3.12, a Function element can be set as a child of KernelFilteredSource
+and take values ``min``, ``max``, ``stddev``, ``median`` or ``mode``.
+
+For example to compute the median value in a 3x3 neighborhood around each pixel:
+
+.. code-block:: xml
+
+    <KernelFilteredSource>
+      <SourceFilename>/debian/home/warmerda/openev/utm.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <Kernel>
+        <Size>3</Size>
+        <Coefs>1 1 1
+               1 1 1
+               1 1 1</Coefs>
+      </Kernel>
+      <Function>median</Function>
     </KernelFilteredSource>
 
 NoDataFromMaskSource
@@ -795,7 +820,7 @@ Except if (from top priority to lesser priority) :
 - (starting with GDAL 3.2) explicit virtual overviews, if a **OverviewList** element
   is declared in the VRTDataset element (see above).
   Those virtual overviews will be hidden by external .vrt.ovr overviews that might be built later.
-- (starting with GDAL 2.1) implicit virtual overviews, if the VRTRasterBand are made of
+- Implicit virtual overviews, if the VRTRasterBand are made of
   a single SimpleSource or ComplexSource that has overviews.
   Those virtual overviews will be hidden by external .vrt.ovr overviews that might be built later.
 
@@ -1038,7 +1063,7 @@ instead of using the simple source.
     "</KernelFilteredSource>";
 
     // Create the virtual dataset.
-    poVRTDS = poDriver->Create( "", 512, 512, 1, GDT_Byte, NULL );
+    poVRTDS = poDriver->Create( "", 512, 512, 1, GDT_UInt8, NULL );
     poVRTDS->GetRasterBand(1)->SetMetadataItem("source_0",pszFilterSourceXML,
                                                 "new_vrt_sources");
 
@@ -1090,7 +1115,7 @@ should be specified with the above :cpp:func:`GDALRasterBand::SetMetadataItem` e
   GDALDriver *poDriver = (GDALDriver *) GDALGetDriverByName( "VRT" );
   GDALDataset *poVRTDS;
 
-  poVRTDS = poDriver->Create( "out.vrt", 512, 512, 0, GDT_Byte, NULL );
+  poVRTDS = poDriver->Create( "out.vrt", 512, 512, 0, GDT_UInt8, NULL );
   char** papszOptions = NULL;
   papszOptions = CSLAddNameValue(papszOptions, "subclass", "VRTRawRasterBand"); // if not specified, default to VRTRasterBand
   papszOptions = CSLAddNameValue(papszOptions, "SourceFilename", "src.tif"); // mandatory
@@ -1099,7 +1124,7 @@ should be specified with the above :cpp:func:`GDALRasterBand::SetMetadataItem` e
   papszOptions = CSLAddNameValue(papszOptions, "LineOffset", "1024"); // optional. default = size of band type * width
   papszOptions = CSLAddNameValue(papszOptions, "ByteOrder", "LSB"); // optional. default = machine order
   papszOptions = CSLAddNameValue(papszOptions, "relativeToVRT", "true"); // optional. default = false
-  poVRTDS->AddBand(GDT_Byte, papszOptions);
+  poVRTDS->AddBand(GDT_UInt8, papszOptions);
   CSLDestroy(papszOptions);
 
   delete poVRTDS;
@@ -1188,6 +1213,10 @@ GDAL provides a set of default pixel functions that can be used without writing 
      - Number of input sources
      - PixelFunctionArguments
      - Description
+   * - **area**
+     - 0
+     - 
+     - (GDAL >= 3.13) Returns the area of each pixel in square meters.
    * - **argmax**
      - >= 1
      - ``propagateNoData`` (optional, default=false)
@@ -1319,6 +1348,8 @@ GDAL provides a set of default pixel functions that can be used without writing 
        can be included in the expression if the derived band has a NoData value.
 
        ExprTk and muparser support a number of built-in functions and control structures.
+
+       Since GDAL 3.12, the function standard C++ function ``fmod`` is added to muparser.
 
        Refer to the documentation of those libraries for details.
    * - **geometric_mean**
@@ -1512,6 +1543,14 @@ GDAL provides a set of default pixel functions that can be used without writing 
        Starting with GDAL 3.12, if the input is equal to the derived band's NoData value
 
        (set with ``<NoDataValue>``), the result will be the NoData value.
+   * - **quantile**
+     - 1
+     - ``q``
+     - Calculate the specified quantile (``q``) of the input raster bands.
+
+       If the input is equal to the derived band's NoData value
+
+       (set with ``<NoDataValue>``), the result will be the NoData value.
    * - **real**
      - 1
      - -
@@ -1545,6 +1584,10 @@ GDAL provides a set of default pixel functions that can be used without writing 
      - = 1
      - ``to`` (optional)
      - Convert incoming ``NoData`` values to a new value, IEEE 754 `nan` by default
+   * - **round**
+     - = 1
+     - - ``digits`` (optional)
+     - (GDAL >= 3.13) Round the input to the specified number of digits to the right of the decimal point.
    * - **scale**
      - = 1
      - -
@@ -2156,8 +2199,6 @@ GDALWarpOptions element which describe the warping options.
 Pansharpened VRT
 ----------------
 
-.. versionadded:: 2.1
-
 A VRT can describe a dataset resulting from a
 `pansharpening operation <https://en.wikipedia.org/wiki/Pansharpened_image>`_
 The pansharpening VRT combines a panchromatic band with several spectral bands
@@ -2407,7 +2448,7 @@ For example:
 
 The supported options currently are ``bands``, ``a_nodata``, ``a_srs``, ``a_ullr``, ``ovr``, ``expand``,
 ``a_scale``, ``a_offset``, ``ot``, ``gcp``, ``if``, ``scale``, ``exponent``, ``outsize``, ``projwin``,
-``projwin_srs``, ``tr``, ``r``, ``srcwin``, ``a_gt``, ``oo``, ``unscale``, ``a_coord_epoch``, ``nogcp``, ``epo``, ``eco``, ``sd_name``, and ``sd``.
+``projwin_srs``, ``tr``, ``r``, ``srcwin``, ``a_gt``, ``oo``, ``unscale``, ``a_coord_epoch``, ``nogcp``, ``epo``, ``eco``, ``sd_name``, ``sd``, and ``block``.
 
 Other options may be added in the future.
 
@@ -2518,6 +2559,21 @@ The usage syntax is ``vrt://somefile.extension?transpose=varname:iXDim,iYDim`` w
 transpose on the first two axes. There must be two unique axis indexes with values between 0 and the maximum available.
 This option is mutually exclusive with ``sd_name`` and ``sd``.
 
+The effect of the ``block`` option (added in GDAL 3.13) is to access a natural block
+from the raster as a subwindow defined by the internal block indexing as per
+:cpp:func:`GDALRasterBand::ReadBlock`. The value consists of two integers separated by commas,
+in the order 'nXBlockOff,nYBlockOff', the horizontal and vertical block offset, with 0 indicating
+the left-most or top-most block, 1 the next block, and so forth. Marginal blocks are extracted with
+reduced size if implied by imperfect divisor matching of block size versus raster size. It is an error
+to provide fewer or more than two values to the ``block`` option, and an error for values that are
+less than zero, or greater than the maximum block index. This option is mutually exclusive with
+``srcwin``, ``projwin``, ``outsize``, ``tr``, ``r``, and ``ovr``.
+
+.. spelling:word-list::
+    nXBlockOff
+    nYBlockOff
+
+
 The options may be chained together separated by '&'. (Beware the need for quoting to protect
 the ampersand).
 
@@ -2566,39 +2622,6 @@ configuration option.
 
 Note that the number of threads actually used is also limited by the
 :config:`GDAL_MAX_DATASET_POOL_SIZE` configuration option.
-
-Multi-threading issues
-----------------------
-
-.. warning::
-
-    The below section applies to GDAL <= 2.2. Starting with GDAL 2.3, the use
-    of VRT datasets is subject to the standard GDAL dataset multi-threaded rules
-    (that is a VRT dataset handle may only be used by a same thread at a time,
-    but you may open several dataset handles on the same VRT file and use them
-    in different threads)
-
-When using VRT datasets in a multi-threading environment, you should be
-careful to open the VRT dataset by the thread that will use it afterwards. The
-reason for that is that the VRT dataset uses :cpp:func:`GDALOpenShared` when opening the
-underlying datasets. So, if you open twice the same VRT dataset by the same
-thread, both VRT datasets will share the same handles to the underlying
-datasets.
-
-The shared attribute, on the SourceFilename indicates whether the
-dataset should be shared (value is 1) or not (value is 0). The default is 1.
-If several VRT datasets referring to the same underlying sources are used in a multithreaded context,
-shared should be set to 0. Alternatively, the :config:`VRT_SHARED_SOURCE` configuration
-option can be set to ``NO`` to force non-shared mode:
-
--  .. config:: VRT_SHARED_SOURCE
-      :choices: YES, NO
-      :default: YES
-
-      Determines whether a VRT dataset should open its underlying sources in
-      shared mode, for ``SourceFilename`` elements that do not specify a
-      ``shared`` attribute. When the ``shared`` attribute is present this
-      configuration option is ignored.
 
 Performance considerations
 --------------------------

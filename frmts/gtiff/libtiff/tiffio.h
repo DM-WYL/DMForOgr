@@ -269,7 +269,7 @@ struct _TIFFRGBAImage
 typedef int (*TIFFInitMethod)(TIFF *, int);
 typedef struct
 {
-    char *name;
+    const char *name;
     uint16_t scheme;
     TIFFInitMethod init;
 } TIFFCodec;
@@ -608,7 +608,7 @@ extern int TIFFReadRGBAImageOriented(TIFF *, uint32_t, uint32_t, uint32_t *,
     extern uint64_t TIFFGetStrileByteCountWithErr(TIFF *tif, uint32_t strile,
                                                   int *pbErr);
 
-#ifdef LOGLUV_PUBLIC
+#if LOGLUV_PUBLIC
 #define U_NEU 0.210526316
 #define V_NEU 0.473684211
 #define UVSCALE 410.
@@ -659,7 +659,7 @@ extern int TIFFReadRGBAImageOriented(TIFF *, uint32_t, uint32_t, uint32_t *,
         unsigned short field_bit;       /* bit in fieldsset bit vector */
         unsigned char field_oktochange; /* if true, can change while writing */
         unsigned char field_passcount;  /* if true, pass dir count on set */
-        char *field_name;               /* ASCII name */
+        const char *field_name;         /* ASCII name */
     } TIFFFieldInfo;
 
     extern int TIFFMergeFieldInfo(TIFF *, const TIFFFieldInfo[], uint32_t);

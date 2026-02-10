@@ -22,6 +22,7 @@ import sys
 
 import gdaltest
 import pytest
+import webserver
 
 from osgeo import gdal, osr
 
@@ -36,7 +37,7 @@ def module_disable_exceptions():
 
 _gdal_data_type_to_array_type = {
     gdal.GDT_Int8: "b",
-    gdal.GDT_Byte: "B",
+    gdal.GDT_UInt8: "B",
     gdal.GDT_Int16: "h",
     gdal.GDT_UInt16: "H",
     gdal.GDT_Int32: "i",
@@ -55,13 +56,13 @@ _gdal_data_type_to_array_type = {
 @pytest.mark.parametrize(
     "dtype,gdaltype,fill_value,nodata_value",
     [
-        ["!b1", gdal.GDT_Byte, None, None],
+        ["!b1", gdal.GDT_UInt8, None, None],
         ["!i1", gdal.GDT_Int8, None, None],
         ["!i1", gdal.GDT_Int8, -1, -1],
-        ["!u1", gdal.GDT_Byte, None, None],
+        ["!u1", gdal.GDT_UInt8, None, None],
         [
             "!u1",
-            gdal.GDT_Byte,
+            gdal.GDT_UInt8,
             "1",
             1,
         ],  # not really legit to have the fill_value as a str
@@ -170,6 +171,8 @@ def test_zarr_basic(
     assert ar.GetOffset() is None
     assert ar.GetScale() is None
     assert ar.GetUnit() == ""
+    assert ar.GetOverviewCount() == 0
+    assert ar.GetOverview(0) is None
 
     # Check reading one single value
     assert ar[1, 2].Read(
@@ -720,6 +723,7 @@ def test_zarr_read_shuffle_quantize_update_not_supported():
         "data/zarr/fixedscaleoffset_dtype_f8_astype_u1.zarr",
         "data/zarr/fixedscaleoffset_dtype_f8_astype_u2.zarr",
         "data/zarr/fixedscaleoffset_dtype_f8_astype_u4.zarr",
+        "data/zarr/fixedscaleoffset_dtype_f8_astype_f4.zarr",
     ],
 )
 def test_zarr_read_fixedscaleoffset(filename):
@@ -773,7 +777,7 @@ def test_zarr_read_fortran_order(name):
     ar = rg.OpenMDArray(rg.GetMDArrayNames()[0])
     assert ar
     assert ar.Read(
-        buffer_datatype=gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+        buffer_datatype=gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
     ) == array.array("b", [i for i in range(16)])
 
 
@@ -814,7 +818,7 @@ def test_zarr_read_fortran_order_3d():
     ar = rg.OpenMDArray(rg.GetMDArrayNames()[0])
     assert ar
     assert ar.Read(
-        buffer_datatype=gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+        buffer_datatype=gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
     ) == array.array("b", [i for i in range(2 * 3 * 4)])
 
 
@@ -871,7 +875,7 @@ def test_zarr_read_compound_not_aligned():
     assert comps[0].GetType().GetNumericDataType() == gdal.GDT_UInt16
     assert comps[1].GetName() == "b"
     assert comps[1].GetOffset() == 2
-    assert comps[1].GetType().GetNumericDataType() == gdal.GDT_Byte
+    assert comps[1].GetType().GetNumericDataType() == gdal.GDT_UInt8
     assert comps[2].GetName() == "c"
     assert comps[2].GetOffset() == 4
     assert comps[2].GetType().GetNumericDataType() == gdal.GDT_UInt16
@@ -907,7 +911,7 @@ def test_zarr_read_compound_complex():
     assert len(comps) == 4
     assert comps[0].GetName() == "a"
     assert comps[0].GetOffset() == 0
-    assert comps[0].GetType().GetNumericDataType() == gdal.GDT_Byte
+    assert comps[0].GetType().GetNumericDataType() == gdal.GDT_UInt8
     assert comps[1].GetName() == "b"
     assert comps[1].GetOffset() == 2
     assert comps[1].GetType().GetClass() == gdal.GEDTC_COMPOUND
@@ -1633,18 +1637,19 @@ def test_zarr_read_BLOSC_COMPRESSORS():
     assert "lz4" in gdal.GetDriverByName("Zarr").GetMetadataItem("BLOSC_COMPRESSORS")
 
 
-@pytest.mark.parametrize(
-    "format,create_z_metadata",
-    [("ZARR_V2", "YES"), ("ZARR_V2", "NO"), ("ZARR_V3", "NO")],
-)
-def test_zarr_create_group(tmp_path, format, create_z_metadata):
+@pytest.mark.parametrize("format", ["ZARR_V2", "ZARR_V3"])
+@pytest.mark.parametrize("create_consolidated_metadata", ["YES", "NO"])
+def test_zarr_create_group(tmp_path, format, create_consolidated_metadata):
 
     filename = tmp_path / "test.zarr"
 
     def create():
         ds = gdal.GetDriverByName("ZARR").CreateMultiDimensional(
             filename,
-            options=["FORMAT=" + format, "CREATE_ZMETADATA=" + create_z_metadata],
+            options=[
+                "FORMAT=" + format,
+                "CREATE_CONSOLIDATED_METADATA=" + create_consolidated_metadata,
+            ],
         )
         assert ds is not None
         rg = ds.GetRootGroup()
@@ -1748,13 +1753,33 @@ def test_zarr_create_group(tmp_path, format, create_z_metadata):
 
     create()
 
-    if create_z_metadata == "YES":
-        f = gdal.VSIFOpenL(f"{filename}/.zmetadata", "rb")
-        assert f
-        data = gdal.VSIFReadL(1, 10000, f)
-        gdal.VSIFCloseL(f)
+    if create_consolidated_metadata == "YES":
+        with gdal.VSIFile(
+            filename / ".zmetadata" if format == "ZARR_V2" else filename / "zarr.json",
+            "rb",
+        ) as f:
+            data = f.read()
         j = json.loads(data)
-        assert "foo/.zgroup" in j["metadata"]
+        if format == "ZARR_V2":
+            assert "foo/.zgroup" in j["metadata"]
+            assert ".zattrs" in j["metadata"]
+            assert j["metadata"][".zattrs"]["int_attr"] == 12345678
+        else:
+            assert j["consolidated_metadata"] == {
+                "kind": "inline",
+                "must_understand": False,
+                "metadata": {
+                    "foo": {"zarr_format": 3, "node_type": "group", "attributes": {}}
+                },
+            }
+    else:
+        if format == "ZARR_V2":
+            assert gdal.VSIStatL(filename / ".zmetadata") is None
+        else:
+            with gdal.VSIFile(filename / "zarr.json", "rb") as f:
+                data = f.read()
+            j = json.loads(data)
+            assert "consolidated_metadata" not in j
 
     def update():
         ds = gdal.OpenEx(filename, gdal.OF_MULTIDIM_RASTER | gdal.OF_UPDATE)
@@ -1781,100 +1806,113 @@ def test_zarr_create_group(tmp_path, format, create_z_metadata):
 
     update()
 
-    ds = gdal.OpenEx(filename, gdal.OF_MULTIDIM_RASTER)
-    assert ds
-    rg = ds.GetRootGroup()
-    assert rg
+    def check():
+        ds = gdal.OpenEx(filename, gdal.OF_MULTIDIM_RASTER)
+        assert ds
+        rg = ds.GetRootGroup()
+        assert rg
 
-    attr = rg.GetAttribute("str_attr")
-    assert attr
-    assert attr.Read() == "my_string_modified"
+        attr = rg.GetAttribute("str_attr")
+        assert attr
+        assert attr.Read() == "my_string_modified"
 
-    attr = rg.GetAttribute("json_attr")
-    assert attr
-    assert attr.GetDataType().GetSubType() == gdal.GEDTST_JSON
-    assert attr.Read() == {"foo": "bar"}
+        attr = rg.GetAttribute("json_attr")
+        assert attr
+        assert attr.GetDataType().GetSubType() == gdal.GEDTST_JSON
+        assert attr.Read() == {"foo": "bar"}
 
-    attr = rg.GetAttribute("str_array_attr")
-    assert attr
-    assert attr.Read() == ["first_string", "second_string"]
+        attr = rg.GetAttribute("str_array_attr")
+        assert attr
+        assert attr.Read() == ["first_string", "second_string"]
 
-    attr = rg.GetAttribute("int_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int32
-    assert attr.ReadAsInt() == 12345678
-    assert attr.ReadAsInt64() == 12345678
-    assert attr.ReadAsDouble() == 12345678
+        attr = rg.GetAttribute("int_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int32
+        assert attr.ReadAsInt() == 12345678
+        assert attr.ReadAsInt64() == 12345678
+        assert attr.ReadAsDouble() == 12345678
 
-    attr = rg.GetAttribute("uint_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
-    assert attr.ReadAsInt64() == 4000000000
-    assert attr.ReadAsDouble() == 4000000000
+        attr = rg.GetAttribute("uint_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
+        assert attr.ReadAsInt64() == 4000000000
+        assert attr.ReadAsDouble() == 4000000000
 
-    attr = rg.GetAttribute("int64_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
-    assert attr.ReadAsInt64() == 12345678901234
-    assert attr.ReadAsDouble() == 12345678901234
+        attr = rg.GetAttribute("int64_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
+        assert attr.ReadAsInt64() == 12345678901234
+        assert attr.ReadAsDouble() == 12345678901234
 
-    attr = rg.GetAttribute("uint64_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
-    assert attr.ReadAsInt64() == 9000000000000000000
-    assert attr.ReadAsDouble() == 9000000000000000000
+        attr = rg.GetAttribute("uint64_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
+        assert attr.ReadAsInt64() == 9000000000000000000
+        assert attr.ReadAsDouble() == 9000000000000000000
 
-    attr = rg.GetAttribute("int_array_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int32
-    assert attr.ReadAsIntArray() == (12345678, -12345678)
-    assert attr.ReadAsInt64Array() == (12345678, -12345678)
-    assert attr.ReadAsDoubleArray() == (12345678, -12345678)
+        attr = rg.GetAttribute("int_array_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int32
+        assert attr.ReadAsIntArray() == (12345678, -12345678)
+        assert attr.ReadAsInt64Array() == (12345678, -12345678)
+        assert attr.ReadAsDoubleArray() == (12345678, -12345678)
 
-    attr = rg.GetAttribute("uint_array_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
-    assert attr.ReadAsInt64Array() == (12345678, 4000000000)
-    assert attr.ReadAsDoubleArray() == (12345678, 4000000000)
+        attr = rg.GetAttribute("uint_array_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
+        assert attr.ReadAsInt64Array() == (12345678, 4000000000)
+        assert attr.ReadAsDoubleArray() == (12345678, 4000000000)
 
-    attr = rg.GetAttribute("int64_array_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
-    assert attr.ReadAsInt64Array() == (12345678091234, -12345678091234)
-    assert attr.ReadAsDoubleArray() == (12345678091234, -12345678091234)
+        attr = rg.GetAttribute("int64_array_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
+        assert attr.ReadAsInt64Array() == (12345678091234, -12345678091234)
+        assert attr.ReadAsDoubleArray() == (12345678091234, -12345678091234)
 
-    attr = rg.GetAttribute("uint64_array_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
-    assert attr.ReadAsInt64Array() == (12345678091234, 9000000000000000000)
-    assert attr.ReadAsDoubleArray() == (12345678091234, 9000000000000000000)
+        attr = rg.GetAttribute("uint64_array_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Int64
+        assert attr.ReadAsInt64Array() == (12345678091234, 9000000000000000000)
+        assert attr.ReadAsDoubleArray() == (12345678091234, 9000000000000000000)
 
-    attr = rg.GetAttribute("double_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Float64
-    assert attr.ReadAsDouble() == 12345678.5
+        attr = rg.GetAttribute("double_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Float64
+        assert attr.ReadAsDouble() == 12345678.5
 
-    attr = rg.GetAttribute("double_array_attr")
-    assert attr
-    assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Float64
-    assert attr.Read() == (12345678.5, -12345678.5)
+        attr = rg.GetAttribute("double_array_attr")
+        assert attr
+        assert attr.GetDataType().GetNumericDataType() == gdal.GDT_Float64
+        assert attr.Read() == (12345678.5, -12345678.5)
 
-    assert set(rg.GetGroupNames()) == set(["foo", "bar"])
-    with gdal.quiet_errors():
-        assert rg.CreateGroup("not_opened_in_update_mode") is None
-        assert (
-            rg.CreateAttribute(
-                "not_opened_in_update_mode",
-                [],
-                gdal.ExtendedDataType.CreateString(),
+        assert set(rg.GetGroupNames()) == set(["foo", "bar"])
+        with gdal.quiet_errors():
+            assert rg.CreateGroup("not_opened_in_update_mode") is None
+            assert (
+                rg.CreateAttribute(
+                    "not_opened_in_update_mode",
+                    [],
+                    gdal.ExtendedDataType.CreateString(),
+                )
+                is None
             )
-            is None
-        )
-    subgroup = rg.OpenGroup("foo")
-    assert subgroup
-    subsubgroup = subgroup.OpenGroup("baz")
-    assert subsubgroup
-    ds = None
+        subgroup = rg.OpenGroup("foo")
+        assert subgroup
+        subsubgroup = subgroup.OpenGroup("baz")
+        assert subsubgroup
+        ds = None
+
+    check()
+
+    # With consolidated metadata, check that we don't try to access subfiles
+    if create_consolidated_metadata == "YES":
+        if format == "ZARR_V2":
+            gdal.Unlink(filename / "foo" / ".zarray")
+            gdal.Unlink(filename / ".zattrs")
+        else:
+            gdal.Unlink(filename / "foo" / "zarr.json")
+
+        check()
 
 
 @pytest.mark.parametrize(
@@ -1931,8 +1969,8 @@ def getCompoundDT():
 @pytest.mark.parametrize(
     "datatype,nodata",
     [
-        [gdal.ExtendedDataType.Create(gdal.GDT_Byte), None],
-        [gdal.ExtendedDataType.Create(gdal.GDT_Byte), 1],
+        [gdal.ExtendedDataType.Create(gdal.GDT_UInt8), None],
+        [gdal.ExtendedDataType.Create(gdal.GDT_UInt8), 1],
         [gdal.ExtendedDataType.Create(gdal.GDT_UInt16), None],
         [gdal.ExtendedDataType.Create(gdal.GDT_Int16), None],
         [gdal.ExtendedDataType.Create(gdal.GDT_UInt32), None],
@@ -2070,14 +2108,14 @@ def test_zarr_create_array_errors(tmp_vsimem, array_name, format):
         rg = ds.GetRootGroup()
         assert rg
         assert (
-            rg.CreateMDArray("foo", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+            rg.CreateMDArray("foo", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
             is not None
         )
         gdal.Mkdir(tmp_vsimem / "test.zarr/directory_with_that_name", 0)
         with gdal.quiet_errors():
             assert (
                 rg.CreateMDArray(
-                    array_name, [], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+                    array_name, [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
                 )
                 is None
             )
@@ -2093,7 +2131,7 @@ def test_zarr_create_array_errors(tmp_vsimem, array_name, format):
         with gdal.quiet_errors():
             assert (
                 rg.CreateMDArray(
-                    array_name, [], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+                    array_name, [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
                 )
                 is None
             )
@@ -2131,7 +2169,7 @@ def test_zarr_create_array_compressor(tmp_vsimem, compressor, options, expected_
             rg.CreateMDArray(
                 "test",
                 [],
-                gdal.ExtendedDataType.Create(gdal.GDT_Byte),
+                gdal.ExtendedDataType.Create(gdal.GDT_UInt8),
                 ["COMPRESS=" + compressor] + options,
             )
             is not None
@@ -2242,7 +2280,7 @@ def test_zarr_create_array_compressor_v3(
         ar = rg.CreateMDArray(
             "test",
             [dim],
-            gdal.ExtendedDataType.Create(gdal.GDT_Byte),
+            gdal.ExtendedDataType.Create(gdal.GDT_UInt8),
             ["COMPRESS=" + compressor] + options,
         )
         assert ar.Write(array.array("b", [1, 2])) == gdal.CE_None
@@ -2279,21 +2317,21 @@ def test_zarr_create_array_compressor_v3(
         [
             ["@ENDIAN=little", "CHUNK_MEMORY_LAYOUT=F"],
             [
-                {"name": "transpose", "configuration": {"order": "F"}},
+                {"name": "transpose", "configuration": {"order": [1, 0]}},
                 {"configuration": {"endian": "little"}, "name": "bytes"},
             ],
         ],
         [
             ["@ENDIAN=big", "CHUNK_MEMORY_LAYOUT=F"],
             [
-                {"name": "transpose", "configuration": {"order": "F"}},
+                {"name": "transpose", "configuration": {"order": [1, 0]}},
                 {"configuration": {"endian": "big"}, "name": "bytes"},
             ],
         ],
         [
             ["@ENDIAN=big", "CHUNK_MEMORY_LAYOUT=F", "COMPRESS=GZIP"],
             [
-                {"name": "transpose", "configuration": {"order": "F"}},
+                {"name": "transpose", "configuration": {"order": [1, 0]}},
                 {"name": "bytes", "configuration": {"endian": "big"}},
                 {"name": "gzip", "configuration": {"level": 6}},
             ],
@@ -2304,7 +2342,7 @@ def test_zarr_create_array_compressor_v3(
     "gdal_data_type",
     [
         gdal.GDT_Int8,
-        gdal.GDT_Byte,
+        gdal.GDT_UInt8,
         gdal.GDT_Int16,
         gdal.GDT_UInt16,
         gdal.GDT_Int32,
@@ -2331,8 +2369,9 @@ def test_zarr_create_array_endian_v3(
         rg = ds.GetRootGroup()
         assert rg
         dim0 = rg.CreateDimension("dim0", None, None, 2)
+        dim1 = rg.CreateDimension("dim1", None, None, 1)
         ar = rg.CreateMDArray(
-            "test", [dim0], gdal.ExtendedDataType.Create(gdal_data_type), options
+            "test", [dim0, dim1], gdal.ExtendedDataType.Create(gdal_data_type), options
         )
         assert ar.Write(array.array(array_type, [1, 2])) == gdal.CE_None
 
@@ -2655,7 +2694,7 @@ def test_zarr_create_array_endian_v3(
                 "chunk_key_encoding": {"name": "default"},
                 "fill_value": 0,
             },
-            "Array test has more than 2^64 tiles. This is not supported.",
+            "Array test has more than 2^64 blocks. This is not supported.",
         ],
     ],
 )
@@ -2832,7 +2871,7 @@ def test_zarr_create_array_bad_compressor(tmp_vsimem, format):
             rg.CreateMDArray(
                 "test",
                 [],
-                gdal.ExtendedDataType.Create(gdal.GDT_Byte),
+                gdal.ExtendedDataType.Create(gdal.GDT_UInt8),
                 ["COMPRESS=invalid"],
             )
             is None
@@ -2848,7 +2887,7 @@ def test_zarr_create_array_attributes(tmp_vsimem, format):
         assert ds is not None
         rg = ds.GetRootGroup()
         assert rg
-        ar = rg.CreateMDArray("test", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+        ar = rg.CreateMDArray("test", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
         assert ar
         assert ar.GetFullName() == "/test"
 
@@ -2912,7 +2951,7 @@ def test_zarr_create_array_set_crs(tmp_vsimem):
         assert ds is not None
         rg = ds.GetRootGroup()
         assert rg
-        ar = rg.CreateMDArray("test", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+        ar = rg.CreateMDArray("test", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
         assert ar
         crs = osr.SpatialReference()
         crs.ImportFromEPSG(4326)
@@ -2944,11 +2983,11 @@ def test_zarr_create_array_set_dimension_name(tmp_vsimem):
 
         dim0 = rg.CreateDimension("dim0", None, None, 2)
         dim0_ar = rg.CreateMDArray(
-            "dim0", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "dim0", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         dim0.SetIndexingVariable(dim0_ar)
 
-        rg.CreateMDArray("test", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+        rg.CreateMDArray("test", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
 
     create()
 
@@ -2964,11 +3003,11 @@ def test_zarr_create_array_set_dimension_name(tmp_vsimem):
 @pytest.mark.parametrize(
     "dtype,gdaltype,fill_value,nodata_value",
     [
-        ["!b1", gdal.GDT_Byte, None, None],
+        ["!b1", gdal.GDT_UInt8, None, None],
         ["!i1", gdal.GDT_Int16, None, None],
         ["!i1", gdal.GDT_Int16, -1, -1],
-        ["!u1", gdal.GDT_Byte, None, None],
-        ["!u1", gdal.GDT_Byte, "1", 1],
+        ["!u1", gdal.GDT_UInt8, None, None],
+        ["!u1", gdal.GDT_UInt8, "1", 1],
         ["<i2", gdal.GDT_Int16, None, None],
         [">i2", gdal.GDT_Int16, None, None],
         ["<i4", gdal.GDT_Int32, None, None],
@@ -3143,7 +3182,7 @@ def test_zarr_write_array_content(
 @pytest.mark.parametrize(
     "dt,array_type",
     [
-        (gdal.GDT_Byte, "B"),
+        (gdal.GDT_UInt8, "B"),
         (gdal.GDT_UInt16, "H"),
         (gdal.GDT_UInt32, "I"),
         (gdal.GDT_UInt64, "Q"),
@@ -3208,7 +3247,7 @@ def test_zarr_write_interleave(tmp_vsimem, dt, array_type):
     )
     if dt != gdal.GDT_CFloat64:
         assert ar.Read(
-            buffer_datatype=gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            buffer_datatype=gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         ) == array.array("B", [0, 1, 2, 3, 4, 5])
 
 
@@ -3288,7 +3327,7 @@ def test_zarr_update_array_string(tmp_vsimem, srcfilename):
     "gdal_data_type",
     [
         gdal.GDT_Int8,
-        gdal.GDT_Byte,
+        gdal.GDT_UInt8,
         gdal.GDT_Int16,
         gdal.GDT_UInt16,
         gdal.GDT_Int32,
@@ -3346,7 +3385,7 @@ def test_zarr_create_fortran_order_3d_and_compression_and_dim_separator(
     else:
         assert "codecs" in j
         assert j["codecs"] == [
-            {"name": "transpose", "configuration": {"order": "F"}},
+            {"name": "transpose", "configuration": {"order": [2, 1, 0]}},
             {"name": "bytes", "configuration": {"endian": "little"}},
             {"name": "gzip", "configuration": {"level": 6}},
         ]
@@ -3368,7 +3407,7 @@ def test_zarr_create_unit_offset_scale(tmp_vsimem):
         rg = ds.GetRootGroup()
         assert rg
 
-        ar = rg.CreateMDArray("test", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+        ar = rg.CreateMDArray("test", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
         assert ar.SetOffset(1.5) == gdal.CE_None
         assert ar.SetScale(2.5) == gdal.CE_None
         assert ar.SetUnit("my unit") == gdal.CE_None
@@ -3516,9 +3555,7 @@ def test_zarr_create_append_subdataset(tmp_vsimem):
     check()
 
 
-@pytest.mark.parametrize(
-    "blocksize", ["1,2", "2,2,0", "4000000000,4000000000,4000000000"]
-)
+@pytest.mark.parametrize("blocksize", ["1,2", "4000000000,4000000000,4000000000"])
 def test_zarr_create_array_invalid_blocksize(tmp_vsimem, blocksize):
     def create():
         ds = gdal.GetDriverByName("ZARR").CreateMultiDimensional(
@@ -3536,7 +3573,7 @@ def test_zarr_create_array_invalid_blocksize(tmp_vsimem, blocksize):
             ar = rg.CreateMDArray(
                 "test",
                 [dim0, dim1, dim2],
-                gdal.ExtendedDataType.Create(gdal.GDT_Byte),
+                gdal.ExtendedDataType.Create(gdal.GDT_UInt8),
                 ["BLOCKSIZE=" + blocksize],
             )
             assert ar is None
@@ -3621,7 +3658,7 @@ def test_zarr_pam_spatial_ref(tmp_vsimem):
         dim0 = rg.CreateDimension("dim0", None, None, 2)
         dim1 = rg.CreateDimension("dim1", None, None, 2)
         rg.CreateMDArray(
-            "test", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "test", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
 
     create()
@@ -3893,7 +3930,7 @@ def test_zarr_cache_tile_presence(tmp_path, format):
         ar = rg.CreateMDArray(
             "test",
             [dim0, dim1],
-            gdal.ExtendedDataType.Create(gdal.GDT_Byte),
+            gdal.ExtendedDataType.Create(gdal.GDT_UInt8),
             ["BLOCKSIZE=1,2"],
         )
         assert ar
@@ -4027,7 +4064,7 @@ def test_zarr_advise_read(tmp_path, compression, format):
         ar = rg.CreateMDArray(
             "test",
             [dim0, dim1],
-            gdal.ExtendedDataType.Create(gdal.GDT_Byte),
+            gdal.ExtendedDataType.Create(gdal.GDT_UInt8),
             [
                 "COMPRESS=" + compression,
                 "BLOCKSIZE=%d,%d" % (dim0_blocksize, dim1_blocksize),
@@ -4283,7 +4320,7 @@ def test_zarr_resize(tmp_vsimem, format, create_z_metadata):
         dim0 = rg.CreateDimension("dim0", None, None, 2)
         dim1 = rg.CreateDimension("dim1", None, None, 2)
         var = rg.CreateMDArray(
-            "test", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "test", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         assert var.Write(struct.pack("B" * (2 * 2), 1, 2, 3, 4)) == gdal.CE_None
 
@@ -4366,21 +4403,21 @@ def test_zarr_resize_XARRAY(tmp_vsimem, create_z_metadata):
 
         dim0 = rg.CreateDimension("dim0", None, None, 2)
         dim0_var = rg.CreateMDArray(
-            "dim0", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "dim0", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         dim0.SetIndexingVariable(dim0_var)
         dim1 = rg.CreateDimension("dim1", None, None, 2)
         dim1_var = rg.CreateMDArray(
-            "dim1", [dim1], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "dim1", [dim1], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         dim1.SetIndexingVariable(dim1_var)
         var = rg.CreateMDArray(
-            "test", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "test", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         assert var.Write(struct.pack("B" * (2 * 2), 1, 2, 3, 4)) == gdal.CE_None
 
         var2 = rg.CreateMDArray(
-            "test2", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "test2", [dim0, dim1], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         assert var2 is not None
 
@@ -4463,12 +4500,12 @@ def test_zarr_resize_dim_referenced_twice(tmp_vsimem):
 
         dim0 = rg.CreateDimension("dim0", None, None, 2)
         dim0_var = rg.CreateMDArray(
-            "dim0", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "dim0", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         dim0.SetIndexingVariable(dim0_var)
 
         var = rg.CreateMDArray(
-            "test", [dim0, dim0], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "test", [dim0, dim0], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         assert var.Write(struct.pack("B" * (2 * 2), 1, 2, 3, 4)) == gdal.CE_None
 
@@ -4528,28 +4565,28 @@ def test_zarr_multidim_rename_group_at_creation(tmp_vsimem, format, create_z_met
         rg = ds.GetRootGroup()
         group = rg.CreateGroup("group")
         group_attr = group.CreateAttribute(
-            "group_attr", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "group_attr", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         rg.CreateGroup("other_group")
         dim = group.CreateDimension(
             "dim0", "unspecified type", "unspecified direction", 2
         )
         ar = group.CreateMDArray(
-            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         attr = ar.CreateAttribute(
-            "attr", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "attr", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
 
         subgroup = group.CreateGroup("subgroup")
         subgroup_attr = subgroup.CreateAttribute(
-            "subgroup_attr", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "subgroup_attr", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         subgroup_ar = subgroup.CreateMDArray(
-            "subgroup_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "subgroup_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         subgroup_ar_attr = subgroup_ar.CreateAttribute(
-            "subgroup_ar_attr", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "subgroup_ar_attr", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
 
         # Cannot rename root group
@@ -4657,7 +4694,7 @@ def test_zarr_multidim_rename_group_after_reopening(
             "dim0", "unspecified type", "unspecified direction", 2
         )
         ar = group.CreateMDArray(
-            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         attr = ar.CreateAttribute("attr", [], gdal.ExtendedDataType.CreateString())
         attr.Write("foo")
@@ -4762,13 +4799,13 @@ def test_zarr_multidim_rename_array_at_creation(tmp_path, format, create_z_metad
             "dim0", "unspecified type", "unspecified direction", 2
         )
         ar = group.CreateMDArray(
-            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         group.CreateMDArray(
-            "other_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "other_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         attr = ar.CreateAttribute(
-            "attr", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "attr", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
 
         # Empty name
@@ -4852,10 +4889,10 @@ def test_zarr_multidim_rename_array_after_reopening(
             "dim0", "unspecified type", "unspecified direction", 2
         )
         ar = group.CreateMDArray(
-            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         group.CreateMDArray(
-            "other_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "other_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         attr = ar.CreateAttribute("attr", [], gdal.ExtendedDataType.CreateString())
         attr.Write("foo")
@@ -4957,10 +4994,10 @@ def test_zarr_multidim_rename_attr_after_reopening(
             "dim0", "unspecified type", "unspecified direction", 2
         )
         ar = group.CreateMDArray(
-            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         group.CreateMDArray(
-            "other_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "other_ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         attr = ar.CreateAttribute("attr", [], gdal.ExtendedDataType.CreateString())
         attr.Write("foo")
@@ -5190,7 +5227,7 @@ def test_zarr_multidim_delete_group_after_reopening(
             "dim0", "unspecified type", "unspecified direction", 2
         )
         ar = group.CreateMDArray(
-            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_Byte)
+            "ar", [dim], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
         )
         attr = ar.CreateAttribute("attr", [], gdal.ExtendedDataType.CreateString())
         attr.Write("foo")
@@ -5290,13 +5327,15 @@ def test_zarr_multidim_delete_array_after_reopening(
         )
         rg = ds.GetRootGroup()
         group = rg.CreateGroup("group")
-        ar = group.CreateMDArray("ar", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+        ar = group.CreateMDArray("ar", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
         attr = ar.CreateAttribute("attr", [], gdal.ExtendedDataType.CreateString())
         attr.Write("foo")
         attr2 = ar.CreateAttribute("attr2", [], gdal.ExtendedDataType.CreateString())
         attr2.Write("foo")
 
-        group.CreateMDArray("other_ar", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+        group.CreateMDArray(
+            "other_ar", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
+        )
 
     def reopen_readonly():
         ds = gdal.OpenEx(filename, gdal.OF_MULTIDIM_RASTER)
@@ -5390,7 +5429,7 @@ def test_zarr_multidim_delete_attribute_after_reopening(
         )
         group_attr2.Write("foo")
 
-        ar = group.CreateMDArray("ar", [], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+        ar = group.CreateMDArray("ar", [], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
         attr = ar.CreateAttribute("attr", [], gdal.ExtendedDataType.CreateString())
         attr.Write("foo")
         attr2 = ar.CreateAttribute("attr2", [], gdal.ExtendedDataType.CreateString())
@@ -5788,7 +5827,7 @@ def test_zarr_write_error_at_close_on_array(tmp_path, format):
     rg = ds.GetRootGroup()
     dim0 = rg.CreateDimension("dim0", None, None, 2)
 
-    ar = rg.CreateMDArray("my_ar", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_Byte))
+    ar = rg.CreateMDArray("my_ar", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_UInt8))
     attr = ar.CreateAttribute("str_attr", [], gdal.ExtendedDataType.CreateString())
     assert attr.Write("my_string") == gdal.CE_None
     del attr
@@ -5816,3 +5855,1764 @@ def test_zarr_write_vsizip(tmp_vsimem, format):
 
     ds = gdal.Open(out_filename)
     assert ds.GetMetadata() == {"AREA_OR_POINT": "Area"}
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_ossfuzz_444714656():
+
+    ds = gdal.OpenEx("/vsitar/data/zarr/ossfuzz_444714656.tar", gdal.OF_MULTIDIM_RASTER)
+    rg = ds.GetRootGroup()
+    assert rg.GetGroupNames() == ["x"]
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_zarr_with_stac_proj_epsg():
+
+    ds = gdal.Open("data/zarr/zarr_with_stac_proj_epsg.zarr")
+    assert ds.GetSpatialRef().GetAuthorityCode(None) == "26711"
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_zarr_with_stac_proj_wkt2():
+
+    ds = gdal.Open("data/zarr/zarr_with_stac_proj_wkt2.zarr")
+    assert ds.GetSpatialRef().GetAuthorityCode(None) == "26711"
+
+
+###############################################################################
+#
+
+
+@pytest.mark.parametrize(
+    "file_path",
+    [
+        ("data/zarr/array_attrs.zarr/.zarray"),
+        ("data/zarr/group.zarr/.zgroup"),
+        ("data/zarr/group_with_zmetadata.zarr/.zmetadata"),
+        ("data/zarr/v3/test.zr3/zarr.json"),
+    ],
+)
+@gdaltest.enable_exceptions()
+def test_zarr_identify_file_extensions(file_path):
+    ds = gdal.Open(file_path)
+    ds.GetRasterBand(1).Checksum()
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_zarr_v2_GetRawBlockInfo():
+
+    ds = gdal.OpenEx("data/zarr/zlib.zarr", gdal.OF_MULTIDIM_RASTER)
+    ar = ds.GetRootGroup().OpenMDArray("zlib")
+    info = ar.GetRawBlockInfo([0])
+    assert info.GetOffset() == 0
+    assert info.GetSize() == 10
+    assert info.GetFilename().replace("\\", "/") == "data/zarr/zlib.zarr/0"
+    assert info.GetInfo() == ['COMPRESSOR={ "id": "zlib", "level": 1 }']
+
+    with pytest.raises(Exception, match="invalid block coordinate"):
+        ar.GetRawBlockInfo([1])
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize(
+    "filename,expected_info",
+    [
+        ("data/zarr/f2_le.zarr", ["ENDIANNESS=LITTLE"]),
+        ("data/zarr/f2_be.zarr", ["ENDIANNESS=BIG"]),
+        ("data/zarr/order_f_u2.zarr", ["ENDIANNESS=LITTLE", "TRANSPOSE_ORDER=[1,0]"]),
+        ("data/zarr/v3/f2_le.zarr", ["ENDIANNESS=LITTLE"]),
+        ("data/zarr/v3/f2_be.zarr", ["ENDIANNESS=BIG"]),
+        (
+            "data/zarr/v3/order_f_u2.zarr",
+            ["ENDIANNESS=LITTLE", "TRANSPOSE_ORDER=[1,0]"],
+        ),
+    ],
+)
+def test_zarr_read_zarr_endian_or_transpose_GetRawBlockInfo(filename, expected_info):
+
+    ds = gdal.OpenEx(filename, gdal.OF_MULTIDIM_RASTER)
+    ar = ds.GetRootGroup().OpenMDArray(ds.GetRootGroup().GetMDArrayNames()[0])
+    info = ar.GetRawBlockInfo([0] * ar.GetDimensionCount())
+    assert info.GetInfo() == expected_info
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_zarr_v2_missing_block_GetRawBlockInfo(tmp_vsimem):
+
+    ds = gdal.GetDriverByName("ZARR").CreateMultiDimensional(
+        tmp_vsimem / "test.zarr", ["FORMAT=ZARR_V2"]
+    )
+    dim0 = ds.GetRootGroup().CreateDimension("dim0", None, None, 2)
+    ar = ds.GetRootGroup().CreateMDArray(
+        "test", [dim0], gdal.ExtendedDataType.Create(gdal.GDT_UInt8)
+    )
+    info = ar.GetRawBlockInfo([0])
+    assert info.GetOffset() == 0
+    assert info.GetSize() == 0
+    assert info.GetFilename() is None
+    assert info.GetInfo() is None
+    assert info.GetInlineData() is None
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_zarr_v2_kerchunk_GetRawBlockInfo():
+
+    ds = gdal.OpenEx(
+        "data/zarr/kerchunk_json/json_ref_v0_min/ref.json", gdal.OF_MULTIDIM_RASTER
+    )
+    ar = ds.GetRootGroup().OpenMDArray("x")
+    info = ar.GetRawBlockInfo([0])
+    assert info.GetOffset() == 0
+    assert info.GetSize() == 1
+    assert (
+        info.GetFilename().replace("\\", "/")
+        == "data/zarr/kerchunk_json/json_ref_v0_min/0.bin"
+    )
+    assert info.GetInfo() is None
+    assert info.GetInlineData() is None
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_zarr_v3_GetRawBlockInfo():
+
+    ds = gdal.OpenEx("data/zarr/v3/gzip.zarr", gdal.OF_MULTIDIM_RASTER)
+    ar = ds.GetRootGroup().OpenMDArray("gzip")
+    info = ar.GetRawBlockInfo([0, 0])
+    assert info.GetOffset() == 0
+    assert info.GetSize() == 25
+    assert info.GetFilename().replace("\\", "/") == "data/zarr/v3/gzip.zarr/gzip/c/0/0"
+    assert info.GetInfo() == [
+        'COMPRESSOR={ "name": "gzip", "configuration": { "level": 6 } }'
+    ]
+    assert info.GetInlineData() is None
+
+    with pytest.raises(Exception, match="invalid block coordinate"):
+        ar.GetRawBlockInfo([1, 0])
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.require_driver("Parquet")
+def test_zarr_read_kerchunk_parquet_GetRawBlockInfo():
+
+    ds = gdal.OpenEx(
+        "ZARR:data/zarr/kerchunk_parquet/parquet_ref_0_dim_inline_content",
+        gdal.OF_MULTIDIM_RASTER,
+    )
+    ar = ds.GetRootGroup().OpenMDArray("x")
+    info = ar.GetRawBlockInfo([])
+    assert info.GetOffset() == 0
+    assert info.GetSize() == 1
+    assert info.GetFilename() is None
+    assert info.GetInfo() is None
+    assert info.GetInlineData() == b"\x01"
+
+
+###############################################################################
+# Basic tests for a rather canonical sharded dataset, using ZSTD compression for
+# inner chunks, and whose inner chunk index is protected by CRC32C.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_simple_sharding(tmp_path):
+
+    compressors = gdal.GetDriverByName("Zarr").GetMetadataItem("COMPRESSORS")
+    if "zstd" not in compressors:
+        pytest.skip("compressor zstd not available")
+
+    ds = gdal.OpenEx(
+        "data/zarr/v3/simple_sharding.zarr",
+        gdal.OF_MULTIDIM_RASTER,
+    )
+    ar = ds.GetRootGroup().OpenMDArray("simple_sharding")
+    assert ar.GetBlockSize() == [5, 6]
+
+    expected = [i for i in range(24 * 26)]
+
+    assert list(struct.unpack("f" * (24 * 26), ar.Read())) == expected
+
+    assert list(struct.unpack("f" * (24 * 26), ar.Read())) == expected
+
+    assert ar.AdviseRead() == gdal.CE_None
+
+    assert list(struct.unpack("f" * (24 * 26), ar.Read())) == expected
+
+    info = ar.GetRawBlockInfo([0, 0])
+    assert info.GetOffset() == 0
+    assert info.GetSize() == 392
+    assert (
+        info.GetFilename().replace("\\", "/")
+        == "data/zarr/v3/simple_sharding.zarr/c/0/0"
+    )
+    assert "CHUNK_TYPE=INNER" in info.GetInfo()
+
+    info = ar.GetRawBlockInfo([4, 0])
+    assert (
+        info.GetFilename().replace("\\", "/")
+        == "data/zarr/v3/simple_sharding.zarr/c/2/0"
+    )
+
+    with pytest.raises(Exception):
+        ar.GetRawBlockInfo([5, 0])
+
+    shutil.copytree(
+        "data/zarr/v3/simple_sharding.zarr", tmp_path / "simple_sharding.zarr"
+    )
+
+    # Create the tile presence cache
+    def open_with_cache_tile_presence_option():
+        ds = gdal.OpenEx(
+            tmp_path / "simple_sharding.zarr",
+            gdal.OF_MULTIDIM_RASTER,
+            open_options=["CACHE_TILE_PRESENCE=YES"],
+        )
+        assert ds is not None
+        rg = ds.GetRootGroup()
+        assert rg.OpenMDArray("simple_sharding") is not None
+
+    open_with_cache_tile_presence_option()
+
+    assert (
+        gdal.VSIStatL(tmp_path / "simple_sharding.zarr" / "zarr.json.gmac") is not None
+    )
+
+
+###############################################################################
+# Test various errors in the shard data file
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_simple_sharding_read_errors(tmp_vsimem):
+
+    compressors = gdal.GetDriverByName("Zarr").GetMetadataItem("COMPRESSORS")
+    if "zstd" not in compressors:
+        pytest.skip("compressor zstd not available")
+
+    gdal.alg.vsi.copy(
+        "data/zarr/v3/simple_sharding.zarr",
+        tmp_vsimem,
+        recursive=True,
+    )
+
+    data = bytearray(open("data/zarr/v3/simple_sharding.zarr/c/0/0", "rb").read())
+
+    error_msgs = ""
+
+    for pass_ in range(2):
+        length_to_mutate = 1 if pass_ == 0 else 4
+        for i in range(len(data) // length_to_mutate):
+
+            # Corrupt some bytes(s)
+            for k in range(length_to_mutate):
+                data[i * length_to_mutate + k] = 255 - data[i * length_to_mutate + k]
+
+            gdal.FileFromMemBuffer(tmp_vsimem / "simple_sharding.zarr/c/0/0", data)
+
+            # Restore original values
+            for k in range(length_to_mutate):
+                data[i * length_to_mutate + k] = 255 - data[i * length_to_mutate + k]
+
+            ds = gdal.OpenEx(
+                tmp_vsimem / "simple_sharding.zarr",
+                gdal.OF_MULTIDIM_RASTER,
+            )
+            ar = ds.GetRootGroup().OpenMDArray("simple_sharding")
+
+            # Just test this does not crash
+            try:
+                ar.Read()
+            except Exception as e:
+                error_msgs += str(e) + "\n"
+
+    assert "DecodePartial(): cannot decode chunk 0" in error_msgs
+    assert "cannot read data for chunk" in error_msgs
+    assert "invalid chunk location for chunk" in error_msgs
+
+
+###############################################################################
+# Test accessing a sharded dataset via /vsicurl/
+
+
+@pytest.mark.require_curl()
+@gdaltest.enable_exceptions()
+def test_zarr_read_simple_sharding_network():
+
+    compressors = gdal.GetDriverByName("Zarr").GetMetadataItem("COMPRESSORS")
+    if "zstd" not in compressors:
+        pytest.skip("compressor zstd not available")
+
+    webserver_process = None
+    webserver_port = 0
+
+    (webserver_process, webserver_port) = webserver.launch(
+        handler=webserver.DispatcherHttpHandler
+    )
+    if webserver_port == 0:
+        pytest.skip()
+
+    zarr_json = json.dumps(
+        {
+            "shape": [2, 2],
+            "data_type": "uint8",
+            "chunk_grid": {
+                "name": "regular",
+                "configuration": {"chunk_shape": [2, 2]},
+            },
+            "chunk_key_encoding": {
+                "name": "default",
+                "configuration": {"separator": "/"},
+            },
+            "fill_value": 0,
+            "codecs": [
+                {
+                    "name": "sharding_indexed",
+                    "configuration": {
+                        "chunk_shape": [2, 2],
+                        "codecs": [
+                            {"name": "bytes", "configuration": {"endian": "little"}}
+                        ],
+                        "index_codecs": [
+                            {"name": "bytes", "configuration": {"endian": "little"}}
+                        ],
+                    },
+                }
+            ],
+            "attributes": {},
+            "zarr_format": 3,
+            "node_type": "array",
+            "storage_transformers": [],
+        }
+    )
+    shard_index = struct.pack("<Q", 0) + struct.pack("<Q", 4)
+    shard_tail = b"\x00" * (16384 - len(shard_index)) + shard_index
+    chunk_block = b"\x01\x02\x03\x04" + (16384 - 4) * b"\x00"
+
+    try:
+        # Loop twice: second iteration proves ClearMemoryCaches() lets the
+        # driver re-fetch everything cleanly.
+        for _ in range(2):
+            handler = webserver.SequentialHandler()
+            handler.add("GET", "/test.zarr/", 404)
+            handler.add("HEAD", "/test.zarr/.zmetadata", 404)
+            handler.add("HEAD", "/test.zarr/.zarray", 404)
+            handler.add("HEAD", "/test.zarr/.zgroup", 404)
+            handler.add(
+                "HEAD",
+                "/test.zarr/zarr.json",
+                200,
+                {"Content-Length": "%d" % len(zarr_json)},
+            )
+            handler.add(
+                "GET",
+                "/test.zarr/zarr.json",
+                200,
+                {"Content-Length": "%d" % len(zarr_json)},
+                zarr_json,
+            )
+            handler.add("HEAD", "/test.zarr/zarr.json.aux.xml", 404)
+            handler.add("HEAD", "/test.zarr/zarr.aux", 404)
+            handler.add("HEAD", "/test.zarr/zarr.AUX", 404)
+            handler.add("HEAD", "/test.zarr/zarr.json.aux", 404)
+            handler.add("HEAD", "/test.zarr/zarr.json.AUX", 404)
+            handler.add("HEAD", "/test.zarr/zarr.json.gmac", 404)
+            handler.add("HEAD", "/test.zarr/c/0/0", 200, {"Content-Length": "65536"})
+            handler.add(
+                "GET",
+                "/test.zarr/c/0/0",
+                206,
+                {
+                    "Content-Length": "16384",
+                    "Content-Range": "bytes 49152-65535/65536",
+                },
+                shard_tail,
+                expected_headers={"Range": "bytes=49152-65535"},
+            )
+            handler.add(
+                "GET",
+                "/test.zarr/c/0/0",
+                206,
+                {
+                    "Content-Length": "16384",
+                    "Content-Range": "bytes 0-16383/65536",
+                },
+                chunk_block,
+                expected_headers={"Range": "bytes=0-16383"},
+            )
+            with webserver.install_http_handler(handler):
+                ds = gdal.Open(
+                    'ZARR:"/vsicurl/http://localhost:%d/test.zarr"' % webserver_port
+                )
+                assert ds.GetRasterBand(1).ReadBlock(0, 0) == b"\x01\x02\x03\x04"
+            ds = None
+            gdal.ClearMemoryCaches()
+
+    finally:
+        webserver.server_stop(webserver_process, webserver_port)
+
+
+###############################################################################
+# Test batch reads: full-array read via multidim API on a sharded dataset
+# uses BatchDecodePartial (ReadMultiRange) and produces correct data.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_batch_reads_sharding():
+
+    compressors = gdal.GetDriverByName("Zarr").GetMetadataItem("COMPRESSORS")
+    if "zstd" not in compressors:
+        pytest.skip("compressor zstd not available")
+
+    ds = gdal.OpenEx(
+        "data/zarr/v3/simple_sharding.zarr",
+        gdal.OF_MULTIDIM_RASTER,
+    )
+    ar = ds.GetRootGroup().OpenMDArray("simple_sharding")
+    assert ar.GetBlockSize() == [5, 6]
+
+    expected = [i for i in range(24 * 26)]
+
+    # Full-extent read triggers PreloadShardedBlocks → BatchDecodePartial.
+    # Verify data matches single-block reads.
+    data = list(struct.unpack("f" * (24 * 26), ar.Read()))
+    assert data == expected
+
+    # Partial read spanning multiple inner chunks within a shard
+    partial = list(struct.unpack("f" * (10 * 12), ar.Read([0, 0], [10, 12])))
+    for row in range(10):
+        for col in range(12):
+            assert partial[row * 12 + col] == expected[row * 26 + col]
+
+
+###############################################################################
+# Test a sharded dataset, where sharding happens after a transpose codec.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_transposed_sharding():
+
+    compressors = gdal.GetDriverByName("Zarr").GetMetadataItem("COMPRESSORS")
+    if "zstd" not in compressors:
+        pytest.skip("compressor zstd not available")
+
+    # At time of writing, zarr-python does not support yet this:
+    # https://github.com/zarr-developers/zarr-python/issues/2050
+    ds = gdal.OpenEx(
+        "data/zarr/v3/transposed_sharding.zarr",
+        gdal.OF_MULTIDIM_RASTER,
+    )
+    ar = ds.GetRootGroup().OpenMDArray("transposed_sharding")
+    assert ar.GetBlockSize() == [5, 6]
+
+    assert list(struct.unpack("f" * (24 * 26), ar.Read()))[0:14] == [
+        0,
+        24,
+        48,
+        72,
+        96,
+        120,
+        144,
+        168,
+        192,
+        216,
+        240,
+        264,
+        10,
+        34,
+    ]
+
+
+###############################################################################
+# Test reading sharded dataset with (all) missing inner chunks and a non-zero
+# fill_value.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_sharding_fill_value():
+
+    compressors = gdal.GetDriverByName("Zarr").GetMetadataItem("COMPRESSORS")
+    if "zstd" not in compressors:
+        pytest.skip("compressor zstd not available")
+
+    ds = gdal.OpenEx(
+        "data/zarr/v3/sharding_fill_value.zarr",
+        gdal.OF_MULTIDIM_RASTER,
+    )
+    ar = ds.GetRootGroup().OpenMDArray("sharding_fill_value")
+
+    assert ar.GetBlockSize() == [1, 2]
+
+    assert list(struct.unpack("h" * 3 * 3, ar.Read())) == [1] * (3 * 3)
+
+
+###############################################################################
+# Test reading a sharded dataset where both inner chunk data and inner indexe
+# use big endian ordering.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_sharding_big_endian():
+
+    # Test dataset generated with:
+    #
+    # import zarr
+    # sharding = zarr.codecs.ShardingCodec(chunk_shape=(1, 2), codecs=[zarr.codecs.BytesCodec(endian='big')], index_codecs=[zarr.codecs.BytesCodec(endian='big'), zarr.codecs.Crc32cCodec()])
+    # z = zarr.array([[1, 2],[3, 4]], chunk_shape=(2, 4), codecs=[sharding], store='sharding_big_endian.zarr')
+
+    ds = gdal.OpenEx(
+        "data/zarr/v3/sharding_big_endian.zarr",
+        gdal.OF_MULTIDIM_RASTER,
+    )
+    ar = ds.GetRootGroup().OpenMDArray("sharding_big_endian")
+
+    assert ar.GetBlockSize() == [1, 2]
+
+    assert list(struct.unpack("Q" * 4, ar.Read())) == [1, 2, 3, 4]
+
+
+###############################################################################
+# Test reading a sharded dataset where the sharding codec is followed by a
+# bytes->bytes codec, which makes partial decoding impossible, and thus falling
+# back to full shard decoding.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_sharding_little_endian_then_byte_byte_codec():
+
+    # Test dataset generated with:
+    #
+    # import zarr
+    # sharding = zarr.codecs.ShardingCodec(chunk_shape=(1, 2), codecs=[zarr.codecs.BytesCodec(endian='little')], index_codecs=[zarr.codecs.BytesCodec(endian='little')])
+    # z = zarr.array([[1, 2],[3, 4]], chunk_shape=(2, 4), codecs=[sharding, zarr.codecs.Crc32cCodec()], store='sharding_little_endian_then_byte_byte_codec.zarr')
+
+    with gdaltest.error_raised(
+        gdal.CE_Warning,
+        match="Sharding codec found, but not in last position. Consequently partial shard decoding will not be possible",
+    ):
+        ds = gdal.OpenEx(
+            "data/zarr/v3/sharding_little_endian_then_byte_byte_codec.zarr",
+            gdal.OF_MULTIDIM_RASTER,
+        )
+        ar = ds.GetRootGroup().OpenMDArray(
+            "sharding_little_endian_then_byte_byte_codec"
+        )
+
+    # Not the inner shard shape
+    assert ar.GetBlockSize() == [2, 4]
+
+    assert list(struct.unpack("Q" * 4, ar.Read())) == [1, 2, 3, 4]
+
+
+###############################################################################
+# Same as test_zarr_read_sharding_little_endian_then_byte_byte_codec(), but
+# where the byte order is big endian
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_sharding_big_endian_then_byte_byte_codec():
+
+    # Test dataset generated with:
+    #
+    # import zarr
+    # sharding = zarr.codecs.ShardingCodec(chunk_shape=(1, 2), codecs=[zarr.codecs.BytesCodec(endian='big')], index_codecs=[zarr.codecs.BytesCodec(endian='big')])
+    # z = zarr.array([[1, 2],[3, 4]], chunk_shape=(2, 4), codecs=[sharding, zarr.codecs.Crc32cCodec()], store='sharding_big_endian_then_byte_byte_codec.zarr')
+
+    with gdaltest.error_raised(
+        gdal.CE_Warning,
+        match="Sharding codec found, but not in last position. Consequently partial shard decoding will not be possible",
+    ):
+        ds = gdal.OpenEx(
+            "data/zarr/v3/sharding_big_endian_then_byte_byte_codec.zarr",
+            gdal.OF_MULTIDIM_RASTER,
+        )
+        ar = ds.GetRootGroup().OpenMDArray("sharding_big_endian_then_byte_byte_codec")
+
+    # Not the inner shard shape
+    assert ar.GetBlockSize() == [2, 4]
+
+    assert list(struct.unpack("Q" * 4, ar.Read())) == [1, 2, 3, 4]
+
+
+###############################################################################
+# Test reading a *corrupted* sharded dataset where the sharding codec is followed by a
+# bytes->bytes codec, which makes partial decoding impossible, and thus falling
+# back to full shard decoding.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_sharding_little_endian_then_byte_byte_codec_read_errors(tmp_vsimem):
+
+    gdal.alg.vsi.copy(
+        "data/zarr/v3/sharding_little_endian_then_byte_byte_codec.zarr",
+        tmp_vsimem,
+        recursive=True,
+    )
+
+    data = bytearray(
+        open(
+            "data/zarr/v3/sharding_little_endian_then_byte_byte_codec.zarr/c/0/0", "rb"
+        ).read()
+    )
+
+    # Corrupt last byte (CRC32c)
+    data[-1] = 0
+    gdal.FileFromMemBuffer(
+        tmp_vsimem / "sharding_little_endian_then_byte_byte_codec.zarr/c/0/0", data
+    )
+
+    with gdaltest.error_raised(
+        gdal.CE_Warning,
+        match="Sharding codec found, but not in last position. Consequently partial shard decoding will not be possible",
+    ):
+        ds = gdal.OpenEx(
+            tmp_vsimem / "sharding_little_endian_then_byte_byte_codec.zarr",
+            gdal.OF_MULTIDIM_RASTER,
+        )
+        ar = ds.GetRootGroup().OpenMDArray(
+            "sharding_little_endian_then_byte_byte_codec"
+        )
+
+    with pytest.raises(
+        Exception,
+        match="CRC32C decoder: computed CRC value is B5176337 whereas expected value is 00176337",
+    ):
+        ar.Read()
+
+
+###############################################################################
+# Test reading a *corrupted* sharded dataset where the data of inner chunks
+# is protected by a CRC32C
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_sharding_with_crc32_then_byte_byte_codec_read_errors(tmp_vsimem):
+
+    gdal.alg.vsi.copy(
+        "data/zarr/v3/sharding_with_crc32_then_byte_byte_codec.zarr",
+        tmp_vsimem,
+        recursive=True,
+    )
+
+    with gdal.VSIFile(
+        tmp_vsimem / "sharding_with_crc32_then_byte_byte_codec.zarr/zarr.json", "rb"
+    ) as f:
+        j = json.loads(f.read())
+    assert j["codecs"][1]["name"] == "crc32c"
+    j["codecs"][1]["configuration"] = {"check_crc": False}
+    with gdal.VSIFile(
+        tmp_vsimem / "sharding_with_crc32_then_byte_byte_codec.zarr/zarr.json", "wb"
+    ) as f:
+        f.write(bytes(json.dumps(j), encoding="ascii"))
+
+    data = bytearray(
+        open(
+            "data/zarr/v3/sharding_with_crc32_then_byte_byte_codec.zarr/c/0/0", "rb"
+        ).read()
+    )
+
+    error_msgs = ""
+
+    for pass_ in range(2):
+        length_to_mutate = 1 if pass_ == 0 else 4
+        for i in range(len(data) // length_to_mutate):
+
+            # Corrupt some bytes(s)
+            for k in range(length_to_mutate):
+                data[i * length_to_mutate + k] = 255 - data[i * length_to_mutate + k]
+
+            gdal.FileFromMemBuffer(
+                tmp_vsimem / "sharding_with_crc32_then_byte_byte_codec.zarr/c/0/0", data
+            )
+
+            # Restore original values
+            for k in range(length_to_mutate):
+                data[i * length_to_mutate + k] = 255 - data[i * length_to_mutate + k]
+
+            with gdaltest.error_raised(
+                gdal.CE_Warning,
+                match="Sharding codec found, but not in last position. Consequently partial shard decoding will not be possible",
+            ):
+                ds = gdal.OpenEx(
+                    tmp_vsimem / "sharding_with_crc32_then_byte_byte_codec.zarr",
+                    gdal.OF_MULTIDIM_RASTER,
+                )
+                ar = ds.GetRootGroup().OpenMDArray(
+                    "sharding_with_crc32_then_byte_byte_codec"
+                )
+
+            # Just test this does not crash
+            try:
+                ar.Read()
+            except Exception as e:
+                error_msgs += str(e) + "\n"
+
+    assert "cannot decode chunk 0" in error_msgs
+    assert "CRC32C decoder: computed CRC value" in error_msgs
+    assert "invalid chunk location for chunk 0" in error_msgs
+
+
+###############################################################################
+# Test reading a sharded dataset where the configuration of the sharding_indexed
+# codec is invalid.
+
+
+def mutate_missing_configuration(j):
+    del j["codecs"][0]["configuration"]
+
+
+def mutate_configuration_not_object(j):
+    j["codecs"][0]["configuration"] = "foo"
+
+
+def mutate_missing_chunk_shape(j):
+    del j["codecs"][0]["configuration"]["chunk_shape"]
+
+
+def mutate_chunk_shape_not_array(j):
+    j["codecs"][0]["configuration"]["chunk_shape"] = "foo"
+
+
+def mutate_chunk_shape_not_right_dim_count(j):
+    j["codecs"][0]["configuration"]["chunk_shape"] = [1]
+
+
+def mutate_chunk_shape_minus_one_val(j):
+    j["codecs"][0]["configuration"]["chunk_shape"] = [-1, 1]
+
+
+def mutate_chunk_shape_zero_val(j):
+    j["codecs"][0]["configuration"]["chunk_shape"] = [0, 1]
+
+
+def mutate_chunk_shape_three_val(j):
+    j["codecs"][0]["configuration"]["chunk_shape"] = [3, 1]
+
+
+def mutate_missing_codecs(j):
+    del j["codecs"][0]["configuration"]["codecs"]
+
+
+def mutate_codecs_not_array(j):
+    j["codecs"][0]["configuration"]["codecs"] = "foo"
+
+
+def mutate_codecs_empty_array(j):
+    j["codecs"][0]["configuration"]["codecs"] = []
+
+
+def mutate_codecs_invalid_subcodec(j):
+    j["codecs"][0]["configuration"]["codecs"] = [{"name": "invalid"}]
+
+
+def mutate_missing_index_codecs(j):
+    del j["codecs"][0]["configuration"]["index_codecs"]
+
+
+def mutate_index_codecs_not_array(j):
+    j["codecs"][0]["configuration"]["index_codecs"] = "foo"
+
+
+def mutate_index_codecs_empty_array(j):
+    j["codecs"][0]["configuration"]["index_codecs"] = []
+
+
+def mutate_index_codecs_invalid_subcodec(j):
+    j["codecs"][0]["configuration"]["index_codecs"] = [{"name": "invalid"}]
+
+
+def mutate_index_codecs_unsupported_type(j):
+    j["codecs"][0]["configuration"]["index_codecs"] = [
+        {"name": "transpose", "configuration": {"order": [2, 1, 0]}}
+    ]
+
+
+def mutate_wrong_index_location(j):
+    j["codecs"][0]["configuration"]["index_location"] = "middle of nowhere"
+
+
+@pytest.mark.parametrize(
+    "mutate_func,expected_error_msg",
+    [
+        (
+            mutate_missing_configuration,
+            "Codec sharding_indexed: configuration missing or not an object",
+        ),
+        (
+            mutate_configuration_not_object,
+            "Codec sharding_indexed: configuration missing or not an object",
+        ),
+        (
+            mutate_missing_chunk_shape,
+            "Codec sharding_indexed: configuration.chunk_shape missing or not an array",
+        ),
+        (
+            mutate_chunk_shape_not_array,
+            "Codec sharding_indexed: configuration.chunk_shape missing or not an array",
+        ),
+        (
+            mutate_chunk_shape_not_right_dim_count,
+            "Codec sharding_indexed: configuration.chunk_shape should have the same shape as the array",
+        ),
+        (
+            mutate_chunk_shape_minus_one_val,
+            r"Codec sharding_indexed: configuration.chunk_shape\[0\]=-1 should be a strictly positive value that is a divisor of 10",
+        ),
+        (
+            mutate_chunk_shape_zero_val,
+            r"Codec sharding_indexed: configuration.chunk_shape\[0\]=0 should be a strictly positive value that is a divisor of 10",
+        ),
+        (
+            mutate_chunk_shape_three_val,
+            r"Codec sharding_indexed: configuration.chunk_shape\[0\]=3 should be a strictly positive value that is a divisor of 10",
+        ),
+        (
+            mutate_missing_codecs,
+            "Codec sharding_indexed: configuration.codecs missing or not an array",
+        ),
+        (
+            mutate_codecs_not_array,
+            "Codec sharding_indexed: configuration.codecs missing or not an array",
+        ),
+        (
+            mutate_codecs_empty_array,
+            r"Codec sharding_indexed: configuration.codecs\[\] is empty",
+        ),
+        (
+            mutate_codecs_invalid_subcodec,
+            r"Codec sharding_indexed: initialization of codecs failed\nMay be caused by: Unsupported codec: invalid",
+        ),
+        (
+            mutate_missing_index_codecs,
+            "Codec sharding_indexed: configuration.index_codecs missing or not an array",
+        ),
+        (
+            mutate_index_codecs_not_array,
+            "Codec sharding_indexed: configuration.index_codecs missing or not an array",
+        ),
+        (
+            mutate_index_codecs_empty_array,
+            r"Codec sharding_indexed: configuration.index_codecs\[\] is empty",
+        ),
+        (
+            mutate_index_codecs_invalid_subcodec,
+            r"Codec sharding_indexed: initialization of index_codecs failed\nMay be caused by: Unsupported codec: invalid",
+        ),
+        (
+            mutate_index_codecs_unsupported_type,
+            "Codec sharding_indexed: this implementation only supports Bytes, possibly followed by CRC32C, as index_codecs",
+        ),
+        (
+            mutate_wrong_index_location,
+            "Codec sharding_indexed: invalid value for index_location",
+        ),
+    ],
+)
+@gdaltest.enable_exceptions()
+def test_zarr_read_sharding_errors(tmp_vsimem, mutate_func, expected_error_msg):
+
+    j = {
+        "shape": [24, 26],
+        "data_type": "float32",
+        "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [10, 12]}},
+        "chunk_key_encoding": {"name": "default", "configuration": {"separator": "/"}},
+        "fill_value": 0,
+        "codecs": [
+            {
+                "name": "sharding_indexed",
+                "configuration": {
+                    "chunk_shape": [5, 6],
+                    "codecs": [
+                        {"name": "bytes", "configuration": {"endian": "little"}}
+                    ],
+                    "index_codecs": [
+                        {"name": "bytes", "configuration": {"endian": "little"}}
+                    ],
+                },
+            }
+        ],
+        "attributes": {},
+        "zarr_format": 3,
+        "node_type": "array",
+        "storage_transformers": [],
+    }
+
+    mutate_func(j)
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "zarr.json", json.dumps(j))
+
+    with gdal.quiet_errors():
+        with pytest.raises(Exception, match=expected_error_msg):
+            gdal.OpenEx(tmp_vsimem / "zarr.json", gdal.OF_MULTIDIM_RASTER)
+
+
+###############################################################################
+# Test reading a sharded dataset whose inner chunks are themselves sharded...
+# This is partially supported, as we fallback to full outer shard decoding
+# currently.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_nested_sharding():
+
+    # Dataset generated with:
+    # import zarr
+    # from zarr.codecs import ShardingCodec
+    # inner_sharding = zarr.codecs.ShardingCodec(chunk_shape=(1, 2), codecs=[zarr.codecs.BytesCodec()], index_codecs=[zarr.codecs.BytesCodec()])
+    # outer_sharding = zarr.codecs.ShardingCodec(chunk_shape=(2, 4), codecs=[inner_sharding], index_codecs=[zarr.codecs.BytesCodec()])
+    # z = zarr.array([[0,1,2,3,4,5,6,7,8,9],[10,11,12,13,14,15,16,17,18,19],[20,21,22,23,24,25,26,27,28,29],[30,31,32,33,34,35,36,37,38,39],[40,41,42,43,44,45,46,47,48,49]], chunk_shape=(4,8), codecs=[outer_sharding], store='nested_sharding.zarr', dtype='uint16')
+
+    # At time of writing, zarr-python does not support reading this back
+    # https://github.com/zarr-developers/zarr-python/issues/3652
+
+    with gdaltest.error_raised(
+        gdal.CE_Warning,
+        match="Nested sharding detected. For now, partial decoding is only implemented on the outer-most shard level",
+    ):
+        ds = gdal.OpenEx(
+            "data/zarr/v3/nested_sharding.zarr",
+            gdal.OF_MULTIDIM_RASTER,
+        )
+
+    ar = ds.GetRootGroup().OpenMDArray("nested_sharding")
+    assert ar.GetBlockSize() == [2, 4]
+
+    assert list(struct.unpack("H" * (5 * 10), ar.Read())) == [i for i in range(50)]
+
+
+###############################################################################
+# Test reading a dataset with the "multiscales" convention
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "data/zarr/v3/simple_multiscales/zarr.json",
+        "data/zarr/v3/simple_multiscales_ref_array/zarr.json",
+        "data/zarr/v3/simple_multiscales_spatial/zarr.json",
+    ],
+)
+def test_zarr_read_simple_multiscales(filename):
+
+    with gdal.OpenEx(filename, gdal.OF_MULTIDIM_RASTER) as ds:
+        rg = ds.GetRootGroup()
+
+        level0 = rg.OpenGroup("level0")
+        ar0 = level0.OpenMDArray("ar")
+        assert ar0.GetOverviewCount() == 2
+        assert ar0.GetOverview(-1) is None
+        assert ar0.GetOverview(2) is None
+        assert ar0.GetOverview(0).GetFullName() == "/level1/ar"
+        assert ar0.GetOverview(1).GetFullName() == "/level2/ar"
+
+        level1 = rg.OpenGroup("level1")
+        ar1 = level1.OpenMDArray("ar")
+        assert ar1.GetOverviewCount() == 1
+        assert ar1.GetOverview(0).GetFullName() == "/level2/ar"
+
+        level2 = rg.OpenGroup("level2")
+        ar2 = level2.OpenMDArray("ar")
+        assert ar2.GetOverviewCount() == 0
+
+        unrelated = level0.OpenMDArray("unrelated")
+        assert unrelated.GetOverviewCount() == 0
+
+        y = level0.OpenMDArray("y")
+        if "_ref_array" not in filename:
+            assert y.GetOverviewCount() == 1
+            assert y.GetOverview(0).GetFullName() == "/level1/y"
+        else:
+            assert y.GetOverviewCount() == 0
+
+    # Without calling GetOverviewCount()
+    with gdal.OpenEx(filename, gdal.OF_MULTIDIM_RASTER) as ds:
+        rg = ds.GetRootGroup()
+        level0 = rg.OpenGroup("level0")
+        ar0 = level0.OpenMDArray("ar")
+        assert ar0.GetOverview(-1) is None
+        assert ar0.GetOverview(2) is None
+        assert ar0.GetOverview(0).GetFullName() == "/level1/ar"
+        assert ar0.GetOverview(1).GetFullName() == "/level2/ar"
+
+    filename_with_zarr_json = filename.replace("/zarr.json", "")
+    with gdal.Open(f'ZARR:"{filename_with_zarr_json}":/level0/ar') as ds:
+        band = ds.GetRasterBand(1)
+        assert band.GetOverviewCount() == 2
+        assert band.GetOverview(-1) is None
+        assert band.GetOverview(2) is None
+
+        assert band.GetOverview(0).YSize == 100
+        assert band.GetOverview(0).XSize == 50
+
+        assert band.GetOverview(1).YSize == 50
+        assert band.GetOverview(1).XSize == 25
+
+
+###############################################################################
+# Test reading a dataset with errors in the "multiscales" convention
+
+
+def mutate_multiscale_missing_layout(j):
+    del j["attributes"]["multiscales"]["layout"]
+
+
+def mutate_multiscale_missing_asset(j):
+    j["attributes"]["multiscales"]["layout"] = [{}]
+
+
+def mutate_multiscale_assert_not_existing(j):
+    j["attributes"]["multiscales"]["layout"] = [{"asset": "non_existing"}]
+
+
+def mutate_multiscale_asset_not_same_dim_count(j):
+    j["consolidated_metadata"]["metadata"]["level1/ar"]["shape"] = [100]
+    j["consolidated_metadata"]["metadata"]["level1/ar"]["chunk_grid"]["configuration"][
+        "chunk_shape"
+    ] = [100]
+    j["consolidated_metadata"]["metadata"]["level1/ar"]["dimension_names"] = ["y"]
+
+
+def mutate_multiscale_asset_not_same_type(j):
+    j["consolidated_metadata"]["metadata"]["level1/ar"]["data_type"] = "uint8"
+    j["consolidated_metadata"]["metadata"]["level1/ar"]["fill_value"] = 0
+
+
+def mutate_multiscale_derived_from_non_existing(j):
+    j["attributes"]["multiscales"]["layout"][1]["derived_from"] = "non_existing"
+
+
+def mutate_multiscale_derived_from_not_same_dim_count(j):
+    j["attributes"]["multiscales"]["layout"][1]["derived_from"] = "level0/y"
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize(
+    "mutate_func,expected_error_msg",
+    [
+        (mutate_multiscale_missing_layout, "layout not found in multiscales"),
+        (mutate_multiscale_missing_asset, "multiscales.layout[].asset not found"),
+        (
+            mutate_multiscale_assert_not_existing,
+            "multiscales.layout[].asset=non_existing ignored, because it is not a valid group or array name",
+        ),
+        (
+            mutate_multiscale_asset_not_same_dim_count,
+            "multiscales.layout[].asset=level1 (/level1/ar) ignored, because it  has not the same dimension count as ar (/level0/ar)",
+        ),
+        (
+            mutate_multiscale_asset_not_same_type,
+            "multiscales.layout[].asset=level1 (/level1/ar) ignored, because it has not the same data type as ar (/level0/ar)",
+        ),
+        (
+            mutate_multiscale_derived_from_non_existing,
+            "multiscales.layout[].asset=level1 refers to derived_from=non_existing which does not exist",
+        ),
+        (
+            mutate_multiscale_derived_from_not_same_dim_count,
+            "multiscales.layout[].asset=level1 refers to derived_from=level0/y that does not have the expected number of dimensions. Ignoring that asset",
+        ),
+    ],
+)
+def test_zarr_read_simple_multiscales_error(
+    tmp_vsimem, mutate_func, expected_error_msg
+):
+
+    with gdal.VSIFile("data/zarr/v3/simple_multiscales/zarr.json", "rb") as f:
+        j = json.loads(f.read())
+
+    mutate_func(j)
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "zarr.json", json.dumps(j))
+
+    with gdal.OpenEx(tmp_vsimem / "zarr.json", gdal.OF_MULTIDIM_RASTER) as ds:
+        rg = ds.GetRootGroup()
+        level0 = rg.OpenGroup("level0")
+        ar0 = level0.OpenMDArray("ar")
+        with gdaltest.error_raised(gdal.CE_Warning, match=expected_error_msg):
+            ar0.GetOverviewCount()
+
+
+###############################################################################
+# Test reading a dataset with errors in the "multiscales" convention
+
+
+def mutate_multiscale_transform_scale_not_expected_number_of_vals(j):
+    j["attributes"]["multiscales"]["layout"][1]["transform"]["scale"] = [2]
+
+
+def mutate_multiscale_transform_scale_unexpected_vals(j):
+    j["attributes"]["multiscales"]["layout"][1]["transform"]["scale"] = [1.5, 1.5]
+
+
+def mutate_multiscale_transform_translation_not_expected_number_of_vals(j):
+    j["attributes"]["multiscales"]["layout"][1]["transform"]["translation"] = [0]
+
+
+def mutate_multiscale_transform_translation_unexpected_vals(j):
+    j["attributes"]["multiscales"]["layout"][1]["transform"]["translation"] = [0, 0.5]
+
+
+def mutate_multiscale_spatial_shape_not_array(j):
+    j["attributes"]["multiscales"]["layout"][1]["spatial:shape"] = None
+
+
+def mutate_multiscale_spatial_shape_not_expected_number_of_vals(j):
+    j["attributes"]["multiscales"]["layout"][1]["spatial:shape"] = [100]
+
+
+def mutate_multiscale_spatial_shape_not_expected_val(j):
+    j["attributes"]["multiscales"]["layout"][1]["spatial:shape"] = [100, 49]
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize(
+    "mutate_func,expected_error_msg",
+    [
+        (
+            mutate_multiscale_transform_scale_not_expected_number_of_vals,
+            "multiscales.layout[].asset=level1 has a transform.scale array with an unexpected number of values. Ignoring the asset",
+        ),
+        (
+            mutate_multiscale_transform_scale_unexpected_vals,
+            "multiscales.layout[].asset=level1 has a transform.scale[1]=1.500000 value whereas 2.000000 was expected. Assuming that later value as the scale.",
+        ),
+        (
+            mutate_multiscale_transform_translation_not_expected_number_of_vals,
+            "multiscales.layout[].asset=level1 has a transform.translation array with an unexpected number of values. Ignoring the asset",
+        ),
+        (
+            mutate_multiscale_transform_translation_unexpected_vals,
+            "multiscales.layout[].asset=level1 has a transform.translation[1]=0.500000 value. Ignoring that offset.",
+        ),
+        (
+            mutate_multiscale_spatial_shape_not_array,
+            "multiscales.layout[].asset=level1 ignored, because its spatial:shape property is not an array",
+        ),
+        (
+            mutate_multiscale_spatial_shape_not_expected_number_of_vals,
+            "multiscales.layout[].asset=level1 ignored, because its spatial:shape property has not the expected number of values",
+        ),
+        (
+            mutate_multiscale_spatial_shape_not_expected_val,
+            "multiscales.layout[].asset=level1 ignored, because its spatial:shape[1] value is 49 whereas 50 was expected.",
+        ),
+    ],
+)
+def test_zarr_read_simple_multiscales_spatial_error(
+    tmp_vsimem, mutate_func, expected_error_msg
+):
+
+    with gdal.VSIFile("data/zarr/v3/simple_multiscales_spatial/zarr.json", "rb") as f:
+        j = json.loads(f.read())
+
+    mutate_func(j)
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "zarr.json", json.dumps(j))
+
+    with gdal.OpenEx(tmp_vsimem / "zarr.json", gdal.OF_MULTIDIM_RASTER) as ds:
+        rg = ds.GetRootGroup()
+        level0 = rg.OpenGroup("level0")
+        ar0 = level0.OpenMDArray("ar")
+        with gdaltest.error_raised(gdal.CE_Warning, match=expected_error_msg):
+            ar0.GetOverviewCount()
+
+
+###############################################################################
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_multiscales_cannot_get_root_group(tmp_vsimem):
+
+    gdal.FileFromMemBuffer(
+        tmp_vsimem / "zarr.json",
+        gdal.VSIFile("data/zarr/v3/simple_multiscales_spatial/zarr.json", "rb").read(),
+    )
+
+    def get_array():
+        with gdal.OpenEx(tmp_vsimem / "zarr.json", gdal.OF_MULTIDIM_RASTER) as ds:
+            rg = ds.GetRootGroup()
+            level0 = rg.OpenGroup("level0")
+            ar0 = level0.OpenMDArray("ar")
+            return ar0
+
+    ar = get_array()
+    gdal.Unlink(tmp_vsimem / "zarr.json")
+    with gdaltest.error_raised(
+        gdal.CE_Warning, match="LoadOverviews(): cannot access root group"
+    ):
+        assert ar.GetOverviewCount() == 0
+
+
+###############################################################################
+# Test multiscales overview discovery when convention is on a nested group.
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_multiscales_nested_group(tmp_vsimem):
+
+    with gdal.VSIFile("data/zarr/v3/simple_multiscales/zarr.json", "rb") as f:
+        orig = json.loads(f.read())
+
+    nested = {
+        "zarr_format": 3,
+        "node_type": "group",
+        "attributes": {},
+        "consolidated_metadata": {
+            "kind": "inline",
+            "must_understand": False,
+            "metadata": {
+                "container": {
+                    "zarr_format": 3,
+                    "node_type": "group",
+                    "attributes": orig["attributes"],
+                    "consolidated_metadata": {
+                        "kind": "inline",
+                        "must_understand": False,
+                        "metadata": {},
+                    },
+                },
+            },
+        },
+    }
+    for key, val in orig["consolidated_metadata"]["metadata"].items():
+        nested["consolidated_metadata"]["metadata"]["container/" + key] = val
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "zarr.json", json.dumps(nested))
+
+    with gdal.OpenEx(tmp_vsimem / "zarr.json", gdal.OF_MULTIDIM_RASTER) as ds:
+        rg = ds.GetRootGroup()
+        container = rg.OpenGroup("container")
+        level0 = container.OpenGroup("level0")
+        ar0 = level0.OpenMDArray("ar")
+        assert ar0.GetOverviewCount() == 2
+        assert ar0.GetOverview(0).GetFullName() == "/container/level1/ar"
+        assert ar0.GetOverview(1).GetFullName() == "/container/level2/ar"
+
+    zarr_root = str(tmp_vsimem).rstrip("/")
+    with gdal.Open(f'ZARR:"{zarr_root}":/container/level0/ar') as ds:
+        assert ds.GetRasterBand(1).GetOverviewCount() == 2
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_spatial_proj_at_array_level():
+
+    ds = gdal.Open("data/zarr/v3/spatial_proj_at_array_level.zarr")
+    assert ds.GetGeoTransform() == (450000, 10, 0, 5000000, 0, -10)
+    assert ds.GetSpatialRef().GetAuthorityCode(None) == "32631"
+    assert ds.GetMetadata() == {"AREA_OR_POINT": "Area"}
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_spatial_proj_at_parent_level():
+
+    ds = gdal.Open("data/zarr/v3/spatial_proj_at_parent_level.zarr")
+    assert ds.GetGeoTransform() == (450000, 10, 0, 5000000, 0, -10)
+    assert ds.GetSpatialRef().GetAuthorityCode(None) == "32631"
+    assert ds.GetMetadata() == {"AREA_OR_POINT": "Area"}
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_spatial_proj_convention_at_root_level():
+
+    ds = gdal.Open("data/zarr/v3/spatial_proj_convention_at_root_level.zarr")
+    assert ds.GetGeoTransform() == (450000, 10, 0, 5000000, 0, -10)
+    assert ds.GetSpatialRef().GetAuthorityCode(None) == "32631"
+    assert ds.GetMetadata() == {"AREA_OR_POINT": "Area"}
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_read_spatial_geotransform():
+
+    ds = gdal.Open("data/zarr/v3/spatial_geotransform.zarr")
+    assert ds.GetGeoTransform() == (450000, 10, 0.1, 5000000, 0.15, -10)
+    assert ds.GetSpatialRef() is None
+    assert ds.GetMetadata() == {"AREA_OR_POINT": "Area"}
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_write_spatial_geotransform(tmp_vsimem):
+
+    src_ds = gdal.Open("data/byte.tif")
+    gdal.GetDriverByName("Zarr").CreateCopy(
+        tmp_vsimem / "out.zarr",
+        src_ds,
+        options={"FORMAT": "ZARR_V3", "GEOREFERENCING_CONVENTION": "SPATIAL_PROJ"},
+    )
+
+    with gdal.VSIFile(tmp_vsimem / "out.zarr" / "zarr.json", "rb") as f:
+        j = json.loads(f.read())
+
+    assert j == {
+        "zarr_format": 3,
+        "node_type": "group",
+        "attributes": {},
+        "consolidated_metadata": {
+            "kind": "inline",
+            "must_understand": False,
+            "metadata": {
+                "X": {
+                    "zarr_format": 3,
+                    "node_type": "array",
+                    "shape": [20],
+                    "data_type": "float64",
+                    "chunk_grid": {
+                        "name": "regular",
+                        "configuration": {"chunk_shape": [20]},
+                    },
+                    "chunk_key_encoding": {
+                        "name": "default",
+                        "configuration": {"separator": "/"},
+                    },
+                    "fill_value": "NaN",
+                    "codecs": [
+                        {"name": "bytes", "configuration": {"endian": "little"}}
+                    ],
+                    "attributes": {},
+                    "dimension_names": ["X"],
+                },
+                "Y": {
+                    "zarr_format": 3,
+                    "node_type": "array",
+                    "shape": [20],
+                    "data_type": "float64",
+                    "chunk_grid": {
+                        "name": "regular",
+                        "configuration": {"chunk_shape": [20]},
+                    },
+                    "chunk_key_encoding": {
+                        "name": "default",
+                        "configuration": {"separator": "/"},
+                    },
+                    "fill_value": "NaN",
+                    "codecs": [
+                        {"name": "bytes", "configuration": {"endian": "little"}}
+                    ],
+                    "attributes": {},
+                    "dimension_names": ["Y"],
+                },
+                "out": {
+                    "zarr_format": 3,
+                    "node_type": "array",
+                    "shape": [20, 20],
+                    "data_type": "uint8",
+                    "chunk_grid": {
+                        "name": "regular",
+                        "configuration": {"chunk_shape": [20, 20]},
+                    },
+                    "chunk_key_encoding": {
+                        "name": "default",
+                        "configuration": {"separator": "/"},
+                    },
+                    "fill_value": None,
+                    "codecs": [
+                        {"name": "bytes", "configuration": {"endian": "little"}}
+                    ],
+                    "attributes": {
+                        "COLOR_INTERPRETATION": "Gray",
+                        "proj:code": "EPSG:26711",
+                        "spatial:bbox": [
+                            440720.0,
+                            3750120.0,
+                            441920.0,
+                            3751320.0,
+                        ],
+                        "spatial:transform_type": "affine",
+                        "spatial:transform": [
+                            60.0,
+                            0.0,
+                            440720.0,
+                            0.0,
+                            -60.0,
+                            3751320.0,
+                        ],
+                        "spatial:registration": "pixel",
+                        "spatial:dimensions": ["Y", "X"],
+                        "zarr_conventions": [
+                            {
+                                "schema_url": "https://raw.githubusercontent.com/zarr-experimental/geo-proj/refs/tags/v1/schema.json",
+                                "spec_url": "https://github.com/zarr-experimental/geo-proj/blob/v1/README.md",
+                                "uuid": "f17cb550-5864-4468-aeb7-f3180cfb622f",
+                                "name": "proj:",
+                                "description": "Coordinate reference system information for geospatial data",
+                            },
+                            {
+                                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/spatial/refs/tags/v1/schema.json",
+                                "spec_url": "https://github.com/zarr-conventions/spatial/blob/v1/README.md",
+                                "uuid": "689b58e2-cf7b-45e0-9fff-9cfc0883d6b4",
+                                "name": "spatial:",
+                                "description": "Spatial coordinate information",
+                            },
+                        ],
+                    },
+                    "dimension_names": ["Y", "X"],
+                },
+            },
+        },
+    }
+
+    # Remove CF-like X and Y coordinate variables, to be sure we read from
+    # spatial:transform
+    gdal.RmdirRecursive(tmp_vsimem / "out.zarr" / "X")
+    gdal.RmdirRecursive(tmp_vsimem / "out.zarr" / "Y")
+
+    ds = gdal.Open(tmp_vsimem / "out.zarr")
+    assert ds.GetSpatialRef().IsSame(src_ds.GetSpatialRef())
+    assert ds.GetGeoTransform() == src_ds.GetGeoTransform()
+    assert ds.GetRasterBand(1).Checksum() == src_ds.GetRasterBand(1).Checksum()
+
+
+###############################################################################
+#
+
+
+@gdaltest.enable_exceptions()
+def test_zarr_write_spatial_geotransform_no_epsg_code_rotated_gt_and_pixel_center(
+    tmp_vsimem,
+):
+
+    src_ds = gdal.GetDriverByName("MEM").Create("", 2, 3)
+    src_ds.SetGeoTransform([1, 2, 3, 4, 5, 6])
+    src_ds.SetSpatialRef(
+        osr.SpatialReference("+proj=longlat +ellps=GRS80 +towgs84=0,0,0")
+    )
+    src_ds.SetMetadataItem("AREA_OR_POINT", "Point")
+
+    gdal.GetDriverByName("Zarr").CreateCopy(
+        tmp_vsimem / "out.zarr",
+        src_ds,
+        options={"FORMAT": "ZARR_V3", "GEOREFERENCING_CONVENTION": "SPATIAL_PROJ"},
+    )
+
+    with gdal.VSIFile(tmp_vsimem / "out.zarr" / "zarr.json", "rb") as f:
+        j = json.loads(f.read())
+
+    assert j["consolidated_metadata"]["metadata"]["out"]["attributes"][
+        "proj:wkt2"
+    ].startswith("BOUNDCRS")
+    assert (
+        j["consolidated_metadata"]["metadata"]["out"]["attributes"]["proj:projjson"][
+            "type"
+        ]
+        == "BoundCRS"
+    )
+
+    # Set those 2 elements to dummy value for comparison, as their content might be PROJ dependent
+    j["consolidated_metadata"]["metadata"]["out"]["attributes"][
+        "proj:wkt2"
+    ] = "redacted"
+    j["consolidated_metadata"]["metadata"]["out"]["attributes"][
+        "proj:projjson"
+    ] = "redacted"
+
+    assert j == {
+        "zarr_format": 3,
+        "node_type": "group",
+        "attributes": {},
+        "consolidated_metadata": {
+            "kind": "inline",
+            "must_understand": False,
+            "metadata": {
+                "out": {
+                    "zarr_format": 3,
+                    "node_type": "array",
+                    "shape": [3, 2],
+                    "data_type": "uint8",
+                    "chunk_grid": {
+                        "name": "regular",
+                        "configuration": {"chunk_shape": [3, 2]},
+                    },
+                    "chunk_key_encoding": {
+                        "name": "default",
+                        "configuration": {"separator": "/"},
+                    },
+                    "fill_value": None,
+                    "codecs": [
+                        {"name": "bytes", "configuration": {"endian": "little"}}
+                    ],
+                    "attributes": {
+                        "proj:wkt2": "redacted",
+                        "proj:projjson": "redacted",
+                        "spatial:bbox": [3.5, 9.5, 11.5, 26.5],
+                        "spatial:transform_type": "affine",
+                        "spatial:transform": [2.0, 3.0, 3.5, 5.0, 6.0, 9.5],
+                        "spatial:dimensions": ["Y", "X"],
+                        "spatial:registration": "node",
+                        "zarr_conventions": [
+                            {
+                                "schema_url": "https://raw.githubusercontent.com/zarr-experimental/geo-proj/refs/tags/v1/schema.json",
+                                "spec_url": "https://github.com/zarr-experimental/geo-proj/blob/v1/README.md",
+                                "uuid": "f17cb550-5864-4468-aeb7-f3180cfb622f",
+                                "name": "proj:",
+                                "description": "Coordinate reference system information for geospatial data",
+                            },
+                            {
+                                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/spatial/refs/tags/v1/schema.json",
+                                "spec_url": "https://github.com/zarr-conventions/spatial/blob/v1/README.md",
+                                "uuid": "689b58e2-cf7b-45e0-9fff-9cfc0883d6b4",
+                                "name": "spatial:",
+                                "description": "Spatial coordinate information",
+                            },
+                        ],
+                    },
+                    "dimension_names": ["Y", "X"],
+                },
+            },
+        },
+    }
+
+    ds = gdal.Open(tmp_vsimem / "out.zarr")
+    assert ds.GetSpatialRef().IsSame(src_ds.GetSpatialRef())
+    assert ds.GetGeoTransform() == src_ds.GetGeoTransform()
+    assert ds.GetMetadataItem("AREA_OR_POINT") == src_ds.GetMetadataItem(
+        "AREA_OR_POINT"
+    )
+    assert ds.GetRasterBand(1).Checksum() == src_ds.GetRasterBand(1).Checksum()
+
+
+###############################################################################
+#
+
+eopf_sample_service_zarray = {
+    "zarr_format": 2,
+    "shape": [1, 1],
+    "chunks": [1, 1],
+    "dtype": "<u2",
+    "fill_value": 0,
+    "filters": None,
+    "compressor": None,
+    "order": "C",
+}
+eopf_sample_service_zattrs = {"_eopf_attrs": {}}
+
+eopf_sample_service_zgroup = {"zarr_format": 2}
+
+
+@gdaltest.enable_exceptions()
+@pytest.mark.parametrize(
+    "filename,j",
+    [
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {"stac_discovery": {"properties": {"proj:epsg": 32632}}},
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {
+                        "stac_discovery": {"properties": {"proj:epsg": "32632"}}
+                    },
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {"proj:epsg": 32632},
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {"proj:epsg": "32632"},
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {"some_child": {"proj:epsg": 32632}},
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {"some_child": {"proj:epsg": "32632"}},
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {
+                        "stac_discovery": {
+                            "geometry": {"crs": {"properties": {"code": 32632}}}
+                        }
+                    },
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "foo_T32VLK_bla.zarr",
+            {
+                "metadata": {
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {
+                        "stac_discovery": {"properties": {"s2:mgrs_tile": "T32VLK"}}
+                    },
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {
+                        "stac_discovery": {"properties": {"mgrs_tile": "T32VLK"}}
+                    },
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {
+                        "stac_discovery": {"properties": {"tile_id": "T32VLK"}}
+                    },
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {
+                        "spatial_ref": 'PROJCS["WGS 84 / UTM zone 32N",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",9],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32632"]]'
+                    },
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+        (
+            "test.zarr",
+            {
+                "metadata": {
+                    ".zattrs": {
+                        "stac_discovery": {
+                            "properties": {
+                                "spatial_ref": 'PROJCS["WGS 84 / UTM zone 32N",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",9],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32632"]]'
+                            }
+                        }
+                    },
+                    ".zgroup": eopf_sample_service_zgroup,
+                    "myar/.zarray": eopf_sample_service_zarray,
+                    "myar/.zattrs": eopf_sample_service_zattrs,
+                }
+            },
+        ),
+    ],
+)
+def test_zarr_read_srs_eopf_sample_service(tmp_vsimem, filename, j):
+
+    gdal.FileFromMemBuffer(tmp_vsimem / filename / ".zmetadata", json.dumps(j))
+    gdal.FileFromMemBuffer(tmp_vsimem / filename / ".zgroup", '{"zarr_format": 2}')
+
+    ds = gdal.Open(tmp_vsimem / filename)
+    assert ds.GetSpatialRef().GetAuthorityCode(None) == "32632"

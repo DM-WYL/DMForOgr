@@ -148,18 +148,35 @@ GDALPamDataset::GDALPamDataset()
 GDALPamDataset::~GDALPamDataset()
 
 {
-    if (IsMarkedSuppressOnClose())
-    {
-        if (psPam && psPam->pszPamFilename != nullptr)
-            VSIUnlink(psPam->pszPamFilename);
-    }
-    else if (nPamFlags & GPF_DIRTY)
-    {
-        CPLDebug("GDALPamDataset", "In destructor with dirty metadata.");
-        GDALPamDataset::TrySaveXML();
-    }
+    CPL_IGNORE_RET_VAL(GDALPamDataset::Close());
 
     PamClear();
+}
+
+/************************************************************************/
+/*                               Close()                                */
+/************************************************************************/
+
+CPLErr GDALPamDataset::Close(GDALProgressFunc, void *)
+{
+    CPLErr eErr = CE_None;
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        if (IsMarkedSuppressOnClose())
+        {
+            if (psPam && psPam->pszPamFilename != nullptr)
+                VSIUnlink(psPam->pszPamFilename);
+        }
+        else if (nPamFlags & GPF_DIRTY)
+        {
+            CPLDebug("GDALPamDataset", "In Close() with dirty metadata.");
+            eErr = GDALPamDataset::TrySaveXML();
+        }
+
+        if (GDALDataset::Close() != CE_None)
+            eErr = CE_Failure;
+    }
+    return eErr;
 }
 
 /************************************************************************/
@@ -743,7 +760,7 @@ void GDALPamDataset::SetSubdatasetName(const char *pszSubdataset)
 }
 
 /************************************************************************/
-/*                        SetDerivedDatasetName()                        */
+/*                       SetDerivedDatasetName()                        */
 /************************************************************************/
 
 /* Mutually exclusive with SetSubdatasetName() */
@@ -816,7 +833,7 @@ const char *GDALPamDataset::BuildPamFilename()
 }
 
 /************************************************************************/
-/*                   IsPamFilenameAPotentialSiblingFile()               */
+/*                 IsPamFilenameAPotentialSiblingFile()                 */
 /************************************************************************/
 
 int GDALPamDataset::IsPamFilenameAPotentialSiblingFile()
@@ -1354,7 +1371,7 @@ const OGRSpatialReference *GDALPamDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                        GetSpatialRefRasterOnly()                     */
+/*                      GetSpatialRefRasterOnly()                       */
 /************************************************************************/
 
 const OGRSpatialReference *GDALPamDataset::GetSpatialRefRasterOnly() const
@@ -1423,7 +1440,7 @@ CPLErr GDALPamDataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                        DeleteGeoTransform()                          */
+/*                         DeleteGeoTransform()                         */
 /************************************************************************/
 
 /** Remove geotransform from PAM.
@@ -1469,7 +1486,7 @@ const OGRSpatialReference *GDALPamDataset::GetGCPSpatialRef() const
 }
 
 /************************************************************************/
-/*                               GetGCPs()                              */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *GDALPamDataset::GetGCPs()
@@ -1509,7 +1526,8 @@ CPLErr GDALPamDataset::SetGCPs(int nGCPCount, const GDAL_GCP *pasGCPList,
 /*                            SetMetadata()                             */
 /************************************************************************/
 
-CPLErr GDALPamDataset::SetMetadata(char **papszMetadata, const char *pszDomain)
+CPLErr GDALPamDataset::SetMetadata(CSLConstList papszMetadata,
+                                   const char *pszDomain)
 
 {
     PamInitialize();
@@ -1615,7 +1633,7 @@ const char *GDALPamDataset::GetMetadataItem(const char *pszName,
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **GDALPamDataset::GetMetadata(const char *pszDomain)
+CSLConstList GDALPamDataset::GetMetadata(const char *pszDomain)
 
 {
     // if( pszDomain == nullptr || !EQUAL(pszDomain,"ProxyOverviewRequest") )
@@ -1702,7 +1720,7 @@ CPLErr GDALPamDataset::TryLoadAux(CSLConstList papszSiblingFiles)
     /*      Apply metadata. We likely ought to be merging this in rather    */
     /*      than overwriting everything that was there.                     */
     /* -------------------------------------------------------------------- */
-    char **papszMD = poAuxDS->GetMetadata();
+    CSLConstList papszMD = poAuxDS->GetMetadata();
     if (CSLCount(papszMD) > 0)
     {
         char **papszMerged = CSLMerge(CSLDuplicate(GetMetadata()), papszMD);

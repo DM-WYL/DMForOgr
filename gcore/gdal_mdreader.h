@@ -116,7 +116,7 @@ class CPL_DLL GDALMDReaderBase
                          const std::string &osPrefixFull);
 
   public:
-    GDALMDReaderBase(const char *pszPath, char **papszSiblingFiles);
+    GDALMDReaderBase(const char *pszPath, CSLConstList papszSiblingFiles);
     virtual ~GDALMDReaderBase();
 
     /**
@@ -214,7 +214,7 @@ class CPL_DLL GDALMDReaderManager
      * delete it.
      */
     virtual GDALMDReaderBase *GetReader(const char *pszPath,
-                                        char **papszSiblingFiles,
+                                        CSLConstList papszSiblingFiles,
                                         GUInt32 nType = MDR_ANY);
 
   protected:
@@ -232,8 +232,9 @@ char **GDALLoadIMDFile(const CPLString &osFilePath);
 bool GDALCheckFileHeader(const CPLString &soFilePath, const char *pszTestString,
                          int nBufferSize = 256);
 
-CPLErr GDALWriteRPBFile(const char *pszFilename, char **papszMD);
-CPLErr CPL_DLL GDALWriteRPCTXTFile(const char *pszFilename, char **papszMD);
-CPLErr GDALWriteIMDFile(const char *pszFilename, char **papszMD);
+CPLErr GDALWriteRPBFile(const char *pszFilename, CSLConstList papszMD);
+CPLErr CPL_DLL GDALWriteRPCTXTFile(const char *pszFilename,
+                                   CSLConstList papszMD);
+CPLErr GDALWriteIMDFile(const char *pszFilename, CSLConstList papszMD);
 
 #endif  // GDAL_MDREADER_H_INCLUDED

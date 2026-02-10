@@ -47,6 +47,9 @@
  *  Author: Lucian Plesea
  */
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "mrfdrivercore.h"
 #include "cpl_string.h"
 
@@ -65,7 +68,7 @@ static bool IsLerc2(const char *s)
 #endif
 
 /************************************************************************/
-/*                     MRFDriverIdentify()                              */
+/*                         MRFDriverIdentify()                          */
 /************************************************************************/
 
 /**
@@ -110,7 +113,7 @@ int MRFDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                      MRFDriverSetCommonMetadata()                    */
+/*                     MRFDriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void MRFDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -143,7 +146,7 @@ void MRFDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                     DeclareDeferredMRFPlugin()                       */
+/*                      DeclareDeferredMRFPlugin()                      */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

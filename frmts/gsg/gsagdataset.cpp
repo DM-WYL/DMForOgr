@@ -22,6 +22,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 /************************************************************************/
 /* ==================================================================== */
@@ -50,13 +54,13 @@ class GSAGDataset final : public GDALPamDataset
 
   public:
     explicit GSAGDataset(const char *pszEOL = "\x0D\x0A");
-    ~GSAGDataset();
+    ~GSAGDataset() override;
 
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 
@@ -100,7 +104,7 @@ class GSAGRasterBand final : public GDALPamRasterBand
 
   public:
     GSAGRasterBand(GSAGDataset *, int, vsi_l_offset);
-    ~GSAGRasterBand();
+    ~GSAGRasterBand() override;
 
     CPLErr IReadBlock(int, int, void *) override;
     CPLErr IWriteBlock(int, int, void *) override;
@@ -450,7 +454,9 @@ CPLErr GSAGRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
             }
 
             /* End of buffer, could be interrupting a number */
-            if (VSIFSeekL(poGDS->fp, VSIFTellL(poGDS->fp) + szStart - szEnd,
+            if (VSIFSeekL(poGDS->fp,
+                          static_cast<vsi_l_offset>(VSIFTellL(poGDS->fp) +
+                                                    szStart - szEnd),
                           SEEK_SET) != 0)
             {
                 VSIFree(szLineBuf);
@@ -754,7 +760,7 @@ double GSAGRasterBand::GetMaximum(int *pbSuccess)
 /************************************************************************/
 
 /************************************************************************/
-/*                             GSAGDataset()                            */
+/*                            GSAGDataset()                             */
 /************************************************************************/
 
 GSAGDataset::GSAGDataset(const char *pszEOL) : fp(nullptr), nMinMaxZOffset(0)
@@ -1364,7 +1370,7 @@ CPLErr GSAGDataset::ShiftFileContents(VSILFILE *fp, vsi_l_offset nShiftStart,
 }
 
 /************************************************************************/
-/*                             UpdateHeader()                           */
+/*                            UpdateHeader()                            */
 /************************************************************************/
 
 CPLErr GSAGDataset::UpdateHeader()
@@ -1434,7 +1440,7 @@ CPLErr GSAGDataset::UpdateHeader()
 
 GDALDataset *GSAGDataset::CreateCopy(const char *pszFilename,
                                      GDALDataset *poSrcDS, int bStrict,
-                                     CPL_UNUSED char **papszOptions,
+                                     CPL_UNUSED CSLConstList papszOptions,
                                      GDALProgressFunc pfnProgress,
                                      void *pProgressData)
 {
@@ -1663,7 +1669,7 @@ GDALDataset *GSAGDataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                          GDALRegister_GSAG()                         */
+/*                         GDALRegister_GSAG()                          */
 /************************************************************************/
 
 void GDALRegister_GSAG()

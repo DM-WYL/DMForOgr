@@ -15,7 +15,7 @@
 /*! @cond Doxygen_Suppress */
 
 /************************************************************************/
-/*                        GDALGeoLocDatasetAccessors                    */
+/*                      GDALGeoLocDatasetAccessors                      */
 /************************************************************************/
 
 class GDALGeoLocDatasetAccessors
@@ -93,7 +93,7 @@ GDALGeoLocDatasetAccessors::~GDALGeoLocDatasetAccessors()
 }
 
 /************************************************************************/
-/*                         AllocateBackMap()                            */
+/*                          AllocateBackMap()                           */
 /************************************************************************/
 
 bool GDALGeoLocDatasetAccessors::AllocateBackMap()
@@ -143,7 +143,7 @@ bool GDALGeoLocDatasetAccessors::AllocateBackMap()
 }
 
 /************************************************************************/
-/*                         FreeWghtsBackMap()                           */
+/*                          FreeWghtsBackMap()                          */
 /************************************************************************/
 
 void GDALGeoLocDatasetAccessors::FreeWghtsBackMap()
@@ -157,20 +157,20 @@ void GDALGeoLocDatasetAccessors::FreeWghtsBackMap()
 }
 
 /************************************************************************/
-/*                        GetBackmapDataset()                           */
+/*                         GetBackmapDataset()                          */
 /************************************************************************/
 
 GDALDataset *GDALGeoLocDatasetAccessors::GetBackmapDataset()
 {
     auto poBandX = m_poBackmapTmpDataset->GetRasterBand(1);
     auto poBandY = m_poBackmapTmpDataset->GetRasterBand(2);
-    poBandX->SetNoDataValue(INVALID_BMXY);
-    poBandY->SetNoDataValue(INVALID_BMXY);
+    poBandX->SetNoDataValue(double(INVALID_BMXY));
+    poBandY->SetNoDataValue(double(INVALID_BMXY));
     return m_poBackmapTmpDataset;
 }
 
 /************************************************************************/
-/*                       FlushBackmapCaches()                           */
+/*                         FlushBackmapCaches()                         */
 /************************************************************************/
 
 void GDALGeoLocDatasetAccessors::FlushBackmapCaches()
@@ -180,7 +180,7 @@ void GDALGeoLocDatasetAccessors::FlushBackmapCaches()
 }
 
 /************************************************************************/
-/*                             Load()                                   */
+/*                                Load()                                */
 /************************************************************************/
 
 bool GDALGeoLocDatasetAccessors::Load(bool bIsRegularGrid, bool bUseQuadtree)
@@ -192,7 +192,7 @@ bool GDALGeoLocDatasetAccessors::Load(bool bIsRegularGrid, bool bUseQuadtree)
 }
 
 /************************************************************************/
-/*                          LoadGeoloc()                                */
+/*                             LoadGeoloc()                             */
 /************************************************************************/
 
 bool GDALGeoLocDatasetAccessors::LoadGeoloc(bool bIsRegularGrid)

@@ -10,12 +10,15 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include "ogrsf_frmts.h"
 
 #include "ogrxlsdrivercore.h"
 
 /************************************************************************/
-/*                    OGRXLSDriverIdentify()                            */
+/*                        OGRXLSDriverIdentify()                        */
 /************************************************************************/
 
 static int OGRXLSDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -25,7 +28,7 @@ static int OGRXLSDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                  OGRXLSDriverSetCommonMetadata()                  */
+/*                   OGRXLSDriverSetCommonMetadata()                    */
 /************************************************************************/
 
 void OGRXLSDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -45,7 +48,7 @@ void OGRXLSDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredOGRXLSPlugin()                      */
+/*                    DeclareDeferredOGRXLSPlugin()                     */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

@@ -10,12 +10,18 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 #include "ogrsf_frmts.h"
 
 #include "ogrocidrivercore.h"
 
 /************************************************************************/
-/*                         OGROCIDriverIdentify()                       */
+/*                        OGROCIDriverIdentify()                        */
 /************************************************************************/
 
 int OGROCIDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -25,7 +31,7 @@ int OGROCIDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                  OGROCIDriverSetCommonMetadata()                     */
+/*                   OGROCIDriverSetCommonMetadata()                    */
 /************************************************************************/
 
 void OGROCIDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -130,7 +136,7 @@ void OGROCIDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredOGROCIPlugin()                      */
+/*                    DeclareDeferredOGROCIPlugin()                     */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

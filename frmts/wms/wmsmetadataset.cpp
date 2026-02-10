@@ -12,16 +12,18 @@
 
 #include "wmsmetadataset.h"
 
+#include "gdal_openinfo.h"
+
 int VersionStringToInt(const char *version);
 
 /************************************************************************/
-/*                          GDALWMSMetaDataset()                        */
+/*                         GDALWMSMetaDataset()                         */
 /************************************************************************/
 
 GDALWMSMetaDataset::GDALWMSMetaDataset() = default;
 
 /************************************************************************/
-/*                         ~GDALWMSMetaDataset()                        */
+/*                        ~GDALWMSMetaDataset()                         */
 /************************************************************************/
 
 GDALWMSMetaDataset::~GDALWMSMetaDataset()
@@ -30,7 +32,7 @@ GDALWMSMetaDataset::~GDALWMSMetaDataset()
 }
 
 /************************************************************************/
-/*                            AddSubDataset()                           */
+/*                           AddSubDataset()                            */
 /************************************************************************/
 
 void GDALWMSMetaDataset::AddSubDataset(const char *pszName, const char *pszDesc)
@@ -46,7 +48,7 @@ void GDALWMSMetaDataset::AddSubDataset(const char *pszName, const char *pszDesc)
 }
 
 /************************************************************************/
-/*                        DownloadGetCapabilities()                     */
+/*                      DownloadGetCapabilities()                       */
 /************************************************************************/
 
 GDALDataset *
@@ -123,7 +125,7 @@ GDALWMSMetaDataset::DownloadGetCapabilities(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                         DownloadGetTileService()                     */
+/*                       DownloadGetTileService()                       */
 /************************************************************************/
 
 GDALDataset *
@@ -189,7 +191,7 @@ GDALWMSMetaDataset::DownloadGetTileService(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **GDALWMSMetaDataset::GetMetadataDomainList()
@@ -202,7 +204,7 @@ char **GDALWMSMetaDataset::GetMetadataDomainList()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **GDALWMSMetaDataset::GetMetadata(const char *pszDomain)
+CSLConstList GDALWMSMetaDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain != nullptr && EQUAL(pszDomain, "SUBDATASETS"))
@@ -342,7 +344,7 @@ void GDALWMSMetaDataset::AddWMSCSubDataset(WMSCTileSetDesc &oWMSCTileSetDesc,
 }
 
 /************************************************************************/
-/*                             ExploreLayer()                           */
+/*                            ExploreLayer()                            */
 /************************************************************************/
 
 void GDALWMSMetaDataset::ExploreLayer(CPLXMLNode *psXML,
@@ -592,7 +594,7 @@ void GDALWMSMetaDataset::ParseWMSCTileSets(CPLXMLNode *psXML)
 }
 
 /************************************************************************/
-/*                        AnalyzeGetCapabilities()                      */
+/*                       AnalyzeGetCapabilities()                       */
 /************************************************************************/
 
 GDALDataset *GDALWMSMetaDataset::AnalyzeGetCapabilities(
@@ -644,7 +646,7 @@ GDALDataset *GDALWMSMetaDataset::AnalyzeGetCapabilities(
 }
 
 /************************************************************************/
-/*                          AddTiledSubDataset()                        */
+/*                         AddTiledSubDataset()                         */
 /************************************************************************/
 
 // tiledWMS only
@@ -696,7 +698,7 @@ void GDALWMSMetaDataset::AddTiledSubDataset(const char *pszTiledGroupName,
 }
 
 /************************************************************************/
-/*                     AnalyzeGetTileServiceRecurse()                   */
+/*                    AnalyzeGetTileServiceRecurse()                    */
 /************************************************************************/
 // tiledWMS only
 void GDALWMSMetaDataset::AnalyzeGetTileServiceRecurse(CPLXMLNode *psXML,
@@ -746,7 +748,7 @@ void GDALWMSMetaDataset::AnalyzeGetTileServiceRecurse(CPLXMLNode *psXML,
 }
 
 /************************************************************************/
-/*                        AnalyzeGetTileService()                       */
+/*                       AnalyzeGetTileService()                        */
 /************************************************************************/
 // tiledWMS only
 GDALDataset *GDALWMSMetaDataset::AnalyzeGetTileService(CPLXMLNode *psXML,
@@ -778,7 +780,7 @@ GDALDataset *GDALWMSMetaDataset::AnalyzeGetTileService(CPLXMLNode *psXML,
 }
 
 /************************************************************************/
-/*                        AnalyzeTileMapService()                       */
+/*                       AnalyzeTileMapService()                        */
 /************************************************************************/
 
 GDALDataset *GDALWMSMetaDataset::AnalyzeTileMapService(CPLXMLNode *psXML)

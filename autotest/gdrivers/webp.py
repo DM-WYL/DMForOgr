@@ -12,6 +12,8 @@
 # SPDX-License-Identifier: MIT
 ###############################################################################
 
+import os
+
 import gdaltest
 import pytest
 
@@ -202,3 +204,35 @@ def test_webp_create_copy_only_visible_at_close_time(tmp_path):
 
     with gdal.Open(out_filename) as ds:
         ds.GetRasterBand(1).Checksum()
+
+
+###############################################################################
+
+
+def test_webp_world_file(tmp_vsimem):
+
+    src_ds = gdal.Open("data/rgbsmall.tif")
+
+    drv = gdal.GetDriverByName("WEBP")
+    drv.CreateCopy(tmp_vsimem / "out.webp", src_ds, options={"WORLDFILE": "YES"})
+    assert gdal.VSIStatL(tmp_vsimem / "out.wld") is not None
+    gdal.Unlink(tmp_vsimem / "out.webp.aux.xml")
+    with gdal.Open(tmp_vsimem / "out.webp") as ds:
+        assert ds.GetGeoTransform() == pytest.approx(src_ds.GetGeoTransform())
+    with gdal.Open(tmp_vsimem / "out.webp") as ds:
+        assert ds.GetFileList() == [
+            str(tmp_vsimem / "out.webp"),
+            str(tmp_vsimem / "out.wld"),
+        ]
+
+
+###############################################################################
+
+
+def test_webp_close(tmp_path):
+
+    ds = gdal.GetDriverByName("WEBP").CreateCopy(
+        tmp_path / "out.webp", gdal.Open("data/rgbsmall.tif")
+    )
+    ds.Close()
+    os.remove(tmp_path / "out.webp")

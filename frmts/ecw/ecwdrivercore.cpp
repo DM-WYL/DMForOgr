@@ -13,6 +13,12 @@
 // ncsjpcbuffer.h needs the min and max macros.
 #undef NOMINMAX
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 #include "ecwdrivercore.h"
 
 #include "ecwsdk_headers.h"
@@ -50,7 +56,7 @@ int ECWDatasetIdentifyECW(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                    ECWDriverSetCommonMetadata()                      */
+/*                     ECWDriverSetCommonMetadata()                     */
 /************************************************************************/
 
 void ECWDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -146,7 +152,7 @@ int ECWDatasetIdentifyJPEG2000(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                 JP2ECWDriverSetCommonMetadata()                      */
+/*                   JP2ECWDriverSetCommonMetadata()                    */
 /************************************************************************/
 
 void JP2ECWDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -264,7 +270,7 @@ void JP2ECWDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                    DeclareDeferredECWPlugin()                        */
+/*                      DeclareDeferredECWPlugin()                      */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

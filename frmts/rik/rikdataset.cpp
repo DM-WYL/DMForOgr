@@ -14,7 +14,12 @@
 #include <cfloat>
 #include <zlib.h>
 #include "gdal_frmts.h"
+#include "gdal_colortable.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 #include <cmath>
 
@@ -119,7 +124,7 @@ class RIKDataset final : public GDALPamDataset
 
   public:
     RIKDataset();
-    ~RIKDataset();
+    ~RIKDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
@@ -141,9 +146,9 @@ class RIKRasterBand final : public GDALPamRasterBand
   public:
     RIKRasterBand(RIKDataset *, int);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual GDALColorInterp GetColorInterpretation() override;
-    virtual GDALColorTable *GetColorTable() override;
+    CPLErr IReadBlock(int, int, void *) override;
+    GDALColorInterp GetColorInterpretation() override;
+    GDALColorTable *GetColorTable() override;
 };
 
 /************************************************************************/
@@ -156,14 +161,14 @@ RIKRasterBand::RIKRasterBand(RIKDataset *poDSIn, int nBandIn)
     poDS = poDSIn;
     nBand = nBandIn;
 
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     nBlockXSize = poDSIn->nBlockXSize;
     nBlockYSize = poDSIn->nBlockYSize;
 }
 
 /************************************************************************/
-/*                             GetNextLZWCode()                         */
+/*                           GetNextLZWCode()                           */
 /************************************************************************/
 
 static int GetNextLZWCode(int codeBits, const GByte *blockData,
@@ -215,7 +220,7 @@ static int GetNextLZWCode(int codeBits, const GByte *blockData,
 }
 
 /************************************************************************/
-/*                             OutputPixel()                            */
+/*                            OutputPixel()                             */
 /************************************************************************/
 
 static void OutputPixel(GByte pixel, void *image, GUInt32 imageWidth,
@@ -282,7 +287,7 @@ CPLErr RIKRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
         return CE_None;
     }
 
-    VSIFSeekL(poRDS->fp, nBlockOffset, SEEK_SET);
+    VSIFSeekL(poRDS->fp, static_cast<vsi_l_offset>(nBlockOffset), SEEK_SET);
 
     /* -------------------------------------------------------------------- */
     /*      Read uncompressed block.                                        */
@@ -642,7 +647,7 @@ CPLErr RIKDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *RIKDataset::GetSpatialRef() const
@@ -652,7 +657,7 @@ const OGRSpatialReference *RIKDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                             GetRikString()                           */
+/*                            GetRikString()                            */
 /************************************************************************/
 
 static GUInt16 GetRikString(VSILFILE *fp, char *str, GUInt16 strLength)
@@ -678,7 +683,7 @@ static GUInt16 GetRikString(VSILFILE *fp, char *str, GUInt16 strLength)
 }
 
 /************************************************************************/
-/*                          Identify()                                  */
+/*                              Identify()                              */
 /************************************************************************/
 
 int RIKDataset::Identify(GDALOpenInfo *poOpenInfo)

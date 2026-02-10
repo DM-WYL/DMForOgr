@@ -13,6 +13,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_srs_api.h"
 #include "rawdataset.h"
 
@@ -70,7 +71,7 @@ class LOSLASDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(LOSLASDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     LOSLASDataset();
@@ -94,7 +95,7 @@ class LOSLASDataset final : public RawDataset
 /************************************************************************/
 
 /************************************************************************/
-/*                             LOSLASDataset()                          */
+/*                           LOSLASDataset()                            */
 /************************************************************************/
 
 LOSLASDataset::LOSLASDataset() : fpImage(nullptr), nRecordLength(0)
@@ -104,7 +105,7 @@ LOSLASDataset::LOSLASDataset() : fpImage(nullptr), nRecordLength(0)
 }
 
 /************************************************************************/
-/*                            ~LOSLASDataset()                          */
+/*                           ~LOSLASDataset()                           */
 /************************************************************************/
 
 LOSLASDataset::~LOSLASDataset()
@@ -114,10 +115,10 @@ LOSLASDataset::~LOSLASDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr LOSLASDataset::Close()
+CPLErr LOSLASDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)

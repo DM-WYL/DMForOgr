@@ -16,6 +16,7 @@ RUN apt-get update && \
     g++ \
     git \
     gpsbabel \
+    jq \
     libblosc-dev \
     libboost-dev \
     libcairo2-dev \
@@ -44,8 +45,6 @@ RUN apt-get update && \
     libopenjp2-7-dev \
     libpcre3-dev \
     libpng-dev \
-    libpoppler-dev \
-    libpoppler-private-dev \
     libpq-dev \
     libproj-dev \
     librasterlite2-dev \
@@ -71,6 +70,17 @@ RUN apt-get update && \
     unixodbc-dev \
     wget \
     zip
+
+# Removing "libpoppler-dev libpoppler-private-dev" from above list to build from source
+
+# do a build of poppler master because their C++ API is unstable
+RUN git clone --depth 1 https://gitlab.freedesktop.org/poppler/poppler.git poppler && \
+    cd poppler && \
+    mkdir build && \
+    cd build && \
+    cmake -DENABLE_UNSTABLE_API_ABI_HEADER=ON -DENABLE_NSS3=OFF -DENABLE_GPGME=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF .. && \
+    make -j$(nproc) && \
+    make install
 
 # libavif development build
 RUN apt-get install -y --allow-unauthenticated libaom-dev libyuv-dev
@@ -99,7 +109,7 @@ RUN apt-get update \
    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
 
 # Build mongo-c-driver
-ARG MONGO_C_DRIVER_VERSION=2.0.2
+ARG MONGO_C_DRIVER_VERSION=2.1.2
 RUN mkdir mongo-c-driver \
     && wget -q https://github.com/mongodb/mongo-c-driver/releases/download/${MONGO_C_DRIVER_VERSION}/mongo-c-driver-${MONGO_C_DRIVER_VERSION}.tar.gz -O - \
         | tar xz -C mongo-c-driver --strip-components=1 \
@@ -113,7 +123,7 @@ RUN mkdir mongo-c-driver \
     && rm -rf mongo-c-driver
 
 # Build mongocxx
-ARG MONGOCXX_VERSION=4.1.1
+ARG MONGOCXX_VERSION=4.1.4
 RUN mkdir mongocxx \
     && wget -q https://github.com/mongodb/mongo-cxx-driver/archive/r${MONGOCXX_VERSION}.tar.gz -O - \
         | tar xz -C mongocxx --strip-components=1 \
@@ -208,3 +218,12 @@ RUN curl -LO -fsS https://github.com/apache/arrow/archive/refs/heads/main.zip \
     && make install \
     && cd ../../.. \
     && rm -rf arrow-main
+
+# Install pdfium
+RUN wget -q https://github.com/rouault/pdfium_build_gdal_3_12/releases/download/pdfium_7391_v1/install-ubuntu2004-rev7391.tar.gz \
+  && tar -xzf install-ubuntu2004-rev7391.tar.gz \
+  && chown -R root:root install \
+  && mv install/lib/* /usr/lib/ \
+  && mv install/include/* /usr/include/ \
+  && rm -rf install-ubuntu2004-rev7391.tar.gz install
+

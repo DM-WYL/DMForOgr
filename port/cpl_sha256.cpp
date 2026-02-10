@@ -523,6 +523,9 @@ typedef byte cryptopp_byte;
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+#ifdef HAVE_WFLAG_CAST_FUNCTION_TYPE
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif
 #endif
 
 #include <openssl/bio.h>
@@ -552,7 +555,7 @@ static int CPLOpenSSLNullPassphraseCallback(char * /*buf*/, int /*size*/,
 #endif
 
 /************************************************************************/
-/*                         CPL_RSA_SHA256_Sign()                        */
+/*                        CPL_RSA_SHA256_Sign()                         */
 /************************************************************************/
 
 GByte *CPL_RSA_SHA256_Sign(const char *pszPrivateKey, const void *pabyData,

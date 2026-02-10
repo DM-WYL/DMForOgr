@@ -219,7 +219,7 @@ char CPL_DLL *GOA2GetRefreshToken(const char *pszAuthToken,
 }
 
 /************************************************************************/
-/*                       GOA2ProcessResponse()                          */
+/*                        GOA2ProcessResponse()                         */
 /************************************************************************/
 
 static char **GOA2ProcessResponse(CPLHTTPResult *psResult)
@@ -273,7 +273,7 @@ static char **GOA2ProcessResponse(CPLHTTPResult *psResult)
 }
 
 /************************************************************************/
-/*                       GOA2GetAccessTokenEx()                         */
+/*                        GOA2GetAccessTokenEx()                        */
 /************************************************************************/
 
 static char **GOA2GetAccessTokenEx(const char *pszRefreshToken,
@@ -348,7 +348,7 @@ char *GOA2GetAccessToken(const char *pszRefreshToken,
 }
 
 /************************************************************************/
-/*               GOA2GetAccessTokenFromCloudEngineVM()                  */
+/*                GOA2GetAccessTokenFromCloudEngineVM()                 */
 /************************************************************************/
 
 /**
@@ -364,7 +364,6 @@ char *GOA2GetAccessToken(const char *pszRefreshToken,
  * @param papszOptions NULL terminated list of options. None currently
  *
  * @return a list of key=value pairs, including a access_token and expires_in
- * @since GDAL 2.3
  */
 
 char **GOA2GetAccessTokenFromCloudEngineVM(CSLConstList papszOptions)
@@ -387,7 +386,7 @@ char **GOA2GetAccessTokenFromCloudEngineVM(CSLConstList papszOptions)
 }
 
 /************************************************************************/
-/*                 GOA2GetAccessTokenFromServiceAccount()               */
+/*                GOA2GetAccessTokenFromServiceAccount()                */
 /************************************************************************/
 
 /**
@@ -404,7 +403,6 @@ char **GOA2GetAccessTokenFromCloudEngineVM(CSLConstList papszOptions)
  * @param papszOptions NULL terminated list of options. None currently
  *
  * @return a list of key=value pairs, including a access_token and expires_in
- * @since GDAL 2.3
  */
 
 char **GOA2GetAccessTokenFromServiceAccount(const char *pszPrivateKey,
@@ -502,14 +500,14 @@ char **GOA2GetAccessTokenFromServiceAccount(const char *pszPrivateKey,
 }
 
 /************************************************************************/
-/*                              GOA2Manager()                           */
+/*                            GOA2Manager()                             */
 /************************************************************************/
 
 /** Constructor */
 GOA2Manager::GOA2Manager() = default;
 
 /************************************************************************/
-/*                         SetAuthFromGCE()                             */
+/*                           SetAuthFromGCE()                           */
 /************************************************************************/
 
 /** Specifies that the authentication will be done using the local
@@ -529,7 +527,7 @@ bool GOA2Manager::SetAuthFromGCE(CSLConstList papszOptions)
 }
 
 /************************************************************************/
-/*                       SetAuthFromRefreshToken()                      */
+/*                      SetAuthFromRefreshToken()                       */
 /************************************************************************/
 
 /** Specifies that the authentication will be done using the OAuth2 client
@@ -564,7 +562,7 @@ bool GOA2Manager::SetAuthFromRefreshToken(const char *pszRefreshToken,
 }
 
 /************************************************************************/
-/*                      SetAuthFromServiceAccount()                     */
+/*                     SetAuthFromServiceAccount()                      */
 /************************************************************************/
 
 /** Specifies that the authentication will be done using the OAuth2 service

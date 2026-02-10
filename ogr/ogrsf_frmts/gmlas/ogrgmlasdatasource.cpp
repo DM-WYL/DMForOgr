@@ -20,7 +20,7 @@
 #include <algorithm>
 
 /************************************************************************/
-/*                 XercesInitializer::XercesInitializer()               */
+/*                XercesInitializer::XercesInitializer()                */
 /************************************************************************/
 
 OGRGMLASDataSource::XercesInitializer::XercesInitializer()
@@ -29,7 +29,7 @@ OGRGMLASDataSource::XercesInitializer::XercesInitializer()
 }
 
 /************************************************************************/
-/*                 XercesInitializer::~XercesInitializer()              */
+/*               XercesInitializer::~XercesInitializer()                */
 /************************************************************************/
 
 OGRGMLASDataSource::XercesInitializer::~XercesInitializer()
@@ -38,7 +38,7 @@ OGRGMLASDataSource::XercesInitializer::~XercesInitializer()
 }
 
 /************************************************************************/
-/*                          OGRGMLASDataSource()                        */
+/*                         OGRGMLASDataSource()                         */
 /************************************************************************/
 
 OGRGMLASDataSource::OGRGMLASDataSource()
@@ -54,123 +54,123 @@ OGRGMLASDataSource::OGRGMLASDataSource()
     // Initialize m_poFieldsMetadataLayer
     {
         OGRFieldDefn oFieldDefn(szLAYER_NAME, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_INDEX, OFTInteger);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_NAME, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_XPATH, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_TYPE, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_IS_LIST, OFTInteger);
         oFieldDefn.SetSubType(OFSTBoolean);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_MIN_OCCURS, OFTInteger);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_MAX_OCCURS, OFTInteger);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_REPETITION_ON_SEQUENCE, OFTInteger);
         oFieldDefn.SetSubType(OFSTBoolean);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_DEFAULT_VALUE, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_FIXED_VALUE, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_CATEGORY, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_RELATED_LAYER, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_JUNCTION_LAYER, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szFIELD_DOCUMENTATION, OFTString);
-        m_poFieldsMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poFieldsMetadataLayer->CreateField(&oFieldDefn));
     }
 
     // Initialize m_poLayersMetadataLayer
     {
         OGRFieldDefn oFieldDefn(szLAYER_NAME, OFTString);
-        m_poLayersMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poLayersMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szLAYER_XPATH, OFTString);
-        m_poLayersMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poLayersMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szLAYER_CATEGORY, OFTString);
-        m_poLayersMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poLayersMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szLAYER_PKID_NAME, OFTString);
-        m_poLayersMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poLayersMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szLAYER_PARENT_PKID_NAME, OFTString);
-        m_poLayersMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poLayersMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szLAYER_DOCUMENTATION, OFTString);
-        m_poLayersMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poLayersMetadataLayer->CreateField(&oFieldDefn));
     }
 
     // Initialize m_poRelationshipsLayer
     {
         OGRFieldDefn oFieldDefn(szPARENT_LAYER, OFTString);
-        m_poRelationshipsLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poRelationshipsLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szPARENT_PKID, OFTString);
-        m_poRelationshipsLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poRelationshipsLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szPARENT_ELEMENT_NAME, OFTString);
-        m_poRelationshipsLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poRelationshipsLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szCHILD_LAYER, OFTString);
-        m_poRelationshipsLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poRelationshipsLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szCHILD_PKID, OFTString);
-        m_poRelationshipsLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poRelationshipsLayer->CreateField(&oFieldDefn));
     }
 
     // Initialize m_poOtherMetadataLayer
     {
         OGRFieldDefn oFieldDefn(szKEY, OFTString);
-        m_poOtherMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poOtherMetadataLayer->CreateField(&oFieldDefn));
     }
     {
         OGRFieldDefn oFieldDefn(szVALUE, OFTString);
-        m_poOtherMetadataLayer->CreateField(&oFieldDefn);
+        CPL_IGNORE_RET_VAL(m_poOtherMetadataLayer->CreateField(&oFieldDefn));
     }
 }
 
@@ -187,7 +187,7 @@ OGRGMLASDataSource::~OGRGMLASDataSource()
 }
 
 /************************************************************************/
-/*                            GetLayerCount()                           */
+/*                           GetLayerCount()                            */
 /************************************************************************/
 
 int OGRGMLASDataSource::GetLayerCount() const
@@ -197,7 +197,7 @@ int OGRGMLASDataSource::GetLayerCount() const
 }
 
 /************************************************************************/
-/*                                GetLayer()                            */
+/*                              GetLayer()                              */
 /************************************************************************/
 
 const OGRLayer *OGRGMLASDataSource::GetLayer(int i) const
@@ -218,7 +218,7 @@ const OGRLayer *OGRGMLASDataSource::GetLayer(int i) const
 }
 
 /************************************************************************/
-/*                             GetLayerByName()                         */
+/*                           GetLayerByName()                           */
 /************************************************************************/
 
 OGRLayer *OGRGMLASDataSource::GetLayerByName(const char *pszName)
@@ -248,7 +248,7 @@ OGRLayer *OGRGMLASDataSource::GetLayerByName(const char *pszName)
 }
 
 /************************************************************************/
-/*                           TranslateClasses()                         */
+/*                          TranslateClasses()                          */
 /************************************************************************/
 
 void OGRGMLASDataSource::TranslateClasses(OGRGMLASLayer *poParentLayer,
@@ -270,7 +270,7 @@ void OGRGMLASDataSource::TranslateClasses(OGRGMLASLayer *poParentLayer,
 }
 
 /************************************************************************/
-/*                         GMLASTopElementParser                        */
+/*                        GMLASTopElementParser                         */
 /************************************************************************/
 
 class GMLASTopElementParser : public DefaultHandler
@@ -356,7 +356,7 @@ void GMLASTopElementParser::Parse(const CPLString &osFilename,
 }
 
 /************************************************************************/
-/*                             startElement()                           */
+/*                            startElement()                            */
 /************************************************************************/
 
 void GMLASTopElementParser::startElement(const XMLCh *const /*uri*/,
@@ -425,7 +425,7 @@ void GMLASTopElementParser::startElement(const XMLCh *const /*uri*/,
 }
 
 /************************************************************************/
-/*                         FillOtherMetadataLayer()                     */
+/*                       FillOtherMetadataLayer()                       */
 /************************************************************************/
 
 void OGRGMLASDataSource::FillOtherMetadataLayer(
@@ -638,7 +638,7 @@ void OGRGMLASDataSource::FillOtherMetadataLayer(
 }
 
 /************************************************************************/
-/*                         BuildXSDVector()                             */
+/*                           BuildXSDVector()                           */
 /************************************************************************/
 
 std::vector<PairURIFilename>
@@ -1059,7 +1059,7 @@ int OGRGMLASDataSource::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                           CreateReader()                             */
+/*                            CreateReader()                            */
 /************************************************************************/
 
 GMLASReader *
@@ -1255,7 +1255,7 @@ OGRGMLASLayer *OGRGMLASDataSource::GetLayerByXPath(const CPLString &osXPath)
 }
 
 /************************************************************************/
-/*                       PushUnusedGMLFilePointer()                     */
+/*                      PushUnusedGMLFilePointer()                      */
 /************************************************************************/
 
 void OGRGMLASDataSource::PushUnusedGMLFilePointer(
@@ -1272,7 +1272,7 @@ void OGRGMLASDataSource::PushUnusedGMLFilePointer(
 }
 
 /************************************************************************/
-/*                        PopUnusedGMLFilePointer()                     */
+/*                      PopUnusedGMLFilePointer()                       */
 /************************************************************************/
 
 std::shared_ptr<VSIVirtualHandle> OGRGMLASDataSource::PopUnusedGMLFilePointer()
@@ -1283,7 +1283,7 @@ std::shared_ptr<VSIVirtualHandle> OGRGMLASDataSource::PopUnusedGMLFilePointer()
 }
 
 /************************************************************************/
-/*                    InitReaderWithFirstPassElements()                 */
+/*                  InitReaderWithFirstPassElements()                   */
 /************************************************************************/
 
 void OGRGMLASDataSource::InitReaderWithFirstPassElements(GMLASReader *poReader)
@@ -1302,7 +1302,7 @@ void OGRGMLASDataSource::InitReaderWithFirstPassElements(GMLASReader *poReader)
 }
 
 /************************************************************************/
-/*                          RunFirstPassIfNeeded()                      */
+/*                        RunFirstPassIfNeeded()                        */
 /************************************************************************/
 
 bool OGRGMLASDataSource::RunFirstPassIfNeeded(GMLASReader *poReader,

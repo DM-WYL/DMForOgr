@@ -27,12 +27,12 @@ PDFWritableVectorDataset::PDFWritableVectorDataset()
 }
 
 /************************************************************************/
-/*                      ~PDFWritableVectorDataset()                     */
+/*                     ~PDFWritableVectorDataset()                      */
 /************************************************************************/
 
 PDFWritableVectorDataset::~PDFWritableVectorDataset()
 {
-    PDFWritableVectorDataset::SyncToDisk();
+    PDFWritableVectorDataset::Close();
 
     CSLDestroy(papszOptions);
     for (int i = 0; i < nLayers; i++)
@@ -47,7 +47,7 @@ PDFWritableVectorDataset::~PDFWritableVectorDataset()
 GDALDataset *PDFWritableVectorDataset::Create(const char *pszName, int nXSize,
                                               int nYSize, int nBandsIn,
                                               GDALDataType eType,
-                                              char **papszOptions)
+                                              CSLConstList papszOptions)
 {
     if (nBandsIn == 0 && nXSize == 0 && nYSize == 0 && eType == GDT_Unknown)
     {
@@ -81,7 +81,7 @@ GDALDataset *PDFWritableVectorDataset::Create(const char *pszName, int nXSize,
 }
 
 /************************************************************************/
-/*                           ICreateLayer()                             */
+/*                            ICreateLayer()                            */
 /************************************************************************/
 
 OGRLayer *
@@ -142,7 +142,7 @@ const OGRLayer *PDFWritableVectorDataset::GetLayer(int iLayer) const
 }
 
 /************************************************************************/
-/*                            GetLayerCount()                           */
+/*                           GetLayerCount()                            */
 /************************************************************************/
 
 int PDFWritableVectorDataset::GetLayerCount() const
@@ -151,13 +151,22 @@ int PDFWritableVectorDataset::GetLayerCount() const
 }
 
 /************************************************************************/
-/*                            SyncToDisk()                              */
+/*                               Close()                                */
 /************************************************************************/
 
-OGRErr PDFWritableVectorDataset::SyncToDisk()
+CPLErr PDFWritableVectorDataset::Close(GDALProgressFunc, void *)
+{
+    return PDFWritableVectorDataset::FlushCache(true);
+}
+
+/************************************************************************/
+/*                             FlushCache()                             */
+/************************************************************************/
+
+CPLErr PDFWritableVectorDataset::FlushCache(bool /* bAtClosing*/)
 {
     if (nLayers == 0 || !bModified)
-        return OGRERR_NONE;
+        return CE_None;
 
     bModified = FALSE;
 
@@ -177,7 +186,7 @@ OGRErr PDFWritableVectorDataset::SyncToDisk()
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Cannot compute spatial extent of features");
-        return OGRERR_FAILURE;
+        return CE_Failure;
     }
 
     double dfRatio = (sGlobalExtent.MaxY - sGlobalExtent.MinY) /
@@ -192,7 +201,7 @@ OGRErr PDFWritableVectorDataset::SyncToDisk()
         if (dfHeight < 1 || dfHeight > INT_MAX || std::isnan(dfHeight))
         {
             CPLError(CE_Failure, CPLE_AppDefined, "Invalid image dimensions");
-            return OGRERR_FAILURE;
+            return CE_Failure;
         }
         nHeight = static_cast<int>(dfHeight);
     }
@@ -203,7 +212,7 @@ OGRErr PDFWritableVectorDataset::SyncToDisk()
         if (dfWidth < 1 || dfWidth > INT_MAX || std::isnan(dfWidth))
         {
             CPLError(CE_Failure, CPLE_AppDefined, "Invalid image dimensions");
-            return OGRERR_FAILURE;
+            return CE_Failure;
         }
         nWidth = static_cast<int>(dfWidth);
     }
@@ -222,7 +231,7 @@ OGRErr PDFWritableVectorDataset::SyncToDisk()
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Cannot compute spatial extent of features");
-        return OGRERR_FAILURE;
+        return CE_Failure;
     }
 
     PDFCompressMethod eStreamCompressMethod = COMPRESS_DEFLATE;
@@ -325,13 +334,13 @@ OGRErr PDFWritableVectorDataset::SyncToDisk()
     {
         CPLError(CE_Failure, CPLE_OpenFailed, "Unable to create PDF file %s.\n",
                  GetDescription());
-        return OGRERR_FAILURE;
+        return CE_Failure;
     }
 
     GDALPDFWriter oWriter(fp);
 
     GDALDataset *poSrcDS =
-        MEMDataset::Create("MEM:::", nWidth, nHeight, 0, GDT_Byte, nullptr);
+        MEMDataset::Create("MEM:::", nWidth, nHeight, 0, GDT_UInt8, nullptr);
 
     poSrcDS->SetGeoTransform(gt);
 
@@ -382,5 +391,5 @@ OGRErr PDFWritableVectorDataset::SyncToDisk()
 
     delete poSrcDS;
 
-    return OGRERR_NONE;
+    return CE_None;
 }

@@ -58,7 +58,7 @@ class OGRFlatGeobufBaseLayerInterface CPL_NON_FINAL
 
     virtual const std::string &GetFilename() const = 0;
     virtual OGRLayer *GetLayer() = 0;
-    virtual CPLErr Close() = 0;
+    virtual CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) = 0;
 };
 
 class OGRFlatGeobufLayer final : public OGRLayer,
@@ -148,10 +148,10 @@ class OGRFlatGeobufLayer final : public OGRLayer,
     virtual int GetNextArrowArray(struct ArrowArrayStream *,
                                   struct ArrowArray *out_array) override;
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
-    virtual ~OGRFlatGeobufLayer();
+    ~OGRFlatGeobufLayer() override;
 
     static OGRFlatGeobufLayer *Open(const FlatGeobuf::Header *,
                                     GByte *headerBuf, const char *pszFilename,
@@ -163,23 +163,23 @@ class OGRFlatGeobufLayer final : public OGRLayer,
            const OGRSpatialReference *poSpatialRef, OGRwkbGeometryType eGType,
            bool bCreateSpatialIndexAtClose, CSLConstList papszOptions);
 
-    virtual OGRFeature *GetFeature(GIntBig nFeatureId) override;
-    virtual OGRFeature *GetNextFeature() override;
+    OGRFeature *GetFeature(GIntBig nFeatureId) override;
+    OGRFeature *GetNextFeature() override;
     virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = true) override;
-    virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
+    OGRErr ICreateFeature(OGRFeature *poFeature) override;
     int TestCapability(const char *) const override;
 
-    virtual void ResetReading() override;
+    void ResetReading() override;
 
     const OGRFeatureDefn *GetLayerDefn() const override
     {
         return m_poFeatureDefn;
     }
 
-    virtual GIntBig GetFeatureCount(int bForce) override;
-    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
-                              bool bForce) override;
+    GIntBig GetFeatureCount(int bForce) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
     void VerifyBuffers(int bFlag)
     {
@@ -221,7 +221,7 @@ class OGRFlatGeobufEditableLayer final : public OGREditableLayer,
     OGRFlatGeobufEditableLayer(OGRFlatGeobufLayer *poFlatGeobufLayer,
                                char **papszOpenOptions);
 
-    virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
+    GIntBig GetFeatureCount(int bForce = TRUE) override;
 
     const std::string &GetFilename() const override
     {
@@ -236,7 +236,7 @@ class OGRFlatGeobufEditableLayer final : public OGREditableLayer,
 
     int TestCapability(const char *pszCap) const override;
 
-    CPLErr Close() override
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override
     {
         return CE_None;
     }
@@ -252,18 +252,18 @@ class OGRFlatGeobufDataset final : public GDALDataset
 
     bool OpenFile(const char *pszFilename, VSILFILE *fp, bool bVerifyBuffers);
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     OGRFlatGeobufDataset(const char *pszName, bool bIsDir, bool bCreate,
                          bool bUpdate);
-    ~OGRFlatGeobufDataset();
+    ~OGRFlatGeobufDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszName, CPL_UNUSED int nBands,
                                CPL_UNUSED int nXSize, CPL_UNUSED int nYSize,
                                CPL_UNUSED GDALDataType eDT,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
     using GDALDataset::GetLayer;
     const OGRLayer *GetLayer(int) const override;
     int TestCapability(const char *pszCap) const override;

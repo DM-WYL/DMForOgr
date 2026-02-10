@@ -32,7 +32,6 @@ adfMinMax
 advertized
 advertizing
 AdviseRead
-advized
 AES
 affine
 Affine
@@ -53,7 +52,6 @@ allCountries
 allocator
 alphanumerics
 Alpina
-altername
 alternance
 altitudemode
 altitudeMode
@@ -68,7 +66,6 @@ Analysing
 analytics
 Andrey
 AndreyK
-andsize
 anMapNewAxisToOldAxis
 Antalya
 antialias
@@ -79,7 +76,6 @@ aoDims
 api
 Api
 apoNewDims
-apploy
 approximator
 AppVeyor
 APSTILE
@@ -93,7 +89,6 @@ argc
 args
 argv
 ari
-arra
 Arrayname
 arrayStartIdx
 ASC
@@ -101,7 +96,6 @@ ascii
 aspatial
 Aspatial
 assumerolewithwebidentity
-asterix
 Astrogeology
 Astun
 AStyle
@@ -115,9 +109,7 @@ Athlon
 atof
 atoi
 atomicity
-atrix
 attr
-Attrbute
 attrib
 attrname
 attrvalue
@@ -148,7 +140,6 @@ Avenza
 Avyav
 avyavkumar
 aws
-axactly
 axisLabels
 axisOrder
 axisswap
@@ -172,6 +163,7 @@ bak
 bAllowPromotingToCurves
 bAllowResizeOutptr
 bandblockcache
+BandMetadataItem
 BandN
 BandsCount
 bAnglesInPackedDMSFormat
@@ -256,7 +248,6 @@ Bonne
 Bool
 boolean
 booleans
-Bootstraping
 boto
 Boto
 bottomfov
@@ -297,12 +288,13 @@ buildbot
 Buildbot
 BuildVRT
 BuildVRTOptions
+bulleted
+Bulleted
 bumpmap
 BUnits
 bUnlinkAndSeize
 bUpdate
 burnValues
-butsetting
 bValueIsNull
 byn
 bytecode
@@ -311,12 +303,9 @@ cadastral
 Cadastral
 Cadastre
 Cadcorp
-Cadorp
 calc
 Calc
-calclulated
 calloc
-capabalities
 capi
 cardinality
 Cardinality
@@ -379,6 +368,7 @@ ClassificationCode
 Clayers
 CleanTimeout
 clearerr
+CLI
 clib
 clipdst
 clipdstlayer
@@ -422,6 +412,7 @@ Coeff
 Coefs
 colname
 colorinterp
+ColorInterpretation
 colormap
 colormapped
 colorspace
@@ -455,9 +446,9 @@ conformities
 connectedness
 const
 constexpr
-contensts
+contextlib
+contextmanager
 ContourOptions
-Contrarty
 conv
 Convair
 conveniency
@@ -487,7 +478,6 @@ CPUs
 CPython
 Cracknell
 creatable
-createad
 CreateCopy
 CreateFieldFromArrowSchema
 createGeometry
@@ -527,6 +517,7 @@ cvs
 Cxx
 Cygwin
 dall
+Damerau
 dan
 DanB
 DanielM
@@ -543,12 +534,10 @@ dataset
 Dataset
 datasets
 Datasets
-datasett
 datasource
 Datasource
 datasources
 Datasources
-datasset
 datastore
 Datastores
 datastream
@@ -578,7 +567,6 @@ DCMAKE
 de
 De
 deaccess
-deails
 deallocate
 Deallocate
 deallocated
@@ -591,7 +579,6 @@ Decompressor
 decompressors
 decrementing
 decrypted
-dedeicated
 Deegree
 defacto
 define'ed
@@ -619,13 +606,11 @@ derogations
 des
 DES
 desc
-descendent
 describedby
 deserialization
 deserialize
 deserialized
 deserializing
-desirabled
 dest
 destructor
 Destructor
@@ -686,7 +671,6 @@ dimensioned
 dimN
 DINSTALL
 dir
-directies
 Discoe
 discretization
 discretizing
@@ -713,18 +697,16 @@ domainSet
 domainuser
 doo
 doq
-doubtfull
+doubtful
 downcasting
 downsampled
 downsampling
 downscaling
-downswhen
 dox
 doxing
 Doxyfiles
 Doxygen
 dp
-dpecified
 drawOrder
 drv
 ds
@@ -739,6 +721,7 @@ dstType
 dt
 dT
 dtype
+DummyBand
 DUnits
 dValue
 dve
@@ -764,12 +747,10 @@ ecw
 ecwp
 eDataType
 EDE
-editings
 eDstType
 eDT
 eedaconf
 eErrClass
-effictively
 eFieldType
 eg
 eGeomType
@@ -848,7 +829,6 @@ ExportToWKB
 exportToWkt
 ExportToWKT
 expr
-Exte
 extendbeyonddateline
 ExtendBeyondDateLine
 Extensibility
@@ -889,7 +869,6 @@ FHelvetica
 fi
 fid
 FID
-fieds
 FieldDomain
 fieldname
 fieldName
@@ -905,7 +884,6 @@ filesystems
 fillnodata
 FillValue
 FindFile
-finition
 fiona
 fipszone
 fixedLevels
@@ -928,8 +906,8 @@ ForceTo
 forceToMultiPolygon
 forecolor
 Foris
+formatter
 formatters
-formly
 Fortran
 fp
 fpInput
@@ -940,6 +918,7 @@ fpRawL
 fprintf
 fpSource
 fputc
+frac
 franca
 france
 FrankW
@@ -966,8 +945,6 @@ fullExtent
 func
 funnyline
 Furieri
-furtherbelow
-Furthermode
 fusiontables
 fwhm
 fwrite
@@ -993,6 +970,8 @@ gdalabstractbandblockcache
 gdaladdo
 gdalalljni
 gdalallregister
+GDALArgDatasetValue
+GDALArgDatasetValue
 gdalarraybandblockcache
 gdalasyncread
 GDALAsyncReader
@@ -1140,6 +1119,7 @@ GetFieldAsDateTime
 GetFieldCount
 GetFieldDefn
 GetFieldSubTypeName
+GetFileList
 GetGeomFieldCount
 GetGeomFieldDefn
 GetLayerDefn
@@ -1205,6 +1185,7 @@ gnot
 Gohlke
 Golang
 Golomb
+Goode
 goog
 googleapis
 gpkg
@@ -1255,6 +1236,7 @@ gz
 gzip
 GZip
 gzipped
+Hadoop
 Haff
 Halasz
 hana
@@ -1289,7 +1271,6 @@ heightfields
 Helmert
 hElseBand
 Helvetica
-hether
 hFeat
 hGeom
 hGeomCoordPrec
@@ -1319,7 +1300,6 @@ hNewSubGeom
 hObject
 hobu
 hoc
-holded
 Homebrew
 homographies
 Homographies
@@ -1339,6 +1319,7 @@ hOtherFeature
 hotine
 Hotine
 Hough
+hOutDS
 howard
 HowardB
 hProximityBand
@@ -1370,6 +1351,7 @@ hypercubes
 hyperspectral
 hypsometric
 Hypsometric
+hZonesDS
 iAxis
 iBand
 iChild
@@ -1387,6 +1369,7 @@ idofic
 Idrisi
 iDriver
 idx
+idxN
 ie
 ieee
 ifdef
@@ -1434,12 +1417,10 @@ ini
 init
 Init
 initialExtent
-initiali
 initializer
 inlined
 instantiable
 instantiation
-integratations
 integrations
 integrators
 intentionally
@@ -1579,6 +1560,7 @@ leftfov
 LegalConstraints
 len
 Leveller
+Levenshtein
 lf
 libaom
 libarchive
@@ -1649,7 +1631,6 @@ libwebp
 libXML
 libxz
 libzstd
-licencing
 Lichun
 lifonly
 linearities
@@ -1692,7 +1673,6 @@ loheight
 lon
 LongitudeDirection
 longjmp
-longtiudinal
 lonorth
 los
 Loskot
@@ -1723,8 +1703,6 @@ MacOS
 magellan
 magnetics
 Mahamood
-mainbly
-mainteners
 makefile
 Makefile
 makefiles
@@ -1736,6 +1714,7 @@ mapbox
 Mapbox
 Maperitive
 mapFieldType
+Mapfile
 mapinfo
 Mapinfo
 maplist
@@ -1751,7 +1730,6 @@ Maptech
 maptools
 Marek
 marshaller
-Matchine
 Mateusz
 MateuszL
 MateuzL
@@ -1773,6 +1751,7 @@ MaxX
 maxy
 maxY
 MaxY
+maxz
 MaxZ
 mbtiles
 mbtowc
@@ -1801,6 +1780,7 @@ Miara
 MiB
 Microstation
 mif
+MikeS
 millimetric
 mimetype
 miniconda
@@ -1822,6 +1802,7 @@ minX
 miny
 minY
 MinY
+minz
 MinZ
 Mipmaps
 MiraD
@@ -1846,6 +1827,7 @@ Mollweide
 Mongo
 MONGOCXX
 mongocxxv
+MongoDB
 monoblock
 Monospace
 Morissette
@@ -1891,6 +1873,7 @@ multilines
 multilinestring
 multilinestrings
 Multipage
+multipart
 multipatch
 Multiplatform
 multipoint
@@ -2279,6 +2262,7 @@ outptr
 outputBounds
 outputer
 outputSchema
+outString
 Oversample
 OverviewCount
 ovf
@@ -2291,6 +2275,7 @@ pabyHeader
 pabyM
 pabySrcData
 pabyValue
+pabyWKB
 pabyX
 pabyY
 pabyZ
@@ -2350,6 +2335,7 @@ papoPolygons
 papszDirFiles
 papszFields
 papszFileList
+papszInfo
 papszLayerList
 papszMetadata
 papszOpenOptions
@@ -2362,8 +2348,6 @@ papszStrList
 papszURL
 papszVectorTranslateArguments
 papszWarpOptions
-Paquet
-paradygm
 parallelisation
 parallelising
 Parallelization
@@ -2411,7 +2395,6 @@ pds
 PDS
 pDstBuffer
 pDstBufferAllocStart
-pecedence
 pel
 perefix
 performant
@@ -2419,6 +2402,7 @@ perl
 Petr
 pFct
 pfnCachePage
+pfnClearCaches
 pfnCopy
 pfnCopyFiles
 pfnCreate
@@ -2508,6 +2492,7 @@ poFeatureDefn
 poFieldDefn
 poFilterGeom
 poGCP
+poGeom
 poGeomFieldDefn
 PointFromColumns
 PointOnSurface
@@ -2551,6 +2536,7 @@ Postgresql
 poTargetSRS
 pOutBuffer
 ppabyRet
+ppabyWKB
 ppadfOutNoData
 ppadfPrjParams
 ppanHistogram
@@ -2579,7 +2565,6 @@ ppszRawXML
 ppszResult
 ppszUnits
 ppWorkingData
-practise
 pre
 Pre
 pread
@@ -2590,9 +2575,10 @@ precompiled
 precompute
 predefine
 predelete
-prelimenary
+preinstalled
 preload
 premultiplication
+premultiplied
 Prepar
 preparse
 prepended
@@ -2604,7 +2590,6 @@ pRet
 prf
 printf
 Printf
-prioritary
 priorly
 Priorly
 priv
@@ -2625,13 +2610,12 @@ projjson
 projwin
 projWin
 PropertyDefn
-prounounces
 Provincie
 proximities
 proxyauth
 proxyuserpwd
-prsence
 ps
+psBlockInfo
 psChild
 psDT
 psEnvelope
@@ -2739,6 +2723,7 @@ qtcreator
 quadkey
 Quadrilateralized
 quadtree
+quantile
 Quantile
 quantizeCoordinates
 quantized
@@ -2759,8 +2744,8 @@ rasterization
 rasterize
 Rasterize
 rasterized
-rasterizes
 RasterizeOptions
+rasterizes
 rasterizing
 rasterlite
 Rasterlite
@@ -2784,6 +2769,7 @@ ReadCompressedData
 readdir
 ReadDir
 ReadRaster
+RealList
 realloc
 rebased
 Recherches
@@ -2827,7 +2813,6 @@ relaxedFieldNameMatch
 relink
 RemoveM
 renderer
-repistory
 repo
 reportings
 reportSrcColumn
@@ -2867,7 +2852,6 @@ resy
 retile
 retiling
 RetrieveNumericColumnsAsDouble
-Retrurns
 rewrap
 rewrapped
 rfc
@@ -2895,7 +2879,6 @@ RollbackTransaction
 Ronnen
 rorient
 rouault
-rought
 roundCoordinates
 roundoff
 roundtrip
@@ -3008,7 +2991,6 @@ si
 sig
 Sightlines
 signedness
-significants
 Simmon
 sinc
 sizeBytes
@@ -3056,9 +3038,7 @@ spatio
 Spatio
 spc
 specialised
-speciffed
 specificities
-Specifieds
 SpectralBand
 spf
 sprintf
@@ -3093,6 +3073,7 @@ StartTransaction
 stat'ed
 stateful
 stderr
+stdev
 stdin
 stdout
 stealInteriorRing
@@ -3131,6 +3112,8 @@ Struve
 styleurl
 styleurls
 su
+subalgorithm
+subalgorithms
 subarcs
 subarray
 subbottom
@@ -3249,12 +3232,10 @@ tgt
 tgz
 th
 thebuffer
-themself
 thenBand
 thescale
 thf
 THH
-thish
 Thorne
 thorougful
 threadsafe
@@ -3336,12 +3317,9 @@ tpkx
 tps
 trac
 Trac
-Traditionnaly
 Traditonal
-trailaing
 transactional
 Transactional
-transcations
 transcode
 transcoded
 transcoding
@@ -3391,10 +3369,8 @@ uncoded
 uncomment
 Uncompress
 uncompressing
-underscope
 undirected
 Undirected
-undoubtly
 unencrypted
 unescape
 Unescape
@@ -3403,7 +3379,6 @@ ungeoreference
 ungeoreferenced
 ungridded
 unicode
-unintentionnaly
 uninvertable
 unioned
 unistd
@@ -3412,12 +3387,10 @@ unix
 unixodbc
 unixODBC
 unlabelled
-unlikeley
 unlink
 Unlink
 unlogged
 Unlogged
-unmanagable
 unmanaged
 unmapped
 unoptimized
@@ -3460,7 +3433,6 @@ Userid
 userNote
 USERPROFILE
 UserPwd
-useul
 usgsdemdataset
 ushort
 usr
@@ -3489,7 +3461,6 @@ vct
 vcvars
 vdc
 vdv
-vecror
 VectorInfo
 VectorInfoOptions
 vectorization
@@ -3514,7 +3485,6 @@ Viewsheds
 virtualenv
 virtualized
 virtualmem
-visibiliy
 visualisation
 vmaplv
 vnd
@@ -3583,6 +3553,8 @@ webmercator
 WebP
 WEBP
 webviewer
+weighted_frac
+weighted_stdev
 wellformedness
 Westervelt
 westing
@@ -3719,6 +3691,7 @@ yk
 ym
 ymax
 ymin
+yml
 yoff
 yOff
 YOrigin

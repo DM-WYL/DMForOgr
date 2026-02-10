@@ -15,6 +15,11 @@
 #include "cpl_string.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_colortable.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 #include <limits>
 
@@ -242,7 +247,7 @@ class BMPDataset final : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
 
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
@@ -284,7 +289,12 @@ BMPRasterBand::BMPRasterBand(BMPDataset *poDSIn, int nBandIn)
 {
     poDS = poDSIn;
     nBand = nBandIn;
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
+
+    if (poDSIn->sInfoHeader.iBitCount < 8)
+        SetMetadataItem("NBITS",
+                        CPLSPrintf("%d", poDSIn->sInfoHeader.iBitCount),
+                        "IMAGE_STRUCTURE");
 
     // We will read one scanline per time. Scanlines in BMP aligned at 4-byte
     // boundary
@@ -623,7 +633,10 @@ CPLErr BMPRasterBand::SetColorTable(GDALColorTable *poColorTable)
                 (GByte)oEntry.c3;  // Blue
         }
 
-        VSIFSeekL(poGDS->fp, BFH_SIZE + poGDS->sInfoHeader.iSize, SEEK_SET);
+        VSIFSeekL(
+            poGDS->fp,
+            static_cast<vsi_l_offset>(BFH_SIZE + poGDS->sInfoHeader.iSize),
+            SEEK_SET);
         if (VSIFWriteL(poGDS->pabyColorTable, 1,
                        static_cast<size_t>(poGDS->nColorElems) *
                            poGDS->sInfoHeader.iClrUsed,
@@ -688,7 +701,7 @@ class BMPComprRasterBand final : public BMPRasterBand
 };
 
 /************************************************************************/
-/*                           BMPComprRasterBand()                       */
+/*                         BMPComprRasterBand()                         */
 /************************************************************************/
 
 BMPComprRasterBand::BMPComprRasterBand(BMPDataset *poDSIn, int nBandIn)
@@ -712,6 +725,13 @@ BMPComprRasterBand::BMPComprRasterBand(BMPDataset *poDSIn, int nBandIn)
         CPLError(CE_Failure, CPLE_NotSupported, "Invalid header");
         return;
     }
+
+    if (poDSIn->sInfoHeader.iClrUsed <= 2)
+        SetMetadataItem("NBITS", "1", "IMAGE_STRUCTURE");
+    else if (poDSIn->sInfoHeader.iClrUsed <= 4)
+        SetMetadataItem("NBITS", "2", "IMAGE_STRUCTURE");
+    else if (poDSIn->sInfoHeader.iClrUsed <= 16)
+        SetMetadataItem("NBITS", "4", "IMAGE_STRUCTURE");
 
     const GUInt32 iComprSize = static_cast<GUInt32>(
         poDSIn->m_nFileSize - poDSIn->sFileHeader.iOffBits);
@@ -737,7 +757,9 @@ BMPComprRasterBand::BMPComprRasterBand(BMPDataset *poDSIn, int nBandIn)
         return;
     }
 
-    if (VSIFSeekL(poDSIn->fp, poDSIn->sFileHeader.iOffBits, SEEK_SET) != 0 ||
+    if (VSIFSeekL(poDSIn->fp,
+                  static_cast<vsi_l_offset>(poDSIn->sFileHeader.iOffBits),
+                  SEEK_SET) != 0 ||
         VSIFReadL(pabyComprBuf, 1, iComprSize, poDSIn->fp) < iComprSize)
     {
         CPLError(CE_Failure, CPLE_FileIO,
@@ -826,13 +848,13 @@ BMPComprRasterBand::BMPComprRasterBand(BMPDataset *poDSIn, int nBandIn)
                 unsigned int iLength = pabyComprBuf[i++];
                 if (j == iUncomprSize)
                     break;
-                while (iLength > 0 && j < iUncomprSize && i < iComprSize)
+                for (unsigned k = 0;
+                     k < iLength && j < iUncomprSize && i < iComprSize; k++)
                 {
-                    if (iLength & 0x01)
-                        pabyUncomprBuf[j++] = (pabyComprBuf[i] & 0xF0) >> 4;
-                    else
+                    if (k & 0x01)
                         pabyUncomprBuf[j++] = pabyComprBuf[i] & 0x0F;
-                    iLength--;
+                    else
+                        pabyUncomprBuf[j++] = (pabyComprBuf[i] & 0xF0) >> 4;
                 }
                 i++;
             }
@@ -884,7 +906,9 @@ BMPComprRasterBand::BMPComprRasterBand(BMPDataset *poDSIn, int nBandIn)
                         else
                             pabyUncomprBuf[j++] = (pabyComprBuf[i] & 0xF0) >> 4;
                     }
-                    if (i & 0x01)
+                    if ((iLength + 1) & 0x02) /* iLength%4 = 1 or 2 */
+                        i++;
+                    if (iLength & 0x01) /* iLength%4 = 1 (again) or 3 */
                         i++;
                 }
             }
@@ -892,6 +916,7 @@ BMPComprRasterBand::BMPComprRasterBand(BMPDataset *poDSIn, int nBandIn)
     }
     /* Validate that we have read all compressed data (we tolerate missing */
     /* end of image marker) and that we have filled all uncompressed data */
+    /* i will be odd if and only if we saw the End of Image marker above */
     if (j < iUncomprSize || (i + 1 != iComprSize && i + 2 != iComprSize))
     {
         CPLFree(pabyUncomprBuf);
@@ -903,7 +928,7 @@ BMPComprRasterBand::BMPComprRasterBand(BMPDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                           ~BMPComprRasterBand()                      */
+/*                        ~BMPComprRasterBand()                         */
 /************************************************************************/
 
 BMPComprRasterBand::~BMPComprRasterBand()
@@ -928,7 +953,7 @@ CPLErr BMPComprRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                           BMPDataset()                               */
+/*                             BMPDataset()                             */
 /************************************************************************/
 
 BMPDataset::BMPDataset()
@@ -1126,7 +1151,7 @@ GDALDataset *BMPDataset::Open(GDALOpenInfo *poOpenInfo)
     poDS->fp = poOpenInfo->fpL;
     poOpenInfo->fpL = nullptr;
 
-    VSIFSeekL(poDS->fp, BFH_SIZE, SEEK_SET);
+    VSIFSeekL(poDS->fp, BFH_SIZE + 0, SEEK_SET);
     VSIFReadL(&poDS->sInfoHeader.iSize, 1, 4, poDS->fp);
 #ifdef CPL_MSB
     CPL_SWAP32PTR(&poDS->sInfoHeader.iSize);
@@ -1405,10 +1430,10 @@ GDALDataset *BMPDataset::Open(GDALOpenInfo *poOpenInfo)
 
 GDALDataset *BMPDataset::Create(const char *pszFilename, int nXSize, int nYSize,
                                 int nBandsIn, GDALDataType eType,
-                                char **papszOptions)
+                                CSLConstList papszOptions)
 
 {
-    if (eType != GDT_Byte)
+    if (eType != GDT_UInt8)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Attempt to create BMP dataset with an illegal\n"
@@ -1654,7 +1679,7 @@ GDALDataset *BMPDataset::Create(const char *pszFilename, int nXSize, int nYSize,
 }
 
 /************************************************************************/
-/*                        GDALRegister_BMP()                            */
+/*                          GDALRegister_BMP()                          */
 /************************************************************************/
 
 void GDALRegister_BMP()

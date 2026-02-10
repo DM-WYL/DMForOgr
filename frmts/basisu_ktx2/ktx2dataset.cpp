@@ -10,6 +10,7 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
 #include "gdal_pam.h"
 #include "common.h"
 #include "include_basisu_sdk.h"
@@ -20,7 +21,7 @@
 #include <limits>
 
 /************************************************************************/
-/*                            KTX2Dataset                               */
+/*                             KTX2Dataset                              */
 /************************************************************************/
 
 class KTX2Dataset final : public GDALPamDataset
@@ -50,7 +51,7 @@ class KTX2Dataset final : public GDALPamDataset
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
@@ -72,7 +73,7 @@ class KTX2RasterBand final : public GDALPamRasterBand
 };
 
 /************************************************************************/
-/*                           KTX2Dataset()                              */
+/*                            KTX2Dataset()                             */
 /************************************************************************/
 
 KTX2Dataset::KTX2Dataset(uint32_t iLayer, uint32_t iFace, void *pEncodedData)
@@ -82,7 +83,7 @@ KTX2Dataset::KTX2Dataset(uint32_t iLayer, uint32_t iFace, void *pEncodedData)
 }
 
 /************************************************************************/
-/*                           KTX2Dataset()                              */
+/*                            KTX2Dataset()                             */
 /************************************************************************/
 
 KTX2Dataset::KTX2Dataset(KTX2Dataset *poParent, uint32_t iLevel)
@@ -97,7 +98,7 @@ KTX2Dataset::KTX2Dataset(KTX2Dataset *poParent, uint32_t iLevel)
 }
 
 /************************************************************************/
-/*                           ~KTX2Dataset()                             */
+/*                            ~KTX2Dataset()                            */
 /************************************************************************/
 
 KTX2Dataset::~KTX2Dataset()
@@ -107,7 +108,7 @@ KTX2Dataset::~KTX2Dataset()
 }
 
 /************************************************************************/
-/*                        GetDecodedData()                              */
+/*                           GetDecodedData()                           */
 /************************************************************************/
 
 void *KTX2Dataset::GetDecodedData(uint32_t &nLineStride)
@@ -173,7 +174,7 @@ KTX2RasterBand::KTX2RasterBand(KTX2Dataset *poDSIn, int nBandIn)
     nRasterYSize = poDSIn->GetRasterYSize();
     nBlockXSize = nRasterXSize;
     nBlockYSize = 1;
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
     SetColorInterpretation(
         static_cast<GDALColorInterp>(GCI_RedBand + nBandIn - 1));
 }
@@ -193,12 +194,12 @@ CPLErr KTX2RasterBand::IReadBlock(int /*nBlockXOff*/, int nBlockYOff,
 
     GDALCopyWords(static_cast<GByte *>(decoded_data) +
                       nBlockYOff * nLineStride + nBand - 1,
-                  GDT_Byte, 4, pImage, GDT_Byte, 1, nBlockXSize);
+                  GDT_UInt8, 4, pImage, GDT_UInt8, 1, nBlockXSize);
     return CE_None;
 }
 
 /************************************************************************/
-/*                           GetOverviewCount()                         */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int KTX2RasterBand::GetOverviewCount()
@@ -208,7 +209,7 @@ int KTX2RasterBand::GetOverviewCount()
 }
 
 /************************************************************************/
-/*                             GetOverview()                            */
+/*                            GetOverview()                             */
 /************************************************************************/
 
 GDALRasterBand *KTX2RasterBand::GetOverview(int nIdx)
@@ -396,12 +397,12 @@ GDALDataset *KTX2Dataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            CreateCopy()                              */
+/*                             CreateCopy()                             */
 /************************************************************************/
 
 GDALDataset *KTX2Dataset::CreateCopy(const char *pszFilename,
                                      GDALDataset *poSrcDS, int /*bStrict*/,
-                                     char **papszOptions,
+                                     CSLConstList papszOptions,
                                      GDALProgressFunc pfnProgress,
                                      void *pProgressData)
 {

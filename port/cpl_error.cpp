@@ -86,7 +86,7 @@ constexpr CPLErrorContext sFailureContext = {
      psCtxt == &sFailureContext)
 
 /************************************************************************/
-/*                     CPLErrorContextGetString()                       */
+/*                      CPLErrorContextGetString()                      */
 /************************************************************************/
 
 // Makes clang -fsanitize=undefined happy since it doesn't like
@@ -128,7 +128,7 @@ static CPLErrorContext *CPLGetErrorContext()
 }
 
 /************************************************************************/
-/*                         CPLGetErrorHandlerUserData()                 */
+/*                     CPLGetErrorHandlerUserData()                     */
 /************************************************************************/
 
 /**
@@ -198,7 +198,7 @@ CPLErrorHandler CPLGetErrorHandler(void **ppUserData)
 }
 
 /************************************************************************/
-/*                          ApplyErrorHandler()                         */
+/*                         ApplyErrorHandler()                          */
 /************************************************************************/
 
 static void ApplyErrorHandler(CPLErrorContext *psCtx, CPLErr eErrClass,
@@ -509,7 +509,7 @@ void CPLEmergencyError(const char *pszMessage)
 }
 
 /************************************************************************/
-/*                    CPLGetProcessMemorySize()                         */
+/*                      CPLGetProcessMemorySize()                       */
 /************************************************************************/
 
 #ifdef MEMORY_DEBUG
@@ -543,7 +543,7 @@ static int CPLGetProcessMemorySize()
 #endif  // def MEMORY_DEBUG
 
 /************************************************************************/
-/*                        CPLGettimeofday()                             */
+/*                          CPLGettimeofday()                           */
 /************************************************************************/
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
@@ -744,7 +744,7 @@ void CPLDebug(const char *pszCategory, CPL_FORMAT_STRING(const char *pszFormat),
 #endif  // WITHOUT_CPLDEBUG
 
 /************************************************************************/
-/*                         CPLDebugProgress()                           */
+/*                          CPLDebugProgress()                          */
 /************************************************************************/
 
 /**
@@ -879,7 +879,6 @@ void CPLErrorSetState(CPLErr eErrClass, CPLErrorNum err_no, const char *pszMsg,
  * Can be useful if a routine might call CPLErrorReset() and one wants to
  * preserve the previous error state.
  *
- * @since GDAL 2.0
  */
 
 void CPL_DLL CPLErrorSetState(CPLErr eErrClass, CPLErrorNum err_no,
@@ -971,7 +970,6 @@ const char *CPL_STDCALL CPLGetLastErrorMsg()
  * since the last call to CPLErrorReset()
  *
  * @return the error counter.
- * @since GDAL 2.3
  */
 
 GUInt32 CPL_STDCALL CPLGetErrorCounter()
@@ -1338,7 +1336,7 @@ void CPL_STDCALL CPLPushErrorHandler(CPLErrorHandler pfnErrorHandlerNew)
 }
 
 /************************************************************************/
-/*                        CPLPushErrorHandlerEx()                       */
+/*                       CPLPushErrorHandlerEx()                        */
 /************************************************************************/
 
 /**
@@ -1409,7 +1407,7 @@ void CPL_STDCALL CPLPopErrorHandler()
 }
 
 /************************************************************************/
-/*                         CPLCallPreviousHandler()                     */
+/*                       CPLCallPreviousHandler()                       */
 /************************************************************************/
 
 /**
@@ -1458,7 +1456,7 @@ void CPLCallPreviousHandler(CPLErr eErrClass, CPLErrorNum err_no,
 }
 
 /************************************************************************/
-/*                 CPLSetCurrentErrorHandlerCatchDebug()                */
+/*                CPLSetCurrentErrorHandlerCatchDebug()                 */
 /************************************************************************/
 
 /**
@@ -1473,7 +1471,6 @@ void CPLCallPreviousHandler(CPLErr eErrClass, CPLErrorNum err_no,
  *
  * @param bCatchDebug FALSE if the current error handler should not intercept
  * debug messages
- * @since GDAL 2.1
  */
 
 void CPL_STDCALL CPLSetCurrentErrorHandlerCatchDebug(int bCatchDebug)
@@ -1524,7 +1521,7 @@ void CPL_STDCALL _CPLAssert(const char *pszExpression, const char *pszFile,
 }
 
 /************************************************************************/
-/*                       CPLCleanupErrorMutex()                         */
+/*                        CPLCleanupErrorMutex()                        */
 /************************************************************************/
 
 void CPLCleanupErrorMutex()
@@ -1550,7 +1547,7 @@ bool CPLIsDefaultErrorHandlerAndCatchDebug()
 }
 
 /************************************************************************/
-/*               CPLErrorStateBackuper::CPLErrorStateBackuper()         */
+/*            CPLErrorStateBackuper::CPLErrorStateBackuper()            */
 /************************************************************************/
 
 CPLErrorStateBackuper::CPLErrorStateBackuper(CPLErrorHandler hHandler)
@@ -1565,7 +1562,7 @@ CPLErrorStateBackuper::CPLErrorStateBackuper(CPLErrorHandler hHandler)
 }
 
 /************************************************************************/
-/*               CPLErrorStateBackuper::~CPLErrorStateBackuper()        */
+/*           CPLErrorStateBackuper::~CPLErrorStateBackuper()            */
 /************************************************************************/
 
 CPLErrorStateBackuper::~CPLErrorStateBackuper()
@@ -1577,7 +1574,7 @@ CPLErrorStateBackuper::~CPLErrorStateBackuper()
 /*! @cond Doxygen_Suppress */
 
 /************************************************************************/
-/*                CPLErrorAccumulator::Context::~Context()              */
+/*               CPLErrorAccumulator::Context::~Context()               */
 /************************************************************************/
 
 CPLErrorAccumulator::Context::~Context()
@@ -1586,7 +1583,7 @@ CPLErrorAccumulator::Context::~Context()
 }
 
 /************************************************************************/
-/*             CPLErrorAccumulator::InstallForCurrentScope()            */
+/*            CPLErrorAccumulator::InstallForCurrentScope()             */
 /************************************************************************/
 
 CPLErrorAccumulator::Context CPLErrorAccumulator::InstallForCurrentScope()
@@ -1596,7 +1593,7 @@ CPLErrorAccumulator::Context CPLErrorAccumulator::InstallForCurrentScope()
 }
 
 /************************************************************************/
-/*                    CPLErrorAccumulator::ReplayErrors()               */
+/*                 CPLErrorAccumulator::ReplayErrors()                  */
 /************************************************************************/
 
 void CPLErrorAccumulator::ReplayErrors()
@@ -1609,7 +1606,7 @@ void CPLErrorAccumulator::ReplayErrors()
 }
 
 /************************************************************************/
-/*                 CPLErrorAccumulator::Accumulator()                   */
+/*                  CPLErrorAccumulator::Accumulator()                  */
 /************************************************************************/
 
 /* static */ void CPL_STDCALL CPLErrorAccumulator::Accumulator(CPLErr eErr,

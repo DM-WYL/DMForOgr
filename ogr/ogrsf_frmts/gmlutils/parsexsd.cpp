@@ -46,7 +46,7 @@ static const char *StripNS(const char *pszFullValue)
 }
 
 /************************************************************************/
-/*                   GetSimpleTypeProperties()                          */
+/*                      GetSimpleTypeProperties()                       */
 /************************************************************************/
 
 static bool GetSimpleTypeProperties(CPLXMLNode *psTypeNode,
@@ -129,7 +129,7 @@ static bool GetSimpleTypeProperties(CPLXMLNode *psTypeNode,
         return true;
     }
 
-    else if (EQUAL(pszBase, "dateTime"))
+    else if (EQUAL(pszBase, "dateTime") || EQUAL(pszBase, "TimeInstantType"))
     {
         *pGMLType = GMLPT_DateTime;
         return true;
@@ -151,7 +151,7 @@ static bool GetSimpleTypeProperties(CPLXMLNode *psTypeNode,
 }
 
 /************************************************************************/
-/*                      LookForSimpleType()                             */
+/*                         LookForSimpleType()                          */
 /************************************************************************/
 
 static bool LookForSimpleType(CPLXMLNode *psSchemaNode,
@@ -176,7 +176,7 @@ static bool LookForSimpleType(CPLXMLNode *psSchemaNode,
 }
 
 /************************************************************************/
-/*                      GetSingleChildElement()                         */
+/*                       GetSingleChildElement()                        */
 /************************************************************************/
 
 /* Returns the child element whose name is pszExpectedValue only if */
@@ -209,7 +209,7 @@ static CPLXMLNode *GetSingleChildElement(CPLXMLNode *psNode,
 }
 
 /************************************************************************/
-/*                      CheckMinMaxOccursCardinality()                  */
+/*                    CheckMinMaxOccursCardinality()                    */
 /************************************************************************/
 
 static int CheckMinMaxOccursCardinality(CPLXMLNode *psNode)
@@ -243,7 +243,7 @@ static GMLPropertyType GetListTypeFromSingleType(GMLPropertyType eType)
 }
 
 /************************************************************************/
-/*                      ParseFeatureType()                              */
+/*                          ParseFeatureType()                          */
 /************************************************************************/
 
 typedef struct
@@ -425,7 +425,8 @@ static GMLFeatureClass *GMLParseFeatureType(CPLXMLNode *psSchemaNode,
                 gmlType = GMLPT_Date;
             else if (EQUAL(pszStrippedNSType, "time"))
                 gmlType = GMLPT_Time;
-            else if (EQUAL(pszStrippedNSType, "dateTime"))
+            else if (EQUAL(pszStrippedNSType, "dateTime") ||
+                     EQUAL(pszStrippedNSType, "TimeInstantType"))
                 gmlType = GMLPT_DateTime;
             else if (EQUAL(pszStrippedNSType, "real") ||
                      EQUAL(pszStrippedNSType, "double") ||
@@ -865,7 +866,7 @@ static GMLFeatureClass *GMLParseFeatureType(CPLXMLNode *psSchemaNode,
 }
 
 /************************************************************************/
-/*                         ExcludeBaseGMLSchemas()                      */
+/*                       ExcludeBaseGMLSchemas()                        */
 /************************************************************************/
 
 static bool ExcludeBaseGMLSchemas(const std::string &osFilename)
@@ -884,7 +885,7 @@ static bool ExcludeBaseGMLSchemas(const std::string &osFilename)
 }
 
 /************************************************************************/
-/*                         GMLParseXMLFile()                            */
+/*                          GMLParseXMLFile()                           */
 /************************************************************************/
 
 static CPLXMLNode *GMLParseXMLFile(const char *pszFilename)
@@ -912,7 +913,7 @@ static CPLXMLNode *GMLParseXMLFile(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                       CPLGetFirstChildNode()                         */
+/*                        CPLGetFirstChildNode()                        */
 /************************************************************************/
 
 static CPLXMLNode *CPLGetFirstChildNode(CPLXMLNode *psNode)
@@ -930,7 +931,7 @@ static CPLXMLNode *CPLGetFirstChildNode(CPLXMLNode *psNode)
 }
 
 /************************************************************************/
-/*                          CPLGetLastNode()                            */
+/*                           CPLGetLastNode()                           */
 /************************************************************************/
 
 static CPLXMLNode *CPLGetLastNode(CPLXMLNode *psNode)
@@ -942,7 +943,7 @@ static CPLXMLNode *CPLGetLastNode(CPLXMLNode *psNode)
 }
 
 /************************************************************************/
-/*                       CPLXMLSchemaResolveInclude()                   */
+/*                     CPLXMLSchemaResolveInclude()                     */
 /************************************************************************/
 
 static void CPLXMLSchemaResolveInclude(const char *pszMainSchemaLocation,
@@ -1033,7 +1034,7 @@ static void CPLXMLSchemaResolveInclude(const char *pszMainSchemaLocation,
 }
 
 /************************************************************************/
-/*                       GetUniqueConstraints()                         */
+/*                        GetUniqueConstraints()                        */
 /************************************************************************/
 
 static std::set<std::pair<std::string, std::string>>
@@ -1070,7 +1071,7 @@ GetUniqueConstraints(const CPLXMLNode *psNode)
 }
 
 /************************************************************************/
-/*                          GMLParseXSD()                               */
+/*                            GMLParseXSD()                             */
 /************************************************************************/
 
 bool GMLParseXSD(const char *pszFile, bool bUseSchemaImports,

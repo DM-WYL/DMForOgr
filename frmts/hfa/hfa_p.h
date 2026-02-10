@@ -44,7 +44,7 @@ class HFASpillFile;
 class HFAType;
 
 /************************************************************************/
-/*      Flag indicating read/write, or read-only access to data.        */
+/*       Flag indicating read/write, or read-only access to data.       */
 /************************************************************************/
 typedef enum
 {
@@ -68,7 +68,7 @@ struct hfainfo
 
     HFAAccess eAccess;
 
-    GUInt32 nEndOfFile;
+    vsi_l_offset nEndOfFile;
     GUInt32 nRootPos;
     GUInt32 nDictionaryPos;
 
@@ -96,7 +96,7 @@ struct hfainfo
 
 typedef struct hfainfo HFAInfo_t;
 
-GUInt32 HFAAllocateSpace(HFAInfo_t *, GUInt32);
+vsi_l_offset HFAAllocateSpace(HFAInfo_t *, GUInt32);
 CPLErr HFAParseBandInfo(HFAInfo_t *);
 HFAInfo_t *HFAGetDependent(HFAInfo_t *, const char *);
 HFAInfo_t *HFACreateDependent(HFAInfo_t *psBase);
@@ -113,7 +113,7 @@ int CPL_DLL HFACreateLayer(HFAHandle psInfo, HFAEntry *poParent,
                            int nBlockSize, int bCreateCompressed,
                            int bCreateLargeRaster, int bDependentLayer,
                            int nXSize, int nYSize, EPTType eDataType,
-                           char **papszOptions,
+                           CSLConstList papszOptions,
 
                            // These are only related to external (large) files.
                            GIntBig nStackValidFlagsOffset,
@@ -131,7 +131,7 @@ const char *const *HFAGetUnitMap();
 /*                               HFABand                                */
 /************************************************************************/
 
-class HFABand
+class HFABand final
 {
     int nBlocks;
 
@@ -215,7 +215,7 @@ class HFABand
 /*      have a subclass, and are just handled generically with this     */
 /*      class.                                                          */
 /************************************************************************/
-class HFAEntry
+class HFAEntry final
 {
     bool bDirty;
     GUInt32 nFilePos;
@@ -266,7 +266,7 @@ class HFAEntry
                          const char *pszTypeName,
                          HFAEntry *poParent) CPL_WARN_UNUSED_RESULT;
 
-    virtual ~HFAEntry();
+    ~HFAEntry();
 
     static HFAEntry *BuildEntryFromMIFObject(HFAEntry *poContainer,
                                              const char *pszMIFObjectPath)
@@ -345,7 +345,7 @@ class HFAEntry
 /*      A field in a HFAType in the dictionary.                         */
 /************************************************************************/
 
-class HFAField
+class HFAField final
 {
   public:
     int nBytes;

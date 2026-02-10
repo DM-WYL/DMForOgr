@@ -12,6 +12,12 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 #include "ogrsf_frmts.h"
 #include "FGdbDriverCore.h"
 
@@ -19,7 +25,7 @@
     (strLen >= strlen(end) && EQUAL(str + strLen - strlen(end), end))
 
 /************************************************************************/
-/*                 OGRFileGDBDriverIdentifyInternal()                   */
+/*                  OGRFileGDBDriverIdentifyInternal()                  */
 /************************************************************************/
 
 GDALIdentifyEnum OGRFileGDBDriverIdentifyInternal(GDALOpenInfo *poOpenInfo,
@@ -70,7 +76,7 @@ static int OGRFileGDBDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                OGRFileGDBDriverSetCommonMetadata()                   */
+/*                 OGRFileGDBDriverSetCommonMetadata()                  */
 /************************************************************************/
 
 void OGRFileGDBDriverSetCommonMetadata(GDALDriver *poDriver)

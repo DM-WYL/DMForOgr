@@ -16,6 +16,7 @@
 #include "cpl_string.h"
 #include "cpl_time.h"
 
+#include <cstdlib>
 #include <limits>
 
 //! @cond Doxygen_Suppress
@@ -25,7 +26,7 @@
 #endif
 
 /************************************************************************/
-/*                    GDALVSISOZIPCreateBaseAlgorithm                   */
+/*                   GDALVSISOZIPCreateBaseAlgorithm                    */
 /************************************************************************/
 
 class GDALVSISOZIPCreateBaseAlgorithm /* non final */ : public GDALAlgorithm
@@ -138,7 +139,7 @@ class GDALVSISOZIPCreateBaseAlgorithm /* non final */ : public GDALAlgorithm
 };
 
 /************************************************************************/
-/*                GDALVSISOZIPCreateBaseAlgorithm::RunImpl()            */
+/*              GDALVSISOZIPCreateBaseAlgorithm::RunImpl()              */
 /************************************************************************/
 
 bool GDALVSISOZIPCreateBaseAlgorithm::RunImpl(GDALProgressFunc pfnProgress,
@@ -336,7 +337,7 @@ bool GDALVSISOZIPCreateBaseAlgorithm::RunImpl(GDALProgressFunc pfnProgress,
 }
 
 /************************************************************************/
-/*                    GDALVSISOZIPCreateAlgorithm                       */
+/*                     GDALVSISOZIPCreateAlgorithm                      */
 /************************************************************************/
 
 class GDALVSISOZIPCreateAlgorithm final : public GDALVSISOZIPCreateBaseAlgorithm
@@ -358,7 +359,7 @@ class GDALVSISOZIPCreateAlgorithm final : public GDALVSISOZIPCreateBaseAlgorithm
 GDALVSISOZIPCreateAlgorithm::~GDALVSISOZIPCreateAlgorithm() = default;
 
 /************************************************************************/
-/*                  GDALVSISOZIPOptimizeAlgorithm                       */
+/*                    GDALVSISOZIPOptimizeAlgorithm                     */
 /************************************************************************/
 
 class GDALVSISOZIPOptimizeAlgorithm final
@@ -473,7 +474,7 @@ bool GDALVSISOZIPListAlgorithm::RunImpl(GDALProgressFunc, void *)
 }
 
 /************************************************************************/
-/*                      GDALVSISOZIPValidateAlgorithm                   */
+/*                    GDALVSISOZIPValidateAlgorithm                     */
 /************************************************************************/
 
 class GDALVSISOZIPValidateAlgorithm final : public GDALAlgorithm
@@ -516,7 +517,7 @@ class GDALVSISOZIPValidateAlgorithm final : public GDALAlgorithm
 };
 
 /************************************************************************/
-/*                 GDALVSISOZIPValidateAlgorithm::RunImpl()             */
+/*               GDALVSISOZIPValidateAlgorithm::RunImpl()               */
 /************************************************************************/
 
 bool GDALVSISOZIPValidateAlgorithm::RunImpl(GDALProgressFunc, void *)
@@ -832,7 +833,7 @@ bool GDALVSISOZIPValidateAlgorithm::RunImpl(GDALProgressFunc, void *)
 }
 
 /************************************************************************/
-/*               GDALVSISOZIPAlgorithm::GDALVSISOZIPAlgorithm()         */
+/*            GDALVSISOZIPAlgorithm::GDALVSISOZIPAlgorithm()            */
 /************************************************************************/
 
 GDALVSISOZIPAlgorithm::GDALVSISOZIPAlgorithm()
@@ -845,7 +846,7 @@ GDALVSISOZIPAlgorithm::GDALVSISOZIPAlgorithm()
 }
 
 /************************************************************************/
-/*               GDALVSISOZIPAlgorithm::RunImpl()                       */
+/*                   GDALVSISOZIPAlgorithm::RunImpl()                   */
 /************************************************************************/
 
 bool GDALVSISOZIPAlgorithm::RunImpl(GDALProgressFunc, void *)

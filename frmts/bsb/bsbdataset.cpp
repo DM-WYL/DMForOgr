@@ -14,7 +14,12 @@
 #include "bsb_read.h"
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_colortable.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #include <cstdlib>
@@ -93,7 +98,7 @@ BSBRasterBand::BSBRasterBand(BSBDataset *poDSIn)
     poDS = poDSIn;
     nBand = 1;
 
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     nBlockXSize = poDS->GetRasterXSize();
     nBlockYSize = 1;
@@ -164,7 +169,7 @@ GDALColorInterp BSBRasterBand::GetColorInterpretation()
 /************************************************************************/
 
 /************************************************************************/
-/*                           BSBDataset()                               */
+/*                             BSBDataset()                             */
 /************************************************************************/
 
 BSBDataset::BSBDataset()
@@ -207,7 +212,7 @@ CPLErr BSBDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *BSBDataset::GetSpatialRef() const
@@ -628,7 +633,7 @@ void BSBDataset::ScanForGCPsNos(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                            ScanForGCPsBSB()                          */
+/*                           ScanForGCPsBSB()                           */
 /************************************************************************/
 
 void BSBDataset::ScanForGCPsBSB()
@@ -686,7 +691,7 @@ void BSBDataset::ScanForGCPsBSB()
 }
 
 /************************************************************************/
-/*                            ScanForCutline()                          */
+/*                           ScanForCutline()                           */
 /************************************************************************/
 
 void BSBDataset::ScanForCutline()
@@ -942,7 +947,7 @@ static GDALDataset *BSBCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         return NULL;
     }
 
-    if (poSrcDS->GetRasterBand(1)->GetRasterDataType() != GDT_Byte && bStrict)
+    if (poSrcDS->GetRasterBand(1)->GetRasterDataType() != GDT_UInt8 && bStrict)
     {
         CPLError(CE_Failure, CPLE_NotSupported,
                  "BSB driver doesn't support data type %s. "
@@ -1158,7 +1163,7 @@ static GDALDataset *BSBCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     {
         eErr =
             poBand->RasterIO(GF_Read, 0, iLine, nXSize, 1, pabyScanline, nXSize,
-                             1, GDT_Byte, nBands, nBands * nXSize, NULL);
+                             1, GDT_UInt8, nBands, nBands * nXSize, NULL);
         if (eErr == CE_None)
         {
             for (int i = 0; i < nXSize; i++)
@@ -1187,7 +1192,7 @@ static GDALDataset *BSBCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 #endif
 
 /************************************************************************/
-/*                        GDALRegister_BSB()                            */
+/*                          GDALRegister_BSB()                          */
 /************************************************************************/
 
 void GDALRegister_BSB()

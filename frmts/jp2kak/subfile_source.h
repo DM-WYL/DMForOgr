@@ -33,7 +33,7 @@ static const long IO_BUFFER_SIZE = 1048576L;
 /*                            subfile_source                            */
 /************************************************************************/
 
-class subfile_source : public kdu_compressed_source
+class subfile_source final : public kdu_compressed_source
 {
   public:
     subfile_source()
@@ -141,7 +141,8 @@ class subfile_source : public kdu_compressed_source
         if (!(capabilities & KDU_SOURCE_CAP_SEEKABLE))
             return false;
 
-        if (VSIFSeekL(file, subfile_offset + offset, SEEK_SET) == 0)
+        if (VSIFSeekL(file, static_cast<vsi_l_offset>(subfile_offset + offset),
+                      SEEK_SET) == 0)
             return true;
         else
             return false;

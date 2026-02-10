@@ -13,6 +13,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_spatialref.h"
 #include "rawdataset.h"
 
@@ -132,7 +133,7 @@ class LANDataset final : public RawDataset
 
     char **GetFileList() override;
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     LANDataset();
@@ -160,7 +161,7 @@ LAN4BitRasterBand::LAN4BitRasterBand(LANDataset *poDSIn, int nBandIn)
 {
     poDS = poDSIn;
     nBand = nBandIn;
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     nBlockXSize = poDSIn->GetRasterXSize();
     nBlockYSize = 1;
@@ -310,10 +311,10 @@ LANDataset::~LANDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr LANDataset::Close()
+CPLErr LANDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -432,12 +433,12 @@ GDALDataset *LANDataset::Open(GDALOpenInfo *poOpenInfo)
     GDALDataType eDataType = GDT_Unknown;
     if (nTmp16 == 0)
     {
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
         nPixelOffset = 1;
     }
     else if (nTmp16 == 1)  // 4 bit
     {
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
         nPixelOffset = -1;
     }
     else if (nTmp16 == 2)
@@ -699,7 +700,7 @@ void LANDataset::CheckForStatistics()
         GInt16 nMin = 0;
         GInt16 nMax = 0;
 
-        if (poBand->GetRasterDataType() != GDT_Byte)
+        if (poBand->GetRasterDataType() != GDT_UInt8)
         {
             memcpy(&nMin, abyBandInfo + 28, 2);
             memcpy(&nMax, abyBandInfo + 30, 2);

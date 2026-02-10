@@ -14,6 +14,10 @@
 #include "cpl_vsi_virtual.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -67,15 +71,15 @@ class XYZDataset final : public GDALPamDataset
 
   public:
     XYZDataset();
-    virtual ~XYZDataset();
+    ~XYZDataset() override;
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
@@ -95,10 +99,10 @@ class XYZRasterBand final : public GDALPamRasterBand
   public:
     XYZRasterBand(XYZDataset *, int, GDALDataType);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual double GetMinimum(int *pbSuccess = nullptr) override;
-    virtual double GetMaximum(int *pbSuccess = nullptr) override;
-    virtual double GetNoDataValue(int *pbSuccess = nullptr) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    double GetMinimum(int *pbSuccess = nullptr) override;
+    double GetMaximum(int *pbSuccess = nullptr) override;
+    double GetNoDataValue(int *pbSuccess = nullptr) override;
 };
 
 /************************************************************************/
@@ -588,7 +592,7 @@ CPLErr XYZRasterBand::IReadBlock(CPL_UNUSED int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                            GetMinimum()                              */
+/*                             GetMinimum()                             */
 /************************************************************************/
 
 double XYZRasterBand::GetMinimum(int *pbSuccess)
@@ -600,7 +604,7 @@ double XYZRasterBand::GetMinimum(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                            GetMaximum()                              */
+/*                             GetMaximum()                             */
 /************************************************************************/
 
 double XYZRasterBand::GetMaximum(int *pbSuccess)
@@ -612,21 +616,21 @@ double XYZRasterBand::GetMaximum(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                          GetNoDataValue()                            */
+/*                           GetNoDataValue()                           */
 /************************************************************************/
 
 double XYZRasterBand::GetNoDataValue(int *pbSuccess)
 {
     XYZDataset *poGDS = cpl::down_cast<XYZDataset *>(poDS);
     if (!poGDS->bSameNumberOfValuesPerLine && poGDS->dfMinZ > -32768 &&
-        eDataType != GDT_Byte)
+        eDataType != GDT_UInt8)
     {
         if (pbSuccess)
             *pbSuccess = TRUE;
         return (poGDS->dfMinZ > 0) ? 0 : -32768;
     }
     else if (!poGDS->bSameNumberOfValuesPerLine && poGDS->dfMinZ > 0 &&
-             eDataType == GDT_Byte)
+             eDataType == GDT_UInt8)
     {
         if (pbSuccess)
             *pbSuccess = TRUE;
@@ -637,7 +641,7 @@ double XYZRasterBand::GetNoDataValue(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                            ~XYZDataset()                            */
+/*                            ~XYZDataset()                             */
 /************************************************************************/
 
 XYZDataset::XYZDataset()
@@ -649,7 +653,7 @@ XYZDataset::XYZDataset()
 }
 
 /************************************************************************/
-/*                            ~XYZDataset()                            */
+/*                            ~XYZDataset()                             */
 /************************************************************************/
 
 XYZDataset::~XYZDataset()
@@ -671,7 +675,7 @@ XYZDataset::~XYZDataset()
 }
 
 /************************************************************************/
-/*                             Identify()                               */
+/*                              Identify()                              */
 /************************************************************************/
 
 int XYZDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -685,7 +689,7 @@ int XYZDataset::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            IdentifyEx()                              */
+/*                             IdentifyEx()                             */
 /************************************************************************/
 
 int XYZDataset::IdentifyEx(GDALOpenInfo *poOpenInfo, int &bHasHeaderLine,
@@ -984,7 +988,7 @@ GDALDataset *XYZDataset::Open(GDALOpenInfo *poOpenInfo)
     double dfLastY = 0.0;
     std::vector<double> adfStepX;
     std::vector<double> adfStepY;
-    GDALDataType eDT = GDT_Byte;
+    GDALDataType eDT = GDT_UInt8;
     bool bSameNumberOfValuesPerLine = true;
     char chDecimalSep = '\0';
     int nStepYSign = 0;
@@ -1069,11 +1073,29 @@ GDALDataset *XYZDataset::Open(GDALOpenInfo *poOpenInfo)
                     {
                         nUsefulColsFound++;
                         dfX = CPLAtofDelim(pszPtr, chLocalDecimalSep);
+                        if (std::isnan(dfX))
+                        {
+                            CPLError(CE_Failure, CPLE_AppDefined,
+                                     "At line " CPL_FRMT_GIB
+                                     ", NaN value found",
+                                     nLineNum);
+                            VSIFCloseL(fp);
+                            return nullptr;
+                        }
                     }
                     else if (nCol == nYIndex)
                     {
                         nUsefulColsFound++;
                         dfY = CPLAtofDelim(pszPtr, chLocalDecimalSep);
+                        if (std::isnan(dfY))
+                        {
+                            CPLError(CE_Failure, CPLE_AppDefined,
+                                     "At line " CPL_FRMT_GIB
+                                     ", NaN value found",
+                                     nLineNum);
+                            VSIFCloseL(fp);
+                            return nullptr;
+                        }
                     }
                     else if (nCol == nZIndex)
                     {
@@ -1093,7 +1115,7 @@ GDALDataset *XYZDataset::Open(GDALOpenInfo *poOpenInfo)
                             dfMaxZ = dfZ;
                         }
 
-                        if (dfZ < INT_MIN || dfZ > INT_MAX)
+                        if (!(dfZ >= INT_MIN && dfZ <= INT_MAX))
                         {
                             eDT = GDT_Float32;
                         }
@@ -1104,10 +1126,10 @@ GDALDataset *XYZDataset::Open(GDALOpenInfo *poOpenInfo)
                             {
                                 eDT = GDT_Float32;
                             }
-                            else if ((eDT == GDT_Byte || eDT == GDT_Int16)
-                                     // cppcheck-suppress
-                                     // knownConditionTrueFalse
-                                     && (nZ < 0 || nZ > 255))
+                            else if (
+                                (eDT == GDT_UInt8 || eDT == GDT_Int16)
+                                // cppcheck-suppress knownConditionTrueFalse
+                                && (nZ < 0 || nZ > 255))
                             {
                                 if (nZ < -32768 || nZ > 32767)
                                     eDT = GDT_Int32;
@@ -1422,7 +1444,12 @@ GDALDataset *XYZDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (adfStepX.size() != 1 || adfStepX[0] == 0)
     {
-        CPLError(CE_Failure, CPLE_AppDefined, "Couldn't determine X spacing");
+        if (!((poOpenInfo->nOpenFlags & GDAL_OF_VECTOR) != 0 &&
+              poOpenInfo->IsExtensionEqualToCI("CSV")))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Couldn't determine X spacing");
+        }
         VSIFCloseL(fp);
         return nullptr;
     }
@@ -1484,7 +1511,7 @@ GDALDataset *XYZDataset::Open(GDALOpenInfo *poOpenInfo)
     {
         if (eDT == GDT_Int32)
             eDT = GDT_Float32;
-        else if (eDT == GDT_Byte)
+        else if (eDT == GDT_UInt8)
             eDT = GDT_Int16;
         CPLAssert(eDT == GDT_Int16 || eDT == GDT_Float32);
     }
@@ -1555,7 +1582,7 @@ GDALDataset *XYZDataset::Open(GDALOpenInfo *poOpenInfo)
 
 GDALDataset *XYZDataset::CreateCopy(const char *pszFilename,
                                     GDALDataset *poSrcDS, int bStrict,
-                                    char **papszOptions,
+                                    CSLConstList papszOptions,
                                     GDALProgressFunc pfnProgress,
                                     void *pProgressData)
 {
@@ -1600,7 +1627,7 @@ GDALDataset *XYZDataset::CreateCopy(const char *pszFilename,
 
     const GDALDataType eSrcDT = poSrcDS->GetRasterBand(1)->GetRasterDataType();
     GDALDataType eReqDT;
-    if (eSrcDT == GDT_Byte || eSrcDT == GDT_Int16 || eSrcDT == GDT_UInt16 ||
+    if (eSrcDT == GDT_UInt8 || eSrcDT == GDT_Int16 || eSrcDT == GDT_UInt16 ||
         eSrcDT == GDT_Int32)
         eReqDT = GDT_Int32;
     else
@@ -1781,7 +1808,7 @@ CPLErr XYZDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                         GDALRegister_XYZ()                           */
+/*                          GDALRegister_XYZ()                          */
 /************************************************************************/
 
 void GDALRegister_XYZ()

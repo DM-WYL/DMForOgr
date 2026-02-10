@@ -37,7 +37,6 @@
 #include <list>
 #include <mutex>
 #include <stdexcept>
-#include <thread>
 #include <unordered_map>
 
 namespace lru11
@@ -116,7 +115,7 @@ template <typename K, typename V> struct KeyValuePair
 template <class Key, class Value, class Lock = NullLock,
           class Map = std::unordered_map<
               Key, typename std::list<KeyValuePair<Key, Value>>::iterator>>
-class Cache
+class Cache final
 {
   public:
     typedef KeyValuePair<Key, Value> node_type;
@@ -138,7 +137,7 @@ class Cache
     {
     }
 
-    virtual ~Cache() = default;
+    ~Cache() = default;
 
     size_t size() const
     {

@@ -90,6 +90,7 @@ int TIFFJPEGIsFullStripRequired_12(TIFF *tif);
 
 /* HAVE_JPEGTURBO_DUAL_MODE_8_12 is defined for libjpeg-turbo >= 3.0 which
  * adds a dual-mode 8/12 bit API in the same library.
+ * (note: libjpeg-turbo 2.2 was actually released as 3.0)
  */
 
 #if defined(HAVE_JPEGTURBO_DUAL_MODE_8_12)
@@ -173,6 +174,10 @@ typedef struct jpeg_error_mgr jpeg_error_mgr;
  *     so we can safely cast JPEGState* -> jpeg_xxx_struct*
  *     and vice versa!
  */
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4324) /* structure padding due to alignment */
+#endif
 typedef struct
 {
     union
@@ -205,7 +210,12 @@ typedef struct
     int samplesperclump;
 
     JPEGOtherSettings otherSettings;
+
+    int encode_raw_error;
 } JPEGState;
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #define JState(tif) ((JPEGState *)(tif)->tif_data)
 
@@ -1013,7 +1023,7 @@ JPEGFixupTagsSubsamplingReadByte(struct JPEGFixupTagsSubsamplingData *data,
         assert(m < 0x80000000UL);
         if (TIFFReadFile(data->tif, data->buffer, (tmsize_t)m) != (tmsize_t)m)
             return (0);
-        data->buffercurrentbyte = data->buffer;
+        data->buffercurrentbyte = (uint8_t *)data->buffer;
         data->bufferbytesleft = m;
         data->fileoffset += m;
         data->filebytesleft -= m;
@@ -1279,7 +1289,8 @@ int TIFFJPEGIsFullStripRequired(TIFF *tif)
     sp->cinfo.d.data_precision = td->td_bitspersample;
     sp->cinfo.d.bits_in_jsample = td->td_bitspersample;
 #else
-    if (sp->cinfo.d.data_precision != td->td_bitspersample)
+    if (td->td_bitspersample != BITS_IN_JSAMPLE ||
+        sp->cinfo.d.data_precision != td->td_bitspersample)
     {
         TIFFErrorExtR(tif, module, "Improper JPEG data precision");
         return (0);
@@ -1553,6 +1564,7 @@ static int JPEGDecode(TIFF *tif, uint8_t *buf, tmsize_t cc, uint16_t s)
                 if (TIFFjpeg_read_scanlines(sp, &line_work_buf, 1) != 1)
                 {
                     memset(buf, 0, (size_t)cc);
+                    _TIFFfreeExt(tif, line_work_buf);
                     return (0);
                 }
 
@@ -1657,9 +1669,9 @@ static int JPEGDecode(TIFF *tif, uint8_t *buf, tmsize_t cc, uint16_t s)
         int samples_per_clump = sp->samplesperclump;
 
 #if defined(JPEG_LIB_MK1_OR_12BIT)
-        tmpbuf = _TIFFmallocExt(tif, sizeof(unsigned short) *
-                                         sp->cinfo.d.output_width *
-                                         sp->cinfo.d.num_components);
+        tmpbuf = (unsigned short *)_TIFFmallocExt(
+            tif, sizeof(unsigned short) * sp->cinfo.d.output_width *
+                     sp->cinfo.d.num_components);
         if (tmpbuf == NULL)
         {
             TIFFErrorExtR(tif, "JPEGDecodeRaw", "Out of memory");
@@ -1769,7 +1781,8 @@ static int JPEGDecode(TIFF *tif, uint8_t *buf, tmsize_t cc, uint16_t s)
                     {
                         unsigned char *out_ptr =
                             ((unsigned char *)buf) + iPair * 3;
-                        JSAMPLE *in_ptr = (JSAMPLE *)(tmpbuf + iPair * 2);
+                        TIFF_JSAMPLE *in_ptr =
+                            (TIFF_JSAMPLE *)(tmpbuf + iPair * 2);
                         out_ptr[0] = (unsigned char)((in_ptr[0] & 0xff0) >> 4);
                         out_ptr[1] =
                             (unsigned char)(((in_ptr[0] & 0xf) << 4) |
@@ -2303,6 +2316,7 @@ static int JPEGPreEncode(TIFF *tif, uint16_t s)
             return (0);
     }
     sp->scancount = 0;
+    sp->encode_raw_error = FALSE;
 
     return (1);
 }
@@ -2399,6 +2413,13 @@ static int JPEGEncodeRaw(TIFF *tif, uint8_t *buf, tmsize_t cc, uint16_t s)
 
     (void)s;
     assert(sp != NULL);
+
+    if (sp->encode_raw_error)
+    {
+        TIFFErrorExtR(tif, tif->tif_name, "JPEGEncodeRaw() already failed");
+        return 0;
+    }
+
     /* data is expected to be supplied in multiples of a clumpline */
     /* a clumpline is equivalent to v_sampling desubsampled scanlines */
     /* TODO: the following calculation of bytesperclumpline, should substitute
@@ -2470,7 +2491,10 @@ static int JPEGEncodeRaw(TIFF *tif, uint8_t *buf, tmsize_t cc, uint16_t s)
         {
             int n = sp->cinfo.c.max_v_samp_factor * DCTSIZE;
             if (TIFFjpeg_write_raw_data(sp, sp->ds_buffer, n) != n)
+            {
+                sp->encode_raw_error = TRUE;
                 return (0);
+            }
             sp->scancount = 0;
         }
         tif->tif_row += sp->v_sampling;

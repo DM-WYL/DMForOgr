@@ -60,7 +60,7 @@ enum class MMBytesPerPixel
     TYPE_BYTES_PER_PIXEL_DOUBLE_I_RLE = 8
 };
 
-class MMRBand
+class MMRBand final
 {
   public:
     MMRBand(MMRRel &pfRel, const CPLString &osSection);
@@ -103,6 +103,24 @@ class MMRBand
     const CPLString &GetFriendlyDescription() const
     {
         return m_osFriendlyDescription;
+    }
+
+    MMDataType GeteMMNCDataType() const
+    {
+        // Gets not compressed data type
+        if (m_eMMDataType == MMDataType::DATATYPE_AND_COMPR_BYTE_RLE)
+            return MMDataType::DATATYPE_AND_COMPR_BYTE;
+        if (m_eMMDataType == MMDataType::DATATYPE_AND_COMPR_INTEGER_RLE)
+            return MMDataType::DATATYPE_AND_COMPR_INTEGER;
+        if (m_eMMDataType == MMDataType::DATATYPE_AND_COMPR_UINTEGER_RLE)
+            return MMDataType::DATATYPE_AND_COMPR_UINTEGER;
+        if (m_eMMDataType == MMDataType::DATATYPE_AND_COMPR_LONG_RLE)
+            return MMDataType::DATATYPE_AND_COMPR_LONG;
+        if (m_eMMDataType == MMDataType::DATATYPE_AND_COMPR_REAL_RLE)
+            return MMDataType::DATATYPE_AND_COMPR_REAL;
+        if (m_eMMDataType == MMDataType::DATATYPE_AND_COMPR_DOUBLE_RLE)
+            return MMDataType::DATATYPE_AND_COMPR_DOUBLE;
+        return m_eMMDataType;
     }
 
     MMDataType GeteMMDataType() const
@@ -234,6 +252,7 @@ class MMRBand
     CPLErr GetBlockData(void *rowBuffer, size_t nCompressedRawSize);
     int PositionAtStartOfRowOffsetsInFile();
     bool FillRowOffsets();
+    vsi_l_offset GetFileSize();
 
     bool m_bIsValid =
         false;  // Determines if the created object is valid or not.
@@ -251,6 +270,7 @@ class MMRBand
 
     // indexed-RLE format
     std::vector<vsi_l_offset> m_aFileOffsets{};
+    vsi_l_offset m_nFileSize = 0; /* 0=unknown */
 
     // Assigned Subdataset for this band.
     int m_nAssignedSDS = 0;

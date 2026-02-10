@@ -25,16 +25,11 @@
 #include "ogr_p.h"
 
 /************************************************************************/
-/*                  OGRLinearRing( const OGRLinearRing& )               */
+/*                OGRLinearRing( const OGRLinearRing& )                 */
 /************************************************************************/
 
 /**
  * \brief Copy constructor.
- *
- * Note: before GDAL 2.1, only the default implementation of the constructor
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRLinearRing::OGRLinearRing(const OGRLinearRing &) = default;
@@ -70,16 +65,11 @@ OGRLinearRing::OGRLinearRing(const OGRLinearRing *poSrcRing)
 }
 
 /************************************************************************/
-/*                    operator=( const OGRLinearRing& )                 */
+/*                  operator=( const OGRLinearRing& )                   */
 /************************************************************************/
 
 /**
  * \brief Assignment operator.
- *
- * Note: before GDAL 2.1, only the default implementation of the operator
- * existed, which could be unsafe to use.
- *
- * @since GDAL 2.1
  */
 
 OGRLinearRing &OGRLinearRing::operator=(const OGRLinearRing &other)
@@ -416,7 +406,7 @@ OGRLinearRing *OGRLinearRing::clone() const
 }
 
 /************************************************************************/
-/*                             reverseWindingOrder()                    */
+/*                        reverseWindingOrder()                         */
 /************************************************************************/
 
 //! @cond Doxygen_Suppress
@@ -450,7 +440,7 @@ void OGRLinearRing::closeRings()
 }
 
 /************************************************************************/
-/*                              isPointInRing()                         */
+/*                           isPointInRing()                            */
 /************************************************************************/
 
 /** Returns whether the point is inside the ring.
@@ -662,7 +652,7 @@ OGRLineString *OGRLinearRing::CastToLineString(OGRLinearRing *poLR)
 
 //! @cond Doxygen_Suppress
 /************************************************************************/
-/*                     GetCasterToLineString()                          */
+/*                       GetCasterToLineString()                        */
 /************************************************************************/
 
 OGRLineString *OGRLinearRing::CasterToLineString(OGRCurve *poCurve)
@@ -676,7 +666,7 @@ OGRCurveCasterToLineString OGRLinearRing::GetCasterToLineString() const
 }
 
 /************************************************************************/
-/*                        GetCasterToLinearRing()                       */
+/*                       GetCasterToLinearRing()                        */
 /************************************************************************/
 
 static OGRLinearRing *CasterToLinearRing(OGRCurve *poCurve)

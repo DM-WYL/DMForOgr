@@ -48,8 +48,46 @@ struct CPL_DLL VSIVirtualHandle
 {
   public:
     virtual int Seek(vsi_l_offset nOffset, int nWhence) = 0;
+
+#ifdef GDAL_COMPILATION
+    /*! @cond Doxygen_Suppress */
+    inline int Seek(int &&nOffset, int nWhence)
+    {
+        return Seek(static_cast<vsi_l_offset>(nOffset), nWhence);
+    }
+
+    inline int Seek(unsigned &&nOffset, int nWhence)
+    {
+        return Seek(static_cast<vsi_l_offset>(nOffset), nWhence);
+    }
+
+    template <typename T>
+    inline std::enable_if_t<std::is_same_v<T, uint64_t> &&
+                                !std::is_same_v<uint64_t, vsi_l_offset>,
+                            int>
+    Seek(T nOffset, int nWhence)
+    {
+        return Seek(static_cast<vsi_l_offset>(nOffset), nWhence);
+    }
+
+    template <typename T>
+    inline std::enable_if_t<std::is_same_v<T, size_t> &&
+                                !std::is_same_v<T, uint64_t> &&
+                                !std::is_same_v<size_t, unsigned> &&
+                                !std::is_same_v<size_t, vsi_l_offset>,
+                            int>
+    Seek(T nOffset, int nWhence) = delete;
+
+    int Seek(int &nOffset, int nWhence) = delete;
+    int Seek(const int &nOffset, int nWhence) = delete;
+    int Seek(unsigned &nOffset, int nWhence) = delete;
+    int Seek(const unsigned &nOffset, int nWhence) = delete;
+/*! @endcond */
+#endif
+
     virtual vsi_l_offset Tell() = 0;
-    virtual size_t Read(void *pBuffer, size_t nSize, size_t nCount) = 0;
+    size_t Read(void *pBuffer, size_t nSize, size_t nCount);
+    virtual size_t Read(void *pBuffer, size_t nBytes) = 0;
     virtual int ReadMultiRange(int nRanges, void **ppData,
                                const vsi_l_offset *panOffsets,
                                const size_t *panSizes);
@@ -89,7 +127,8 @@ struct CPL_DLL VSIVirtualHandle
         return 0;
     }
 
-    virtual size_t Write(const void *pBuffer, size_t nSize, size_t nCount) = 0;
+    virtual size_t Write(const void *pBuffer, size_t nBytes) = 0;
+    size_t Write(const void *pBuffer, size_t nSize, size_t nCount);
 
     int Printf(CPL_FORMAT_STRING(const char *pszFormat), ...)
         CPL_PRINT_FUNC_FORMAT(2, 3);
@@ -172,7 +211,7 @@ typedef std::unique_ptr<VSIVirtualHandle, VSIVirtualHandleCloser>
     VSIVirtualHandleUniquePtr;
 
 /************************************************************************/
-/*                        VSIProxyFileHandle                            */
+/*                          VSIProxyFileHandle                          */
 /************************************************************************/
 
 #ifndef DOXYGEN_SKIP
@@ -197,9 +236,9 @@ class VSIProxyFileHandle /* non final */ : public VSIVirtualHandle
         return m_nativeHandle->Tell();
     }
 
-    size_t Read(void *pBuffer, size_t nSize, size_t nCount) override
+    size_t Read(void *pBuffer, size_t nBytes) override
     {
-        return m_nativeHandle->Read(pBuffer, nSize, nCount);
+        return m_nativeHandle->Read(pBuffer, nBytes);
     }
 
     int ReadMultiRange(int nRanges, void **ppData,
@@ -221,9 +260,9 @@ class VSIProxyFileHandle /* non final */ : public VSIVirtualHandle
         return m_nativeHandle->GetAdviseReadTotalBytesLimit();
     }
 
-    size_t Write(const void *pBuffer, size_t nSize, size_t nCount) override
+    size_t Write(const void *pBuffer, size_t nBytes) override
     {
-        return m_nativeHandle->Write(pBuffer, nSize, nCount);
+        return m_nativeHandle->Write(pBuffer, nBytes);
     }
 
     void ClearErr() override
@@ -296,9 +335,7 @@ class CPL_DLL VSIFilesystemHandler
 {
 
   public:
-    virtual ~VSIFilesystemHandler()
-    {
-    }
+    virtual ~VSIFilesystemHandler() = default;
 
     static VSIVirtualHandleUniquePtr
     OpenStatic(const char *pszFilename, const char *pszAccess,
@@ -544,8 +581,9 @@ class CPL_DLL VSIFilesystemHandler
 class CPL_DLL VSIFileManager
 {
   private:
-    VSIFilesystemHandler *poDefaultHandler = nullptr;
-    std::map<std::string, VSIFilesystemHandler *> oHandlers{};
+    std::shared_ptr<VSIFilesystemHandler> m_poDefaultHandler{};
+    std::map<std::string, std::shared_ptr<VSIFilesystemHandler>>
+        m_apoHandlers{};
 
     VSIFileManager();
 
@@ -558,7 +596,10 @@ class CPL_DLL VSIFileManager
 
     static VSIFilesystemHandler *GetHandler(const char *);
     static void InstallHandler(const std::string &osPrefix,
-                               VSIFilesystemHandler *);
+                               const std::shared_ptr<VSIFilesystemHandler> &);
+    static void InstallHandler(const std::string &osPrefix,
+                               VSIFilesystemHandler *)
+        CPL_WARN_DEPRECATED("Use version with std::shared_ptr<> instead");
     static void RemoveHandler(const std::string &osPrefix);
 
     static char **GetPrefixes();
@@ -648,7 +689,7 @@ class VSIArchiveFilesystemHandler /* non final */ : public VSIFilesystemHandler
 
   public:
     VSIArchiveFilesystemHandler();
-    virtual ~VSIArchiveFilesystemHandler();
+    ~VSIArchiveFilesystemHandler() override;
 
     int Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
              int nFlags) override;
@@ -657,10 +698,9 @@ class VSIArchiveFilesystemHandler /* non final */ : public VSIFilesystemHandler
     virtual const VSIArchiveContent *
     GetContentOfArchive(const char *archiveFilename,
                         VSIArchiveReader *poReader = nullptr);
-    virtual char *SplitFilename(const char *pszFilename,
-                                CPLString &osFileInArchive,
-                                bool bCheckMainFileExists,
-                                bool bSetError) const;
+    virtual std::unique_ptr<char, VSIFreeReleaser>
+    SplitFilename(const char *pszFilename, CPLString &osFileInArchive,
+                  bool bCheckMainFileExists, bool bSetError) const;
     virtual std::unique_ptr<VSIArchiveReader>
     OpenArchiveFile(const char *archiveFilename, const char *fileInArchiveName);
 
@@ -682,7 +722,7 @@ class VSIArchiveFilesystemHandler /* non final */ : public VSIFilesystemHandler
 };
 
 /************************************************************************/
-/*                              VSIDIR                                  */
+/*                                VSIDIR                                */
 /************************************************************************/
 
 struct CPL_DLL VSIDIR

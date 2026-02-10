@@ -10,13 +10,19 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 #include "ogrsf_frmts.h"
 #include "gdal_priv.h"
 
 #include "ogrparquetdrivercore.h"
 
 /************************************************************************/
-/*                             Identify()                               */
+/*                              Identify()                              */
 /************************************************************************/
 
 template <size_t N> constexpr int constexpr_length(const char (&)[N])
@@ -66,7 +72,7 @@ int OGRParquetDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                OGRParquetDriverSetCommonMetadata()                   */
+/*                 OGRParquetDriverSetCommonMetadata()                  */
 /************************************************************************/
 
 void OGRParquetDriverSetCommonMetadata(GDALDriver *poDriver)
@@ -81,6 +87,8 @@ void OGRParquetDriverSetCommonMetadata(GDALDriver *poDriver)
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_MEASURED_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_Z_GEOMETRIES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_REOPEN_AFTER_WRITE_REQUIRED, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CAN_READ_AFTER_DELETE, "YES");
 
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_FIELD, "YES");
     poDriver->SetMetadataItem(
@@ -103,11 +111,26 @@ void OGRParquetDriverSetCommonMetadata(GDALDriver *poDriver)
         "  <Option name='CRS' type='string' "
         "description='Set/override CRS, typically defined as AUTH:CODE "
         "(e.g EPSG:4326), of geometry column(s)'/>"
+        "  <Option name='LISTS_AS_STRING_JSON' type='boolean' description='"
+        "Whether lists of strings/integers/reals should be reported as "
+        "String(JSON) fields rather than String/Integer[64]/RealList. Useful "
+        "when null values in such lists must be exactly mapped as such.' "
+        "default='NO'/>"
         "</OpenOptionList>");
 
     poDriver->pfnIdentify = OGRParquetDriverIdentify;
     poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_UPDATE, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_UPDATE_ITEMS, "Features");
+
+    poDriver->SetMetadataItem(GDAL_DCAP_DELETE_FIELD, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_REORDER_FIELDS, "YES");
+    poDriver->SetMetadataItem(GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
+                              "Name Type WidthPrecision");
+
+    poDriver->DeclareAlgorithm({"create-metadata-file"});
 }
 
 /************************************************************************/

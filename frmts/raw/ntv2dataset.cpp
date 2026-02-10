@@ -18,6 +18,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_srs_api.h"
 #include "rawdataset.h"
 
@@ -96,7 +97,7 @@ class NTv2Dataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(NTv2Dataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     NTv2Dataset();
@@ -120,7 +121,7 @@ class NTv2Dataset final : public RawDataset
 /************************************************************************/
 
 /************************************************************************/
-/*                             NTv2Dataset()                          */
+/*                            NTv2Dataset()                             */
 /************************************************************************/
 
 NTv2Dataset::NTv2Dataset()
@@ -140,10 +141,10 @@ NTv2Dataset::~NTv2Dataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr NTv2Dataset::Close()
+CPLErr NTv2Dataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)

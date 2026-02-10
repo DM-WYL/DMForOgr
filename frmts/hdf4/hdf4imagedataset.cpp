@@ -141,20 +141,20 @@ class HDF4ImageDataset final : public HDF4Dataset
 
   public:
     HDF4ImageDataset();
-    virtual ~HDF4ImageDataset();
+    ~HDF4ImageDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszParamList);
-    virtual CPLErr FlushCache(bool bAtClosing) override;
+                               CSLConstList papszParamList);
+    CPLErr FlushCache(bool bAtClosing) override;
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
-    virtual CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
+    CPLErr SetGeoTransform(const GDALGeoTransform &gt) override;
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override;
-    virtual int GetGCPCount() override;
+    int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
-    virtual const GDAL_GCP *GetGCPs() override;
+    const GDAL_GCP *GetGCPs() override;
 };
 
 /************************************************************************/
@@ -182,23 +182,19 @@ class HDF4ImageRasterBand final : public GDALPamRasterBand
   public:
     HDF4ImageRasterBand(HDF4ImageDataset *, int, GDALDataType);
 
-    virtual ~HDF4ImageRasterBand()
-    {
-    }
-
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IWriteBlock(int, int, void *) override;
-    virtual GDALColorInterp GetColorInterpretation() override;
-    virtual GDALColorTable *GetColorTable() override;
-    virtual double GetNoDataValue(int *) override;
-    virtual CPLErr SetNoDataValue(double) override;
-    virtual double GetOffset(int *pbSuccess) override;
-    virtual double GetScale(int *pbSuccess) override;
-    virtual const char *GetUnitType() override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
+    GDALColorInterp GetColorInterpretation() override;
+    GDALColorTable *GetColorTable() override;
+    double GetNoDataValue(int *) override;
+    CPLErr SetNoDataValue(double) override;
+    double GetOffset(int *pbSuccess) override;
+    double GetScale(int *pbSuccess) override;
+    const char *GetUnitType() override;
 };
 
 /************************************************************************/
-/*                           HDF4ImageRasterBand()                      */
+/*                        HDF4ImageRasterBand()                         */
 /************************************************************************/
 
 HDF4ImageRasterBand::HDF4ImageRasterBand(HDF4ImageDataset *poDSIn, int nBandIn,
@@ -742,7 +738,7 @@ double HDF4ImageRasterBand::GetScale(int *pbSuccess)
 /************************************************************************/
 
 /************************************************************************/
-/*                           HDF4ImageDataset()                         */
+/*                          HDF4ImageDataset()                          */
 /************************************************************************/
 
 HDF4ImageDataset::HDF4ImageDataset()
@@ -762,7 +758,7 @@ HDF4ImageDataset::HDF4ImageDataset()
 }
 
 /************************************************************************/
-/*                            ~HDF4ImageDataset()                       */
+/*                         ~HDF4ImageDataset()                          */
 /************************************************************************/
 
 HDF4ImageDataset::~HDF4ImageDataset()
@@ -844,7 +840,7 @@ CPLErr HDF4ImageDataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *HDF4ImageDataset::GetSpatialRef() const
@@ -854,7 +850,7 @@ const OGRSpatialReference *HDF4ImageDataset::GetSpatialRef() const
 }
 
 /************************************************************************/
-/*                          SetSpatialRef()                             */
+/*                           SetSpatialRef()                            */
 /************************************************************************/
 
 CPLErr HDF4ImageDataset::SetSpatialRef(const OGRSpatialReference *poSRS)
@@ -888,7 +884,7 @@ const OGRSpatialReference *HDF4ImageDataset::GetGCPSpatialRef() const
 }
 
 /************************************************************************/
-/*                               GetGCPs()                              */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *HDF4ImageDataset::GetGCPs()
@@ -943,7 +939,7 @@ CPLErr HDF4ImageDataset::FlushCache(bool bAtClosing)
     // Store all metadata from source dataset as HDF attributes
     if (GetMetadata())
     {
-        char **papszMeta = GetMetadata();
+        CSLConstList papszMeta = GetMetadata();
 
         while (*papszMeta)
         {
@@ -1014,7 +1010,7 @@ CPLErr HDF4ImageDataset::FlushCache(bool bAtClosing)
 }
 
 /************************************************************************/
-/*                        USGSMnemonicToCode()                          */
+/*                         USGSMnemonicToCode()                         */
 /************************************************************************/
 
 long HDF4ImageDataset::USGSMnemonicToCode(const char *pszMnemonic)
@@ -1064,7 +1060,7 @@ void HDF4ImageDataset::ToGeoref(double *pdfGeoX, double *pdfGeoY)
 }
 
 /************************************************************************/
-/*                            ReadCoordinates()                         */
+/*                          ReadCoordinates()                           */
 /************************************************************************/
 
 void HDF4ImageDataset::ReadCoordinates(const char *pszString,
@@ -1562,7 +1558,7 @@ void HDF4ImageDataset::CaptureCoastwatchGCTPInfo()
 }
 
 /************************************************************************/
-/*                          GetImageDimensions()                        */
+/*                         GetImageDimensions()                         */
 /************************************************************************/
 
 void HDF4ImageDataset::GetImageDimensions(char *pszDimList)
@@ -2173,7 +2169,10 @@ int HDF4ImageDataset::ProcessSwathGeolocation(int32 hSW, char **papszDimList)
     int iLineDim = -1;
     int iLongDim = -1;
     int iLatDim = -1;
-
+    double dfLatNoData = 0;
+    bool bLatNoDataSet = false;
+    double dfLongNoData = 0;
+    bool bLongNoDataSet = false;
     for (int i = 0; i < nGeolocationsCount; i++)
     {
         // Skip "SceneLineNumber" table if present in the list of geolocation
@@ -2243,6 +2242,14 @@ int HDF4ImageDataset::ProcessSwathGeolocation(int32 hSW, char **papszDimList)
                 CPLFree(pLat);
                 pLat = nullptr;
             }
+
+            void *pNoDataValue = CPLMalloc(iDataSize);
+            if (SWgetfillvalue(hSW, papszGeolocations[i], pNoDataValue) != -1)
+            {
+                dfLatNoData = AnyTypeToDouble(iWrkNumType, pNoDataValue);
+                bLatNoDataSet = true;
+            }
+            CPLFree(pNoDataValue);
         }
         else if (strstr(papszGeolocations[i], "Longitude"))
         {
@@ -2257,6 +2264,14 @@ int HDF4ImageDataset::ProcessSwathGeolocation(int32 hSW, char **papszDimList)
                 CPLFree(pLong);
                 pLong = nullptr;
             }
+
+            void *pNoDataValue = CPLMalloc(iDataSize);
+            if (SWgetfillvalue(hSW, papszGeolocations[i], pNoDataValue) != -1)
+            {
+                dfLongNoData = AnyTypeToDouble(iWrkNumType, pNoDataValue);
+                bLongNoDataSet = true;
+            }
+            CPLFree(pNoDataValue);
         }
 
         CSLDestroy(papszGeoDimList);
@@ -2480,6 +2495,11 @@ int HDF4ImageDataset::ProcessSwathGeolocation(int32 hSW, char **papszDimList)
                         iWrkNumType, reinterpret_cast<void *>(
                                          reinterpret_cast<char *>(pLat) +
                                          iGeoOff * iDataSize));
+
+                    if (bLongNoDataSet && dfGCPX == dfLongNoData)
+                        continue;
+                    if (bLatNoDataSet && dfGCPY == dfLatNoData)
+                        continue;
 
                     // GCPs in Level 1A/1B dataset are in geocentric
                     // coordinates. Convert them in geodetic (we
@@ -3755,7 +3775,8 @@ GDALDataset *HDF4ImageDataset::Open(GDALOpenInfo *poOpenInfo)
 
 GDALDataset *HDF4ImageDataset::Create(const char *pszFilename, int nXSize,
                                       int nYSize, int nBandsIn,
-                                      GDALDataType eType, char **papszOptions)
+                                      GDALDataType eType,
+                                      CSLConstList papszOptions)
 
 {
     /* -------------------------------------------------------------------- */
@@ -3834,7 +3855,7 @@ GDALDataset *HDF4ImageDataset::Create(const char *pszFilename, int nXSize,
                 return DFNT_INT32;
             case GDT_Int16:
                 return DFNT_INT16;
-            case GDT_Byte:
+            case GDT_UInt8:
                 return DFNT_UINT8;
             case GDT_Int8:
                 return DFNT_INT8;
@@ -3910,7 +3931,7 @@ GDALDataset *HDF4ImageDataset::Create(const char *pszFilename, int nXSize,
 }
 
 /************************************************************************/
-/*                        GDALRegister_HDF4Image()                      */
+/*                       GDALRegister_HDF4Image()                       */
 /************************************************************************/
 
 void GDALRegister_HDF4Image()

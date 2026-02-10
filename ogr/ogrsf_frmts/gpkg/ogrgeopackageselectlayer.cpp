@@ -13,7 +13,7 @@
 #include "ogr_geopackage.h"
 
 /************************************************************************/
-/*                        OGRGeoPackageSelectLayer()                    */
+/*                      OGRGeoPackageSelectLayer()                      */
 /************************************************************************/
 
 OGRGeoPackageSelectLayer::OGRGeoPackageSelectLayer(
@@ -29,6 +29,7 @@ OGRGeoPackageSelectLayer::OGRGeoPackageSelectLayer(
 
     BuildFeatureDefn("SELECT", hStmtIn);
 
+    m_bEOF = bEmptyLayer;
     if (bUseStatementForGetNextFeature)
     {
         m_poQueryStatement = hStmtIn;
@@ -41,7 +42,7 @@ OGRGeoPackageSelectLayer::OGRGeoPackageSelectLayer(
 }
 
 /************************************************************************/
-/*                       ~OGRGeoPackageSelectLayer()                    */
+/*                     ~OGRGeoPackageSelectLayer()                      */
 /************************************************************************/
 
 OGRGeoPackageSelectLayer::~OGRGeoPackageSelectLayer()

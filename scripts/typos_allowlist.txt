@@ -68,7 +68,7 @@ ogr2ogr --config OGR_STROKE_CURVE TRUE -SQL 'SELECT Rechtsstatus,publiziertAb,Me
     lyr = ds.GetLayerByName("OeREBKRM09trsfr.Transferstruktur.Geometrie")
    /* 130 */ {"MSLET", "Mean Sea Level Pressure (NAM Model Reduction)", "Pa", UC_NONE},
       addSimpleType(&oTypes, "INST_EFFEKT", "installertEffekt", OFTInteger);
-            const char sText[] = "infinit";
+    ErrorCase("infinit");
     if (EQUAL(pszFormat, "DOUB"))
             pszFormat = "DOUB";
 * gdal2tiles.py: add --xyz option to generate tiles in the OSM Slippy Map standard (#2098)
@@ -256,7 +256,7 @@ static const char * const ILC_N[] = { "PNG", "PPNG", "JPEG", "JPNG", "NONE", "DE
 	return (Le << 16 | ue << 8 | ve);
 // DECLARE_SYMBOL(creat, int, (const char *path, mode_t mode));
     // LOAD_SYMBOL(creat);
-/*                             creat()                                  */
+/*                               creat()                                */
 int CPL_DLL creat(const char *path, mode_t mode)
     // CASE_ALG(Gost) (obsolete)
                      "Invalid txe or tye parameters detected. Please check "
@@ -366,3 +366,10 @@ for Bosnia and Herzegovina (country code "BA"), limited to the "county" subtype.
         const bool bForcePaeth = EQUAL(pszGDAL_RASTER_TILE_PNG_FILTER, "PAETH");
 @pytest.mark.parametrize("GDAL_RASTER_TILE_PNG_FILTER", ["", "AVERAGE", "PAETH"])
         // We manually generate the PNG file using the Average or PAETH filter
+        for (const CPLXMLNode *psIter = psTreNode->psChild;
+    for (const CPLXMLNode *psIter = psTreNode->psChild;
+      gdal vector sql --oo MODEL=OeREBKRM09vs.imd --config OGR_STROKE_CURVE=TRUE --sql 'SELECT Rechtsstatus,publiziertAb,MetadatenGeobasisdaten,Eigentumsbeschraenkung,ZustaendigeStelle,Flaeche FROM "OeREBKRM09trsfr.Transferstruktur.Geometrie"' -f "ESRI Shapefile" ch.bazl.sicherheitszonenplan.oereb_20131118.xtf shpdir
+                (0, 2, "metres"),
+                (1, 2, "metres"),
+            {"depth", "depth", "metres", "1000000", "H5T_FLOAT",
+            {"uncertainty", "uncertainty", "metres", "1000000", "H5T_FLOAT",

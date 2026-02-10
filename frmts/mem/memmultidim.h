@@ -25,7 +25,7 @@ std::shared_ptr<GDALMDArray> CPL_DLL MEMGroupCreateMDArray(
     CSLConstList papszOptions);
 
 /************************************************************************/
-/*                        MEMAttributeHolder                            */
+/*                          MEMAttributeHolder                          */
 /************************************************************************/
 
 class CPL_DLL MEMAttributeHolder CPL_NON_FINAL
@@ -143,7 +143,7 @@ class CPL_DLL MEMGroup CPL_NON_FINAL : public GDALGroup,
 };
 
 /************************************************************************/
-/*                            MEMAbstractMDArray                        */
+/*                          MEMAbstractMDArray                          */
 /************************************************************************/
 
 class CPL_DLL MEMAbstractMDArray : virtual public GDALAbstractMDArray
@@ -199,7 +199,7 @@ class CPL_DLL MEMAbstractMDArray : virtual public GDALAbstractMDArray
         const std::string &osParentName, const std::string &osName,
         const std::vector<std::shared_ptr<GDALDimension>> &aoDimensions,
         const GDALExtendedDataType &oType);
-    ~MEMAbstractMDArray();
+    ~MEMAbstractMDArray() override;
 
     const std::vector<std::shared_ptr<GDALDimension>> &
     GetDimensions() const override
@@ -233,7 +233,7 @@ class CPL_DLL MEMAbstractMDArray : virtual public GDALAbstractMDArray
 };
 
 /************************************************************************/
-/*                                MEMMDArray                            */
+/*                              MEMMDArray                              */
 /************************************************************************/
 
 #ifdef _MSC_VER
@@ -288,7 +288,7 @@ class CPL_DLL MEMMDArray CPL_NON_FINAL : public MEMAbstractMDArray,
         return array;
     }
 
-    ~MEMMDArray();
+    ~MEMMDArray() override;
 
     void Invalidate()
     {
@@ -402,7 +402,7 @@ class CPL_DLL MEMMDArray CPL_NON_FINAL : public MEMAbstractMDArray,
 };
 
 /************************************************************************/
-/*                               MEMAttribute                           */
+/*                             MEMAttribute                             */
 /************************************************************************/
 
 class CPL_DLL MEMAttribute CPL_NON_FINAL : public MEMAbstractMDArray,
@@ -441,7 +441,7 @@ class CPL_DLL MEMAttribute CPL_NON_FINAL : public MEMAbstractMDArray,
 #endif  //_MSC_VER
 
 /************************************************************************/
-/*                               MEMDimension                           */
+/*                             MEMDimension                             */
 /************************************************************************/
 
 class MEMDimension CPL_NON_FINAL : public GDALDimensionWeakIndexingVar

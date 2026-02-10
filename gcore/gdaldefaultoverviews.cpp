@@ -375,11 +375,14 @@ void GDALDefaultOverviews::OverviewScan()
                 osOvrFilename = pszProxyOvrFilename;
             }
 
+            // Exclude TILEDB because reading from /vsis3/ can be really slow
+            const char *const apszAllowedDrivers[] = {"-TILEDB", nullptr};
             CPLPushErrorHandler(CPLQuietErrorHandler);
             poODS = GDALDataset::Open(
                 osOvrFilename,
                 GDAL_OF_RASTER |
-                    (poDS->GetAccess() == GA_Update ? GDAL_OF_UPDATE : 0));
+                    (poDS->GetAccess() == GA_Update ? GDAL_OF_UPDATE : 0),
+                apszAllowedDrivers);
             CPLPopErrorHandler();
         }
     }
@@ -515,7 +518,7 @@ static int GetFloorPowerOfTwo(int n)
 }
 
 /************************************************************************/
-/*                         GDALComputeOvFactor()                        */
+/*                        GDALComputeOvFactor()                         */
 /************************************************************************/
 
 int GDALComputeOvFactor(int nOvrXSize, int nRasterXSize, int nOvrYSize,
@@ -760,7 +763,7 @@ static const char *GetOptionValue(CSLConstList papszOptions,
 }
 
 /************************************************************************/
-/*                           AddOverviews()                             */
+/*                            AddOverviews()                            */
 /************************************************************************/
 
 CPLErr GDALDefaultOverviews::AddOverviews(
@@ -1143,10 +1146,13 @@ CPLErr GDALDefaultOverviews::BuildOverviews(
         }
         else
         {
+            CPLStringList aosOptions(papszOptions);
+            aosOptions.SetNameValue("LOCATION", nullptr);
+            aosOptions.SetNameValue("USE_RRD", nullptr);
             eErr = HFAAuxBuildOverviews(
                 osOvrFilename, poDS, &poODS, nBands, panBandList, nNewOverviews,
                 panNewOverviewList, pszResampling, GDALScaledProgress,
-                pScaledProgress, papszOptions);
+                pScaledProgress, aosOptions.List());
         }
 
         // HFAAuxBuildOverviews doesn't actually generate overviews
@@ -1330,7 +1336,7 @@ CPLErr GDALDefaultOverviews::BuildOverviews(
 }
 
 /************************************************************************/
-/*                          BuildOverviewsMask()                        */
+/*                         BuildOverviewsMask()                         */
 /************************************************************************/
 
 CPLErr GDALDefaultOverviews::BuildOverviewsMask(const char *pszResampling,
@@ -1439,7 +1445,7 @@ CPLErr GDALDefaultOverviews::CreateMaskBand(int nFlags, int nBand)
         osMskFilename.Printf("%s.msk", poDS->GetDescription());
         poMaskDS =
             poDr->Create(osMskFilename, poDS->GetRasterXSize(),
-                         poDS->GetRasterYSize(), nBands, GDT_Byte, papszOpt);
+                         poDS->GetRasterYSize(), nBands, GDT_UInt8, papszOpt);
         CSLDestroy(papszOpt);
 
         if (poMaskDS == nullptr)  // Presumably error already issued.
@@ -1648,7 +1654,7 @@ int GDALDefaultOverviews::HaveMaskFile(char **papszSiblingFiles,
 }
 
 /************************************************************************/
-/*                    GDALGetNormalizedOvrResampling()                  */
+/*                   GDALGetNormalizedOvrResampling()                   */
 /************************************************************************/
 
 std::string GDALGetNormalizedOvrResampling(const char *pszResampling)

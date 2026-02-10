@@ -121,3 +121,31 @@ def test_gdalalg_raster_color_map_from_color_table(options, checksum, output_for
     assert [
         out_ds.GetRasterBand(i + 1).Checksum() for i in range(out_ds.RasterCount)
     ] == checksum
+
+
+@pytest.mark.parametrize("output_format", ["MEM", "PNG"])
+def test_gdalalg_raster_empty_color_map(tmp_vsimem, output_format):
+
+    if gdal.GetDriverByName(output_format) is None:
+        pytest.skip(f"{output_format} not available")
+
+    gdal.FileFromMemBuffer(tmp_vsimem / "empty.txt", "")
+
+    alg = get_alg()
+    alg["input"] = "../gdrivers/data/n43.tif"
+    alg["color-map"] = tmp_vsimem / "empty.txt"
+    alg["output"] = tmp_vsimem / "out"
+    alg["output-format"] = output_format
+    with pytest.raises(Exception, match="No color association found"):
+        alg.Run()
+
+
+def test_gdalalg_raster_color_map_in_pipeline(tmp_vsimem):
+    """Test fix for https://github.com/OSGeo/gdal/issues/13740"""
+
+    with gdal.alg.raster.pipeline(
+        input="../gcore/data/byte.tif",
+        pipeline="read ! clip --bbox 440720.000,3750120.000,441920.000,3751320.000 ! color-map   --color-map data/color_file.txt ! clip --bbox 440720.000,3750120.000,441920.000,3751320.000 ! write",
+        output_format="MEM",
+    ) as alg:
+        assert alg.Output().GetRasterBand(1).Checksum() == 4688

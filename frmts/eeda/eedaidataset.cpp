@@ -11,6 +11,7 @@
  ****************************************************************************/
 
 #include "gdal_priv.h"
+#include "gdal_frmts.h"
 #include "cpl_http.h"
 #include "cpl_conv.h"
 #include "ogrlibjsonutils.h"
@@ -20,8 +21,6 @@
 #include <vector>
 #include <map>
 #include <limits>
-
-extern "C" void GDALRegister_EEDAI();
 
 static const int DEFAULT_BLOCK_SIZE = 256;
 
@@ -34,7 +33,7 @@ const int SERVER_SIMUTANEOUS_BAND_LIMIT = 100;
 const int SERVER_DIMENSION_LIMIT = 10000;
 
 /************************************************************************/
-/*                          GDALEEDAIDataset                            */
+/*                           GDALEEDAIDataset                           */
 /************************************************************************/
 
 class GDALEEDAIDataset final : public GDALEEDABaseDataset
@@ -64,18 +63,17 @@ class GDALEEDAIDataset final : public GDALEEDABaseDataset
 
   public:
     GDALEEDAIDataset();
-    virtual ~GDALEEDAIDataset();
+    ~GDALEEDAIDataset() override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
-    virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                             int nXSize, int nYSize, void *pData, int nBufXSize,
-                             int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, BANDMAP_TYPE panBandMap,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GSpacing nBandSpace,
-                             GDALRasterIOExtraArg *psExtraArg) override;
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, int nBandCount,
+                     BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 
     bool ComputeQueryStrategy();
 
@@ -83,7 +81,7 @@ class GDALEEDAIDataset final : public GDALEEDABaseDataset
 };
 
 /************************************************************************/
-/*                        GDALEEDAIRasterBand                           */
+/*                         GDALEEDAIRasterBand                          */
 /************************************************************************/
 
 class GDALEEDAIRasterBand final : public GDALRasterBand
@@ -110,15 +108,15 @@ class GDALEEDAIRasterBand final : public GDALRasterBand
 
   public:
     GDALEEDAIRasterBand(GDALEEDAIDataset *poDSIn, GDALDataType eDT);
-    virtual ~GDALEEDAIRasterBand();
+    ~GDALEEDAIRasterBand() override;
 
-    virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
-                             int nXSize, int nYSize, void *pData, int nBufXSize,
-                             int nBufYSize, GDALDataType eBufType,
-                             GSpacing nPixelSpace, GSpacing nLineSpace,
-                             GDALRasterIOExtraArg *psExtraArg) CPL_OVERRIDE;
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, GSpacing nPixelSpace,
+                     GSpacing nLineSpace,
+                     GDALRasterIOExtraArg *psExtraArg) CPL_OVERRIDE;
 
-    virtual CPLErr IReadBlock(int, int, void *) CPL_OVERRIDE;
+    CPLErr IReadBlock(int, int, void *) CPL_OVERRIDE;
     virtual int GetOverviewCount() CPL_OVERRIDE;
     virtual GDALRasterBand *GetOverview(int) CPL_OVERRIDE;
 
@@ -135,7 +133,7 @@ class GDALEEDAIRasterBand final : public GDALRasterBand
 };
 
 /************************************************************************/
-/*                         GDALEEDAIDataset()                           */
+/*                          GDALEEDAIDataset()                          */
 /************************************************************************/
 
 GDALEEDAIDataset::GDALEEDAIDataset()
@@ -149,7 +147,7 @@ GDALEEDAIDataset::GDALEEDAIDataset()
 }
 
 /************************************************************************/
-/*                         GDALEEDAIDataset()                           */
+/*                          GDALEEDAIDataset()                          */
 /************************************************************************/
 
 GDALEEDAIDataset::GDALEEDAIDataset(GDALEEDAIDataset *poParentDS, int iOvrLevel)
@@ -174,7 +172,7 @@ GDALEEDAIDataset::GDALEEDAIDataset(GDALEEDAIDataset *poParentDS, int iOvrLevel)
 }
 
 /************************************************************************/
-/*                        ~GDALEEDAIDataset()                           */
+/*                         ~GDALEEDAIDataset()                          */
 /************************************************************************/
 
 GDALEEDAIDataset::~GDALEEDAIDataset()
@@ -199,7 +197,7 @@ GDALEEDAIRasterBand::GDALEEDAIRasterBand(GDALEEDAIDataset *poDSIn,
 }
 
 /************************************************************************/
-/*                       ~GDALEEDAIRasterBand()                         */
+/*                        ~GDALEEDAIRasterBand()                        */
 /************************************************************************/
 
 GDALEEDAIRasterBand::~GDALEEDAIRasterBand()
@@ -207,7 +205,7 @@ GDALEEDAIRasterBand::~GDALEEDAIRasterBand()
 }
 
 /************************************************************************/
-/*                           GetOverviewCount()                         */
+/*                          GetOverviewCount()                          */
 /************************************************************************/
 
 int GDALEEDAIRasterBand::GetOverviewCount()
@@ -217,7 +215,7 @@ int GDALEEDAIRasterBand::GetOverviewCount()
 }
 
 /************************************************************************/
-/*                              GetOverview()                           */
+/*                            GetOverview()                             */
 /************************************************************************/
 
 GDALRasterBand *GDALEEDAIRasterBand::GetOverview(int iIndex)
@@ -231,7 +229,7 @@ GDALRasterBand *GDALEEDAIRasterBand::GetOverview(int iIndex)
 }
 
 /************************************************************************/
-/*                            DecodeNPYArray()                          */
+/*                           DecodeNPYArray()                           */
 /************************************************************************/
 
 bool GDALEEDAIRasterBand::DecodeNPYArray(const GByte *pabyData, int nDataLen,
@@ -311,25 +309,20 @@ bool GDALEEDAIRasterBand::DecodeNPYArray(const GByte *pabyData, int nDataLen,
 
     for (int iYBlock = 0; iYBlock < nYBlocks; iYBlock++)
     {
-        int nBlockActualYSize = nBlockYSize;
-        if ((iYBlock + nBlockYOff + 1) * nBlockYSize > nRasterYSize)
-        {
-            nBlockActualYSize =
-                nRasterYSize - (iYBlock + nBlockYOff) * nBlockYSize;
-        }
+        const int nYOff = (nBlockYOff + iYBlock) * nBlockYSize;
+        const int nBlockActualYSize =
+            std::min(nBlockYSize, nRasterYSize - nYOff);
 
         for (int iXBlock = 0; iXBlock < nXBlocks; iXBlock++)
         {
-            int nBlockActualXSize = nBlockXSize;
-            if ((iXBlock + nBlockXOff + 1) * nBlockXSize > nRasterXSize)
-            {
-                nBlockActualXSize =
-                    nRasterXSize - (iXBlock + nBlockXOff) * nBlockXSize;
-            }
+            const int nXOff = (nBlockXOff + iXBlock) * nBlockXSize;
+            const int nBlockActualXSize =
+                std::min(nBlockXSize, nRasterXSize - nXOff);
 
-            int nOffsetBand =
+            size_t nOffsetBand =
                 10 + nHeaderLen +
-                (iYBlock * nBlockYSize * nReqXSize + iXBlock * nBlockXSize) *
+                (static_cast<size_t>(iYBlock) * nBlockYSize * nReqXSize +
+                 iXBlock * nBlockXSize) *
                     nTotalDataTypeSize;
 
             for (int i = 1; i <= poGDS->GetRasterCount(); i++)
@@ -396,7 +389,7 @@ bool GDALEEDAIRasterBand::DecodeNPYArray(const GByte *pabyData, int nDataLen,
 }
 
 /************************************************************************/
-/*                            DecodeGDALDataset()                         */
+/*                         DecodeGDALDataset()                          */
 /************************************************************************/
 
 bool GDALEEDAIRasterBand::DecodeGDALDataset(const GByte *pabyData, int nDataLen,
@@ -441,21 +434,15 @@ bool GDALEEDAIRasterBand::DecodeGDALDataset(const GByte *pabyData, int nDataLen,
 
     for (int iYBlock = 0; iYBlock < nYBlocks; iYBlock++)
     {
-        int nBlockActualYSize = nBlockYSize;
-        if ((iYBlock + nBlockYOff + 1) * nBlockYSize > nRasterYSize)
-        {
-            nBlockActualYSize =
-                nRasterYSize - (iYBlock + nBlockYOff) * nBlockYSize;
-        }
+        const int nYOff = (nBlockYOff + iYBlock) * nBlockYSize;
+        const int nBlockActualYSize =
+            std::min(nBlockYSize, nRasterYSize - nYOff);
 
         for (int iXBlock = 0; iXBlock < nXBlocks; iXBlock++)
         {
-            int nBlockActualXSize = nBlockXSize;
-            if ((iXBlock + nBlockXOff + 1) * nBlockXSize > nRasterXSize)
-            {
-                nBlockActualXSize =
-                    nRasterXSize - (iXBlock + nBlockXOff) * nBlockXSize;
-            }
+            const int nXOff = (nBlockXOff + iXBlock) * nBlockXSize;
+            const int nBlockActualXSize =
+                std::min(nBlockXSize, nRasterXSize - nXOff);
 
             for (int i = 1; i <= poGDS->GetRasterCount(); i++)
             {
@@ -538,16 +525,13 @@ CPLErr GDALEEDAIRasterBand::GetBlocks(int nBlockXOff, int nBlockYOff,
     }
     json_object_object_add(poReq, "bandIds", poBands);
 
-    int nReqXSize = nBlockXSize * nXBlocks;
-    if ((nBlockXOff + nXBlocks) * nBlockXSize > nRasterXSize)
-        nReqXSize = nRasterXSize - nBlockXOff * nBlockXSize;
-    int nReqYSize = nBlockYSize * nYBlocks;
-    if ((nBlockYOff + nYBlocks) * nBlockYSize > nRasterYSize)
-        nReqYSize = nRasterYSize - nBlockYOff * nBlockYSize;
-    const double dfX0 =
-        poGDS->m_gt[0] + nBlockXOff * nBlockXSize * poGDS->m_gt[1];
-    const double dfY0 =
-        poGDS->m_gt[3] + nBlockYOff * nBlockYSize * poGDS->m_gt[5];
+    const int nXOff = nBlockXOff * nBlockXSize;
+    const int nReqXSize = std::min(nBlockXSize, nRasterXSize - nXOff);
+    const int nYOff = nBlockYOff * nBlockYSize;
+    const int nReqYSize = std::min(nBlockYSize, nRasterYSize - nYOff);
+
+    const double dfX0 = poGDS->m_gt[0] + nXOff * poGDS->m_gt[1];
+    const double dfY0 = poGDS->m_gt[3] + nYOff * poGDS->m_gt[5];
 #ifdef DEBUG_VERBOSE
     CPLDebug("EEDAI",
              "nBlockYOff=%d nBlockYOff=%d "
@@ -679,7 +663,7 @@ CPLErr GDALEEDAIRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                          PrefetchBlocks()                            */
+/*                           PrefetchBlocks()                           */
 /************************************************************************/
 
 // Return or'ed flags among 0, RETRY_PER_BAND, RETRY_SPATIAL_SPLIT if the user
@@ -825,7 +809,7 @@ GUInt32 GDALEEDAIRasterBand::PrefetchBlocks(int nXOff, int nYOff, int nXSize,
 }
 
 /************************************************************************/
-/*                              IRasterIO()                             */
+/*                             IRasterIO()                              */
 /************************************************************************/
 
 CPLErr GDALEEDAIRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
@@ -920,7 +904,7 @@ CPLErr GDALEEDAIRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 }
 
 /************************************************************************/
-/*                              IRasterIO()                             */
+/*                             IRasterIO()                              */
 /************************************************************************/
 
 CPLErr GDALEEDAIDataset::IRasterIO(
@@ -1064,7 +1048,7 @@ bool GDALEEDAIDataset::ComputeQueryStrategy()
             m_osPixelEncoding = "PNG";
             for (int i = 1; i <= nBands; i++)
             {
-                if (GetRasterBand(i)->GetRasterDataType() != GDT_Byte)
+                if (GetRasterBand(i)->GetRasterDataType() != GDT_UInt8)
                 {
                     m_osPixelEncoding = "GEO_TIFF";
                 }
@@ -1081,7 +1065,7 @@ bool GDALEEDAIDataset::ComputeQueryStrategy()
         }
         for (int i = 1; i <= nBands; i++)
         {
-            if (GetRasterBand(i)->GetRasterDataType() != GDT_Byte)
+            if (GetRasterBand(i)->GetRasterDataType() != GDT_UInt8)
             {
                 CPLError(
                     CE_Failure, CPLE_NotSupported,
@@ -1112,7 +1096,7 @@ bool GDALEEDAIDataset::ComputeQueryStrategy()
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *GDALEEDAIDataset::GetSpatialRef() const
@@ -1131,7 +1115,7 @@ CPLErr GDALEEDAIDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                               Open()                                 */
+/*                                Open()                                */
 /************************************************************************/
 
 bool GDALEEDAIDataset::Open(GDALOpenInfo *poOpenInfo)
@@ -1410,7 +1394,7 @@ bool GDALEEDAIDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                       SetMetadataFromProperties()                    */
+/*                     SetMetadataFromProperties()                      */
 /************************************************************************/
 
 void GDALEEDAIDataset::SetMetadataFromProperties(
@@ -1472,7 +1456,7 @@ void GDALEEDAIDataset::SetMetadataFromProperties(
 }
 
 /************************************************************************/
-/*                          GDALEEDAIIdentify()                         */
+/*                         GDALEEDAIIdentify()                          */
 /************************************************************************/
 
 static int GDALEEDAIIdentify(GDALOpenInfo *poOpenInfo)
@@ -1481,7 +1465,7 @@ static int GDALEEDAIIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            GDALEEDAIOpen()                           */
+/*                           GDALEEDAIOpen()                            */
 /************************************************************************/
 
 static GDALDataset *GDALEEDAIOpen(GDALOpenInfo *poOpenInfo)

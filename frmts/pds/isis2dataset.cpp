@@ -58,18 +58,18 @@ class ISIS2Dataset final : public RawDataset
     const char *GetKeywordSub(const char *pszPath, int iSubscript,
                               const char *pszDefault = "");
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
     CPL_DISALLOW_COPY_ASSIGN(ISIS2Dataset)
 
   public:
     ISIS2Dataset();
-    virtual ~ISIS2Dataset();
+    ~ISIS2Dataset() override;
 
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
     const OGRSpatialReference *GetSpatialRef() const override;
 
-    virtual char **GetFileList() override;
+    char **GetFileList() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
 };
@@ -84,7 +84,7 @@ ISIS2Dataset::ISIS2Dataset()
 }
 
 /************************************************************************/
-/*                            ~ISIS2Dataset()                            */
+/*                           ~ISIS2Dataset()                            */
 /************************************************************************/
 
 ISIS2Dataset::~ISIS2Dataset()
@@ -94,10 +94,10 @@ ISIS2Dataset::~ISIS2Dataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr ISIS2Dataset::Close()
+CPLErr ISIS2Dataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -131,7 +131,7 @@ char **ISIS2Dataset::GetFileList()
 }
 
 /************************************************************************/
-/*                         GetSpatialRef()                              */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *ISIS2Dataset::GetSpatialRef() const
@@ -310,7 +310,7 @@ GDALDataset *ISIS2Dataset::Open(GDALOpenInfo *poOpenInfo)
     }
 
     /********   Grab format type - isis2 only supports 8,16,32 *******/
-    GDALDataType eDataType = GDT_Byte;
+    GDALDataType eDataType = GDT_UInt8;
     bool bNoDataSet = false;
     double dfNoData = 0.0;
 
@@ -318,7 +318,7 @@ GDALDataset *ISIS2Dataset::Open(GDALOpenInfo *poOpenInfo)
     switch (itype)
     {
         case 1:
-            eDataType = GDT_Byte;
+            eDataType = GDT_UInt8;
             dfNoData = NULL1;
             bNoDataSet = true;
             break;
@@ -752,7 +752,7 @@ const char *ISIS2Dataset::GetKeyword(const char *pszPath,
 }
 
 /************************************************************************/
-/*                            GetKeywordSub()                           */
+/*                           GetKeywordSub()                            */
 /************************************************************************/
 
 const char *ISIS2Dataset::GetKeywordSub(const char *pszPath, int iSubscript,

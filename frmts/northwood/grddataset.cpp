@@ -17,6 +17,10 @@
 #include <climits>
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "northwood.h"
 #include "ogrmitabspatialref.h"
 
@@ -35,7 +39,7 @@ constexpr double SCALE32BIT = 4294967294.0;
 void replaceExt(std::string &s, const std::string &newExt);
 
 /************************************************************************/
-/* Replace the extension on a filepath with an alternative extension    */
+/*  Replace the extension on a filepath with an alternative extension   */
 /************************************************************************/
 void replaceExt(std::string &s, const std::string &newExt)
 {
@@ -77,7 +81,7 @@ class NWT_GRDDataset final : public GDALPamDataset
 
   public:
     NWT_GRDDataset();
-    ~NWT_GRDDataset();
+    ~NWT_GRDDataset() override;
 
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
@@ -85,10 +89,10 @@ class NWT_GRDDataset final : public GDALPamDataset
 #ifndef NO_MITAB_SUPPORT
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszParamList);
+                               CSLConstList papszParamList);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 #endif
@@ -122,16 +126,16 @@ class NWT_GRDRasterBand final : public GDALPamRasterBand
   public:
     NWT_GRDRasterBand(NWT_GRDDataset *, int, int);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
-    virtual CPLErr IWriteBlock(int, int, void *) override;
-    virtual double GetNoDataValue(int *pbSuccess) override;
-    virtual CPLErr SetNoDataValue(double dfNoData) override;
+    CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IWriteBlock(int, int, void *) override;
+    double GetNoDataValue(int *pbSuccess) override;
+    CPLErr SetNoDataValue(double dfNoData) override;
 
-    virtual GDALColorInterp GetColorInterpretation() override;
+    GDALColorInterp GetColorInterpretation() override;
 };
 
 /************************************************************************/
-/*                           NWT_GRDRasterBand()                        */
+/*                         NWT_GRDRasterBand()                          */
 /************************************************************************/
 NWT_GRDRasterBand::NWT_GRDRasterBand(NWT_GRDDataset *poDSIn, int nBandIn,
                                      int nBands)
@@ -166,7 +170,7 @@ NWT_GRDRasterBand::NWT_GRDRasterBand(NWT_GRDDataset *poDSIn, int nBandIn,
         bHaveOffsetScale = FALSE;
         dfOffset = 0;
         dfScale = 1.0;
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
     }
     nBlockXSize = poDS->GetRasterXSize();
     nBlockYSize = 1;
@@ -226,7 +230,7 @@ GDALColorInterp NWT_GRDRasterBand::GetColorInterpretation()
 }
 
 /************************************************************************/
-/*                             IWriteBlock()                            */
+/*                            IWriteBlock()                             */
 /************************************************************************/
 CPLErr NWT_GRDRasterBand::IWriteBlock(CPL_UNUSED int nBlockXOff, int nBlockYOff,
                                       void *pImage)
@@ -434,7 +438,7 @@ NWT_GRDDataset::NWT_GRDDataset()
 }
 
 /************************************************************************/
-/*                            ~NWT_GRDDataset()                         */
+/*                          ~NWT_GRDDataset()                           */
 /************************************************************************/
 
 NWT_GRDDataset::~NWT_GRDDataset()
@@ -459,7 +463,7 @@ NWT_GRDDataset::~NWT_GRDDataset()
 }
 
 /************************************************************************/
-/*                 ~FlushCache(bool bAtClosing)                         */
+/*                     ~FlushCache(bool bAtClosing)                     */
 /************************************************************************/
 CPLErr NWT_GRDDataset::FlushCache(bool bAtClosing)
 {
@@ -522,7 +526,7 @@ CPLErr NWT_GRDDataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 const OGRSpatialReference *NWT_GRDDataset::GetSpatialRef() const
 {
@@ -546,7 +550,7 @@ const OGRSpatialReference *NWT_GRDDataset::GetSpatialRef() const
 
 #ifndef NO_MITAB_SUPPORT
 /************************************************************************/
-/*                            SetSpatialRef()                           */
+/*                           SetSpatialRef()                            */
 /************************************************************************/
 
 CPLErr NWT_GRDDataset::SetSpatialRef(const OGRSpatialReference *poSRS)
@@ -681,7 +685,7 @@ GDALDataset *NWT_GRDDataset::Open(GDALOpenInfo *poOpenInfo)
 
 #ifndef NO_MITAB_SUPPORT
 /************************************************************************/
-/*                                UpdateHeader()                        */
+/*                            UpdateHeader()                            */
 /************************************************************************/
 int NWT_GRDDataset::UpdateHeader()
 {
@@ -889,11 +893,12 @@ int NWT_GRDDataset::WriteTab()
 }
 
 /************************************************************************/
-/*                                Create()                              */
+/*                               Create()                               */
 /************************************************************************/
 GDALDataset *NWT_GRDDataset::Create(const char *pszFilename, int nXSize,
                                     int nYSize, int nBandsIn,
-                                    GDALDataType eType, char **papszParamList)
+                                    GDALDataType eType,
+                                    CSLConstList papszParamList)
 {
     if (nBandsIn != 1)
     {
@@ -1082,11 +1087,11 @@ GDALDataset *NWT_GRDDataset::Create(const char *pszFilename, int nXSize,
 }
 
 /************************************************************************/
-/*                                CreateCopy()                          */
+/*                             CreateCopy()                             */
 /************************************************************************/
 GDALDataset *NWT_GRDDataset::CreateCopy(const char *pszFilename,
                                         GDALDataset *poSrcDS, int bStrict,
-                                        char **papszOptions,
+                                        CSLConstList papszOptions,
                                         GDALProgressFunc pfnProgress,
                                         void *pProgressData)
 {

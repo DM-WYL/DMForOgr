@@ -287,7 +287,7 @@ RCMRasterBand::RCMRasterBand(RCMDataset *poDSIn, int nBandIn,
 }
 
 /************************************************************************/
-/*                            RCMRasterBand()                            */
+/*                           RCMRasterBand()                            */
 /************************************************************************/
 
 RCMRasterBand::~RCMRasterBand()
@@ -383,7 +383,7 @@ CPLErr RCMRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
 }
 
 /************************************************************************/
-/*                            ReadLUT()                                 */
+/*                              ReadLUT()                               */
 /************************************************************************/
 /* Read the provided LUT in to m_ndTable                                */
 /* 1. The gains list spans the range extent covered by all              */
@@ -521,7 +521,7 @@ void RCMCalibRasterBand::ReadLUT()
 }
 
 /************************************************************************/
-/*                            ReadNoiseLevels()                         */
+/*                          ReadNoiseLevels()                           */
 /************************************************************************/
 /* Read the provided LUT in to m_nfTableNoiseLevels                     */
 /* 1. The gains list spans the range extent covered by all              */
@@ -624,7 +624,7 @@ void RCMCalibRasterBand::ReadNoiseLevels()
 }
 
 /************************************************************************/
-/*                        RCMCalibRasterBand()                          */
+/*                         RCMCalibRasterBand()                         */
 /************************************************************************/
 
 RCMCalibRasterBand::RCMCalibRasterBand(
@@ -655,7 +655,7 @@ RCMCalibRasterBand::RCMCalibRasterBand(
 }
 
 /************************************************************************/
-/*                       ~RCMCalibRasterBand()                          */
+/*                        ~RCMCalibRasterBand()                         */
 /************************************************************************/
 
 RCMCalibRasterBand::~RCMCalibRasterBand()
@@ -668,7 +668,7 @@ RCMCalibRasterBand::~RCMCalibRasterBand()
 }
 
 /************************************************************************/
-/*                        IReadBlock()                                  */
+/*                             IReadBlock()                             */
 /************************************************************************/
 
 CPLErr RCMCalibRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
@@ -913,7 +913,7 @@ CPLErr RCMCalibRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
         CPLFree(panImageTmp);
     } /* Ticket #2104: Support for ScanSAR products */
 
-    else if (this->m_eOriginalType == GDT_Byte)
+    else if (this->m_eOriginalType == GDT_UInt8)
     {
         GByte *pabyImageTmp =
             static_cast<GByte *>(VSI_MALLOC2_VERBOSE(nBlockXSize, nBlockYSize));
@@ -922,7 +922,7 @@ CPLErr RCMCalibRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
         eErr = m_poBandDataset->RasterIO(
             GF_Read, nBlockXOff * nBlockXSize, nBlockYOff * nBlockYSize,
             nRequestXSize, nRequestYSize, pabyImageTmp, nRequestXSize,
-            nRequestYSize, GDT_Byte, 1, nullptr, 1, nBlockXSize, 0, nullptr);
+            nRequestYSize, GDT_UInt8, 1, nullptr, 1, nBlockXSize, 0, nullptr);
 
         /* iterate over detected values */
         for (int i = 0; i < nRequestYSize; i++)
@@ -985,7 +985,7 @@ RCMDataset::~RCMDataset()
 }
 
 /************************************************************************/
-/*                      CloseDependentDatasets()                        */
+/*                       CloseDependentDatasets()                       */
 /************************************************************************/
 
 int RCMDataset::CloseDependentDatasets()
@@ -2499,7 +2499,7 @@ const OGRSpatialReference *RCMDataset::GetGCPSpatialRef() const
 }
 
 /************************************************************************/
-/*                               GetGCPs()                              */
+/*                              GetGCPs()                               */
 /************************************************************************/
 
 const GDAL_GCP *RCMDataset::GetGCPs()
@@ -2509,7 +2509,7 @@ const GDAL_GCP *RCMDataset::GetGCPs()
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *RCMDataset::GetSpatialRef() const
@@ -2536,7 +2536,7 @@ CPLErr RCMDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                      GetMetadataDomainList()                         */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
 char **RCMDataset::GetMetadataDomainList()
@@ -2549,7 +2549,7 @@ char **RCMDataset::GetMetadataDomainList()
 /*                            GetMetadata()                             */
 /************************************************************************/
 
-char **RCMDataset::GetMetadata(const char *pszDomain)
+CSLConstList RCMDataset::GetMetadata(const char *pszDomain)
 
 {
     if (pszDomain != nullptr && STARTS_WITH_CI(pszDomain, "SUBDATASETS") &&
@@ -2560,7 +2560,7 @@ char **RCMDataset::GetMetadata(const char *pszDomain)
 }
 
 /************************************************************************/
-/*                         GDALRegister_RCM()                           */
+/*                          GDALRegister_RCM()                          */
 /************************************************************************/
 
 void GDALRegister_RCM()

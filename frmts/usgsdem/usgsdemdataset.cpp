@@ -16,6 +16,10 @@
 
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #include <algorithm>
@@ -83,7 +87,7 @@ typedef struct
 } Buffer;
 
 /************************************************************************/
-/*                       USGSDEMRefillBuffer()                          */
+/*                        USGSDEMRefillBuffer()                         */
 /************************************************************************/
 
 static void USGSDEMRefillBuffer(Buffer *psBuffer)
@@ -129,7 +133,7 @@ static void USGSDEMSetCurrentFilePos(Buffer *psBuffer, vsi_l_offset nNewPos)
 }
 
 /************************************************************************/
-/*               USGSDEMReadIntFromBuffer()                             */
+/*                      USGSDEMReadIntFromBuffer()                      */
 /************************************************************************/
 
 static int USGSDEMReadIntFromBuffer(Buffer *psBuffer, int *pbSuccess = nullptr)
@@ -212,7 +216,7 @@ static int USGSDEMReadIntFromBuffer(Buffer *psBuffer, int *pbSuccess = nullptr)
 }
 
 /************************************************************************/
-/*                USGSDEMReadDoubleFromBuffer()                         */
+/*                    USGSDEMReadDoubleFromBuffer()                     */
 /************************************************************************/
 
 static double USGSDEMReadDoubleFromBuffer(Buffer *psBuffer, int nCharCount,
@@ -281,7 +285,7 @@ class USGSDEMDataset final : public GDALPamDataset
 {
     friend class USGSDEMRasterBand;
 
-    int nDataStartOffset;
+    vsi_l_offset nDataStartOffset;
     GDALDataType eNaturalDataFormat;
 
     GDALGeoTransform m_gt{};
@@ -297,7 +301,7 @@ class USGSDEMDataset final : public GDALPamDataset
 
   public:
     USGSDEMDataset();
-    ~USGSDEMDataset();
+    ~USGSDEMDataset() override;
 
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
@@ -318,13 +322,13 @@ class USGSDEMRasterBand final : public GDALPamRasterBand
   public:
     explicit USGSDEMRasterBand(USGSDEMDataset *);
 
-    virtual const char *GetUnitType() override;
-    virtual double GetNoDataValue(int *pbSuccess = nullptr) override;
-    virtual CPLErr IReadBlock(int, int, void *) override;
+    const char *GetUnitType() override;
+    double GetNoDataValue(int *pbSuccess = nullptr) override;
+    CPLErr IReadBlock(int, int, void *) override;
 };
 
 /************************************************************************/
-/*                           USGSDEMRasterBand()                            */
+/*                         USGSDEMRasterBand()                          */
 /************************************************************************/
 
 USGSDEMRasterBand::USGSDEMRasterBand(USGSDEMDataset *poDSIn)
@@ -555,7 +559,7 @@ USGSDEMDataset::USGSDEMDataset()
 }
 
 /************************************************************************/
-/*                            ~USGSDEMDataset()                         */
+/*                          ~USGSDEMDataset()                           */
 /************************************************************************/
 
 USGSDEMDataset::~USGSDEMDataset()
@@ -852,7 +856,7 @@ CPLErr USGSDEMDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *USGSDEMDataset::GetSpatialRef() const

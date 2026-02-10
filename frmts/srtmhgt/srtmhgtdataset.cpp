@@ -18,6 +18,10 @@
 #include "cpl_string.h"
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
+#include "gdal_driver.h"
+#include "gdal_drivermanager.h"
+#include "gdal_openinfo.h"
+#include "gdal_cpp_functions.h"
 #include "ogr_spatialref.h"
 
 #include <cmath>
@@ -45,16 +49,16 @@ class SRTMHGTDataset final : public GDALPamDataset
 
   public:
     SRTMHGTDataset();
-    virtual ~SRTMHGTDataset();
+    ~SRTMHGTDataset() override;
 
     const OGRSpatialReference *GetSpatialRef() const override;
-    virtual CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
+    CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
 
     static int Identify(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
-                                   char **papszOptions,
+                                   CSLConstList papszOptions,
                                    GDALProgressFunc pfnProgress,
                                    void *pProgressData);
 };
@@ -75,15 +79,15 @@ class SRTMHGTRasterBand final : public GDALPamRasterBand
   public:
     SRTMHGTRasterBand(SRTMHGTDataset *, int, GDALDataType);
 
-    virtual CPLErr IReadBlock(int, int, void *) override;
+    CPLErr IReadBlock(int, int, void *) override;
     virtual CPLErr IWriteBlock(int nBlockXOff, int nBlockYOff,
                                void *pImage) override;
 
-    virtual GDALColorInterp GetColorInterpretation() override;
+    GDALColorInterp GetColorInterpretation() override;
 
-    virtual double GetNoDataValue(int *pbSuccess = nullptr) override;
+    double GetNoDataValue(int *pbSuccess = nullptr) override;
 
-    virtual const char *GetUnitType() override;
+    const char *GetUnitType() override;
 };
 
 /************************************************************************/
@@ -115,7 +119,7 @@ CPLErr SRTMHGTRasterBand::IReadBlock(int /*nBlockXOff*/, int nBlockYOff,
     /* -------------------------------------------------------------------- */
     const int nDTSize = GDALGetDataTypeSizeBytes(eDataType);
     VSIFSeekL(poGDS->fpImage,
-              static_cast<size_t>(nBlockYOff) * nBlockXSize * nDTSize,
+              static_cast<vsi_l_offset>(nBlockYOff) * nBlockXSize * nDTSize,
               SEEK_SET);
     VSIFReadL((unsigned char *)pImage, nBlockXSize, nDTSize, poGDS->fpImage);
 #ifdef CPL_LSB
@@ -126,7 +130,7 @@ CPLErr SRTMHGTRasterBand::IReadBlock(int /*nBlockXOff*/, int nBlockYOff,
 }
 
 /************************************************************************/
-/*                             IWriteBlock()                            */
+/*                            IWriteBlock()                             */
 /************************************************************************/
 
 CPLErr SRTMHGTRasterBand::IWriteBlock(int /*nBlockXOff*/, int nBlockYOff,
@@ -139,7 +143,7 @@ CPLErr SRTMHGTRasterBand::IWriteBlock(int /*nBlockXOff*/, int nBlockYOff,
 
     const int nDTSize = GDALGetDataTypeSizeBytes(eDataType);
     VSIFSeekL(poGDS->fpImage,
-              static_cast<size_t>(nBlockYOff) * nBlockXSize * nDTSize,
+              static_cast<vsi_l_offset>(nBlockYOff) * nBlockXSize * nDTSize,
               SEEK_SET);
 
 #ifdef CPL_LSB
@@ -168,7 +172,7 @@ CPLErr SRTMHGTRasterBand::IWriteBlock(int /*nBlockXOff*/, int nBlockYOff,
 double SRTMHGTRasterBand::GetNoDataValue(int *pbSuccess)
 
 {
-    if (eDataType == GDT_Byte)
+    if (eDataType == GDT_UInt8)
         return GDALPamRasterBand::GetNoDataValue(pbSuccess);
 
     if (pbSuccess)
@@ -178,7 +182,7 @@ double SRTMHGTRasterBand::GetNoDataValue(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                             GetUnitType()                            */
+/*                            GetUnitType()                             */
 /************************************************************************/
 
 const char *SRTMHGTRasterBand::GetUnitType()
@@ -209,7 +213,7 @@ GDALColorInterp SRTMHGTRasterBand::GetColorInterpretation()
 /************************************************************************/
 
 /************************************************************************/
-/*                            SRTMHGTDataset()                              */
+/*                           SRTMHGTDataset()                           */
 /************************************************************************/
 
 SRTMHGTDataset::SRTMHGTDataset()
@@ -236,7 +240,7 @@ SRTMHGTDataset::SRTMHGTDataset()
 }
 
 /************************************************************************/
-/*                           ~SRTMHGTDataset()                            */
+/*                          ~SRTMHGTDataset()                           */
 /************************************************************************/
 
 SRTMHGTDataset::~SRTMHGTDataset()
@@ -258,7 +262,7 @@ CPLErr SRTMHGTDataset::GetGeoTransform(GDALGeoTransform &gt) const
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *SRTMHGTDataset::GetSpatialRef() const
@@ -442,7 +446,7 @@ GDALPamDataset *SRTMHGTDataset::OpenPAM(GDALOpenInfo *poOpenInfo)
             break;
         case 3601 * 3601:
             numPixels_x = numPixels_y = 3601;
-            eDT = GDT_Byte;
+            eDT = GDT_UInt8;
             break;
         case 3601 * 3601 * 2:
             numPixels_x = numPixels_y = 3601;
@@ -461,7 +465,7 @@ GDALPamDataset *SRTMHGTDataset::OpenPAM(GDALOpenInfo *poOpenInfo)
 
     poDS->eAccess = poOpenInfo->eAccess;
 #ifdef CPL_LSB
-    if (poDS->eAccess == GA_Update && eDT != GDT_Byte)
+    if (poDS->eAccess == GA_Update && eDT != GDT_UInt8)
     {
         poDS->pabyBuffer =
             static_cast<GByte *>(CPLMalloc(numPixels_x * sizeof(eDT)));
@@ -505,12 +509,12 @@ GDALPamDataset *SRTMHGTDataset::OpenPAM(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                              CreateCopy()                            */
+/*                             CreateCopy()                             */
 /************************************************************************/
 
 GDALDataset *SRTMHGTDataset::CreateCopy(const char *pszFilename,
                                         GDALDataset *poSrcDS, int bStrict,
-                                        char ** /* papszOptions*/,
+                                        CSLConstList /* papszOptions*/,
                                         GDALProgressFunc pfnProgress,
                                         void *pProgressData)
 {
@@ -687,7 +691,7 @@ GDALDataset *SRTMHGTDataset::CreateCopy(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                         GDALRegister_SRTMHGT()                       */
+/*                        GDALRegister_SRTMHGT()                        */
 /************************************************************************/
 void GDALRegister_SRTMHGT()
 {

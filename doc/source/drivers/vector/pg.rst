@@ -243,6 +243,22 @@ The following open options are supported:
       :oo::`PRELUDE_STATEMENTS`, the appropriate CLOSING_STATEMENTS would be
       "COMMIT".
 
+-  .. oo:: SPATIAL_FILTER_INTERSECTION
+      :choices: LOCAL, SERVER
+      :default: LOCAL
+      :since: 3.13
+
+      Since GDAL 3.13, spatial filters are evaluated using full geometry intersection
+      rather than only bounding box intersection, as in earlier versions.
+      The ``SPATIAL_FILTER_INTERSECTION`` open option controls where this
+      intersection operation is performed. Even when the intersection is evaluated
+      locally (which is the default), the server still applies a bounding
+      box-based spatial filter to efficiently retrieve candidate features.
+
+      Note that for PostGIS geometry columns of type GEOGRAPHY, the current
+      implementation deals with geographies as if they were cartesian geometries.
+
+
 Dataset Creation Options
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -333,8 +349,8 @@ The following layer creation options are supported:
 
       Creates a
       spatial index (GiST) on the geometry column to speed up queries (Has
-      effect only when PostGIS is available). Set to NONE (GDAL >= 2.4, or
-      FALSE for earlier versions) to disable. BRIN is only available with
+      effect only when PostGIS is available). Set to NONE to disable.
+      BRIN is only available with
       PostgreSQL >= 9.4 and PostGIS >= 2.3. SPGIST is only available with
       PostgreSQL >= 11 and PostGIS >= 2.5
 

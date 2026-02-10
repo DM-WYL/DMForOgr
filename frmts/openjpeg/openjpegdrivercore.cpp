@@ -10,6 +10,12 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "gdal_frmts.h"
+
+#ifdef PLUGIN_FILENAME
+#include "gdalplugindriverproxy.h"
+#endif
+
 #include "openjpegdrivercore.h"
 
 /* This file is to be used with openjpeg 2.1 or later */
@@ -31,7 +37,7 @@
       OPJ_VERSION_BUILD) >= ((major)*10000 + (minor)*100 + (patch)))
 
 /************************************************************************/
-/*                            Identify()                                */
+/*                              Identify()                              */
 /************************************************************************/
 
 #ifndef jpc_header_defined
@@ -240,7 +246,7 @@ void OPENJPEGDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                  DeclareDeferredOPENJPEGPlugin()                     */
+/*                   DeclareDeferredOPENJPEGPlugin()                    */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

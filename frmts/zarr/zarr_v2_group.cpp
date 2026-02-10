@@ -21,7 +21,7 @@
 #include <set>
 
 /************************************************************************/
-/*                      ZarrV2Group::Create()                           */
+/*                        ZarrV2Group::Create()                         */
 /************************************************************************/
 
 std::shared_ptr<ZarrV2Group>
@@ -35,7 +35,7 @@ ZarrV2Group::Create(const std::shared_ptr<ZarrSharedResource> &poSharedResource,
 }
 
 /************************************************************************/
-/*                      ZarrV2Group::~ZarrV2Group()                     */
+/*                     ZarrV2Group::~ZarrV2Group()                      */
 /************************************************************************/
 
 ZarrV2Group::~ZarrV2Group()
@@ -44,7 +44,7 @@ ZarrV2Group::~ZarrV2Group()
 }
 
 /************************************************************************/
-/*                            Close()                                   */
+/*                               Close()                                */
 /************************************************************************/
 
 bool ZarrV2Group::Close()
@@ -65,7 +65,7 @@ bool ZarrV2Group::Close()
 }
 
 /************************************************************************/
-/*                        ExploreDirectory()                            */
+/*                          ExploreDirectory()                          */
 /************************************************************************/
 
 void ZarrV2Group::ExploreDirectory() const
@@ -104,9 +104,9 @@ void ZarrV2Group::ExploreDirectory() const
                 CPLFormFilenameSafe(osSubDir.c_str(), ".zarray", nullptr);
             if (VSIStatL(osFilename.c_str(), &sStat) == 0)
             {
-                if (std::find(m_aosArrays.begin(), m_aosArrays.end(),
-                              aosFiles[i]) == m_aosArrays.end())
+                if (!cpl::contains(m_oSetArrayNames, aosFiles[i]))
                 {
+                    m_oSetArrayNames.insert(aosFiles[i]);
                     m_aosArrays.emplace_back(aosFiles[i]);
                 }
             }
@@ -114,15 +114,19 @@ void ZarrV2Group::ExploreDirectory() const
             {
                 osFilename =
                     CPLFormFilenameSafe(osSubDir.c_str(), ".zgroup", nullptr);
-                if (VSIStatL(osFilename.c_str(), &sStat) == 0)
+                if (VSIStatL(osFilename.c_str(), &sStat) == 0 &&
+                    !cpl::contains(m_oSetGroupNames, aosFiles[i]))
+                {
+                    m_oSetGroupNames.insert(aosFiles[i]);
                     m_aosGroups.emplace_back(aosFiles[i]);
+                }
             }
         }
     }
 }
 
 /************************************************************************/
-/*                             OpenZarrArray()                          */
+/*                           OpenZarrArray()                            */
 /************************************************************************/
 
 std::shared_ptr<ZarrArray> ZarrV2Group::OpenZarrArray(const std::string &osName,
@@ -135,7 +139,7 @@ std::shared_ptr<ZarrArray> ZarrV2Group::OpenZarrArray(const std::string &osName,
     if (oIter != m_oMapMDArrays.end())
         return oIter->second;
 
-    if (!m_bReadFromZMetadata && !m_osDirectoryName.empty())
+    if (!m_bReadFromConsolidatedMetadata && !m_osDirectoryName.empty())
     {
         const std::string osSubDir = CPLFormFilenameSafe(
             m_osDirectoryName.c_str(), osName.c_str(), nullptr);
@@ -157,7 +161,7 @@ std::shared_ptr<ZarrArray> ZarrV2Group::OpenZarrArray(const std::string &osName,
 }
 
 /************************************************************************/
-/*                              OpenZarrGroup()                             */
+/*                           OpenZarrGroup()                            */
 /************************************************************************/
 
 std::shared_ptr<ZarrGroupBase>
@@ -170,7 +174,7 @@ ZarrV2Group::OpenZarrGroup(const std::string &osName, CSLConstList) const
     if (oIter != m_oMapGroups.end())
         return oIter->second;
 
-    if (!m_bReadFromZMetadata && !m_osDirectoryName.empty())
+    if (!m_bReadFromConsolidatedMetadata && !m_osDirectoryName.empty())
     {
         const std::string osSubDir = CPLFormFilenameSafe(
             m_osDirectoryName.c_str(), osName.c_str(), nullptr);
@@ -204,7 +208,7 @@ ZarrV2Group::OpenZarrGroup(const std::string &osName, CSLConstList) const
 }
 
 /************************************************************************/
-/*                   ZarrV2Group::LoadAttributes()                      */
+/*                    ZarrV2Group::LoadAttributes()                     */
 /************************************************************************/
 
 void ZarrV2Group::LoadAttributes() const
@@ -224,7 +228,7 @@ void ZarrV2Group::LoadAttributes() const
 }
 
 /************************************************************************/
-/*                   ZarrV2Group::GetOrCreateSubGroup()                 */
+/*                  ZarrV2Group::GetOrCreateSubGroup()                  */
 /************************************************************************/
 
 std::shared_ptr<ZarrV2Group>
@@ -254,23 +258,24 @@ ZarrV2Group::GetOrCreateSubGroup(const std::string &osSubGroupFullname)
                             poSubGroup->GetName().c_str(), nullptr));
     poSubGroup->m_bDirectoryExplored = true;
     poSubGroup->m_bAttributesLoaded = true;
-    poSubGroup->m_bReadFromZMetadata = true;
+    poSubGroup->m_bReadFromConsolidatedMetadata = true;
     poSubGroup->SetUpdatable(m_bUpdatable);
 
     poBelongingGroup->m_oMapGroups[poSubGroup->GetName()] = poSubGroup;
+    poBelongingGroup->m_oSetGroupNames.insert(poSubGroup->GetName());
     poBelongingGroup->m_aosGroups.emplace_back(poSubGroup->GetName());
     return poSubGroup;
 }
 
 /************************************************************************/
-/*                   ZarrV2Group::InitFromZMetadata()                   */
+/*             ZarrV2Group::InitFromConsolidatedMetadata()              */
 /************************************************************************/
 
-void ZarrV2Group::InitFromZMetadata(const CPLJSONObject &obj)
+void ZarrV2Group::InitFromConsolidatedMetadata(const CPLJSONObject &obj)
 {
     m_bDirectoryExplored = true;
     m_bAttributesLoaded = true;
-    m_bReadFromZMetadata = true;
+    m_bReadFromConsolidatedMetadata = true;
 
     const auto metadata = obj["metadata"];
     if (metadata.GetType() != CPLJSONObject::Type::Object)
@@ -408,7 +413,7 @@ void ZarrV2Group::InitFromZMetadata(const CPLJSONObject &obj)
 }
 
 /************************************************************************/
-/*                   ZarrV2Group::InitFromZGroup()                      */
+/*                    ZarrV2Group::InitFromZGroup()                     */
 /************************************************************************/
 
 bool ZarrV2Group::InitFromZGroup(const CPLJSONObject &obj)
@@ -492,48 +497,57 @@ bool ZarrV2Group::InitFromZGroup(const CPLJSONObject &obj)
         }
 
         const auto vars = nczarrGroup["vars"].ToArray();
+
+        // This is to protect against corruped/hostile datasets
+        std::set<std::string> alreadyExploredArray;
+        int nCountInvalid = 0;
+
         // open first indexing variables
-        std::set<std::string> oSetIndexingArrayNames;
         for (const auto &var : vars)
         {
             const auto osVarName = var.ToString();
             if (IsValidName(osVarName) &&
-                m_oMapDimensions.find(osVarName) != m_oMapDimensions.end() &&
-                m_oMapMDArrays.find(osVarName) == m_oMapMDArrays.end() &&
-                oSetIndexingArrayNames.find(osVarName) ==
-                    oSetIndexingArrayNames.end())
+                cpl::contains(m_oMapDimensions, osVarName) &&
+                !cpl::contains(m_oSetArrayNames, osVarName) &&
+                !cpl::contains(alreadyExploredArray, osVarName))
             {
-                oSetIndexingArrayNames.insert(osVarName);
-                OpenMDArray(osVarName);
+                alreadyExploredArray.insert(osVarName);
+                if (!OpenMDArray(osVarName))
+                {
+                    if (++nCountInvalid > 100)
+                    {
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "Too many invalid arrays in NCZarr 'vars' "
+                                 "array. Giving up");
+                        return false;
+                    }
+                }
             }
         }
 
         // add regular arrays
-        std::set<std::string> oSetRegularArrayNames;
         for (const auto &var : vars)
         {
             const auto osVarName = var.ToString();
             if (IsValidName(osVarName) &&
-                m_oMapDimensions.find(osVarName) == m_oMapDimensions.end() &&
-                m_oMapMDArrays.find(osVarName) == m_oMapMDArrays.end() &&
-                oSetRegularArrayNames.find(osVarName) ==
-                    oSetRegularArrayNames.end())
+                !cpl::contains(m_oMapDimensions, osVarName) &&
+                !cpl::contains(m_oSetArrayNames, osVarName) &&
+                !cpl::contains(alreadyExploredArray, osVarName))
             {
-                oSetRegularArrayNames.insert(osVarName);
+                m_oSetArrayNames.insert(osVarName);
                 m_aosArrays.emplace_back(osVarName);
             }
         }
 
         // Finally list groups
-        std::set<std::string> oSetGroups;
         const auto groups = nczarrGroup["groups"].ToArray();
         for (const auto &group : groups)
         {
             const auto osGroupName = group.ToString();
             if (IsValidName(osGroupName) &&
-                oSetGroups.find(osGroupName) == oSetGroups.end())
+                !cpl::contains(m_oSetGroupNames, osGroupName))
             {
-                oSetGroups.insert(osGroupName);
+                m_oSetGroupNames.insert(osGroupName);
                 m_aosGroups.emplace_back(osGroupName);
             }
         }
@@ -542,7 +556,7 @@ bool ZarrV2Group::InitFromZGroup(const CPLJSONObject &obj)
 }
 
 /************************************************************************/
-/*                   ZarrV2Group::CreateOnDisk()                        */
+/*                     ZarrV2Group::CreateOnDisk()                      */
 /************************************************************************/
 
 std::shared_ptr<ZarrV2Group> ZarrV2Group::CreateOnDisk(
@@ -615,8 +629,7 @@ ZarrV2Group::CreateGroup(const std::string &osName,
 
     GetGroupNames();
 
-    if (std::find(m_aosGroups.begin(), m_aosGroups.end(), osName) !=
-        m_aosGroups.end())
+    if (cpl::contains(m_oSetGroupNames, osName))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "A group with same name already exists");
@@ -632,12 +645,13 @@ ZarrV2Group::CreateGroup(const std::string &osName,
     poGroup->m_poParent =
         std::dynamic_pointer_cast<ZarrGroupBase>(m_pSelf.lock());
     m_oMapGroups[osName] = poGroup;
+    m_oSetGroupNames.insert(osName);
     m_aosGroups.emplace_back(osName);
     return poGroup;
 }
 
 /************************************************************************/
-/*                          FillDTypeElts()                             */
+/*                           FillDTypeElts()                            */
 /************************************************************************/
 
 static CPLJSONObject FillDTypeElts(const GDALExtendedDataType &oDataType,
@@ -701,7 +715,7 @@ static CPLJSONObject FillDTypeElts(const GDALExtendedDataType &oDataType,
             bool bUnsupported = false;
             switch (eDT)
             {
-                case GDT_Byte:
+                case GDT_UInt8:
                 {
                     elt.nativeType = DtypeElt::NativeType::UNSIGNED_INT;
                     dtype.Set(dummy, "|u1");
@@ -882,8 +896,7 @@ std::shared_ptr<GDALMDArray> ZarrV2Group::CreateMDArray(
 
     GetMDArrayNames();
 
-    if (std::find(m_aosArrays.begin(), m_aosArrays.end(), osName) !=
-        m_aosArrays.end())
+    if (cpl::contains(m_oSetArrayNames, osName))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "An array with same name already exists");
@@ -1037,7 +1050,7 @@ std::shared_ptr<GDALMDArray> ZarrV2Group::CreateMDArray(
             {
                 case GDT_Unknown:
                     break;
-                case GDT_Byte:
+                case GDT_UInt8:
                     oFilter.Add("dtype", "u1");
                     break;
                 case GDT_Int8:
@@ -1120,9 +1133,9 @@ std::shared_ptr<GDALMDArray> ZarrV2Group::CreateMDArray(
     const char *pszDimSeparator =
         CSLFetchNameValueDef(papszOptions, "DIM_SEPARATOR", ".");
 
-    auto poArray = ZarrV2Array::Create(m_poSharedResource, GetFullName(),
-                                       osName, aoDimensions, oDataType,
-                                       aoDtypeElts, anBlockSize, bFortranOrder);
+    auto poArray =
+        ZarrV2Array::Create(m_poSharedResource, Self(), osName, aoDimensions,
+                            oDataType, aoDtypeElts, anBlockSize, bFortranOrder);
 
     if (!poArray)
         return nullptr;
@@ -1137,6 +1150,7 @@ std::shared_ptr<GDALMDArray> ZarrV2Group::CreateMDArray(
     if (oCompressor.IsValid())
         poArray->SetCompressorJson(oCompressor);
     poArray->SetFilters(oFilters);
+    poArray->SetCreationOptions(papszOptions);
     poArray->SetUpdatable(true);
     poArray->SetDefinitionModified(true);
     if (!cpl::starts_with(osZarrayFilename, "/vsi") && !poArray->Flush())

@@ -331,7 +331,7 @@ CPLErr GTIFFBuildOverviewsEx(const char *pszFilename, int nBands,
 
         switch (hBand->GetRasterDataType())
         {
-            case GDT_Byte:
+            case GDT_UInt8:
                 nBandBits = 8;
                 nBandFormat = SAMPLEFORMAT_UINT;
                 break;
@@ -568,7 +568,7 @@ CPLErr GTIFFBuildOverviewsEx(const char *pszFilename, int nBands,
     if (nBands == 3)
         nPhotometric = PHOTOMETRIC_RGB;
     else if (papoBandList[0]->GetColorTable() != nullptr &&
-             (papoBandList[0]->GetRasterDataType() == GDT_Byte ||
+             (papoBandList[0]->GetRasterDataType() == GDT_UInt8 ||
               papoBandList[0]->GetRasterDataType() == GDT_UInt16) &&
              !STARTS_WITH_CI(pszResampling, "AVERAGE_BIT2"))
     {
@@ -850,8 +850,8 @@ CPLErr GTIFFBuildOverviewsEx(const char *pszFilename, int nBands,
     /* -------------------------------------------------------------------- */
     int nOvrBlockXSize = 0;
     int nOvrBlockYSize = 0;
-    GTIFFGetOverviewBlockSize(papoBandList[0], &nOvrBlockXSize,
-                              &nOvrBlockYSize);
+    GTIFFGetOverviewBlockSize(papoBandList[0], &nOvrBlockXSize, &nOvrBlockYSize,
+                              papszOptions, "BLOCKSIZE");
 
     CPLString osNoData;  // don't move this in inner scope
     const char *pszNoData = nullptr;
@@ -1078,7 +1078,8 @@ CPLErr GTIFFBuildOverviewsEx(const char *pszFilename, int nBands,
         {
             const float fJXLDistance =
                 static_cast<float>(CPLAtof(pszJXLDistance));
-            TIFFSetField(hTIFF, TIFFTAG_JXL_DISTANCE, fJXLDistance);
+            TIFFSetField(hTIFF, TIFFTAG_JXL_DISTANCE,
+                         static_cast<double>(fJXLDistance));
             GTIFFSetJXLDistance(GDALDataset::ToHandle(hODS), fJXLDistance);
         }
         if (const char *pszJXLAlphaDistance = GetOptionValue(
@@ -1086,7 +1087,8 @@ CPLErr GTIFFBuildOverviewsEx(const char *pszFilename, int nBands,
         {
             const float fJXLAlphaDistance =
                 static_cast<float>(CPLAtof(pszJXLAlphaDistance));
-            TIFFSetField(hTIFF, TIFFTAG_JXL_ALPHA_DISTANCE, fJXLAlphaDistance);
+            TIFFSetField(hTIFF, TIFFTAG_JXL_ALPHA_DISTANCE,
+                         static_cast<double>(fJXLAlphaDistance));
             GTIFFSetJXLAlphaDistance(GDALDataset::ToHandle(hODS),
                                      fJXLAlphaDistance);
         }

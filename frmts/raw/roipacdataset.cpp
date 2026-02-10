@@ -12,6 +12,7 @@
 
 #include "gdal_frmts.h"
 #include "ogr_spatialref.h"
+#include "gdal_priv.h"
 #include "rawdataset.h"
 
 #include <algorithm>
@@ -36,7 +37,7 @@ class ROIPACDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(ROIPACDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     ROIPACDataset();
@@ -46,7 +47,7 @@ class ROIPACDataset final : public RawDataset
     static int Identify(GDALOpenInfo *poOpenInfo);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
-                               char **papszOptions);
+                               CSLConstList papszOptions);
 
     CPLErr FlushCache(bool bAtClosing) override;
     CPLErr GetGeoTransform(GDALGeoTransform &gt) const override;
@@ -99,7 +100,7 @@ static CPLString getRscFilename(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                            ROIPACDataset()                           */
+/*                           ROIPACDataset()                            */
 /************************************************************************/
 
 ROIPACDataset::ROIPACDataset()
@@ -110,7 +111,7 @@ ROIPACDataset::ROIPACDataset()
 }
 
 /************************************************************************/
-/*                            ~ROIPACDataset()                          */
+/*                           ~ROIPACDataset()                           */
 /************************************************************************/
 
 ROIPACDataset::~ROIPACDataset()
@@ -119,10 +120,10 @@ ROIPACDataset::~ROIPACDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr ROIPACDataset::Close()
+CPLErr ROIPACDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -303,7 +304,7 @@ GDALDataset *ROIPACDataset::Open(GDALOpenInfo *poOpenInfo)
     }
     else if (strcmp(pszExtension, "flg") == 0)
     {
-        eDataType = GDT_Byte;
+        eDataType = GDT_UInt8;
         nBands = 1;
         eInterleave = PIXEL;
     }
@@ -491,7 +492,7 @@ GDALDataset *ROIPACDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                             Identify()                               */
+/*                              Identify()                              */
 /************************************************************************/
 
 int ROIPACDataset::Identify(GDALOpenInfo *poOpenInfo)
@@ -532,12 +533,12 @@ int ROIPACDataset::Identify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                              Create()                                */
+/*                               Create()                               */
 /************************************************************************/
 
 GDALDataset *ROIPACDataset::Create(const char *pszFilename, int nXSize,
                                    int nYSize, int nBandsIn, GDALDataType eType,
-                                   char ** /* papszOptions */)
+                                   CSLConstList /* papszOptions */)
 {
     /* -------------------------------------------------------------------- */
     /*      Verify input options.                                           */
@@ -594,7 +595,7 @@ GDALDataset *ROIPACDataset::Create(const char *pszFilename, int nXSize,
     }
     else if (strcmp(pszExtension, "flg") == 0)
     {
-        if (nBandsIn != 1 || eType != GDT_Byte)
+        if (nBandsIn != 1 || eType != GDT_UInt8)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Attempt to create ROI_PAC %s dataset with an illegal "
@@ -751,7 +752,7 @@ CPLErr ROIPACDataset::FlushCache(bool bAtClosing)
     /* -------------------------------------------------------------------- */
     /*      Metadata stored in the ROI_PAC domain.                          */
     /* -------------------------------------------------------------------- */
-    char **papszROIPACMetadata = GetMetadata("ROI_PAC");
+    CSLConstList papszROIPACMetadata = GetMetadata("ROI_PAC");
     for (int i = 0; i < CSLCount(papszROIPACMetadata); i++)
     {
         /* Get the tokens from the metadata item */
@@ -786,7 +787,7 @@ CPLErr ROIPACDataset::FlushCache(bool bAtClosing)
 }
 
 /************************************************************************/
-/*                         GetGeoTransform()                            */
+/*                          GetGeoTransform()                           */
 /************************************************************************/
 
 CPLErr ROIPACDataset::GetGeoTransform(GDALGeoTransform &gt) const

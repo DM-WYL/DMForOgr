@@ -12,12 +12,17 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include "gdal_frmts.h"
+#include "gdalplugindriverproxy.h"
+
 #include <stdexcept>
 
 #include "postgisrasterdrivercore.h"
 
+#include "gdalsubdatasetinfo.h"
+
 /************************************************************************/
-/*                     PostGISRasterDriverIdentify()                    */
+/*                    PostGISRasterDriverIdentify()                     */
 /************************************************************************/
 
 int PostGISRasterDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -95,10 +100,10 @@ char **PostGISRasterParseConnectionString(const char *pszConnectionString)
 }
 
 /************************************************************************/
-/*                    PostGISRasterDriverGetSubdatasetInfo()            */
+/*                PostGISRasterDriverGetSubdatasetInfo()                */
 /************************************************************************/
 
-struct PostGISRasterDriverSubdatasetInfo : public GDALSubdatasetInfo
+struct PostGISRasterDriverSubdatasetInfo final : public GDALSubdatasetInfo
 {
   public:
     explicit PostGISRasterDriverSubdatasetInfo(const std::string &fileName)
@@ -195,7 +200,7 @@ void PostGISRasterDriverSetCommonMetadata(GDALDriver *poDriver)
 }
 
 /************************************************************************/
-/*                   DeclareDeferredPostGISRasterPlugin()               */
+/*                 DeclareDeferredPostGISRasterPlugin()                 */
 /************************************************************************/
 
 #ifdef PLUGIN_FILENAME

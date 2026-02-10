@@ -28,7 +28,7 @@ constexpr uint64_t OFFSET_MINUS_ONE = static_cast<uint64_t>(-1);
 constexpr int MAX_CAR_COUNT_INDEXED_STR = 80;
 
 /************************************************************************/
-/*                        FileGDBTableGeometryType                      */
+/*                       FileGDBTableGeometryType                       */
 /************************************************************************/
 
 /* FGTGT = (F)ile(G)DB(T)able(G)eometry(T)ype */
@@ -43,7 +43,7 @@ typedef enum
 } FileGDBTableGeometryType;
 
 /************************************************************************/
-/*                          FileGDBFieldType                            */
+/*                           FileGDBFieldType                           */
 /************************************************************************/
 
 /* FGFT = (F)ile(G)DB(F)ield(T)ype */
@@ -70,13 +70,13 @@ typedef enum
 } FileGDBFieldType;
 
 /************************************************************************/
-/*                          FileGDBField                                */
+/*                             FileGDBField                             */
 /************************************************************************/
 
 class FileGDBTable;
 class FileGDBIndex;
 
-class FileGDBField
+class FileGDBField /* non final */
 {
     friend class FileGDBTable;
 
@@ -177,10 +177,10 @@ class FileGDBField
 };
 
 /************************************************************************/
-/*                         FileGDBGeomField                             */
+/*                           FileGDBGeomField                           */
 /************************************************************************/
 
-class FileGDBGeomField : public FileGDBField
+class FileGDBGeomField /* non final */ : public FileGDBField
 {
     friend class FileGDBTable;
 
@@ -216,7 +216,7 @@ class FileGDBGeomField : public FileGDBField
                      double dfYOrigin, double dfXYScale, double dfXYTolerance,
                      const std::vector<double> &adfSpatialIndexGridResolution);
 
-    virtual ~FileGDBGeomField();
+    ~FileGDBGeomField() override;
 
     const std::string &GetWKT() const
     {
@@ -341,10 +341,10 @@ class FileGDBGeomField : public FileGDBField
 };
 
 /************************************************************************/
-/*                         FileGDBRasterField                           */
+/*                          FileGDBRasterField                          */
 /************************************************************************/
 
-class FileGDBRasterField : public FileGDBGeomField
+class FileGDBRasterField final : public FileGDBGeomField
 {
   public:
     enum class Type
@@ -370,7 +370,7 @@ class FileGDBRasterField : public FileGDBGeomField
     {
     }
 
-    virtual ~FileGDBRasterField();
+    ~FileGDBRasterField() override;
 
     const std::string &GetRasterColumnName() const
     {
@@ -384,7 +384,7 @@ class FileGDBRasterField : public FileGDBGeomField
 };
 
 /************************************************************************/
-/*                           FileGDBIndex                               */
+/*                             FileGDBIndex                             */
 /************************************************************************/
 
 class FileGDBIndex
@@ -416,7 +416,7 @@ class FileGDBIndex
 };
 
 /************************************************************************/
-/*                           FileGDBTable                               */
+/*                             FileGDBTable                             */
 /************************************************************************/
 
 class FileGDBTable
@@ -760,7 +760,7 @@ class FileGDBTable
 };
 
 /************************************************************************/
-/*                           FileGDBSQLOp                               */
+/*                             FileGDBSQLOp                             */
 /************************************************************************/
 
 typedef enum
@@ -778,12 +778,10 @@ typedef enum
 /*                           FileGDBIterator                            */
 /************************************************************************/
 
-class FileGDBIterator
+class FileGDBIterator /* non final */
 {
   public:
-    virtual ~FileGDBIterator()
-    {
-    }
+    virtual ~FileGDBIterator() = default;
 
     virtual FileGDBTable *GetTable() = 0;
     virtual void Reset() = 0;
@@ -816,10 +814,11 @@ class FileGDBIterator
 };
 
 /************************************************************************/
-/*                      FileGDBSpatialIndexIterator                     */
+/*                     FileGDBSpatialIndexIterator                      */
 /************************************************************************/
 
-class FileGDBSpatialIndexIterator : virtual public FileGDBIterator
+class FileGDBSpatialIndexIterator /* non final */
+    : virtual public FileGDBIterator
 {
   public:
     virtual bool SetEnvelope(const OGREnvelope &sFilterEnvelope) = 0;
@@ -831,10 +830,10 @@ class FileGDBSpatialIndexIterator : virtual public FileGDBIterator
 };
 
 /************************************************************************/
-/*                       FileGDBOGRGeometryConverter                    */
+/*                     FileGDBOGRGeometryConverter                      */
 /************************************************************************/
 
-class FileGDBOGRGeometryConverter
+class FileGDBOGRGeometryConverter /* non final */
 {
   public:
     virtual ~FileGDBOGRGeometryConverter();

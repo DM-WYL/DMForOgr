@@ -53,7 +53,7 @@ class DXFBlockDefinition
 };
 
 /************************************************************************/
-/*                         OGRDXFFeatureQueue                           */
+/*                          OGRDXFFeatureQueue                          */
 /************************************************************************/
 
 class OGRDXFFeatureQueue
@@ -104,7 +104,7 @@ class OGRDXFBlocksLayer final : public OGRLayer
 
   public:
     explicit OGRDXFBlocksLayer(OGRDXFDataSource *poDS);
-    ~OGRDXFBlocksLayer();
+    ~OGRDXFBlocksLayer() override;
 
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;
@@ -552,7 +552,7 @@ class OGRDXFLayer final : public OGRLayer
 
   public:
     explicit OGRDXFLayer(OGRDXFDataSource *poDS);
-    ~OGRDXFLayer();
+    ~OGRDXFLayer() override;
 
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;
@@ -590,7 +590,7 @@ class OGRDXFLayer final : public OGRLayer
                  poDS->GetLineNumber(), poDS->GetDescription());               \
     } while (0)
 
-class OGRDXFReaderBase
+class OGRDXFReaderBase /* non final */
 {
   protected:
     OGRDXFReaderBase() = default;
@@ -715,7 +715,7 @@ class OGRDXFDataSource final : public GDALDataset
 
   public:
     OGRDXFDataSource();
-    ~OGRDXFDataSource();
+    ~OGRDXFDataSource() override;
 
     bool Open(const char *pszFilename, VSILFILE *fpIn, bool bHeaderOnly,
               CSLConstList papszOptionsIn);
@@ -813,7 +813,7 @@ class OGRDXFDataSource final : public GDALDataset
                                        const GByte **pabyBuffer);
 
     // Header variables.
-    bool ReadHeaderSection();
+    bool ReadHeaderSection(CSLConstList papszOpenOptionsIn);
     const char *GetVariable(const char *pszName,
                             const char *pszDefault = nullptr);
 
@@ -890,7 +890,7 @@ class OGRDXFWriterLayer final : public OGRLayer
 
   public:
     OGRDXFWriterLayer(OGRDXFWriterDS *poDS, VSILFILE *fp);
-    ~OGRDXFWriterLayer();
+    ~OGRDXFWriterLayer() override;
 
     void ResetReading() override
     {
@@ -936,7 +936,7 @@ class OGRDXFBlocksWriterLayer final : public OGRLayer
 
   public:
     explicit OGRDXFBlocksWriterLayer(OGRDXFWriterDS *poDS);
-    ~OGRDXFBlocksWriterLayer();
+    ~OGRDXFBlocksWriterLayer() override;
 
     void ResetReading() override
     {
@@ -962,7 +962,7 @@ class OGRDXFBlocksWriterLayer final : public OGRLayer
 };
 
 /************************************************************************/
-/*                           OGRDXFWriterDS                             */
+/*                            OGRDXFWriterDS                            */
 /************************************************************************/
 
 class OGRDXFWriterDS final : public GDALDataset
@@ -1010,9 +1010,9 @@ class OGRDXFWriterDS final : public GDALDataset
 
   public:
     OGRDXFWriterDS();
-    ~OGRDXFWriterDS();
+    ~OGRDXFWriterDS() override;
 
-    int Open(const char *pszFilename, char **papszOptions);
+    int Open(const char *pszFilename, CSLConstList papszOptions);
 
     int GetLayerCount() const override;
     const OGRLayer *GetLayer(int) const override;

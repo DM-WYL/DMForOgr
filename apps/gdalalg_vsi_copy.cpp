@@ -26,7 +26,7 @@
 #endif
 
 /************************************************************************/
-/*              GDALVSICopyAlgorithm::GDALVSICopyAlgorithm()            */
+/*             GDALVSICopyAlgorithm::GDALVSICopyAlgorithm()             */
 /************************************************************************/
 
 GDALVSICopyAlgorithm::GDALVSICopyAlgorithm()
@@ -46,7 +46,18 @@ GDALVSICopyAlgorithm::GDALVSICopyAlgorithm()
                    &m_destination)
                 .SetPositional()
                 .SetMinCharCount(1)
-                .SetRequired();
+                .SetRequired()
+                .AddAction(
+                    [this]()
+                    {
+                        // If outputting to stdout, automatically turn off progress bar
+                        if (m_destination == "/vsistdout/")
+                        {
+                            auto quietArg = GetArg(GDAL_ARG_NAME_QUIET);
+                            if (quietArg && quietArg->GetType() == GAAT_BOOLEAN)
+                                quietArg->Set(true);
+                        }
+                    });
         SetAutoCompleteFunctionForFilename(arg, 0);
     }
 
@@ -58,7 +69,7 @@ GDALVSICopyAlgorithm::GDALVSICopyAlgorithm()
 }
 
 /************************************************************************/
-/*                    GDALVSICopyAlgorithm::RunImpl()                   */
+/*                   GDALVSICopyAlgorithm::RunImpl()                    */
 /************************************************************************/
 
 bool GDALVSICopyAlgorithm::RunImpl(GDALProgressFunc pfnProgress,
@@ -168,7 +179,7 @@ bool GDALVSICopyAlgorithm::RunImpl(GDALProgressFunc pfnProgress,
 }
 
 /************************************************************************/
-/*                 GDALVSICopyAlgorithm::CopySingle()                   */
+/*                  GDALVSICopyAlgorithm::CopySingle()                  */
 /************************************************************************/
 
 bool GDALVSICopyAlgorithm::CopySingle(const std::string &src,
@@ -195,7 +206,7 @@ bool GDALVSICopyAlgorithm::CopySingle(const std::string &src,
 }
 
 /************************************************************************/
-/*                 GDALVSICopyAlgorithm::CopyRecursive()                */
+/*                GDALVSICopyAlgorithm::CopyRecursive()                 */
 /************************************************************************/
 
 bool GDALVSICopyAlgorithm::CopyRecursive(const std::string &srcIn,

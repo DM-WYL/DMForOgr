@@ -18,7 +18,7 @@
 #include <time.h>
 
 /************************************************************************/
-/*                        OGRPMTilesVectorLayer()                       */
+/*                       OGRPMTilesVectorLayer()                        */
 /************************************************************************/
 
 OGRPMTilesVectorLayer::OGRPMTilesVectorLayer(
@@ -94,7 +94,7 @@ OGRPMTilesVectorLayer::~OGRPMTilesVectorLayer()
 }
 
 /************************************************************************/
-/*                          ResetReading()                              */
+/*                            ResetReading()                            */
 /************************************************************************/
 
 void OGRPMTilesVectorLayer::ResetReading()
@@ -105,7 +105,7 @@ void OGRPMTilesVectorLayer::ResetReading()
 }
 
 /************************************************************************/
-/*                      GuessGeometryType()                             */
+/*                         GuessGeometryType()                          */
 /************************************************************************/
 
 /* static */
@@ -181,7 +181,7 @@ OGRwkbGeometryType OGRPMTilesVectorLayer::GuessGeometryType(
 }
 
 /************************************************************************/
-/*                    GetTotalFeatureCount()                            */
+/*                        GetTotalFeatureCount()                        */
 /************************************************************************/
 
 GIntBig OGRPMTilesVectorLayer::GetTotalFeatureCount() const
@@ -238,7 +238,7 @@ GIntBig OGRPMTilesVectorLayer::GetTotalFeatureCount() const
 }
 
 /************************************************************************/
-/*                         GetFeatureCount()                            */
+/*                          GetFeatureCount()                           */
 /************************************************************************/
 
 GIntBig OGRPMTilesVectorLayer::GetFeatureCount(int bForce)
@@ -255,7 +255,7 @@ GIntBig OGRPMTilesVectorLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                           GetFeature()                               */
+/*                             GetFeature()                             */
 /************************************************************************/
 
 OGRFeature *OGRPMTilesVectorLayer::GetFeature(GIntBig nFID)
@@ -327,7 +327,7 @@ OGRFeature *OGRPMTilesVectorLayer::GetFeature(GIntBig nFID)
 }
 
 /************************************************************************/
-/*                        GetNextSrcFeature()                           */
+/*                         GetNextSrcFeature()                          */
 /************************************************************************/
 
 std::unique_ptr<OGRFeature> OGRPMTilesVectorLayer::GetNextSrcFeature()
@@ -371,6 +371,10 @@ std::unique_ptr<OGRFeature> OGRPMTilesVectorLayer::GetNextSrcFeature()
             m_nX = sTile.x;
             m_nY = sTile.y;
 
+            // Do the reset before the later 'm_osTileData = *posStr', otherwise
+            // the destructor might read file content that is no longer valid
+            m_poTileDS.reset();
+
             if (sTile.offset == m_nLastTileOffset)
             {
                 // In case of run-length encoded tiles, we do not need to
@@ -391,7 +395,6 @@ std::unique_ptr<OGRFeature> OGRPMTilesVectorLayer::GetNextSrcFeature()
                 m_osTileData = *posStr;
             }
 
-            m_poTileDS.reset();
             const std::string osTmpFilename = VSIMemGenerateHiddenFilename(
                 CPLSPrintf("pmtiles_%u_%u.pbf", sTile.x, sTile.y));
             VSIFCloseL(VSIFileFromMemBuffer(
@@ -453,7 +456,7 @@ OGRPMTilesVectorLayer::CreateFeatureFrom(OGRFeature *poSrcFeature)
 }
 
 /************************************************************************/
-/*                        GetNextRawFeature()                           */
+/*                         GetNextRawFeature()                          */
 /************************************************************************/
 
 OGRFeature *OGRPMTilesVectorLayer::GetNextRawFeature()
@@ -489,7 +492,7 @@ int OGRPMTilesVectorLayer::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                            IGetExtent()                              */
+/*                             IGetExtent()                             */
 /************************************************************************/
 
 OGRErr OGRPMTilesVectorLayer::IGetExtent(int /* iGeomField */,
@@ -524,7 +527,7 @@ void OGRPMTilesVectorLayer::ExtentToTileExtent(const OGREnvelope &sEnvelope,
 }
 
 /************************************************************************/
-/*                         ISetSpatialFilter()                           */
+/*                         ISetSpatialFilter()                          */
 /************************************************************************/
 
 OGRErr OGRPMTilesVectorLayer::ISetSpatialFilter(int iGeomField,

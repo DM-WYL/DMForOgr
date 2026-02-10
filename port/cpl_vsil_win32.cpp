@@ -29,6 +29,7 @@
 
 #include <cwchar>
 #include <type_traits>
+#include <filesystem>
 
 /************************************************************************/
 /* ==================================================================== */
@@ -63,22 +64,22 @@ class VSIWin32FilesystemHandler final : public VSIFilesystemHandler
 
     virtual int Stat(const char *pszFilename, VSIStatBufL *pStatBuf,
                      int nFlags) override;
-    virtual int Unlink(const char *pszFilename) override;
+    int Unlink(const char *pszFilename) override;
     virtual int Rename(const char *oldpath, const char *newpath,
                        GDALProgressFunc, void *) override;
-    virtual int Mkdir(const char *pszDirname, long nMode) override;
-    virtual int Rmdir(const char *pszDirname) override;
-    virtual char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
+    int Mkdir(const char *pszDirname, long nMode) override;
+    int Rmdir(const char *pszDirname) override;
+    char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
 
-    virtual int IsCaseSensitive(const char *pszFilename) override
+    int IsCaseSensitive(const char *pszFilename) override
     {
         (void)pszFilename;
         return FALSE;
     }
 
-    virtual GIntBig GetDiskFreeSpace(const char *pszDirname) override;
-    virtual int SupportsSparseFiles(const char *pszPath) override;
-    virtual bool IsLocal(const char *pszPath) const override;
+    GIntBig GetDiskFreeSpace(const char *pszDirname) override;
+    int SupportsSparseFiles(const char *pszPath) override;
+    bool IsLocal(const char *pszPath) const override;
     std::string
     GetCanonicalFilename(const std::string &osFilename) const override;
 
@@ -115,6 +116,7 @@ class VSIWin32Handle final : public VSIVirtualHandle
     bool m_bWriteThrough = false;
 
     bool m_bCancelCreation = false;
+    std::string m_osFilename{};
     std::string m_osFilenameToSetAtCloseTime{};
 
     VSIWin32Handle() = default;
@@ -122,8 +124,8 @@ class VSIWin32Handle final : public VSIVirtualHandle
 
     int Seek(vsi_l_offset nOffset, int nWhence) override;
     vsi_l_offset Tell() override;
-    size_t Read(void *pBuffer, size_t nSize, size_t nMemb) override;
-    size_t Write(const void *pBuffer, size_t nSize, size_t nMemb) override;
+    size_t Read(void *pBuffer, size_t nBytes) override;
+    size_t Write(const void *pBuffer, size_t nBytes) override;
     void ClearErr() override;
     int Eof() override;
     int Error() override;
@@ -348,8 +350,17 @@ int VSIWin32Handle::Close()
         ret = ret2;
     hFile = nullptr;
 
-    if (m_bCancelCreation && !m_osFilenameToSetAtCloseTime.empty())
-        VSIUnlink(m_osFilenameToSetAtCloseTime.c_str());
+    if (m_bCancelCreation && m_osFilenameToSetAtCloseTime.empty())
+        ret = VSIUnlink(m_osFilename.c_str());
+    else if (m_bCancelCreation && !m_osFilenameToSetAtCloseTime.empty())
+    {
+        ret = VSIUnlink((m_osFilenameToSetAtCloseTime + ".tmp_hidden").c_str());
+        VSIStatBufL sStatBuf;
+        if (ret != 0 &&
+            VSIStatL((m_osFilenameToSetAtCloseTime + ".tmp_hidden").c_str(),
+                     &sStatBuf) != 0)
+            ret = 0;
+    }
 
     return ret;
 }
@@ -455,12 +466,12 @@ int VSIWin32Handle::Flush()
 /*                                Read()                                */
 /************************************************************************/
 
-size_t VSIWin32Handle::Read(void *pBuffer, size_t nSize, size_t nCount)
+size_t VSIWin32Handle::Read(void *pBuffer, size_t nBytes)
 
 {
     GByte *const pabyBuffer = static_cast<GByte *>(pBuffer);
     size_t nTotalRead = 0;
-    size_t nRemaining = nSize * nCount;
+    size_t nRemaining = nBytes;
     while (nRemaining > 0)
     {
         DWORD dwSizeRead = 0;
@@ -483,51 +494,46 @@ size_t VSIWin32Handle::Read(void *pBuffer, size_t nSize, size_t nCount)
         }
     }
 
-    size_t nResult = 0;
-    if (nSize)
-    {
-        nResult = nTotalRead / nSize;
-        if (nResult != nCount)
-            bEOF = true;
-    }
+    if (nTotalRead != nBytes)
+        bEOF = true;
 
-    return nResult;
+    return nTotalRead;
 }
 
 /************************************************************************/
 /*                               Write()                                */
 /************************************************************************/
 
-size_t VSIWin32Handle::Write(const void *pBuffer, size_t nSize, size_t nCount)
+size_t VSIWin32Handle::Write(const void *pBuffer, size_t nBytes)
 
 {
     DWORD dwSizeWritten = 0;
     size_t nResult = 0;
+    if (nBytes == 0)
+        return 0;
 
-    if (nSize > 0 && nCount > UINT32_MAX / nSize)
+    if (nBytes > UINT32_MAX)
     {
         CPLError(CE_Failure, CPLE_FileIO, "Too many bytes to write at once");
         return 0;
     }
 
-    if (!WriteFile(hFile, pBuffer, static_cast<DWORD>(nSize * nCount),
-                   &dwSizeWritten, nullptr))
+    if (!WriteFile(hFile, pBuffer, static_cast<DWORD>(nBytes), &dwSizeWritten,
+                   nullptr))
     {
         nResult = 0;
         errno = ErrnoFromGetLastError();
         CPLDebug("CPL", "VSIWin32Handle::Write() failed with errno=%d (%s)",
                  errno, strerror(errno));
     }
-    else if (nSize == 0)
-        nResult = 0;
     else
-        nResult = dwSizeWritten / nSize;
+        nResult = dwSizeWritten;
 
     return nResult;
 }
 
 /************************************************************************/
-/*                             ClearErr()                               */
+/*                              ClearErr()                              */
 /************************************************************************/
 
 void VSIWin32Handle::ClearErr()
@@ -538,7 +544,7 @@ void VSIWin32Handle::ClearErr()
 }
 
 /************************************************************************/
-/*                              Error()                                 */
+/*                               Error()                                */
 /************************************************************************/
 
 int VSIWin32Handle::Error()
@@ -558,7 +564,7 @@ int VSIWin32Handle::Eof()
 }
 
 /************************************************************************/
-/*                             Truncate()                               */
+/*                              Truncate()                              */
 /************************************************************************/
 
 int VSIWin32Handle::Truncate(vsi_l_offset nNewSize)
@@ -636,7 +642,7 @@ VSIRangeStatus VSIWin32Handle::GetRangeStatus(vsi_l_offset
 /************************************************************************/
 
 /************************************************************************/
-/*                          CPLGetWineVersion()                         */
+/*                         CPLGetWineVersion()                          */
 /************************************************************************/
 
 const char *CPLGetWineVersion();  // also used by cpl_aws.cpp
@@ -664,7 +670,7 @@ const char *CPLGetWineVersion()
 }
 
 /************************************************************************/
-/*                           VSIWin32StrlenW()                          */
+/*                          VSIWin32StrlenW()                           */
 /************************************************************************/
 
 static size_t VSIWin32StrlenW(const wchar_t *pwszString)
@@ -676,7 +682,7 @@ static size_t VSIWin32StrlenW(const wchar_t *pwszString)
 }
 
 /************************************************************************/
-/*                        VSIWin32TryLongFilename()                     */
+/*                      VSIWin32TryLongFilename()                       */
 /************************************************************************/
 
 static void VSIWin32TryLongFilename(wchar_t *&pwszFilename)
@@ -779,7 +785,7 @@ static void VSIWin32TryLongFilename(wchar_t *&pwszFilename)
 }
 
 /************************************************************************/
-/*                         VSIWin32IsLongFilename()                     */
+/*                       VSIWin32IsLongFilename()                       */
 /************************************************************************/
 
 static bool VSIWin32IsLongFilename(const wchar_t *pwszFilename)
@@ -964,6 +970,7 @@ VSIWin32FilesystemHandler::Open(const char *pszFilename, const char *pszAccess,
     auto poHandle = std::make_unique<VSIWin32Handle>();
 
     poHandle->hFile = hFile;
+    poHandle->m_osFilename = pszFilename;
     poHandle->m_bWriteThrough = bWriteThrough;
 
     if (strchr(pszAccess, 'a') != nullptr)
@@ -984,7 +991,7 @@ VSIWin32FilesystemHandler::Open(const char *pszFilename, const char *pszAccess,
 }
 
 /************************************************************************/
-/*                        GetNTStatusMessage()                          */
+/*                         GetNTStatusMessage()                         */
 /************************************************************************/
 
 static std::string GetNTStatusMessage(NTSTATUS status)
@@ -1033,7 +1040,7 @@ static std::string GetNTStatusMessage(NTSTATUS status)
 }
 
 /************************************************************************/
-/*                            IsPathNTFS()                              */
+/*                             IsPathNTFS()                             */
 /************************************************************************/
 
 static bool IsPathNTFS(const char *pszPath)
@@ -1064,7 +1071,7 @@ static bool IsPathNTFS(const char *pszPath)
 }
 
 /************************************************************************/
-/*                      CreateOnlyVisibleAtCloseTime()                  */
+/*                    CreateOnlyVisibleAtCloseTime()                    */
 /************************************************************************/
 
 VSIVirtualHandleUniquePtr
@@ -1207,6 +1214,7 @@ VSIWin32FilesystemHandler::CreateOnlyVisibleAtCloseTime(
 
             poHandle->hFile = hFile;
             poHandle->m_bWriteThrough = bWriteThrough;
+            poHandle->m_osFilename = pszFilename;
             poHandle->m_osFilenameToSetAtCloseTime = osFullFilename;
 
             return VSIVirtualHandleUniquePtr(poHandle.release());
@@ -1294,7 +1302,6 @@ int VSIWin32FilesystemHandler::Stat(const char *pszFilename,
 }
 
 /************************************************************************/
-
 /*                               Unlink()                               */
 /************************************************************************/
 
@@ -1324,22 +1331,23 @@ int VSIWin32FilesystemHandler::Rename(const char *oldpath, const char *newpath,
                                       GDALProgressFunc, void *)
 
 {
+    std::error_code ec{};
     if (CPLTestBool(CPLGetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")))
     {
-        wchar_t *pwszOldPath =
-            CPLRecodeToWChar(oldpath, CPL_ENC_UTF8, CPL_ENC_UCS2);
-        wchar_t *pwszNewPath =
-            CPLRecodeToWChar(newpath, CPL_ENC_UTF8, CPL_ENC_UCS2);
-
-        const int nResult = _wrename(pwszOldPath, pwszNewPath);
-        CPLFree(pwszOldPath);
-        CPLFree(pwszNewPath);
-        return nResult;
+#if __cplusplus >= 202002L
+        std::filesystem::rename(reinterpret_cast<const char8_t *>(oldpath),
+                                reinterpret_cast<const char8_t *>(newpath), ec);
+#else
+        std::filesystem::rename(std::filesystem::u8path(oldpath),
+                                std::filesystem::u8path(newpath), ec);
+#endif
     }
     else
     {
-        return rename(oldpath, newpath);
+        std::filesystem::rename(std::filesystem::path(oldpath),
+                                std::filesystem::path(newpath), ec);
     }
+    return ec ? -1 : 0;
 }
 
 /************************************************************************/
@@ -1468,7 +1476,7 @@ char **VSIWin32FilesystemHandler::ReadDirEx(const char *pszPath, int nMaxFiles)
 }
 
 /************************************************************************/
-/*                              VSIDIRWin32                             */
+/*                             VSIDIRWin32                              */
 /************************************************************************/
 
 struct VSIDIRWin32 final : public VSIDIR
@@ -1476,6 +1484,8 @@ struct VSIDIRWin32 final : public VSIDIR
     struct DIR
     {
         intptr_t handle = -1;
+
+        DIR() = default;
 
         ~DIR()
         {
@@ -1550,7 +1560,7 @@ struct VSIDIRWin32 final : public VSIDIR
 };
 
 /************************************************************************/
-/*                        OpenDirInternal()                             */
+/*                          OpenDirInternal()                           */
 /************************************************************************/
 
 /* static */
@@ -1596,7 +1606,7 @@ std::unique_ptr<VSIDIRWin32> VSIWin32FilesystemHandler::OpenDirInternal(
 }
 
 /************************************************************************/
-/*                            OpenDir()                                 */
+/*                              OpenDir()                               */
 /************************************************************************/
 
 VSIDIR *VSIWin32FilesystemHandler::OpenDir(const char *pszPath,
@@ -1607,7 +1617,7 @@ VSIDIR *VSIWin32FilesystemHandler::OpenDir(const char *pszPath,
 }
 
 /************************************************************************/
-/*                           NextDirEntry()                             */
+/*                            NextDirEntry()                            */
 /************************************************************************/
 
 const VSIDIREntry *VSIDIRWin32::NextDirEntry()
@@ -1706,7 +1716,7 @@ begin:
 }
 
 /************************************************************************/
-/*                        GetDiskFreeSpace()                            */
+/*                          GetDiskFreeSpace()                          */
 /************************************************************************/
 
 GIntBig VSIWin32FilesystemHandler::GetDiskFreeSpace(const char *pszDirname)
@@ -1721,7 +1731,7 @@ GIntBig VSIWin32FilesystemHandler::GetDiskFreeSpace(const char *pszDirname)
 }
 
 /************************************************************************/
-/*                      SupportsSparseFiles()                           */
+/*                        SupportsSparseFiles()                         */
 /************************************************************************/
 
 int VSIWin32FilesystemHandler::SupportsSparseFiles(const char *pszPath)
@@ -1746,7 +1756,7 @@ int VSIWin32FilesystemHandler::SupportsSparseFiles(const char *pszPath)
 }
 
 /************************************************************************/
-/*                          IsLocal()                                   */
+/*                              IsLocal()                               */
 /************************************************************************/
 
 bool VSIWin32FilesystemHandler::IsLocal(const char *pszPath) const
@@ -1764,7 +1774,7 @@ bool VSIWin32FilesystemHandler::IsLocal(const char *pszPath) const
 }
 
 /************************************************************************/
-/*                      GetCanonicalFilename()                          */
+/*                        GetCanonicalFilename()                        */
 /************************************************************************/
 
 std::string VSIWin32FilesystemHandler::GetCanonicalFilename(
@@ -1832,7 +1842,8 @@ std::string VSIWin32FilesystemHandler::GetCanonicalFilename(
 void VSIInstallLargeFileHandler()
 
 {
-    VSIFileManager::InstallHandler("", new VSIWin32FilesystemHandler);
+    VSIFileManager::InstallHandler(
+        "", std::make_shared<VSIWin32FilesystemHandler>());
 }
 
 #endif /* def WIN32 */

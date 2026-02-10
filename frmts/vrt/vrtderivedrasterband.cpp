@@ -14,9 +14,11 @@
 
 #include "cpl_minixml.h"
 #include "cpl_string.h"
+#include "gdal_priv.h"
 #include "vrtdataset.h"
 #include "cpl_multiproc.h"
 #include "gdalpython.h"
+#include "gdalantirecursion.h"
 
 #include <algorithm>
 #include <array>
@@ -66,7 +68,7 @@ static PyObject *GDALCreateNumpyArray(PyObject *pCreateArray, void *pBuffer,
     const char *pszDataType = nullptr;
     switch (eType)
     {
-        case GDT_Byte:
+        case GDT_UInt8:
             pszDataType = "uint8";
             break;
         case GDT_Int8:
@@ -226,7 +228,7 @@ VRTDerivedRasterBand::~VRTDerivedRasterBand()
 }
 
 /************************************************************************/
-/*                               Cleanup()                              */
+/*                              Cleanup()                               */
 /************************************************************************/
 
 void VRTDerivedRasterBand::Cleanup()
@@ -234,7 +236,7 @@ void VRTDerivedRasterBand::Cleanup()
 }
 
 /************************************************************************/
-/*                      GetGlobalMapPixelFunction()                     */
+/*                     GetGlobalMapPixelFunction()                      */
 /************************************************************************/
 
 static std::map<std::string,
@@ -248,7 +250,7 @@ GetGlobalMapPixelFunction()
 }
 
 /************************************************************************/
-/*                           AddPixelFunction()                         */
+/*                          AddPixelFunction()                          */
 /************************************************************************/
 
 /*! @endcond */
@@ -357,7 +359,7 @@ CPLErr VRTDerivedRasterBand::AddPixelFunction(
 }
 
 /************************************************************************/
-/*                           GetPixelFunction()                         */
+/*                          GetPixelFunction()                          */
 /************************************************************************/
 
 /**
@@ -390,7 +392,7 @@ VRTDerivedRasterBand::GetPixelFunction(const char *pszFuncNameIn)
 }
 
 /************************************************************************/
-/*                        GetPixelFunctionNames()                       */
+/*                       GetPixelFunctionNames()                        */
 /************************************************************************/
 
 /**
@@ -408,7 +410,7 @@ std::vector<std::string> VRTDerivedRasterBand::GetPixelFunctionNames()
 }
 
 /************************************************************************/
-/*                         SetPixelFunctionName()                       */
+/*                        SetPixelFunctionName()                        */
 /************************************************************************/
 
 /**
@@ -424,7 +426,7 @@ void VRTDerivedRasterBand::SetPixelFunctionName(const char *pszFuncNameIn)
 }
 
 /************************************************************************/
-/*                     AddPixelFunctionArgument()                       */
+/*                      AddPixelFunctionArgument()                      */
 /************************************************************************/
 
 /**
@@ -441,7 +443,7 @@ void VRTDerivedRasterBand::AddPixelFunctionArgument(const char *pszArg,
 }
 
 /************************************************************************/
-/*                         SetPixelFunctionLanguage()                   */
+/*                      SetPixelFunctionLanguage()                      */
 /************************************************************************/
 
 /**
@@ -457,7 +459,7 @@ void VRTDerivedRasterBand::SetPixelFunctionLanguage(const char *pszLanguage)
 }
 
 /************************************************************************/
-/*                 SetSkipNonContributingSources()                      */
+/*                   SetSkipNonContributingSources()                    */
 /************************************************************************/
 
 /** Whether sources that do not intersect the VRTRasterBand RasterIO() requested
@@ -477,7 +479,7 @@ void VRTDerivedRasterBand::SetSkipNonContributingSources(bool bSkip)
 }
 
 /************************************************************************/
-/*                         SetSourceTransferType()                      */
+/*                       SetSourceTransferType()                        */
 /************************************************************************/
 
 /**
@@ -497,7 +499,7 @@ void VRTDerivedRasterBand::SetSourceTransferType(GDALDataType eDataTypeIn)
 }
 
 /************************************************************************/
-/*                           InitializePython()                         */
+/*                          InitializePython()                          */
 /************************************************************************/
 
 bool VRTDerivedRasterBand::InitializePython()
@@ -885,6 +887,22 @@ CPLErr VRTDerivedRasterBand::GetPixelFunctionArguments(
                         dfVal = static_cast<double>(nYOff);
                         success = true;
                     }
+                    else if (osArgName == "crs")
+                    {
+                        const auto *crs =
+                            GetDataset()->GetSpatialRefRasterOnly();
+                        if (crs)
+                        {
+                            osVal =
+                                std::to_string(reinterpret_cast<size_t>(crs));
+                            success = true;
+                        }
+                        else
+                        {
+                            CPLError(CE_Failure, CPLE_AppDefined,
+                                     "VRTDataset has no <SRS>");
+                        }
+                    }
                     else if (osArgName == "geotransform")
                     {
                         GDALGeoTransform gt;
@@ -895,9 +913,7 @@ CPLErr VRTDerivedRasterBand::GetPixelFunctionArguments(
                             // is needed, the pixel function can emit the error.
                             continue;
                         }
-                        osVal = CPLSPrintf(
-                            "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g", gt[0], gt[1],
-                            gt[2], gt[3], gt[4], gt[5]);
+                        osVal = gt.ToString();
                         success = true;
                     }
                     else if (osArgName == "source_names")
@@ -1035,6 +1051,26 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
         return CE_Failure;
     }
 
+    const std::string osFctId("VRTDerivedRasterBand::IRasterIO");
+    GDALAntiRecursionGuard oGuard(osFctId);
+    if (oGuard.GetCallDepth() >= 32)
+    {
+        CPLError(
+            CE_Failure, CPLE_AppDefined,
+            "VRTDerivedRasterBand::IRasterIO(): Recursion detected (case 1)");
+        return CE_Failure;
+    }
+
+    GDALAntiRecursionGuard oGuard2(oGuard, poDS->GetDescription());
+    // Allow multiple recursion depths on the same dataset in case the split strategy is applied
+    if (oGuard2.GetCallDepth() > 15)
+    {
+        CPLError(
+            CE_Failure, CPLE_AppDefined,
+            "VRTDerivedRasterBand::IRasterIO(): Recursion detected (case 2)");
+        return CE_Failure;
+    }
+
     if constexpr (sizeof(GSpacing) > sizeof(int))
     {
         if (nLineSpace > INT_MAX)
@@ -1053,6 +1089,21 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
         }
     }
 
+    /* -------------------------------------------------------------------- */
+    /*      Do we have overviews that would be appropriate to satisfy       */
+    /*      this request?                                                   */
+    /* -------------------------------------------------------------------- */
+    auto l_poDS = dynamic_cast<VRTDataset *>(poDS);
+    if (l_poDS &&
+        l_poDS->m_apoOverviews.empty() &&  // do not use virtual overviews
+        (nBufXSize < nXSize || nBufYSize < nYSize) && GetOverviewCount() > 0)
+    {
+        if (OverviewRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize, pData,
+                             nBufXSize, nBufYSize, eBufType, nPixelSpace,
+                             nLineSpace, psExtraArg) == CE_None)
+            return CE_None;
+    }
+
     const int nBufTypeSize = GDALGetDataTypeSizeBytes(eBufType);
     GDALDataType eSrcType = eSourceTransferType;
     if (eSrcType == GDT_Unknown || eSrcType >= GDT_TypeCount)
@@ -1061,7 +1112,7 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
         GDALDataType eAllSrcType = GDT_Unknown;
         for (auto &poSource : m_papoSources)
         {
-            if (poSource->GetType() == VRTSimpleSource::GetTypeStatic())
+            if (poSource->IsSimpleSource())
             {
                 const auto poSS =
                     static_cast<VRTSimpleSource *>(poSource.get());
@@ -1085,9 +1136,9 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
         }
 
         if (eAllSrcType != GDT_Unknown)
-            eSrcType = eAllSrcType;
+            eSrcType = GDALDataTypeUnion(eAllSrcType, eDataType);
         else
-            eSrcType = eBufType;
+            eSrcType = GDALDataTypeUnion(GDT_Float64, eDataType);
     }
     const int nSrcTypeSize = GDALGetDataTypeSizeBytes(eSrcType);
 
@@ -1105,18 +1156,6 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
                                     nPixelSpace, nLineSpace, psExtraArg);
         if (eErr != CE_Warning)
             return eErr;
-    }
-
-    /* -------------------------------------------------------------------- */
-    /*      Do we have overviews that would be appropriate to satisfy       */
-    /*      this request?                                                   */
-    /* -------------------------------------------------------------------- */
-    if ((nBufXSize < nXSize || nBufYSize < nYSize) && GetOverviewCount() > 0)
-    {
-        if (OverviewRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize, pData,
-                             nBufXSize, nBufYSize, eBufType, nPixelSpace,
-                             nLineSpace, psExtraArg) == CE_None)
-            return CE_None;
     }
 
     /* ---- Get pixel function for band ---- */
@@ -1177,9 +1216,10 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
                 static_cast<VRTSimpleSource *>(m_papoSources[iSource].get());
             if (!poSource->GetSrcDstWindow(
                     nXOff, nYOff, nXSize, nYSize, nBufXSize, nBufYSize,
-                    &dfReqXOff, &dfReqYOff, &dfReqXSize, &dfReqYSize, &nReqXOff,
-                    &nReqYOff, &nReqXSize, &nReqYSize, &nOutXOff, &nOutYOff,
-                    &nOutXSize, &nOutYSize, bError))
+                    psExtraArg->eResampleAlg, &dfReqXOff, &dfReqYOff,
+                    &dfReqXSize, &dfReqYSize, &nReqXOff, &nReqYOff, &nReqXSize,
+                    &nReqYSize, &nOutXOff, &nOutYOff, &nOutXSize, &nOutYSize,
+                    bError))
             {
                 if (bError)
                 {
@@ -1434,7 +1474,7 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
         }
     }
 
-    // Collect any pixel function arguments
+    // Collect any pixel function arguments into oAdditionalArgs
     if (poPixelFunc != nullptr && !poPixelFunc->second.empty())
     {
         if (GetPixelFunctionArguments(poPixelFunc->second,
@@ -1582,13 +1622,17 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
     {
         CPLStringList aosArgs;
 
-        oAdditionalArgs.insert(oAdditionalArgs.end(),
-                               m_poPrivate->m_oFunctionArgs.begin(),
-                               m_poPrivate->m_oFunctionArgs.end());
-        for (const auto &oArg : oAdditionalArgs)
+        // Apply arguments specified using <PixelFunctionArguments>
+        for (const auto &[pszKey, pszValue] : m_poPrivate->m_oFunctionArgs)
         {
-            const char *pszKey = oArg.first.c_str();
-            const char *pszValue = oArg.second.c_str();
+            aosArgs.SetNameValue(pszKey, pszValue);
+        }
+
+        // Apply built-in arguments, potentially overwriting those in <PixelFunctionArguments>
+        // This is important because some pixel functions rely on built-in arguments being
+        // properly formatted, or even being a valid pointer. If a user can override these, we could have a crash.
+        for (const auto &[pszKey, pszValue] : oAdditionalArgs)
+        {
             aosArgs.SetNameValue(pszKey, pszValue);
         }
 
@@ -1606,7 +1650,7 @@ CPLErr VRTDerivedRasterBand::IRasterIO(
 }
 
 /************************************************************************/
-/*                         IGetDataCoverageStatus()                     */
+/*                       IGetDataCoverageStatus()                       */
 /************************************************************************/
 
 int VRTDerivedRasterBand::IGetDataCoverageStatus(
@@ -1798,7 +1842,7 @@ double VRTDerivedRasterBand::GetMaximum(int *pbSuccess)
 }
 
 /************************************************************************/
-/*                       ComputeRasterMinMax()                          */
+/*                        ComputeRasterMinMax()                         */
 /************************************************************************/
 
 CPLErr VRTDerivedRasterBand::ComputeRasterMinMax(int bApproxOK,

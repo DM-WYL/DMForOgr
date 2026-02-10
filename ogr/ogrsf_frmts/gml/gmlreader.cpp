@@ -165,7 +165,7 @@ GMLReader::~GMLReader()
 }
 
 /************************************************************************/
-/*                          SetSourceFile()                             */
+/*                           SetSourceFile()                            */
 /************************************************************************/
 
 void GMLReader::SetSourceFile(const char *pszFilename)
@@ -176,7 +176,7 @@ void GMLReader::SetSourceFile(const char *pszFilename)
 }
 
 /************************************************************************/
-/*                       GetSourceFileName()                           */
+/*                         GetSourceFileName()                          */
 /************************************************************************/
 
 const char *GMLReader::GetSourceFileName()
@@ -236,7 +236,7 @@ bool GMLReader::SetupParser()
 
 #ifdef HAVE_XERCES
 /************************************************************************/
-/*                        SetupParserXerces()                           */
+/*                         SetupParserXerces()                          */
 /************************************************************************/
 
 bool GMLReader::SetupParserXerces()
@@ -312,7 +312,7 @@ bool GMLReader::SetupParserXerces()
 #endif
 
 /************************************************************************/
-/*                        SetupParserExpat()                            */
+/*                          SetupParserExpat()                          */
 /************************************************************************/
 
 #ifdef HAVE_EXPAT
@@ -392,7 +392,7 @@ void GMLReader::CleanupParser()
 }
 
 /************************************************************************/
-/*                        NextFeatureXerces()                           */
+/*                         NextFeatureXerces()                          */
 /************************************************************************/
 
 #ifdef HAVE_XERCES
@@ -756,7 +756,7 @@ int GMLReader::GetFeatureElementIndex(const char *pszElement,
 }
 
 /************************************************************************/
-/*                IsCityGMLGenericAttributeElement()                    */
+/*                  IsCityGMLGenericAttributeElement()                  */
 /************************************************************************/
 
 bool GMLReader::IsCityGMLGenericAttributeElement(const char *pszElement,
@@ -796,7 +796,7 @@ bool GMLReader::IsCityGMLGenericAttributeElement(const char *pszElement,
 }
 
 /************************************************************************/
-/*                       GetAttributeElementIndex()                     */
+/*                      GetAttributeElementIndex()                      */
 /************************************************************************/
 
 int GMLReader::GetAttributeElementIndex(const char *pszElement, int nLen,
@@ -1295,7 +1295,8 @@ bool GMLReader::PrescanForSchema(bool bGetExtents, bool bOnlyDetectSRS)
 
     m_nHasSequentialLayers = TRUE;
 
-    void *hCacheSRS = GML_BuildOGRGeometryFromList_CreateCache();
+    std::unique_ptr<OGRGML_SRSCache, decltype(&OGRGML_SRSCache_Destroy)>
+        poSRSCache{OGRGML_SRSCache_Create(), OGRGML_SRSCache_Destroy};
 
     std::string osWork;
 
@@ -1383,7 +1384,7 @@ bool GMLReader::PrescanForSchema(bool bGetExtents, bool bOnlyDetectSRS)
                 OGRGeometry *poGeometry = GML_BuildOGRGeometryFromList(
                     myGeometryList, true, m_bInvertAxisOrderIfLatLong, nullptr,
                     m_bConsiderEPSGAsURN, m_eSwapCoordinates,
-                    m_bGetSecondaryGeometryOption, hCacheSRS,
+                    m_bGetSecondaryGeometryOption, poSRSCache.get(),
                     m_bFaceHoleNegative);
                 if (poGeometry == nullptr)
                     continue;
@@ -1457,8 +1458,6 @@ bool GMLReader::PrescanForSchema(bool bGetExtents, bool bOnlyDetectSRS)
         delete poFeature;
     }
 
-    GML_BuildOGRGeometryFromList_DestroyCache(hCacheSRS);
-
     if (bGetExtents && m_bCanUseGlobalSRSName && m_pszGlobalSRSName &&
         !bFoundPerFeatureSRSName && m_bInvertAxisOrderIfLatLong &&
         GML_IsLegitSRSName(m_pszGlobalSRSName) &&
@@ -1529,7 +1528,7 @@ void GMLReader::SetGlobalSRSName(const char *pszGlobalSRSName)
 }
 
 /************************************************************************/
-/*                       SetFilteredClassName()                         */
+/*                        SetFilteredClassName()                        */
 /************************************************************************/
 
 bool GMLReader::SetFilteredClassName(const char *pszClassName)

@@ -11,6 +11,7 @@
  ****************************************************************************/
 
 #include "cpl_http.h"
+#include "cpl_multiproc.h"  // CPLSleep
 #include "eeda.h"
 #include "ogrlibjsonutils.h"
 
@@ -49,7 +50,7 @@ BuildBandDescArray(json_object *poBands,
         const char *pszPrecision = json_object_get_string(poPrecision);
         if (pszPrecision == nullptr)
             continue;
-        GDALDataType eDT = GDT_Byte;
+        GDALDataType eDT = GDT_UInt8;
         if (EQUAL(pszPrecision, "INT"))
         {
             json_object *poRange =
@@ -231,7 +232,7 @@ BuildBandDescArray(json_object *poBands,
 }
 
 /************************************************************************/
-/*                      GDALEEDABaseDataset()                           */
+/*                        GDALEEDABaseDataset()                         */
 /************************************************************************/
 
 GDALEEDABaseDataset::GDALEEDABaseDataset()
@@ -240,7 +241,7 @@ GDALEEDABaseDataset::GDALEEDABaseDataset()
 }
 
 /************************************************************************/
-/*                     ~GDALEEDABaseDataset()                           */
+/*                        ~GDALEEDABaseDataset()                        */
 /************************************************************************/
 
 GDALEEDABaseDataset::~GDALEEDABaseDataset()
@@ -255,7 +256,7 @@ GDALEEDABaseDataset::~GDALEEDABaseDataset()
 }
 
 /************************************************************************/
-/*                          ConvertPathToName()                        */
+/*                         ConvertPathToName()                          */
 /************************************************************************/
 
 CPLString GDALEEDABaseDataset::ConvertPathToName(const CPLString &path)
@@ -297,7 +298,7 @@ CPLString GDALEEDABaseDataset::ConvertPathToName(const CPLString &path)
 }
 
 /************************************************************************/
-/*                          GetBaseHTTPOptions()                        */
+/*                         GetBaseHTTPOptions()                         */
 /************************************************************************/
 
 char **GDALEEDABaseDataset::GetBaseHTTPOptions()
@@ -463,7 +464,7 @@ static double EEDABackoffFactor(double base)
 /*                           EEDAHTTPFetch()                            */
 /************************************************************************/
 
-CPLHTTPResult *EEDAHTTPFetch(const char *pszURL, char **papszOptions)
+CPLHTTPResult *EEDAHTTPFetch(const char *pszURL, CSLConstList papszOptions)
 {
     CPLHTTPResult *psResult;
     const int RETRY_COUNT = 4;

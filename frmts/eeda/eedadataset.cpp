@@ -11,6 +11,7 @@
  ****************************************************************************/
 
 #include "gdal_priv.h"
+#include "gdal_frmts.h"
 #include "ogrsf_frmts.h"
 #include "cpl_http.h"
 #include "cpl_conv.h"
@@ -24,8 +25,6 @@
 #include <map>
 #include <set>
 #include <limits>
-
-extern "C" void GDALRegister_EEDA();
 
 /************************************************************************/
 /*                     CPLEscapeURLQueryParameter()                     */
@@ -62,7 +61,7 @@ static CPLString CPLEscapeURLQueryParameter(const char *pszInput)
 }
 
 /************************************************************************/
-/*                          GDALEEDADataset                             */
+/*                           GDALEEDADataset                            */
 /************************************************************************/
 
 class GDALEEDALayer;
@@ -75,7 +74,7 @@ class GDALEEDADataset final : public GDALEEDABaseDataset
 
   public:
     GDALEEDADataset();
-    virtual ~GDALEEDADataset();
+    ~GDALEEDADataset() override;
 
     int GetLayerCount() const override
     {
@@ -94,7 +93,7 @@ class GDALEEDADataset final : public GDALEEDABaseDataset
 };
 
 /************************************************************************/
-/*                          GDALEEDALayer                               */
+/*                            GDALEEDALayer                             */
 /************************************************************************/
 
 class GDALEEDALayer final : public OGRLayer
@@ -124,10 +123,10 @@ class GDALEEDALayer final : public OGRLayer
     GDALEEDALayer(GDALEEDADataset *poDS, const CPLString &osCollection,
                   const CPLString &osCollectionName, json_object *poAsset,
                   json_object *poLayerConf);
-    virtual ~GDALEEDALayer();
+    ~GDALEEDALayer() override;
 
-    virtual void ResetReading() override;
-    virtual OGRFeature *GetNextFeature() override;
+    void ResetReading() override;
+    OGRFeature *GetNextFeature() override;
     int TestCapability(const char *) const override;
 
     const OGRFeatureDefn *GetLayerDefn() const override
@@ -135,7 +134,7 @@ class GDALEEDALayer final : public OGRLayer
         return m_poFeatureDefn;
     }
 
-    virtual GIntBig GetFeatureCount(int) override
+    GIntBig GetFeatureCount(int) override
     {
         return -1;
     }
@@ -143,14 +142,14 @@ class GDALEEDALayer final : public OGRLayer
     virtual OGRErr ISetSpatialFilter(int iGeomField,
                                      const OGRGeometry *poGeom) override;
 
-    virtual OGRErr SetAttributeFilter(const char *) override;
+    OGRErr SetAttributeFilter(const char *) override;
 
-    virtual OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
-                              bool bForce) override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 };
 
 /************************************************************************/
-/*                            GDALEEDALayer()                           */
+/*                           GDALEEDALayer()                            */
 /************************************************************************/
 
 GDALEEDALayer::GDALEEDALayer(GDALEEDADataset *poDS,
@@ -368,7 +367,7 @@ void GDALEEDALayer::ResetReading()
 }
 
 /************************************************************************/
-/*                        GetNextRawFeature()                           */
+/*                         GetNextRawFeature()                          */
 /************************************************************************/
 
 OGRFeature *GDALEEDALayer::GetNextRawFeature()
@@ -645,7 +644,7 @@ OGRFeature *GDALEEDALayer::GetNextFeature()
 }
 
 /************************************************************************/
-/*                      GDALEEDALayerParseDateTime()                    */
+/*                     GDALEEDALayerParseDateTime()                     */
 /************************************************************************/
 
 static int GDALEEDALayerParseDateTime(const char *pszValue, int operation,
@@ -671,7 +670,7 @@ static int GDALEEDALayerParseDateTime(const char *pszValue, int operation,
 }
 
 /************************************************************************/
-/*                          IsSimpleComparison()                        */
+/*                         IsSimpleComparison()                         */
 /************************************************************************/
 
 bool GDALEEDALayer::IsSimpleComparison(const swq_expr_node *poNode)
@@ -688,7 +687,7 @@ bool GDALEEDALayer::IsSimpleComparison(const swq_expr_node *poNode)
 }
 
 /************************************************************************/
-/*                             GetOperatorText()                        */
+/*                          GetOperatorText()                           */
 /************************************************************************/
 
 static const char *GetOperatorText(swq_op nOp)
@@ -710,7 +709,7 @@ static const char *GetOperatorText(swq_op nOp)
 }
 
 /************************************************************************/
-/*                             BuildFilter()                            */
+/*                            BuildFilter()                             */
 /************************************************************************/
 
 CPLString GDALEEDALayer::BuildFilter(swq_expr_node *poNode, bool bIsAndTopLevel)
@@ -931,7 +930,7 @@ OGRErr GDALEEDALayer::SetAttributeFilter(const char *pszQuery)
 }
 
 /************************************************************************/
-/*                          ISetSpatialFilter()                         */
+/*                         ISetSpatialFilter()                          */
 /************************************************************************/
 
 OGRErr GDALEEDALayer::ISetSpatialFilter(int /* iGeomField */,
@@ -958,7 +957,7 @@ OGRErr GDALEEDALayer::ISetSpatialFilter(int /* iGeomField */,
 }
 
 /************************************************************************/
-/*                                GetExtent()                           */
+/*                             GetExtent()                              */
 /************************************************************************/
 
 OGRErr GDALEEDALayer::IGetExtent(int /* iGeomField*/, OGREnvelope *psExtent,
@@ -972,7 +971,7 @@ OGRErr GDALEEDALayer::IGetExtent(int /* iGeomField*/, OGREnvelope *psExtent,
 }
 
 /************************************************************************/
-/*                              TestCapability()                        */
+/*                           TestCapability()                           */
 /************************************************************************/
 
 int GDALEEDALayer::TestCapability(const char *pszCap) const
@@ -983,7 +982,7 @@ int GDALEEDALayer::TestCapability(const char *pszCap) const
 }
 
 /************************************************************************/
-/*                         GDALEEDADataset()                           */
+/*                          GDALEEDADataset()                           */
 /************************************************************************/
 
 GDALEEDADataset::GDALEEDADataset() : m_poLayer(nullptr)
@@ -991,7 +990,7 @@ GDALEEDADataset::GDALEEDADataset() : m_poLayer(nullptr)
 }
 
 /************************************************************************/
-/*                        ~GDALEEDADataset()                            */
+/*                          ~GDALEEDADataset()                          */
 /************************************************************************/
 
 GDALEEDADataset::~GDALEEDADataset()
@@ -1000,7 +999,7 @@ GDALEEDADataset::~GDALEEDADataset()
 }
 
 /************************************************************************/
-/*                            GetLayer()                                */
+/*                              GetLayer()                              */
 /************************************************************************/
 
 const OGRLayer *GDALEEDADataset::GetLayer(int idx) const
@@ -1011,7 +1010,7 @@ const OGRLayer *GDALEEDADataset::GetLayer(int idx) const
 }
 
 /************************************************************************/
-/*                            RunRequest()                              */
+/*                             RunRequest()                             */
 /************************************************************************/
 
 json_object *GDALEEDADataset::RunRequest(const CPLString &osURL)
@@ -1067,7 +1066,7 @@ json_object *GDALEEDADataset::RunRequest(const CPLString &osURL)
 }
 
 /************************************************************************/
-/*                         GDALEEDADatasetGetConf()                     */
+/*                       GDALEEDADatasetGetConf()                       */
 /************************************************************************/
 
 static json_object *GDALEEDADatasetGetConf()
@@ -1104,7 +1103,7 @@ static json_object *GDALEEDADatasetGetConf()
 }
 
 /************************************************************************/
-/*                               Open()                                 */
+/*                                Open()                                */
 /************************************************************************/
 
 bool GDALEEDADataset::Open(GDALOpenInfo *poOpenInfo)
@@ -1178,7 +1177,7 @@ bool GDALEEDADataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                          GDALEEDAdentify()                          */
+/*                          GDALEEDAdentify()                           */
 /************************************************************************/
 
 static int GDALEEDAdentify(GDALOpenInfo *poOpenInfo)

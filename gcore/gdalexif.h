@@ -11,6 +11,8 @@
  * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
+#include "cpl_conv.h"
+
 //! @cond Doxygen_Suppress
 
 typedef enum
@@ -50,7 +52,7 @@ typedef struct
     GUInt32 tdir_offset; /* byte offset to field data */
 } GDALEXIFTIFFDirEntry;
 
-GByte CPL_DLL *EXIFCreate(char **papszEXIFMetadata, GByte *pabyThumbnail,
+GByte CPL_DLL *EXIFCreate(CSLConstList papszEXIFMetadata, GByte *pabyThumbnail,
                           GUInt32 nThumbnailSize, GUInt32 nThumbnailWidth,
                           GUInt32 nThumbnailHeight, GUInt32 *pnOutBufferSize);
 

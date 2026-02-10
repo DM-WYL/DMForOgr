@@ -14,11 +14,12 @@
 #include "gtiffsplitbitmapband.h"
 
 #include "gtiffdataset.h"
+#include "gdal_priv.h"
 
 #include "cpl_error_internal.h"
 
 /************************************************************************/
-/*                       GTiffSplitBitmapBand()                         */
+/*                        GTiffSplitBitmapBand()                        */
 /************************************************************************/
 
 GTiffSplitBitmapBand::GTiffSplitBitmapBand(GTiffDataset *poDSIn, int nBandIn)
@@ -30,7 +31,7 @@ GTiffSplitBitmapBand::GTiffSplitBitmapBand(GTiffDataset *poDSIn, int nBandIn)
 }
 
 /************************************************************************/
-/*                      ~GTiffSplitBitmapBand()                         */
+/*                       ~GTiffSplitBitmapBand()                        */
 /************************************************************************/
 
 GTiffSplitBitmapBand::~GTiffSplitBitmapBand()

@@ -25,6 +25,7 @@ Authors:  Lucian Plesea
 #include "LERCV1/Lerc1Image.h"
 
 #include "gdal_priv_templates.hpp"
+#include "gdal_openinfo.h"
 
 // Requires lerc at least 2v4, where the c_api changed, but there is no good way
 // to check
@@ -249,7 +250,7 @@ static CPLErr CompressLERC1(buf_mgr &dst, buf_mgr &src, const ILImage &img,
     Lerc1ImgFill(zImg, reinterpret_cast<T *>(src.buffer) + c, img, stride)
         switch (img.dt)
         {
-            case GDT_Byte:
+            case GDT_UInt8:
                 FILL(GByte);
                 break;
             case GDT_UInt16:
@@ -324,7 +325,7 @@ static CPLErr DecompressLERC1(buf_mgr &dst, const buf_mgr &src,
                             stride)
         switch (img.dt)
         {
-            case GDT_Byte:
+            case GDT_UInt8:
                 UFILL(GByte);
                 break;
             case GDT_Int8:
@@ -392,7 +393,7 @@ static GDALDataType L2toGDT(L2NS::DataType L2type)
             dt = GDT_Int8;
             break;
         default:  // Unsigned byte
-            dt = GDT_Byte;
+            dt = GDT_UInt8;
     }
     return dt;
 }
@@ -503,7 +504,7 @@ static CPLErr CompressLERC2(buf_mgr &dst, buf_mgr &src, const ILImage &img,
 
 #define MASK(T) nndv = MaskFill(bm, reinterpret_cast<T *>(src.buffer), img)
 
-            case GDT_Byte:
+            case GDT_UInt8:
                 MASK(GByte);
                 break;
             case GDT_UInt16:
@@ -605,7 +606,7 @@ CPLErr LERC_Band::Decompress(buf_mgr &dst, buf_mgr &src)
     switch (img.dt)
     {
 #define UNMASK(T) UnMask(bm, reinterpret_cast<T *>(dst.buffer), img)
-        case GDT_Byte:
+        case GDT_UInt8:
             UNMASK(GByte);
             break;
         case GDT_UInt16:

@@ -14,7 +14,7 @@
 #include "ogr_mssqlspatial.h"
 
 /************************************************************************/
-/*                          OGRMSSQLSpatialDataSource()                 */
+/*                     OGRMSSQLSpatialDataSource()                      */
 /************************************************************************/
 
 OGRMSSQLSpatialDataSource::OGRMSSQLSpatialDataSource() : bDSUpdate(false)
@@ -55,7 +55,7 @@ OGRMSSQLSpatialDataSource::OGRMSSQLSpatialDataSource() : bDSUpdate(false)
 }
 
 /************************************************************************/
-/*                         ~OGRMSSQLSpatialDataSource()                 */
+/*                     ~OGRMSSQLSpatialDataSource()                     */
 /************************************************************************/
 
 OGRMSSQLSpatialDataSource::~OGRMSSQLSpatialDataSource()
@@ -72,7 +72,7 @@ OGRMSSQLSpatialDataSource::~OGRMSSQLSpatialDataSource()
 }
 
 /************************************************************************/
-/*                      OGRMSSQLDecodeVersionString()                   */
+/*                    OGRMSSQLDecodeVersionString()                     */
 /************************************************************************/
 
 void OGRMSSQLSpatialDataSource::OGRMSSQLDecodeVersionString(MSSQLVer *psVersion,
@@ -491,7 +491,7 @@ OGRMSSQLSpatialDataSource::ICreateLayer(const char *pszLayerName,
     else
         pszFIDColumnName = CPLStrdup(pszFIDColumnNameIn);
 
-    const bool bFID64 = CPLFetchBool(papszOptions, "FID64", FALSE);
+    const bool bFID64 = CPLFetchBool(papszOptions, "FID64", false);
     const char *pszFIDType = bFID64 ? "bigint" : "int";
 
     if (eType == wkbNone)
@@ -645,7 +645,7 @@ int OGRMSSQLSpatialDataSource::OpenTable(const char *pszSchemaName,
 }
 
 /************************************************************************/
-/*                       GetLayerCount()                                */
+/*                           GetLayerCount()                            */
 /************************************************************************/
 
 int OGRMSSQLSpatialDataSource::GetLayerCount() const
@@ -654,7 +654,7 @@ int OGRMSSQLSpatialDataSource::GetLayerCount() const
 }
 
 /************************************************************************/
-/*                       ParseValue()                                   */
+/*                             ParseValue()                             */
 /************************************************************************/
 
 int OGRMSSQLSpatialDataSource::ParseValue(char **pszValue, char *pszSource,

@@ -13,6 +13,7 @@
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
+#include "gdal_priv.h"
 #include "ogr_spatialref.h"
 #include "rawdataset.h"
 
@@ -43,7 +44,7 @@ class GenBinDataset final : public RawDataset
 
     CPL_DISALLOW_COPY_ASSIGN(GenBinDataset)
 
-    CPLErr Close() override;
+    CPLErr Close(GDALProgressFunc = nullptr, void * = nullptr) override;
 
   public:
     GenBinDataset();
@@ -96,7 +97,7 @@ GenBinBitRasterBand::GenBinBitRasterBand(GenBinDataset *poDSIn, int nBitsIn)
     poDS = poDSIn;
     nBand = 1;
 
-    eDataType = GDT_Byte;
+    eDataType = GDT_UInt8;
 
     nBlockXSize = poDSIn->nRasterXSize;
     nBlockYSize = 1;
@@ -189,7 +190,7 @@ CPLErr GenBinBitRasterBand::IReadBlock(int /* nBlockXOff */, int nBlockYOff,
 /************************************************************************/
 
 /************************************************************************/
-/*                            GenBinDataset()                             */
+/*                           GenBinDataset()                            */
 /************************************************************************/
 
 GenBinDataset::GenBinDataset()
@@ -199,7 +200,7 @@ GenBinDataset::GenBinDataset()
 }
 
 /************************************************************************/
-/*                            ~GenBinDataset()                          */
+/*                           ~GenBinDataset()                           */
 /************************************************************************/
 
 GenBinDataset::~GenBinDataset()
@@ -209,10 +210,10 @@ GenBinDataset::~GenBinDataset()
 }
 
 /************************************************************************/
-/*                              Close()                                 */
+/*                               Close()                                */
 /************************************************************************/
 
-CPLErr GenBinDataset::Close()
+CPLErr GenBinDataset::Close(GDALProgressFunc, void *)
 {
     CPLErr eErr = CE_None;
     if (nOpenFlags != OPEN_FLAGS_CLOSED)
@@ -388,8 +389,12 @@ GDALDataset *GenBinDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      We assume the user is pointing to the binary (i.e. .bil) file.  */
     /* -------------------------------------------------------------------- */
-    if (poOpenInfo->nHeaderBytes < 2 || poOpenInfo->fpL == nullptr)
+    if (poOpenInfo->nHeaderBytes < 2 || poOpenInfo->fpL == nullptr ||
+        (!poOpenInfo->IsSingleAllowedDriver("GenBin") &&
+         poOpenInfo->IsExtensionEqualToCI("zarr")))
+    {
         return nullptr;
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Now we need to tear apart the filename to form a .HDR           */
@@ -399,7 +404,7 @@ GDALDataset *GenBinDataset::Open(GDALOpenInfo *poOpenInfo)
     const CPLString osName = CPLGetBasenameSafe(poOpenInfo->pszFilename);
     CPLString osHDRFilename;
 
-    char **papszSiblingFiles = poOpenInfo->GetSiblingFiles();
+    CSLConstList papszSiblingFiles = poOpenInfo->GetSiblingFiles();
     if (papszSiblingFiles)
     {
         const int iFile =
@@ -535,7 +540,7 @@ GDALDataset *GenBinDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      Figure out the data type.                                       */
     /* -------------------------------------------------------------------- */
     const char *pszDataType = CSLFetchNameValue(papszHdr, "DATATYPE");
-    GDALDataType eDataType = GDT_Byte;
+    GDALDataType eDataType = GDT_UInt8;
     int nBits = -1;  // Only needed for partial byte types
 
     if (pszDataType == nullptr)
@@ -725,7 +730,7 @@ GDALDataset *GenBinDataset::Open(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                         GDALRegister_GenBin()                        */
+/*                        GDALRegister_GenBin()                         */
 /************************************************************************/
 
 void GDALRegister_GenBin()

@@ -17,7 +17,7 @@
 #include "ogrgeojsonutils.h"
 
 /************************************************************************/
-/*                       OGRJSONFGDriverIdentify()                      */
+/*                      OGRJSONFGDriverIdentify()                       */
 /************************************************************************/
 
 static int OGRJSONFGDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -38,7 +38,7 @@ static int OGRJSONFGDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                           Open()                                     */
+/*                                Open()                                */
 /************************************************************************/
 
 static GDALDataset *OGRJSONFGDriverOpen(GDALOpenInfo *poOpenInfo)
@@ -59,7 +59,7 @@ static GDALDataset *OGRJSONFGDriverOpen(GDALOpenInfo *poOpenInfo)
 static GDALDataset *OGRJSONFGDriverCreate(const char *pszName, int /* nBands */,
                                           int /* nXSize */, int /* nYSize */,
                                           GDALDataType /* eDT */,
-                                          char **papszOptions)
+                                          CSLConstList papszOptions)
 {
     auto poDS = std::make_unique<OGRJSONFGDataset>();
     if (!poDS->Create(pszName, papszOptions))
@@ -70,7 +70,7 @@ static GDALDataset *OGRJSONFGDriverCreate(const char *pszName, int /* nBands */,
 }
 
 /************************************************************************/
-/*                           RegisterOGRJSONFG()                        */
+/*                         RegisterOGRJSONFG()                          */
 /************************************************************************/
 
 void RegisterOGRJSONFG()
@@ -85,6 +85,8 @@ void RegisterOGRJSONFG()
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_LAYER, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_FIELD, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_Z_GEOMETRIES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_MEASURED_GEOMETRIES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_CURVE_GEOMETRIES, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_LONGNAME,
                               "OGC Features and Geometries JSON");
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSIONS, "json");
@@ -133,6 +135,10 @@ void RegisterOGRJSONFG()
         "  </Option>"
         "  <Option name='ID_GENERATE' type='boolean' "
         "description='Auto-generate feature ids' default='NO'/>"
+        "  <Option name='MEASURE_UNIT' type='string' "
+        "description='Unit of measures (M) values'/>"
+        "  <Option name='MEASURE_DESCRIPTION' type='string' "
+        "description='Description of measures (M) values'/>"
         "</LayerCreationOptionList>");
 
     poDriver->SetMetadataItem(

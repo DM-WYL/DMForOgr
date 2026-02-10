@@ -26,7 +26,7 @@
 #endif
 
 /************************************************************************/
-/*                   GDALVectorMakeValidAlgorithm()                     */
+/*                    GDALVectorMakeValidAlgorithm()                    */
 /************************************************************************/
 
 GDALVectorMakeValidAlgorithm::GDALVectorMakeValidAlgorithm(bool standaloneStep)
@@ -49,7 +49,7 @@ namespace
 {
 
 /************************************************************************/
-/*                    GDALVectorMakeValidAlgorithmLayer                 */
+/*                  GDALVectorMakeValidAlgorithmLayer                   */
 /************************************************************************/
 
 class GDALVectorMakeValidAlgorithmLayer final
@@ -94,8 +94,7 @@ std::unique_ptr<OGRFeature> GDALVectorMakeValidAlgorithmLayer::TranslateFeature(
         {
             auto poGeom =
                 std::unique_ptr<OGRGeometry>(poSrcFeature->StealGeometry(i));
-            if (poGeom && poGeom->getCoordinateDimension() == 2 &&
-                !poGeom->IsValid())
+            if (poGeom && !poGeom->IsValid())
             {
                 const bool bIsGeomCollection =
                     wkbFlatten(poGeom->getGeometryType()) ==
@@ -153,7 +152,7 @@ GDALVectorMakeValidAlgorithm::CreateAlgLayer(
 }
 
 /************************************************************************/
-/*                  GDALVectorMakeValidAlgorithm::RunStep()             */
+/*               GDALVectorMakeValidAlgorithm::RunStep()                */
 /************************************************************************/
 
 bool GDALVectorMakeValidAlgorithm::RunStep(GDALPipelineStepRunContext &ctxt)

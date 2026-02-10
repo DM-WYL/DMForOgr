@@ -224,28 +224,40 @@ CPLErr MEMRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     {
         for (int iLine = 0; iLine < nYSize; iLine++)
         {
-            GDALCopyWords(pabyData +
-                              nLineOffset *
-                                  static_cast<GPtrDiff_t>(iLine + nYOff) +
-                              nXOff * nPixelOffset,
-                          eDataType, static_cast<int>(nPixelOffset),
-                          static_cast<GByte *>(pData) +
-                              nLineSpaceBuf * static_cast<GPtrDiff_t>(iLine),
-                          eBufType, static_cast<int>(nPixelSpaceBuf), nXSize);
+            GDALCopyWords64(pabyData +
+                                nLineOffset *
+                                    static_cast<GPtrDiff_t>(iLine + nYOff) +
+                                nXOff * nPixelOffset,
+                            eDataType, static_cast<int>(nPixelOffset),
+                            static_cast<GByte *>(pData) +
+                                nLineSpaceBuf * static_cast<GPtrDiff_t>(iLine),
+                            eBufType, static_cast<int>(nPixelSpaceBuf), nXSize);
         }
     }
     else
     {
-        for (int iLine = 0; iLine < nYSize; iLine++)
+        if (nXSize == nRasterXSize && nPixelSpaceBuf == nPixelOffset &&
+            nLineSpaceBuf == nLineOffset)
         {
-            GDALCopyWords(static_cast<GByte *>(pData) +
-                              nLineSpaceBuf * static_cast<GPtrDiff_t>(iLine),
-                          eBufType, static_cast<int>(nPixelSpaceBuf),
-                          pabyData +
-                              nLineOffset *
-                                  static_cast<GPtrDiff_t>(iLine + nYOff) +
-                              nXOff * nPixelOffset,
-                          eDataType, static_cast<int>(nPixelOffset), nXSize);
+            GDALCopyWords64(pData, eBufType, static_cast<int>(nPixelSpaceBuf),
+                            pabyData +
+                                nLineOffset * static_cast<GPtrDiff_t>(nYOff),
+                            eDataType, static_cast<int>(nPixelOffset),
+                            static_cast<GPtrDiff_t>(nXSize) * nYSize);
+        }
+        else
+        {
+            for (int iLine = 0; iLine < nYSize; iLine++)
+            {
+                GDALCopyWords64(
+                    static_cast<GByte *>(pData) +
+                        nLineSpaceBuf * static_cast<GPtrDiff_t>(iLine),
+                    eBufType, static_cast<int>(nPixelSpaceBuf),
+                    pabyData +
+                        nLineOffset * static_cast<GPtrDiff_t>(iLine + nYOff) +
+                        nXOff * nPixelOffset,
+                    eDataType, static_cast<int>(nPixelOffset), nXSize);
+            }
         }
     }
     return CE_None;
@@ -265,46 +277,46 @@ CPLErr MEMDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 {
     const int eBufTypeSize = GDALGetDataTypeSizeBytes(eBufType);
 
+    const auto IsPixelInterleaveDataset = [this, nBandCount, panBandMap]()
+    {
+        GDALDataType eDT = GDT_Unknown;
+        GByte *pabyData = nullptr;
+        GSpacing nPixelOffset = 0;
+        GSpacing nLineOffset = 0;
+        int eDTSize = 0;
+        for (int iBandIndex = 0; iBandIndex < nBandCount; iBandIndex++)
+        {
+            if (panBandMap[iBandIndex] != iBandIndex + 1)
+                return false;
+
+            MEMRasterBand *poBand =
+                cpl::down_cast<MEMRasterBand *>(GetRasterBand(iBandIndex + 1));
+            if (iBandIndex == 0)
+            {
+                eDT = poBand->GetRasterDataType();
+                pabyData = poBand->pabyData;
+                nPixelOffset = poBand->nPixelOffset;
+                nLineOffset = poBand->nLineOffset;
+                eDTSize = GDALGetDataTypeSizeBytes(eDT);
+                if (nPixelOffset != static_cast<GSpacing>(nBands) * eDTSize)
+                    return false;
+            }
+            else if (poBand->GetRasterDataType() != eDT ||
+                     nPixelOffset != poBand->nPixelOffset ||
+                     nLineOffset != poBand->nLineOffset ||
+                     poBand->pabyData != pabyData + iBandIndex * eDTSize)
+            {
+                return false;
+            }
+        }
+        return true;
+    };
+
     // Detect if we have a pixel-interleaved buffer
     if (nXSize == nBufXSize && nYSize == nBufYSize && nBandCount == nBands &&
         nBands > 1 && nBandSpaceBuf == eBufTypeSize &&
         nPixelSpaceBuf == nBandSpaceBuf * nBands)
     {
-        const auto IsPixelInterleaveDataset = [this, nBandCount, panBandMap]()
-        {
-            GDALDataType eDT = GDT_Unknown;
-            GByte *pabyData = nullptr;
-            GSpacing nPixelOffset = 0;
-            GSpacing nLineOffset = 0;
-            int eDTSize = 0;
-            for (int iBandIndex = 0; iBandIndex < nBandCount; iBandIndex++)
-            {
-                if (panBandMap[iBandIndex] != iBandIndex + 1)
-                    return false;
-
-                MEMRasterBand *poBand = cpl::down_cast<MEMRasterBand *>(
-                    GetRasterBand(iBandIndex + 1));
-                if (iBandIndex == 0)
-                {
-                    eDT = poBand->GetRasterDataType();
-                    pabyData = poBand->pabyData;
-                    nPixelOffset = poBand->nPixelOffset;
-                    nLineOffset = poBand->nLineOffset;
-                    eDTSize = GDALGetDataTypeSizeBytes(eDT);
-                    if (nPixelOffset != static_cast<GSpacing>(nBands) * eDTSize)
-                        return false;
-                }
-                else if (poBand->GetRasterDataType() != eDT ||
-                         nPixelOffset != poBand->nPixelOffset ||
-                         nLineOffset != poBand->nLineOffset ||
-                         poBand->pabyData != pabyData + iBandIndex * eDTSize)
-                {
-                    return false;
-                }
-            }
-            return true;
-        };
-
         const auto IsBandSeparatedDataset = [this, nBandCount, panBandMap]()
         {
             GDALDataType eDT = GDT_Unknown;
@@ -425,6 +437,24 @@ CPLErr MEMDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
             return CE_None;
         }
     }
+    // From a band-interleaved buffer to a pixel-interleaved dataset
+    else if (eRWFlag == GF_Write && nXSize == nBufXSize &&
+             nYSize == nBufYSize && nXSize == nRasterXSize &&
+             nBandCount == nBands && nBands > 1 &&
+             nPixelSpaceBuf == eBufTypeSize &&
+             nLineSpaceBuf == nPixelSpaceBuf * nBufXSize &&
+             nBandSpaceBuf == nLineSpaceBuf * nBufYSize &&
+             IsPixelInterleaveDataset())
+    {
+        FlushCache(false);
+
+        auto poDstBand = cpl::down_cast<MEMRasterBand *>(papoBands[0]);
+        GDALTranspose2D(pData, eBufType,
+                        poDstBand->pabyData + nYOff * poDstBand->nLineOffset,
+                        poDstBand->GetRasterDataType(),
+                        static_cast<size_t>(nXSize) * nYSize, nBands);
+        return CE_None;
+    }
 
     if (nBufXSize != nXSize || nBufYSize != nYSize)
         return GDALDataset::IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize,
@@ -466,7 +496,7 @@ GDALRasterBand *MEMRasterBand::GetOverview(int i)
 }
 
 /************************************************************************/
-/*                         CreateMaskBand()                             */
+/*                           CreateMaskBand()                           */
 /************************************************************************/
 
 CPLErr MEMRasterBand::CreateMaskBand(int nFlagsIn)
@@ -489,7 +519,7 @@ CPLErr MEMRasterBand::CreateMaskBand(int nFlagsIn)
 
     nMaskFlags = nFlagsIn;
     auto poMemMaskBand = std::unique_ptr<MEMRasterBand>(
-        new MEMRasterBand(pabyMaskData, GDT_Byte, nRasterXSize, nRasterYSize,
+        new MEMRasterBand(pabyMaskData, GDT_UInt8, nRasterXSize, nRasterYSize,
                           /* bOwnData= */ true));
     poMemMaskBand->m_bIsMask = true;
     poMask.reset(std::move(poMemMaskBand));
@@ -508,7 +538,7 @@ CPLErr MEMRasterBand::CreateMaskBand(int nFlagsIn)
 }
 
 /************************************************************************/
-/*                            IsMaskBand()                              */
+/*                             IsMaskBand()                             */
 /************************************************************************/
 
 bool MEMRasterBand::IsMaskBand() const
@@ -523,7 +553,7 @@ bool MEMRasterBand::IsMaskBand() const
 /************************************************************************/
 
 /************************************************************************/
-/*                            MEMDataset()                             */
+/*                             MEMDataset()                             */
 /************************************************************************/
 
 MEMDataset::MEMDataset()
@@ -534,21 +564,44 @@ MEMDataset::MEMDataset()
 }
 
 /************************************************************************/
-/*                            ~MEMDataset()                            */
+/*                            ~MEMDataset()                             */
 /************************************************************************/
 
 MEMDataset::~MEMDataset()
 
 {
-    const bool bSuppressOnCloseBackup = bSuppressOnClose;
-    bSuppressOnClose = true;
-    FlushCache(true);
-    bSuppressOnClose = bSuppressOnCloseBackup;
+    MEMDataset::Close();
+}
+
+/************************************************************************/
+/*                               Close()                                */
+/************************************************************************/
+
+CPLErr MEMDataset::Close(GDALProgressFunc, void *)
+{
+    CPLErr eErr = CE_None;
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        const bool bSuppressOnCloseBackup = bSuppressOnClose;
+        bSuppressOnClose = true;
+        FlushCache(true);
+        for (int i = 0; i < nBands; ++i)
+        {
+            auto poMEMBand = dynamic_cast<MEMRasterBand *>(papoBands[i]);
+            if (poMEMBand && poMEMBand->poMask)
+                poMEMBand->poMask.get()->FlushCache(true);
+        }
+        bSuppressOnClose = bSuppressOnCloseBackup;
+        m_apoOverviewDS.clear();
+        eErr = GDALDataset::Close();
+    }
+
+    return eErr;
 }
 
 #if 0
 /************************************************************************/
-/*                          EnterReadWrite()                            */
+/*                           EnterReadWrite()                           */
 /************************************************************************/
 
 int MEMDataset::EnterReadWrite(CPL_UNUSED GDALRWFlag eRWFlag)
@@ -557,7 +610,7 @@ int MEMDataset::EnterReadWrite(CPL_UNUSED GDALRWFlag eRWFlag)
 }
 
 /************************************************************************/
-/*                         LeaveReadWrite()                             */
+/*                           LeaveReadWrite()                           */
 /************************************************************************/
 
 void MEMDataset::LeaveReadWrite()
@@ -566,7 +619,7 @@ void MEMDataset::LeaveReadWrite()
 #endif  // if 0
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 
 const OGRSpatialReference *MEMDataset::GetSpatialRef() const
@@ -629,7 +682,7 @@ CPLErr MEMDataset::SetGeoTransform(const GDALGeoTransform &gt)
 }
 
 /************************************************************************/
-/*                          GetInternalHandle()                         */
+/*                         GetInternalHandle()                          */
 /************************************************************************/
 
 void *MEMDataset::GetInternalHandle(const char *pszRequest)
@@ -713,7 +766,7 @@ CPLErr MEMDataset::SetGCPs(int nNewCount, const GDAL_GCP *pasNewGCPList,
 /*      memory.                                                         */
 /************************************************************************/
 
-CPLErr MEMDataset::AddBand(GDALDataType eType, char **papszOptions)
+CPLErr MEMDataset::AddBand(GDALDataType eType, CSLConstList papszOptions)
 
 {
     const int nBandId = GetRasterCount() + 1;
@@ -729,7 +782,8 @@ CPLErr MEMDataset::AddBand(GDALDataType eType, char **papszOptions)
     /*      Do we need to allocate the memory ourselves?  This is the       */
     /*      simple case.                                                    */
     /* -------------------------------------------------------------------- */
-    if (CSLFetchNameValue(papszOptions, "DATAPOINTER") == nullptr)
+    const CPLStringList aosOptions(papszOptions);
+    if (aosOptions.FetchNameValue("DATAPOINTER") == nullptr)
     {
         const GSpacing nTmp = nPixelSize * GetRasterXSize();
         GByte *pData =
@@ -754,18 +808,18 @@ CPLErr MEMDataset::AddBand(GDALDataType eType, char **papszOptions)
     /* -------------------------------------------------------------------- */
     /*      Get layout of memory and other flags.                           */
     /* -------------------------------------------------------------------- */
-    const char *pszDataPointer = CSLFetchNameValue(papszOptions, "DATAPOINTER");
+    const char *pszDataPointer = aosOptions.FetchNameValue("DATAPOINTER");
     GByte *pData = static_cast<GByte *>(CPLScanPointer(
         pszDataPointer, static_cast<int>(strlen(pszDataPointer))));
 
-    const char *pszOption = CSLFetchNameValue(papszOptions, "PIXELOFFSET");
+    const char *pszOption = aosOptions.FetchNameValue("PIXELOFFSET");
     GSpacing nPixelOffset;
     if (pszOption == nullptr)
         nPixelOffset = nPixelSize;
     else
         nPixelOffset = CPLAtoGIntBig(pszOption);
 
-    pszOption = CSLFetchNameValue(papszOptions, "LINEOFFSET");
+    pszOption = aosOptions.FetchNameValue("LINEOFFSET");
     GSpacing nLineOffset;
     if (pszOption == nullptr)
         nLineOffset = GetRasterXSize() * static_cast<size_t>(nPixelOffset);
@@ -779,7 +833,7 @@ CPLErr MEMDataset::AddBand(GDALDataType eType, char **papszOptions)
 }
 
 /************************************************************************/
-/*                           AddMEMBand()                               */
+/*                             AddMEMBand()                             */
 /************************************************************************/
 
 void MEMDataset::AddMEMBand(GDALRasterBandH hMEMBand)
@@ -1037,7 +1091,7 @@ CPLErr MEMDataset::IBuildOverviews(const char *pszResampling, int nOverviews,
 }
 
 /************************************************************************/
-/*                         CreateMaskBand()                             */
+/*                           CreateMaskBand()                           */
 /************************************************************************/
 
 CPLErr MEMDataset::CreateMaskBand(int nFlagsIn)
@@ -1049,7 +1103,7 @@ CPLErr MEMDataset::CreateMaskBand(int nFlagsIn)
 }
 
 /************************************************************************/
-/*                           CanBeCloned()                              */
+/*                            CanBeCloned()                             */
 /************************************************************************/
 
 /** Implements GDALDataset::CanBeCloned()
@@ -1067,7 +1121,7 @@ bool MEMDataset::CanBeCloned(int nScopeFlags, bool bCanShareState) const
 }
 
 /************************************************************************/
-/*                              Clone()                                 */
+/*                               Clone()                                */
 /************************************************************************/
 
 /** Implements GDALDataset::Clone()
@@ -1132,7 +1186,7 @@ std::unique_ptr<GDALDataset> MEMDataset::Clone(int nScopeFlags,
                 {
                     auto poMaskBand =
                         std::unique_ptr<MEMRasterBand>(new MEMRasterBand(
-                            poSrcMaskBand->pabyData, GDT_Byte, nRasterXSize,
+                            poSrcMaskBand->pabyData, GDT_UInt8, nRasterXSize,
                             nRasterYSize, /* bOwnData = */ false));
                     poMaskBand->m_bIsMask = true;
                     poNewBand->poMask.reset(std::move(poMaskBand));
@@ -1177,38 +1231,37 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
     }
 #endif
 
-    char **papszOptions =
-        CSLTokenizeStringComplex(poOpenInfo->pszFilename + 6, ",", TRUE, FALSE);
+    const CPLStringList aosOptions(CSLTokenizeStringComplex(
+        poOpenInfo->pszFilename + 6, ",", TRUE, FALSE));
 
     /* -------------------------------------------------------------------- */
     /*      Verify we have all required fields                              */
     /* -------------------------------------------------------------------- */
-    if (CSLFetchNameValue(papszOptions, "PIXELS") == nullptr ||
-        CSLFetchNameValue(papszOptions, "LINES") == nullptr ||
-        CSLFetchNameValue(papszOptions, "DATAPOINTER") == nullptr)
+    if (aosOptions.FetchNameValue("PIXELS") == nullptr ||
+        aosOptions.FetchNameValue("LINES") == nullptr ||
+        aosOptions.FetchNameValue("DATAPOINTER") == nullptr)
     {
         CPLError(
             CE_Failure, CPLE_AppDefined,
             "Missing required field (one of PIXELS, LINES or DATAPOINTER).  "
             "Unable to access in-memory array.");
 
-        CSLDestroy(papszOptions);
         return nullptr;
     }
 
     /* -------------------------------------------------------------------- */
     /*      Create the new MEMDataset object.                               */
     /* -------------------------------------------------------------------- */
-    MEMDataset *poDS = new MEMDataset();
+    auto poDS = std::make_unique<MEMDataset>();
 
-    poDS->nRasterXSize = atoi(CSLFetchNameValue(papszOptions, "PIXELS"));
-    poDS->nRasterYSize = atoi(CSLFetchNameValue(papszOptions, "LINES"));
+    poDS->nRasterXSize = atoi(aosOptions.FetchNameValue("PIXELS"));
+    poDS->nRasterYSize = atoi(aosOptions.FetchNameValue("LINES"));
     poDS->eAccess = poOpenInfo->eAccess;
 
     /* -------------------------------------------------------------------- */
     /*      Extract other information.                                      */
     /* -------------------------------------------------------------------- */
-    const char *pszOption = CSLFetchNameValue(papszOptions, "BANDS");
+    const char *pszOption = aosOptions.FetchNameValue("BANDS");
     int nBands = 1;
     if (pszOption != nullptr)
     {
@@ -1218,13 +1271,11 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
     if (!GDALCheckDatasetDimensions(poDS->nRasterXSize, poDS->nRasterYSize) ||
         !GDALCheckBandCount(nBands, TRUE))
     {
-        CSLDestroy(papszOptions);
-        delete poDS;
         return nullptr;
     }
 
-    pszOption = CSLFetchNameValue(papszOptions, "DATATYPE");
-    GDALDataType eType = GDT_Byte;
+    pszOption = aosOptions.FetchNameValue("DATATYPE");
+    GDALDataType eType = GDT_UInt8;
     if (pszOption != nullptr)
     {
         if (atoi(pszOption) > 0 && atoi(pszOption) < GDT_TypeCount)
@@ -1236,14 +1287,12 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "DATATYPE=%s not recognised.", pszOption);
-                CSLDestroy(papszOptions);
-                delete poDS;
                 return nullptr;
             }
         }
     }
 
-    pszOption = CSLFetchNameValue(papszOptions, "PIXELOFFSET");
+    pszOption = aosOptions.FetchNameValue("PIXELOFFSET");
     GSpacing nPixelOffset;
     if (pszOption == nullptr)
         nPixelOffset = GDALGetDataTypeSizeBytes(eType);
@@ -1251,7 +1300,7 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
         nPixelOffset =
             CPLScanUIntBig(pszOption, static_cast<int>(strlen(pszOption)));
 
-    pszOption = CSLFetchNameValue(papszOptions, "LINEOFFSET");
+    pszOption = aosOptions.FetchNameValue("LINEOFFSET");
     GSpacing nLineOffset = 0;
     if (pszOption == nullptr)
         nLineOffset = poDS->nRasterXSize * static_cast<size_t>(nPixelOffset);
@@ -1259,7 +1308,7 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
         nLineOffset =
             CPLScanUIntBig(pszOption, static_cast<int>(strlen(pszOption)));
 
-    pszOption = CSLFetchNameValue(papszOptions, "BANDOFFSET");
+    pszOption = aosOptions.FetchNameValue("BANDOFFSET");
     GSpacing nBandOffset = 0;
     if (pszOption == nullptr)
         nBandOffset = nLineOffset * static_cast<size_t>(poDS->nRasterYSize);
@@ -1267,7 +1316,7 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
         nBandOffset =
             CPLScanUIntBig(pszOption, static_cast<int>(strlen(pszOption)));
 
-    const char *pszDataPointer = CSLFetchNameValue(papszOptions, "DATAPOINTER");
+    const char *pszDataPointer = aosOptions.FetchNameValue("DATAPOINTER");
     GByte *pabyData = static_cast<GByte *>(CPLScanPointer(
         pszDataPointer, static_cast<int>(strlen(pszDataPointer))));
 
@@ -1277,20 +1326,21 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
     for (int iBand = 0; iBand < nBands; iBand++)
     {
         poDS->SetBand(iBand + 1,
-                      new MEMRasterBand(poDS, iBand + 1,
-                                        pabyData + iBand * nBandOffset, eType,
-                                        nPixelOffset, nLineOffset, FALSE));
+                      std::make_unique<MEMRasterBand>(
+                          poDS.get(), iBand + 1, pabyData + iBand * nBandOffset,
+                          eType, nPixelOffset, nLineOffset, FALSE));
     }
 
     /* -------------------------------------------------------------------- */
     /*      Set GeoTransform information.                                   */
     /* -------------------------------------------------------------------- */
 
-    pszOption = CSLFetchNameValue(papszOptions, "GEOTRANSFORM");
+    pszOption = aosOptions.FetchNameValue("GEOTRANSFORM");
     if (pszOption != nullptr)
     {
-        char **values = CSLTokenizeStringComplex(pszOption, "/", TRUE, FALSE);
-        if (CSLCount(values) == 6)
+        const CPLStringList values(
+            CSLTokenizeStringComplex(pszOption, "/", TRUE, FALSE));
+        if (values.size() == 6)
         {
             GDALGeoTransform gt;
             for (size_t i = 0; i < 6; ++i)
@@ -1300,14 +1350,13 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
             }
             poDS->SetGeoTransform(gt);
         }
-        CSLDestroy(values);
     }
 
     /* -------------------------------------------------------------------- */
     /*      Set Projection Information                                      */
     /* -------------------------------------------------------------------- */
 
-    pszOption = CSLFetchNameValue(papszOptions, "SPATIALREFERENCE");
+    pszOption = aosOptions.FetchNameValue("SPATIALREFERENCE");
     if (pszOption != nullptr)
     {
         poDS->m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
@@ -1320,8 +1369,7 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Try to return a regular handle on the file.                     */
     /* -------------------------------------------------------------------- */
-    CSLDestroy(papszOptions);
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/
@@ -1330,7 +1378,7 @@ GDALDataset *MEMDataset::Open(GDALOpenInfo *poOpenInfo)
 
 MEMDataset *MEMDataset::Create(const char * /* pszFilename */, int nXSize,
                                int nYSize, int nBandsIn, GDALDataType eType,
-                               char **papszOptions)
+                               CSLConstList papszOptions)
 {
 
     /* -------------------------------------------------------------------- */
@@ -1412,10 +1460,13 @@ MEMDataset *MEMDataset::Create(const char * /* pszFilename */, int nXSize,
     if (pszPixelType && EQUAL(pszPixelType, "SIGNEDBYTE"))
         poDS->SetMetadataItem("PIXELTYPE", "SIGNEDBYTE", "IMAGE_STRUCTURE");
 
-    if (bPixelInterleaved)
-        poDS->SetMetadataItem("INTERLEAVE", "PIXEL", "IMAGE_STRUCTURE");
-    else
-        poDS->SetMetadataItem("INTERLEAVE", "BAND", "IMAGE_STRUCTURE");
+    if (nXSize != 0 && nYSize != 0)
+    {
+        if (bPixelInterleaved)
+            poDS->SetMetadataItem("INTERLEAVE", "PIXEL", "IMAGE_STRUCTURE");
+        else
+            poDS->SetMetadataItem("INTERLEAVE", "BAND", "IMAGE_STRUCTURE");
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Create band information objects.                                */
@@ -1443,7 +1494,8 @@ MEMDataset *MEMDataset::Create(const char * /* pszFilename */, int nXSize,
 
 GDALDataset *MEMDataset::CreateBase(const char *pszFilename, int nXSize,
                                     int nYSize, int nBandsIn,
-                                    GDALDataType eType, char **papszOptions)
+                                    GDALDataType eType,
+                                    CSLConstList papszOptions)
 {
     return Create(pszFilename, nXSize, nYSize, nBandsIn, eType, papszOptions);
 }
@@ -1480,7 +1532,7 @@ bool MEMAttributeHolder::RenameAttribute(const std::string &osOldName,
 }
 
 /************************************************************************/
-/*                           GetMDArrayNames()                          */
+/*                          GetMDArrayNames()                           */
 /************************************************************************/
 
 std::vector<std::string> MEMGroup::GetMDArrayNames(CSLConstList) const
@@ -1494,7 +1546,7 @@ std::vector<std::string> MEMGroup::GetMDArrayNames(CSLConstList) const
 }
 
 /************************************************************************/
-/*                             OpenMDArray()                            */
+/*                            OpenMDArray()                             */
 /************************************************************************/
 
 std::shared_ptr<GDALMDArray> MEMGroup::OpenMDArray(const std::string &osName,
@@ -1509,7 +1561,7 @@ std::shared_ptr<GDALMDArray> MEMGroup::OpenMDArray(const std::string &osName,
 }
 
 /************************************************************************/
-/*                            GetGroupNames()                           */
+/*                           GetGroupNames()                            */
 /************************************************************************/
 
 std::vector<std::string> MEMGroup::GetGroupNames(CSLConstList) const
@@ -1523,7 +1575,7 @@ std::vector<std::string> MEMGroup::GetGroupNames(CSLConstList) const
 }
 
 /************************************************************************/
-/*                              OpenGroup()                             */
+/*                             OpenGroup()                              */
 /************************************************************************/
 
 std::shared_ptr<GDALGroup> MEMGroup::OpenGroup(const std::string &osName,
@@ -1538,7 +1590,7 @@ std::shared_ptr<GDALGroup> MEMGroup::OpenGroup(const std::string &osName,
 }
 
 /************************************************************************/
-/*                              Create()                                */
+/*                               Create()                               */
 /************************************************************************/
 
 /*static*/
@@ -1554,7 +1606,7 @@ std::shared_ptr<MEMGroup> MEMGroup::Create(const std::string &osParentName,
 }
 
 /************************************************************************/
-/*                             CreateGroup()                            */
+/*                            CreateGroup()                             */
 /************************************************************************/
 
 std::shared_ptr<GDALGroup> MEMGroup::CreateGroup(const std::string &osName,
@@ -1582,7 +1634,7 @@ std::shared_ptr<GDALGroup> MEMGroup::CreateGroup(const std::string &osName,
 }
 
 /************************************************************************/
-/*                             DeleteGroup()                            */
+/*                            DeleteGroup()                             */
 /************************************************************************/
 
 bool MEMGroup::DeleteGroup(const std::string &osName,
@@ -1604,7 +1656,7 @@ bool MEMGroup::DeleteGroup(const std::string &osName,
 }
 
 /************************************************************************/
-/*                       NotifyChildrenOfDeletion()                     */
+/*                      NotifyChildrenOfDeletion()                      */
 /************************************************************************/
 
 void MEMGroup::NotifyChildrenOfDeletion()
@@ -1620,7 +1672,7 @@ void MEMGroup::NotifyChildrenOfDeletion()
 }
 
 /************************************************************************/
-/*                            CreateMDArray()                           */
+/*                           CreateMDArray()                            */
 /************************************************************************/
 
 std::shared_ptr<GDALMDArray> MEMGroup::CreateMDArray(
@@ -1721,7 +1773,7 @@ bool MEMGroup::DeleteMDArray(const std::string &osName,
 }
 
 /************************************************************************/
-/*                      MEMGroupCreateMDArray()                         */
+/*                       MEMGroupCreateMDArray()                        */
 /************************************************************************/
 
 // Used by NUMPYMultiDimensionalDataset
@@ -1758,7 +1810,7 @@ MEMGroup::GetAttribute(const std::string &osName) const
 }
 
 /************************************************************************/
-/*                            GetAttributes()                           */
+/*                           GetAttributes()                            */
 /************************************************************************/
 
 std::vector<std::shared_ptr<GDALAttribute>>
@@ -1775,7 +1827,7 @@ MEMGroup::GetAttributes(CSLConstList) const
 }
 
 /************************************************************************/
-/*                            GetDimensions()                           */
+/*                           GetDimensions()                            */
 /************************************************************************/
 
 std::vector<std::shared_ptr<GDALDimension>>
@@ -1792,7 +1844,7 @@ MEMGroup::GetDimensions(CSLConstList) const
 }
 
 /************************************************************************/
-/*                           CreateAttribute()                          */
+/*                          CreateAttribute()                           */
 /************************************************************************/
 
 std::shared_ptr<GDALAttribute>
@@ -1824,7 +1876,7 @@ MEMGroup::CreateAttribute(const std::string &osName,
 }
 
 /************************************************************************/
-/*                         DeleteAttribute()                            */
+/*                          DeleteAttribute()                           */
 /************************************************************************/
 
 bool MEMGroup::DeleteAttribute(const std::string &osName,
@@ -1847,7 +1899,7 @@ bool MEMGroup::DeleteAttribute(const std::string &osName,
 }
 
 /************************************************************************/
-/*                              Rename()                                */
+/*                               Rename()                               */
 /************************************************************************/
 
 bool MEMGroup::Rename(const std::string &osNewName)
@@ -1889,7 +1941,7 @@ bool MEMGroup::Rename(const std::string &osNewName)
 }
 
 /************************************************************************/
-/*                       NotifyChildrenOfRenaming()                     */
+/*                      NotifyChildrenOfRenaming()                      */
 /************************************************************************/
 
 void MEMGroup::NotifyChildrenOfRenaming()
@@ -1930,7 +1982,7 @@ bool MEMGroup::RenameDimension(const std::string &osOldName,
 }
 
 /************************************************************************/
-/*                          RenameArray()                               */
+/*                            RenameArray()                             */
 /************************************************************************/
 
 bool MEMGroup::RenameArray(const std::string &osOldName,
@@ -1955,7 +2007,7 @@ bool MEMGroup::RenameArray(const std::string &osOldName,
 }
 
 /************************************************************************/
-/*                          MEMAbstractMDArray()                        */
+/*                         MEMAbstractMDArray()                         */
 /************************************************************************/
 
 MEMAbstractMDArray::MEMAbstractMDArray(
@@ -1968,7 +2020,7 @@ MEMAbstractMDArray::MEMAbstractMDArray(
 }
 
 /************************************************************************/
-/*                         ~MEMAbstractMDArray()                        */
+/*                        ~MEMAbstractMDArray()                         */
 /************************************************************************/
 
 MEMAbstractMDArray::~MEMAbstractMDArray()
@@ -1977,7 +2029,7 @@ MEMAbstractMDArray::~MEMAbstractMDArray()
 }
 
 /************************************************************************/
-/*                              FreeArray()                             */
+/*                             FreeArray()                              */
 /************************************************************************/
 
 void MEMAbstractMDArray::FreeArray()
@@ -2003,7 +2055,7 @@ void MEMAbstractMDArray::FreeArray()
 }
 
 /************************************************************************/
-/*                                  Init()                              */
+/*                                Init()                                */
 /************************************************************************/
 
 bool MEMAbstractMDArray::Init(GByte *pData,
@@ -2070,7 +2122,7 @@ bool MEMAbstractMDArray::Init(GByte *pData,
 }
 
 /************************************************************************/
-/*                             FastCopy()                               */
+/*                              FastCopy()                              */
 /************************************************************************/
 
 template <int N>
@@ -2302,7 +2354,7 @@ void MEMAbstractMDArray::ReadWrite(bool bIsWrite, const size_t *count,
 }
 
 /************************************************************************/
-/*                                   IRead()                            */
+/*                               IRead()                                */
 /************************************************************************/
 
 bool MEMAbstractMDArray::IRead(const GUInt64 *arrayStartIdx,
@@ -2341,7 +2393,7 @@ bool MEMAbstractMDArray::IRead(const GUInt64 *arrayStartIdx,
 }
 
 /************************************************************************/
-/*                                IWrite()                              */
+/*                               IWrite()                               */
 /************************************************************************/
 
 bool MEMAbstractMDArray::IWrite(const GUInt64 *arrayStartIdx,
@@ -2389,7 +2441,7 @@ bool MEMAbstractMDArray::IWrite(const GUInt64 *arrayStartIdx,
 }
 
 /************************************************************************/
-/*                               MEMMDArray()                           */
+/*                             MEMMDArray()                             */
 /************************************************************************/
 
 MEMMDArray::MEMMDArray(
@@ -2403,7 +2455,7 @@ MEMMDArray::MEMMDArray(
 }
 
 /************************************************************************/
-/*                              ~MEMMDArray()                           */
+/*                            ~MEMMDArray()                             */
 /************************************************************************/
 
 MEMMDArray::~MEMMDArray()
@@ -2423,7 +2475,7 @@ MEMMDArray::~MEMMDArray()
 }
 
 /************************************************************************/
-/*                          GetRawNoDataValue()                         */
+/*                         GetRawNoDataValue()                          */
 /************************************************************************/
 
 const void *MEMMDArray::GetRawNoDataValue() const
@@ -2432,7 +2484,7 @@ const void *MEMMDArray::GetRawNoDataValue() const
 }
 
 /************************************************************************/
-/*                          SetRawNoDataValue()                         */
+/*                         SetRawNoDataValue()                          */
 /************************************************************************/
 
 bool MEMMDArray::SetRawNoDataValue(const void *pNoData)
@@ -2479,7 +2531,7 @@ MEMMDArray::GetAttribute(const std::string &osName) const
 }
 
 /************************************************************************/
-/*                             GetAttributes()                          */
+/*                           GetAttributes()                            */
 /************************************************************************/
 
 std::vector<std::shared_ptr<GDALAttribute>>
@@ -2496,7 +2548,7 @@ MEMMDArray::GetAttributes(CSLConstList) const
 }
 
 /************************************************************************/
-/*                            CreateAttribute()                         */
+/*                          CreateAttribute()                           */
 /************************************************************************/
 
 std::shared_ptr<GDALAttribute>
@@ -2528,7 +2580,7 @@ MEMMDArray::CreateAttribute(const std::string &osName,
 }
 
 /************************************************************************/
-/*                         DeleteAttribute()                            */
+/*                          DeleteAttribute()                           */
 /************************************************************************/
 
 bool MEMMDArray::DeleteAttribute(const std::string &osName,
@@ -2551,7 +2603,7 @@ bool MEMMDArray::DeleteAttribute(const std::string &osName,
 }
 
 /************************************************************************/
-/*                      GetCoordinateVariables()                        */
+/*                       GetCoordinateVariables()                       */
 /************************************************************************/
 
 std::vector<std::shared_ptr<GDALMDArray>>
@@ -2603,7 +2655,7 @@ MEMMDArray::GetCoordinateVariables() const
 }
 
 /************************************************************************/
-/*                            Resize()                                  */
+/*                               Resize()                               */
 /************************************************************************/
 
 bool MEMMDArray::Resize(const std::vector<GUInt64> &anNewDimSizes,
@@ -2915,7 +2967,7 @@ bool MEMMDArray::Resize(const std::vector<GUInt64> &anNewDimSizes,
 }
 
 /************************************************************************/
-/*                              Rename()                                */
+/*                               Rename()                               */
 /************************************************************************/
 
 bool MEMMDArray::Rename(const std::string &osNewName)
@@ -2943,7 +2995,7 @@ bool MEMMDArray::Rename(const std::string &osNewName)
 }
 
 /************************************************************************/
-/*                       NotifyChildrenOfRenaming()                     */
+/*                      NotifyChildrenOfRenaming()                      */
 /************************************************************************/
 
 void MEMMDArray::NotifyChildrenOfRenaming()
@@ -2953,7 +3005,7 @@ void MEMMDArray::NotifyChildrenOfRenaming()
 }
 
 /************************************************************************/
-/*                       NotifyChildrenOfDeletion()                     */
+/*                      NotifyChildrenOfDeletion()                      */
 /************************************************************************/
 
 void MEMMDArray::NotifyChildrenOfDeletion()
@@ -2963,7 +3015,7 @@ void MEMMDArray::NotifyChildrenOfDeletion()
 }
 
 /************************************************************************/
-/*                            BuildDimensions()                         */
+/*                          BuildDimensions()                           */
 /************************************************************************/
 
 static std::vector<std::shared_ptr<GDALDimension>>
@@ -2980,7 +3032,7 @@ BuildDimensions(const std::vector<GUInt64> &anDimensions)
 }
 
 /************************************************************************/
-/*                             MEMAttribute()                           */
+/*                            MEMAttribute()                            */
 /************************************************************************/
 
 MEMAttribute::MEMAttribute(const std::string &osParentName,
@@ -3052,7 +3104,7 @@ std::shared_ptr<MEMAttribute> MEMAttribute::Create(
 }
 
 /************************************************************************/
-/*                              Rename()                                */
+/*                               Rename()                               */
 /************************************************************************/
 
 bool MEMAttribute::Rename(const std::string &osNewName)
@@ -3081,7 +3133,7 @@ bool MEMAttribute::Rename(const std::string &osNewName)
 }
 
 /************************************************************************/
-/*                             MEMDimension()                           */
+/*                            MEMDimension()                            */
 /************************************************************************/
 
 MEMDimension::MEMDimension(const std::string &osParentName,
@@ -3093,7 +3145,7 @@ MEMDimension::MEMDimension(const std::string &osParentName,
 }
 
 /************************************************************************/
-/*                        RegisterUsingArray()                          */
+/*                         RegisterUsingArray()                         */
 /************************************************************************/
 
 void MEMDimension::RegisterUsingArray(MEMMDArray *poArray)
@@ -3111,7 +3163,7 @@ void MEMDimension::UnRegisterUsingArray(MEMMDArray *poArray)
 }
 
 /************************************************************************/
-/*                                Create()                              */
+/*                               Create()                               */
 /************************************************************************/
 
 /* static */
@@ -3127,7 +3179,7 @@ MEMDimension::Create(const std::shared_ptr<MEMGroup> &poParentGroup,
 }
 
 /************************************************************************/
-/*                             CreateDimension()                        */
+/*                          CreateDimension()                           */
 /************************************************************************/
 
 std::shared_ptr<GDALDimension>
@@ -3155,7 +3207,7 @@ MEMGroup::CreateDimension(const std::string &osName, const std::string &osType,
 }
 
 /************************************************************************/
-/*                              Rename()                                */
+/*                               Rename()                               */
 /************************************************************************/
 
 bool MEMDimension::Rename(const std::string &osNewName)
@@ -3180,7 +3232,7 @@ bool MEMDimension::Rename(const std::string &osNewName)
 }
 
 /************************************************************************/
-/*                     CreateMultiDimensional()                         */
+/*                       CreateMultiDimensional()                       */
 /************************************************************************/
 
 GDALDataset *
@@ -3198,7 +3250,7 @@ MEMDataset::CreateMultiDimensional(const char *pszFilename,
 }
 
 /************************************************************************/
-/*                          GetRootGroup()                              */
+/*                            GetRootGroup()                            */
 /************************************************************************/
 
 std::shared_ptr<GDALGroup> MEMDataset::GetRootGroup() const
@@ -3207,7 +3259,7 @@ std::shared_ptr<GDALGroup> MEMDataset::GetRootGroup() const
 }
 
 /************************************************************************/
-/*                     MEMDatasetIdentify()                             */
+/*                         MEMDatasetIdentify()                         */
 /************************************************************************/
 
 static int MEMDatasetIdentify(GDALOpenInfo *poOpenInfo)
@@ -3217,7 +3269,7 @@ static int MEMDatasetIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                       MEMDatasetDelete()                             */
+/*                          MEMDatasetDelete()                          */
 /************************************************************************/
 
 static CPLErr MEMDatasetDelete(const char * /* fileName */)
@@ -3247,7 +3299,7 @@ OGRMemLayer *MEMDataset::CreateLayer(const OGRFeatureDefn &oDefn,
 }
 
 /************************************************************************/
-/*                           ICreateLayer()                             */
+/*                            ICreateLayer()                            */
 /************************************************************************/
 
 OGRLayer *MEMDataset::ICreateLayer(const char *pszLayerName,
@@ -3361,7 +3413,7 @@ bool MEMDataset::AddFieldDomain(std::unique_ptr<OGRFieldDomain> &&domain,
 }
 
 /************************************************************************/
-/*                           DeleteFieldDomain()                        */
+/*                         DeleteFieldDomain()                          */
 /************************************************************************/
 
 bool MEMDataset::DeleteFieldDomain(const std::string &name,
@@ -3394,7 +3446,7 @@ bool MEMDataset::DeleteFieldDomain(const std::string &name,
 }
 
 /************************************************************************/
-/*                           UpdateFieldDomain()                        */
+/*                         UpdateFieldDomain()                          */
 /************************************************************************/
 
 bool MEMDataset::UpdateFieldDomain(std::unique_ptr<OGRFieldDomain> &&domain,
@@ -3412,7 +3464,7 @@ bool MEMDataset::UpdateFieldDomain(std::unique_ptr<OGRFieldDomain> &&domain,
 }
 
 /************************************************************************/
-/*                              ExecuteSQL()                            */
+/*                             ExecuteSQL()                             */
 /************************************************************************/
 
 OGRLayer *MEMDataset::ExecuteSQL(const char *pszStatement,
@@ -3476,6 +3528,8 @@ void GDALRegister_MEM()
         GDAL_DMD_CREATIONFIELDDATATYPES,
         "Integer Integer64 Real String Date DateTime Time IntegerList "
         "Integer64List RealList StringList Binary");
+    poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATASUBTYPES,
+                              "Boolean Int16 Float32 JSON UUID");
     poDriver->SetMetadataItem(GDAL_DMD_CREATION_FIELD_DEFN_FLAGS,
                               "WidthPrecision Nullable Default Unique "
                               "Comment AlternativeName Domain");
@@ -3501,6 +3555,7 @@ void GDALRegister_MEM()
 
     poDriver->SetMetadataItem(GDAL_DMD_ALTER_GEOM_FIELD_DEFN_FLAGS,
                               "Name Type Nullable SRS CoordinateEpoch");
+    poDriver->SetMetadataItem(GDAL_DCAP_UPSERT, "YES");
 
     // Define GDAL_NO_OPEN_FOR_MEM_DRIVER macro to undefine Open() method for
     // MEM driver.  Otherwise, bad user input can trigger easily a GDAL crash

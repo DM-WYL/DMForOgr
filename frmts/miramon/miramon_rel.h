@@ -26,7 +26,7 @@ constexpr auto pszExtREL = ".rel";
 class MMRBand;
 
 /************************************************************************/
-/*                               MMRRel                                */
+/*                                MMRRel                                */
 /************************************************************************/
 
 enum class MMRNomFitxerState
@@ -53,8 +53,8 @@ class MMRRel
     GetValueFromSectionKeyPriorToREL(const CPLString &osPriorRelName,
                                      const CPLString &osSection,
                                      const CPLString &osKey);
-    CPLString GetValueFromSectionKeyFromREL(const CPLString osSection,
-                                            const CPLString osKey);
+    CPLString GetValueFromSectionKeyFromREL(const CPLString &osSection,
+                                            const CPLString &osKey);
     static CPLString GetValueFromSectionKey(VSILFILE *pf,
                                             const CPLString &osSection,
                                             const CPLString &osKey);
@@ -81,7 +81,7 @@ class MMRRel
     int GetColumnsNumberFromREL();
     int GetRowsNumberFromREL();
     static int IdentifySubdataSetFile(const CPLString &osFileName);
-    static int IdentifyFile(GDALOpenInfo *poOpenInfo);
+    static int IdentifyFile(const GDALOpenInfo *poOpenInfo);
 
     bool IsValid() const
     {
@@ -146,7 +146,7 @@ class MMRRel
         return m_bIsAMiraMonFile;
     }
 
-    void addExcludedSectionKey(const CPLString section, const CPLString key)
+    void addExcludedSectionKey(const CPLString &section, const CPLString &key)
     {
         m_ExcludedSectionKey.emplace(section, key);
     }
@@ -160,7 +160,7 @@ class MMRRel
     static CPLErr CheckBandInRel(const CPLString &osRELFileName,
                                  const CPLString &osIMGFile);
     static CPLString MMRGetSimpleMetadataName(const CPLString &osLayerName);
-    static bool SameFile(CPLString osFile1, CPLString osFile2);
+    static bool SameFile(const CPLString &osFile1, const CPLString &osFile2);
     MMRNomFitxerState MMRStateOfNomFitxerInSection(const CPLString &osLayerName,
                                                    const CPLString &osSection,
                                                    const CPLString &osRELFile,
