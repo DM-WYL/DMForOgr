@@ -26,7 +26,11 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengutility.cpp
+#include "ogr_dameng.h"
+=======
 #include "ogr_dm.h"
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmutility.cpp
 #include "cpl_conv.h"
 
 CPL_CVSID("$Id$")
@@ -49,10 +53,10 @@ char *strToupper(char *str)
 }
 
 /************************************************************************/
-/*                       OGRDMCommonLayerGetType()                      */
+/*                       OGRDAMENGCommonLayerGetType()                      */
 /************************************************************************/
 
-CPLString OGRDMCommonLayerGetType(OGRFieldDefn &oField,
+CPLString OGRDAMENGCommonLayerGetType(OGRFieldDefn &oField,
                                   bool bPreservePrecision,
                                   bool bApproxOK)
 {
@@ -135,10 +139,10 @@ CPLString OGRDMCommonLayerGetType(OGRFieldDefn &oField,
 }
 
 /************************************************************************/
-/*                           OGRDMCheckType()                           */
+/*                           OGRDAMENGCheckType()                           */
 /************************************************************************/
 
-OGRwkbGeometryType OGRDMCheckType(int typid)
+OGRwkbGeometryType OGRDAMENGCheckType(int typid)
 
 {
     switch (typid)

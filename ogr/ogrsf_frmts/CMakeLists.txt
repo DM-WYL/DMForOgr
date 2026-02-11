@@ -76,7 +76,7 @@ ogr_optional_driver(adbc ADBC)
 if( NOT WORDS_BIGENDIAN )
     ogr_optional_driver(miramon "MiraMonVector")
 endif()
-ogr_optional_driver(dm DM)
+ogr_optional_driver(dameng DAMENG)
 
 ogr_optional_driver(aivector AIVector)
 

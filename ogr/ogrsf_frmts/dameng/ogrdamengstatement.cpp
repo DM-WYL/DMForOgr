@@ -1,7 +1,11 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengstatement.cpp
+ * Purpose:  Implements OGRDAMENGStatement class.
+=======
  * Purpose:  Implements OGRDMStatement class.
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmstatement.cpp
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
@@ -26,13 +30,17 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengstatement.cpp
+#include "ogr_dameng.h"
+=======
 #include "ogr_dm.h"
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmstatement.cpp
 #include "cpl_conv.h"
 #include <ogr_p.h>
 
 CPL_CVSID("$Id$")
 
-OGRDMStatement::OGRDMStatement(OGRDMConn *poConnIn)
+OGRDAMENGStatement::OGRDAMENGStatement(OGRDAMENGConn *poConnIn)
 
 {
     poConn = poConnIn;
@@ -55,13 +63,13 @@ OGRDMStatement::OGRDMStatement(OGRDMConn *poConnIn)
     papszCurImages = nullptr;
 }
 
-OGRDMStatement::~OGRDMStatement()
+OGRDAMENGStatement::~OGRDAMENGStatement()
 
 {
     Clean();
 }
 
-void OGRDMStatement::Clean()
+void OGRDAMENGStatement::Clean()
 
 {
     DPIRETURN rt;
@@ -76,7 +84,6 @@ void OGRDMStatement::Clean()
                      "failed to exectue");
             return;
         }
-        insert_num = 0;
         for (int iparam = 0; iparam < geonum; iparam++)
         {
             for (int num = 0; num < insert_num; num++)
@@ -84,6 +91,7 @@ void OGRDMStatement::Clean()
                 CPLFree(insert_geovalues[iparam][num]);
             }
         }
+        insert_num = 0;
     }
     rt = dpi_commit((poConn->hCon));
     if (pszCommandText)
@@ -96,6 +104,7 @@ void OGRDMStatement::Clean()
             for (int i = 0; result[i] != nullptr; i++)
             {
                 CPLFree(result[i]);
+                CPLFree(col_len[i]);
                 if (object_index[i])
                 {
                     rt = dpi_free_obj(obj[i]);
@@ -104,7 +113,7 @@ void OGRDMStatement::Clean()
                         CPLError(CE_Failure, CPLE_AppDefined,
                                  "failed to free obj");
                     }
-                    dpi_free_obj_desc(objdesc[i]);
+                    rt = dpi_free_obj_desc(objdesc[i]);
                     if (!DSQL_SUCCEEDED(rt))
                     {
                         CPLError(CE_Failure, CPLE_AppDefined,
@@ -126,6 +135,7 @@ void OGRDMStatement::Clean()
             CPLFree(objdesc);
             CPLFree(lob);
             CPLFree(blob_len);
+            CPLFree(col_len);
         }
         if (papszCurImage)
             CPLFree(papszCurImage);
@@ -177,6 +187,7 @@ void OGRDMStatement::Clean()
                         CPLFree(results[col][0]);
                 }
                 CPLFree(results[col]);
+                CPLFree(col_len[col]);
                 CPLFree(objs[col]);
                 CPLFree(objdescs[col]);
                 CPLFree(lobs[col]);
@@ -185,6 +196,7 @@ void OGRDMStatement::Clean()
                     CPLFree(papszCurImages[col]);
             }
             CPLFree(results);
+            CPLFree(col_len);
             CPLFree(objs);
             CPLFree(objdescs);
             CPLFree(lobs);
@@ -209,6 +221,7 @@ void OGRDMStatement::Clean()
     objs = nullptr;
     objdescs = nullptr;
     blob_lens = nullptr;
+    col_len = nullptr;
     papszCurImages = nullptr;
     papszCurImage = nullptr;
 
@@ -224,20 +237,20 @@ void OGRDMStatement::Clean()
     }
 }
 
-CPLErr OGRDMStatement::Prepare(const char *pszSQLstatement)
+CPLErr OGRDAMENGStatement::Prepare(const char *pszSQLstatement)
 
 {
     DPIRETURN rt;
     Clean();
 
-    CPLDebug("DM", "Prepare(%s)", pszSQLstatement);
+    CPLDebug("DAMENG", "Prepare(%s)", pszSQLstatement);
 
     pszCommandText = CPLStrdup(pszSQLstatement);
 
     if (hStatement != nullptr)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-                 "Statement already executed once on this OGRDMStatement.");
+                 "Statement already executed once on this OGRDAMENGStatement.");
         return CE_Failure;
     }
 
@@ -250,6 +263,22 @@ CPLErr OGRDMStatement::Prepare(const char *pszSQLstatement)
         return CE_Failure;
     }
 
+    if (strstr(pszCommandText, "\"\"") != nullptr)
+    {
+        int i = 0;
+        while (pszCommandText[i + 1] != '\0')
+        {
+            if (pszCommandText[i] == '\"' && pszCommandText[i + 1] == '\"')
+            {
+                if (pszCommandText[i - 1] == ' ')
+                    pszCommandText[i] = ' ';
+                else if (pszCommandText[i + 2] == ' ' || pszCommandText[i + 2] == '\0' || pszCommandText[i + 2] == ')')
+                    pszCommandText[i + 1] = ' ';
+            }
+            i++;
+        }
+    }
+
     rt = dpi_prepare(hStatement, (sdbyte *)pszCommandText);
     if (!DSQL_SUCCEEDED(rt))
     {
@@ -260,7 +289,7 @@ CPLErr OGRDMStatement::Prepare(const char *pszSQLstatement)
     return CE_None;
 }
 
-CPLErr OGRDMStatement::Execute_for_insert(OGRDMFeatureDefn *params,
+CPLErr OGRDAMENGStatement::Execute_for_insert(OGRDAMENGFeatureDefn* params,
                                           OGRFeature *poFeature,
                                           std::map<std::string, int> mymap)
 {
@@ -372,16 +401,16 @@ CPLErr OGRDMStatement::Execute_for_insert(OGRDMFeatureDefn *params,
     for (udint2 num = 0; num < geonum; num++)
     {
 
-        OGRDMGeomFieldDefn *poGeomFieldDefn = params->GetGeomFieldDefn(i);
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = params->GetGeomFieldDefn(i);
         OGRGeometry *poGeom = poFeature->GetGeomFieldRef(i);
         char s[100];
         strncpy(s, poGeomFieldDefn->GetNameRef(), 100);
-        if (mymap[strToupper(s)] == num + 1 && poGeom != nullptr)
+        if (mymap[s] == num + 1 && poGeom != nullptr)
         {
             if (i < params->GetGeomFieldCount())
                 i++;
-            if (poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY ||
-                poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY)
+            if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY ||
+                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY)
             {
                 poGeom->closeRings();
                 poGeom->set3D(poGeomFieldDefn->GeometryTypeFlags &
@@ -393,10 +422,12 @@ CPLErr OGRDMStatement::Execute_for_insert(OGRDMFeatureDefn *params,
 
                 if (!CPLTestBool(CPLGetConfigOption("DM_USE_TEXT", "NO")))
                 {
+                    OGREnvelope3D Envelope;
+                    poGeom->getEnvelope(&Envelope);
                     char *pszHexEWKB =
                         OGRGeometryToHexEWKB(poGeom, nSRSId, 3, 3);
                     insert_geovalues[num][insert_num] =
-                        gserialized_from_ewkb(pszHexEWKB, &gser_length);
+                        OGRDAMENGGeoFromHexwkb(pszHexEWKB, &gser_length, Envelope);
                     CPLFree(pszHexEWKB);
                     rt = dpi_set_obj_val(
                         insert_objs[num][insert_num], 1, DSQL_C_BINARY,
@@ -544,7 +575,7 @@ CPLErr OGRDMStatement::Execute_for_insert(OGRDMFeatureDefn *params,
     return CE_None;
 }
 
-CPLErr OGRDMStatement::ExecuteInsert(const char *pszSQLStatement, int nMode)
+CPLErr OGRDAMENGStatement::ExecuteInsert(const char *pszSQLStatement, int nMode)
 {
     DPIRETURN rt;
 
@@ -574,7 +605,7 @@ CPLErr OGRDMStatement::ExecuteInsert(const char *pszSQLStatement, int nMode)
     return CE_None;
 }
 
-CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
+CPLErr OGRDAMENGStatement::Execute(const char *pszSQLStatement, int nMode)
 {
     DPIRETURN rt;
 
@@ -592,6 +623,14 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
         return CE_Failure;
     }
 
+    sdint2 column_count;
+    rt = dpi_number_columns(hStatement, &column_count);
+    if (!DSQL_SUCCEEDED(rt))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+            "failed to get columns_count");
+        return CE_Failure;
+    }
     sdint4 nStmtType;
     slength len;
 
@@ -622,14 +661,6 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
         return CE_None;
     }
 
-    sdint2 column_count;
-    rt = dpi_number_columns(hStatement, &column_count);
-    if (!DSQL_SUCCEEDED(rt))
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "failed to get columns_count");
-        return CE_Failure;
-    }
     nRawColumnCount = column_count;
     object_index = (int *)CPLCalloc(sizeof(int), column_count);
     lob_index = (int *)CPLCalloc(sizeof(int), column_count);
@@ -637,6 +668,7 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
     obj = (dhobj *)CPLCalloc(sizeof(dhobj), column_count);
     objdesc = (dhobjdesc *)CPLCalloc(sizeof(dhobjdesc), column_count);
     blob_len = (int *)CPLCalloc(sizeof(int), column_count);
+    col_len = (slength**)CPLCalloc(sizeof(slength*), column_count + 1);
     result = (char **)CPLCalloc(sizeof(char *), nRawColumnCount + 1);
 
     dhdesc hdesc_col;
@@ -691,7 +723,7 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
                 return CE_Failure;
             }
             rt = dpi_bind_col(hStatement, (udint2)iParam + 1, DSQL_C_CLASS,
-                              &obj[iParam], sizeof(obj[iParam]), NULL);
+                              &obj[iParam], sizeof(obj[iParam]), &col_len[iParam][0]);
             object_index[iParam] = 1;
             lob_index[iParam] = 0;
         }
@@ -705,7 +737,7 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
                 return CE_Failure;
             }
             rt = dpi_bind_col(hStatement, (udint2)iParam + 1, DSQL_C_LOB_HANDLE,
-                              &lob[iParam], 0, NULL);
+                              &lob[iParam], 0, &col_len[iParam][0]);
             if (coldesc.sql_type == DSQL_BLOB)
                 lob_index[iParam] = 2;
             else
@@ -731,7 +763,7 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
 
             rt = dpi_bind_col(hStatement, (udint2)iParam + 1, DSQL_C_NCHAR,
                               (dpointer)result[iParam],
-                              coldesc.display_size + 1, NULL);
+                              coldesc.display_size + 1, &col_len[iParam][0]);
             if (!DSQL_SUCCEEDED(rt))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
@@ -745,7 +777,7 @@ CPLErr OGRDMStatement::Execute(const char *pszSQLStatement, int nMode)
     return CE_None;
 }
 
-CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
+CPLErr OGRDAMENGStatement::Excute_for_fetchmany(const char *pszSQLStatement)
 {
     DPIRETURN rt;
 
@@ -760,6 +792,15 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "prepare null");
+        return CE_Failure;
+    }
+
+    sdint2 column_count;
+    rt = dpi_number_columns(hStatement, &column_count);
+    if (!DSQL_SUCCEEDED(rt))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+            "failed to get columns_count");
         return CE_Failure;
     }
 
@@ -796,14 +837,6 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
         return CE_None;
     }
     is_fectmany = 1;
-    sdint2 column_count;
-    rt = dpi_number_columns(hStatement, &column_count);
-    if (!DSQL_SUCCEEDED(rt))
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "failed to get columns_count");
-        return CE_Failure;
-    }
     nRawColumnCount = column_count;
     object_index = (int *)CPLCalloc(sizeof(int), column_count);
     lob_index = (int *)CPLCalloc(sizeof(int), column_count);
@@ -811,10 +844,12 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
     lobs = (dhloblctr **)CPLCalloc(sizeof(dhloblctr *), column_count);
     objs = (dhobj **)CPLCalloc(sizeof(dhobj *), column_count);
     blob_lens = (int **)CPLCalloc(sizeof(int *), column_count);
+    col_len = (slength**)CPLCalloc(sizeof(slength*), column_count + 1);
     objdescs = (dhobjdesc **)CPLCalloc(sizeof(dhobjdesc *), column_count);
     for (int i = 0; i < column_count; i++)
     {
         results[i] = (char **)CPLCalloc(sizeof(char *), fetchnum);
+        col_len[i] = (slength*)CPLCalloc(sizeof(slength), fetchnum);
         blob_lens[i] = (int *)CPLCalloc(sizeof(int), fetchnum);
         lobs[i] = (dhloblctr *)CPLCalloc(sizeof(dhloblctr), fetchnum);
         objs[i] = (dhobj *)CPLCalloc(sizeof(dhobj), fetchnum);
@@ -878,7 +913,7 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
             }
 
             rt = dpi_bind_col(hStatement, (udint2)iParam + 1, DSQL_C_CLASS,
-                              &objs[iParam][0], sizeof(objs[iParam][0]), NULL);
+                              &objs[iParam][0], sizeof(objs[iParam][0]), &col_len[iParam][0]);
 
             object_index[iParam] = 1;
             lob_index[iParam] = 0;
@@ -896,7 +931,7 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
                 }
             }
             rt = dpi_bind_col(hStatement, (udint2)iParam + 1, DSQL_C_LOB_HANDLE,
-                              &lobs[iParam][0], sizeof(lobs[iParam][0]), NULL);
+                              &lobs[iParam][0], sizeof(lobs[iParam][0]), &col_len[iParam][0]);
             if (coldesc.sql_type == DSQL_BLOB)
                 lob_index[iParam] = 2;
             else
@@ -929,7 +964,7 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
             rt = dpi_bind_col(
                 hStatement, (udint2)iParam + 1, DSQL_C_NCHAR,
                 (dpointer)results[iParam][0] /*results[0][iParam]*/,
-                nbufwidth + 2, NULL);
+                nbufwidth + 2, &col_len[iParam][0]);
             if (!DSQL_SUCCEEDED(rt))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
@@ -943,7 +978,7 @@ CPLErr OGRDMStatement::Excute_for_fetchmany(const char *pszSQLStatement)
     return CE_None;
 }
 
-char **OGRDMStatement::SimpleFetchRow()
+char **OGRDAMENGStatement::SimpleFetchRow()
 {
     int i;
     DPIRETURN rt;
@@ -965,7 +1000,7 @@ char **OGRDMStatement::SimpleFetchRow()
     return papszCurImage;
 }
 
-char ***OGRDMStatement::Fetchmany(ulength *rows)
+char ***OGRDAMENGStatement::Fetchmany(ulength *rows)
 {
     DPIRETURN rt = 0;
     ulength row = 0;
