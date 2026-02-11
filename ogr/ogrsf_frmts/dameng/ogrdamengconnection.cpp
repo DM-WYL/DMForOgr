@@ -1,7 +1,11 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengconnection.cpp
+ * Purpose:  Implements OGRDAMENGConnection class.
+=======
  * Purpose:  Implements OGRDMConnection class.
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmconnection.cpp
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
@@ -26,21 +30,22 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
-#include "ogr_dm.h"
+#include "ogr_dameng.h"
 #include "cpl_conv.h"
 
 /************************************************************************/
-/*                          OGRGetDMConnection()                        */
+/*                          OGRGetDAMENGConnection()                        */
 /************************************************************************/
 
-OGRDMConn* OGRGetDMConnection(const char* pszUserid,
+OGRDAMENGConn* OGRGetDAMENGConnection(const char* pszUserid,
                               const char* pszPassword,
-                              const char* pszDatabase)
+                              const char* pszDatabase,
+                              const char *pszSchemaName)
 {
-    OGRDMConn *poConnection;
+    OGRDAMENGConn *poConnection;
 
-    poConnection = new OGRDMConn();
-    if (poConnection->EstablishConn(pszUserid, pszPassword, pszDatabase))
+    poConnection = new OGRDAMENGConn();
+    if (poConnection->EstablishConn(pszUserid, pszPassword, pszDatabase, pszSchemaName))
         return poConnection;
     else
     {
@@ -50,10 +55,10 @@ OGRDMConn* OGRGetDMConnection(const char* pszUserid,
 }
 
 /************************************************************************/
-/*                          OGRDMSession()                              */
+/*                          OGRDAMENGSession()                              */
 /************************************************************************/
 
-OGRDMConn::OGRDMConn()
+OGRDAMENGConn::OGRDAMENGConn()
 {
     hEnv = nullptr;
     hRtn = 0;
@@ -64,10 +69,10 @@ OGRDMConn::OGRDMConn()
 }
 
 /************************************************************************/
-/*                          ~OGRDMSession()                             */
+/*                          ~OGRDAMENGSession()                             */
 /************************************************************************/
 
-OGRDMConn::~OGRDMConn()
+OGRDAMENGConn::~OGRDAMENGConn()
 {
     DPIRETURN rt;
     rt = dpi_commit(hCon);
@@ -86,9 +91,10 @@ OGRDMConn::~OGRDMConn()
 /************************************************************************/
 /*                          EstablishSession()                          */
 /************************************************************************/
-int OGRDMConn::EstablishConn(const char* pszUseridIn,
+int OGRDAMENGConn::EstablishConn(const char* pszUseridIn,
                              const char* pszPasswordIn,
-                             const char* pszDatabaseIn)
+                             const char *pszDatabaseIn,
+                             const char *pszSchemaName)
 {
     DPIRETURN rt;
 
@@ -108,6 +114,17 @@ int OGRDMConn::EstablishConn(const char* pszUseridIn,
         return FALSE;
     }
 
+    if (strlen(pszSchemaName))
+    {
+        rt = dpi_set_con_attr(hCon, DSQL_ATTR_CURRENT_SCHEMA,
+                              (sdbyte *)pszSchemaName, strlen(pszSchemaName));
+        if (!DSQL_SUCCEEDED(rt))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined, "failed to set con_attr");
+            return FALSE;
+        }
+    }
+    
     rt = dpi_login(hCon, (sdbyte *)pszDatabaseIn, (sdbyte *)pszUseridIn,
                    (sdbyte *)pszPasswordIn);
     if (!DSQL_SUCCEEDED(rt))

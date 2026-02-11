@@ -1,11 +1,19 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+ * Purpose:  Implements OGRDAMENGLayer class.
+ * Author:   YiLun Wu, wuyilun@dameng.com
+ *
+ ******************************************************************************
+ * Copyright (c) 2024, YiLun Wu
+=======
  * Purpose:  Implements OGRDMLayer class.
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
  * Copyright (c) 2024, YiLun Wu 
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,17 +34,21 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+#include "ogr_dameng.h"
+=======
 #include "ogr_dm.h"
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
 #include "cpl_conv.h"
 #include "ogr_p.h"
 
 CPL_CVSID("$Id$")
 
 /************************************************************************/
-/*                           OGRDMLayer()                               */
+/*                           OGRDAMENGLayer()                               */
 /************************************************************************/
 
-OGRDMLayer::OGRDMLayer()
+OGRDAMENGLayer::OGRDAMENGLayer()
 
 {
     poFeatureDefn = nullptr;
@@ -48,18 +60,18 @@ OGRDMLayer::OGRDMLayer()
 }
 
 /************************************************************************/
-/*                            ~OGRDMLayer()                             */
+/*                            ~OGRDAMENGLayer()                             */
 /************************************************************************/
 
-OGRDMLayer::~OGRDMLayer()
+OGRDAMENGLayer::~OGRDAMENGLayer()
 
 {
     if (m_nFeaturesRead > 0 && poFeatureDefn != nullptr)
     {
-        CPLDebug("DM", "%lld features read on layer '%s'.", m_nFeaturesRead,
+        CPLDebug("DAMENG", "%lld features read on layer '%s'.", m_nFeaturesRead,
                  poFeatureDefn->GetName());
     }
-    OGRDMLayer::ResetReading();
+    OGRDAMENGLayer::ResetReading();
 
     CPLFree(pszFIDColumn);
     CPLFree(pszQueryStatement);
@@ -80,7 +92,7 @@ OGRDMLayer::~OGRDMLayer()
 /*                            ResetReading()                            */
 /************************************************************************/
 
-void OGRDMLayer::ResetReading()
+void OGRDAMENGLayer::ResetReading()
 
 {
     GetLayerDefn();
@@ -95,7 +107,7 @@ void OGRDMLayer::ResetReading()
 /*      a feature.                                                      */
 /************************************************************************/
 
-OGRFeature *OGRDMLayer::RecordToFeature(OGRDMStatement *hStmt,
+OGRFeature *OGRDAMENGLayer::RecordToFeature(OGRDAMENGStatement *hStmt,
                                         const int *panMapFieldNameToIndex,
                                         const int *panMapFieldNameToGeomIndex,
                                         int iRecord)
@@ -142,15 +154,15 @@ OGRFeature *OGRDMLayer::RecordToFeature(OGRDMStatement *hStmt,
         /* -------------------------------------------------------------------- */
         int iOGRGeomField =
             panMapFieldNameToGeomIndex ? panMapFieldNameToGeomIndex[iField] : 0;
-        OGRDMGeomFieldDefn *poGeomFieldDefn = nullptr;
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
 
         if (iOGRGeomField >= 0)
         {
             poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(iOGRGeomField);
         }
         if (poGeomFieldDefn &&
-            (poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY ||
-             poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY))
+            (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+             poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY))
         {
             if (STARTS_WITH_CI((const char *)pszFieldName,
                                "DMGEO2.ST_AsBinary"))
@@ -192,20 +204,23 @@ OGRFeature *OGRDMLayer::RecordToFeature(OGRDMStatement *hStmt,
             }
             else
             {
-                if (poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY ||
-                    poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY)
+                if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+                    poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY)
                 {
                     OGRGeometry *poGeometry = nullptr;
                     pabyData = result[iField][iRecord];
                     if (pabyData)
                     {
-                        ulint64 length;
-                        byte *pabyVal = dm_gser_to_wkb((GSERIALIZED *)pabyData,
-                                                       &length, nullptr);
-                        OGRGeometryFactory::createFromWkb(pabyVal, nullptr,
-                                                          &poGeometry, length,
-                                                          wkbVariantOldOgc);
-                        CPLFree(pabyVal);
+                        int length;
+                        GByte *pabyEWKB = OGRDAMENGGeoToHexwkb((GSERIALIZED *)pabyData, &length);
+                        if (!pabyEWKB)
+                        {
+                            CPLError(CE_Failure, CPLE_AppDefined,
+                                "DAMENG:Invalid Input Geometry Data!");
+                            return NULL;
+                        }
+                        poGeometry = OGRGeometryFromEWKB(pabyEWKB, length, nullptr, false);
+                        CPLFree(pabyEWKB);
                         if (poGeometry != nullptr)
                         {
                             poGeometry->assignSpatialReference(
@@ -243,13 +258,13 @@ OGRFeature *OGRDMLayer::RecordToFeature(OGRDMStatement *hStmt,
 }
 
 /************************************************************************/
-/*                    OGRDMIsKnownGeomFuncPrefix()                      */
+/*                    OGRDAMENGIsKnownGeomFuncPrefix()                      */
 /************************************************************************/
 
 static const char *const apszKnownGeomFuncPrefixes[] = {
     "DMGEO2.ST_AsBinary", "DMGEO2.ST_AsEWKT", "DMGEO2.ST_AsEWKB",
     "DMGEO2.ST_AsText"};
-static int OGRDMIsKnownGeomFuncPrefix(const char *pszFieldName)
+static int OGRDAMENGIsKnownGeomFuncPrefix(const char *pszFieldName)
 {
     for (size_t i = 0; i < sizeof(apszKnownGeomFuncPrefixes) / sizeof(char *);
          i++)
@@ -265,7 +280,7 @@ static int OGRDMIsKnownGeomFuncPrefix(const char *pszFieldName)
 /*                CreateMapFromFieldNameToIndex()                       */
 /************************************************************************/
 
-void OGRDMLayer::CreateMapFromFieldNameToIndex(OGRDMStatement *hStmt,
+void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(OGRDAMENGStatement *hStmt,
                                                OGRFeatureDefn *poFeatureDefn,
                                                int *&panMapFieldNameToIndex,
                                                int *&panMapFieldNameToGeomIndex)
@@ -306,7 +321,7 @@ void OGRDMLayer::CreateMapFromFieldNameToIndex(OGRDMStatement *hStmt,
                 if (panMapFieldNameToGeomIndex[iField] < 0)
                 {
                     int iKnownPrefix =
-                        OGRDMIsKnownGeomFuncPrefix((const char *)pszName);
+                        OGRDAMENGIsKnownGeomFuncPrefix((const char *)pszName);
                     if (iKnownPrefix >= 0 &&
                         pszName[strlen(
                             apszKnownGeomFuncPrefixes[iKnownPrefix])] ==
@@ -331,11 +346,17 @@ void OGRDMLayer::CreateMapFromFieldNameToIndex(OGRDMStatement *hStmt,
 /*                     SetInitialQuery()                          */
 /************************************************************************/
 
-void OGRDMLayer::SetInitialQuery()
+void OGRDAMENGLayer::SetInitialQuery()
 {
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
+    if (poStatement == NULL)
+        poStatement = new OGRDAMENGStatement(hDAMENGConn);
+=======
     OGRDMConn *hDMConn = poDS->GetDMConn();
     if (poStatement == NULL)
         poStatement = new OGRDMStatement(hDMConn);
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
     CPLString osCommand;
 
     CPLAssert(pszQueryStatement != nullptr);
@@ -345,7 +366,7 @@ void OGRDMLayer::SetInitialQuery()
     if (!DSQL_SUCCEEDED(rt))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-                 "DM:Execute command failure!");
+                 "DAMENG:Execute command failure!");
     }
 
     CreateMapFromFieldNameToIndex(poStatement, poFeatureDefn,
@@ -359,7 +380,7 @@ void OGRDMLayer::SetInitialQuery()
 /*                         GetNextRawFeature()                          */
 /************************************************************************/
 
-OGRFeature *OGRDMLayer::GetNextRawFeature()
+OGRFeature *OGRDAMENGLayer::GetNextRawFeature()
 
 {
     OGRFeature *poFeature = nullptr;
@@ -411,7 +432,11 @@ OGRFeature *OGRDMLayer::GetNextRawFeature()
 ///*                           SetNextByIndex()                           */
 ///************************************************************************/
 //
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+//OGRErr OGRDAMENGLayer::SetNextByIndex(GIntBig nIndex)
+=======
 //OGRErr OGRDMLayer::SetNextByIndex(GIntBig nIndex)
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
 //
 //{
 //    GetLayerDefn();
@@ -463,7 +488,7 @@ OGRFeature *OGRDMLayer::GetNextRawFeature()
 /*                        BlobToGByteArray()                           */
 /************************************************************************/
 
-GByte *OGRDMLayer::BlobToGByteArray(const char *pszBlob, int *pnLength)
+GByte *OGRDAMENGLayer::BlobToGByteArray(const char *pszBlob, int *pnLength)
 {
     if (pszBlob == nullptr)
     {
@@ -479,7 +504,7 @@ GByte *OGRDMLayer::BlobToGByteArray(const char *pszBlob, int *pnLength)
 /*                          BlobToGeometry()                           */
 /************************************************************************/
 
-OGRGeometry *OGRDMLayer::BlobToGeometry(const char *pszBlob)
+OGRGeometry* OGRDAMENGLayer::BlobToGeometry(const char* pszBlob)
 
 {
     if (pszBlob == nullptr)
@@ -500,7 +525,7 @@ OGRGeometry *OGRDMLayer::BlobToGeometry(const char *pszBlob)
 /*                        GByteArrayToBlob()                           */
 /************************************************************************/
 
-char *OGRDMLayer::GByteArrayToBlob(const GByte *pabyData, size_t nLen)
+char *OGRDAMENGLayer::GByteArrayToBlob(const GByte *pabyData, size_t nLen)
 {
     if (nLen > (std::numeric_limits<size_t>::max() - 1) / 5)
         return CPLStrdup("");
@@ -532,7 +557,7 @@ char *OGRDMLayer::GByteArrayToBlob(const GByte *pabyData, size_t nLen)
 /*                          GeometryToBlob()                           */
 /************************************************************************/
 
-char *OGRDMLayer::GeometryToBlob(const OGRGeometry *poGeometry)
+char *OGRDAMENGLayer::GeometryToBlob(const OGRGeometry *poGeometry)
 
 {
     const size_t nWkbSize = poGeometry->WkbSize();
@@ -567,7 +592,7 @@ char *OGRDMLayer::GeometryToBlob(const OGRGeometry *poGeometry)
 /*                            GetFIDColumn()                            */
 /************************************************************************/
 
-const char *OGRDMLayer::GetFIDColumn()
+const char *OGRDAMENGLayer::GetFIDColumn()
 
 {
     if (pszFIDColumn != nullptr)
@@ -583,7 +608,7 @@ const char *OGRDMLayer::GetFIDColumn()
 /*      in other cases we use standard OGRLayer::GetExtent()            */
 /************************************************************************/
 
-OGRErr OGRDMLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
+OGRErr OGRDAMENGLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
                              int bForce)
 {
     CPLString osCommand;
@@ -600,12 +625,28 @@ OGRErr OGRDMLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
         return OGRERR_FAILURE;
     }
 
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+    OGRDAMENGGeomFieldDefn *poGeomFieldDefn =
+=======
     OGRDMGeomFieldDefn *poGeomFieldDefn =
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
         poFeatureDefn->GetGeomFieldDefn(iGeomField);
 
     if (TestCapability(OLCFastGetExtent))
     {
         osCommand.Printf(
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+            "SELECT DMGEO2.ST_Extent(%s) FROM %s AS ogrdamengextent",
+            OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
+            GetFromClauseForGetExtent().c_str());
+    }
+    else if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY)
+    {
+        osCommand.Printf(
+            "SELECT DMGEO2.ST_Extent(DMGEO2.ST_GeomFromWKB(DMGEO2.ST_AsBinary(%s))) FROM %s AS "
+            "ogrdamengextent",
+            OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
+=======
             "SELECT DMGEO2.ST_Extent(%s) FROM %s AS ogrdmextent",
             OGRDMEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
             GetFromClauseForGetExtent().c_str());
@@ -616,6 +657,7 @@ OGRErr OGRDMLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
             "SELECT DMGEO2.ST_Extent(DMGEO2.ST_GeomFromWKB(DMGEO2.ST_AsBinary(%s))) FROM %s AS "
             "ogrdmextent",
             OGRDMEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
             GetFromClauseForGetExtent().c_str());
     }
 
@@ -635,17 +677,26 @@ OGRErr OGRDMLayer::GetExtent(int iGeomField, OGREnvelope *psExtent,
 /*                        RunGetExtentRequest()                         */
 /************************************************************************/
 
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+OGRErr OGRDAMENGLayer::RunGetExtentRequest(OGREnvelope &sExtent,
+=======
 OGRErr OGRDMLayer::RunGetExtentRequest(OGREnvelope &sExtent,
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
                                        CPL_UNUSED int bForce,
                                        CPLString osCommand,
                                        int bErrorAsDebug)
 {
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGStatement *hStmt = new OGRDAMENGStatement(hDAMENGConn);
+=======
     OGRDMConn *hDMConn = poDS->GetDMConn();
     OGRDMStatement *hStmt = new OGRDMStatement(hDMConn);
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
     CPLErr eErr = hStmt->Execute(osCommand);
     if (!hStmt || eErr)
     {
-        CPLDebug("DM", "Unable to get extent by DMGEO2");
+        CPLDebug("DAMENG", "Unable to get extent by DMGEO2");
         return OGRERR_FAILURE;
     }
 
@@ -686,10 +737,10 @@ OGRErr OGRDMLayer::RunGetExtentRequest(OGREnvelope &sExtent,
 /*      Build a schema from the current resultset.                      */
 /************************************************************************/
 
-int OGRDMLayer::ReadResultDefinition(OGRDMStatement *hInitialResultIn)
+int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
 
 {
-    OGRDMStatement *hStmt = hInitialResultIn;
+    OGRDAMENGStatement *hStmt = hInitialResultIn;
     sdbyte columnName[200];
     sdint2 rs_deci = 0;
     ulength rs_size = 0;
@@ -700,7 +751,7 @@ int OGRDMLayer::ReadResultDefinition(OGRDMStatement *hInitialResultIn)
     DPIRETURN rt;
     dhdesc desc;
 
-    poFeatureDefn = new OGRDMFeatureDefn("sql_statement");
+    poFeatureDefn = new OGRDAMENGFeatureDefn("sql_statement");
     SetDescription(poFeatureDefn->GetName());
 
     poFeatureDefn->Reference();
@@ -775,12 +826,12 @@ int OGRDMLayer::ReadResultDefinition(OGRDMStatement *hInitialResultIn)
             continue;
         }
         else if ((iGeomFuncPrefix =
-                      OGRDMIsKnownGeomFuncPrefix(oField.GetNameRef())) >= 0 ||
+                      OGRDAMENGIsKnownGeomFuncPrefix(oField.GetNameRef())) >= 0 ||
                  (obj_classid >= NDCT_CLSID_GEO2_ST_GEOMETRY &&
                   obj_classid <= NDCT_CLSID_GEO2_ST_GEOGRAPHY))
         {
             auto poGeomFieldDefn =
-                std::make_unique<OGRDMGeomFieldDefn>(this, oField.GetNameRef());
+                std::make_unique<OGRDAMENGGeomFieldDefn>(this, oField.GetNameRef());
             if (iGeomFuncPrefix >= 0 &&
                 oField.GetNameRef()[strlen(
                     apszKnownGeomFuncPrefixes[iGeomFuncPrefix])] == '_')
@@ -792,19 +843,19 @@ int OGRDMLayer::ReadResultDefinition(OGRDMStatement *hInitialResultIn)
 
             if (obj_classid == NDCT_CLSID_GEO2_ST_GEOGRAPHY)
             {
-                poGeomFieldDefn->eDMGeoType = GEOM_TYPE_GEOGRAPHY;
+                poGeomFieldDefn->eDAMENGGeoType = GEOM_TYPE_GEOGRAPHY;
             }
             else
-                poGeomFieldDefn->eDMGeoType = GEOM_TYPE_GEOMETRY;
+                poGeomFieldDefn->eDAMENGGeoType = GEOM_TYPE_GEOMETRY;
 
             poFeatureDefn->AddGeomFieldDefn(std::move(poGeomFieldDefn));
             continue;
         }
         else if (EQUAL(oField.GetNameRef(), "WKB_GEOMETRY"))
         {
-            auto poGeomFieldDefn = std::make_unique<OGRDMGeomFieldDefn>(
+            auto poGeomFieldDefn = std::make_unique<OGRDAMENGGeomFieldDefn>(
                 this, oField.GetNameRef());
-            poGeomFieldDefn->eDMGeoType = GEOM_TYPE_WKB;
+            poGeomFieldDefn->eDAMENGGeoType = GEOM_TYPE_WKB;
             poFeatureDefn->AddGeomFieldDefn(std::move(poGeomFieldDefn));
             continue;
         }
@@ -886,7 +937,7 @@ int OGRDMLayer::ReadResultDefinition(OGRDMStatement *hInitialResultIn)
         }
         else /* unknown type */
         {
-            CPLDebug("DM",
+            CPLDebug("DAMENG",
                      "Unhandled OID (%d) for column %s. Defaulting to String.",
                      rs_type, oField.GetNameRef());
             oField.SetType(OFTString);
@@ -900,7 +951,7 @@ int OGRDMLayer::ReadResultDefinition(OGRDMStatement *hInitialResultIn)
 /************************************************************************/
 /*                          GetSpatialRef()                             */
 /************************************************************************/
-const OGRSpatialReference *OGRDMGeomFieldDefn::GetSpatialRef() const
+const OGRSpatialReference *OGRDAMENGGeomFieldDefn::GetSpatialRef() const
 {
     if (poLayer == nullptr)
         return nullptr;
@@ -922,7 +973,7 @@ const OGRSpatialReference *OGRDMGeomFieldDefn::GetSpatialRef() const
 /* non-empty field value                                                */
 /************************************************************************/
 
-void OGRDMCommonAppendFieldValue(CPLString &osCommand,
+void OGRDAMENGCommonAppendFieldValue(CPLString &osCommand,
                                  OGRFeature *poFeature,
                                  int i)
 {
@@ -973,7 +1024,11 @@ void OGRDMCommonAppendFieldValue(CPLString &osCommand,
 /*                             GetDataset()                             */
 /************************************************************************/
 
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamenglayer.cpp
+GDALDataset *OGRDAMENGLayer::GetDataset()
+=======
 GDALDataset *OGRDMLayer::GetDataset()
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmlayer.cpp
 {
     return poDS;
 }

@@ -1,7 +1,11 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengresultlayer.cpp
+ * Purpose:  Implements OGRDAMENGResultLayer class.
+=======
  * Purpose:  Implements OGRDMResultLayer class.
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmresultlayer.cpp
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
@@ -27,17 +31,17 @@
  ****************************************************************************/
 
 #include "cpl_conv.h"
-#include "ogr_dm.h"
+#include "ogr_dameng.h"
 
 CPL_CVSID("$Id$")
 
 /************************************************************************/
-/*                          OGRDMResultLayer()                          */
+/*                          OGRDAMENGResultLayer()                          */
 /************************************************************************/
 
-OGRDMResultLayer::OGRDMResultLayer(OGRDMDataSource *poDSIn,
+OGRDAMENGResultLayer::OGRDAMENGResultLayer(OGRDAMENGDataSource *poDSIn,
                                    const char *pszRawQueryIn,
-                                   OGRDMStatement *hInitialResultIn) : pszRawStatement(CPLStrdup(pszRawQueryIn))
+                                   OGRDAMENGStatement *hInitialResultIn) : pszRawStatement(CPLStrdup(pszRawQueryIn))
 {
     poDS = poDSIn;
 
@@ -85,10 +89,10 @@ OGRDMResultLayer::OGRDMResultLayer(OGRDMDataSource *poDSIn,
 }
 
 /************************************************************************/
-/*                          ~OGRDMResultLayer()                          */
+/*                          ~OGRDAMENGResultLayer()                          */
 /************************************************************************/
 
-OGRDMResultLayer::~OGRDMResultLayer()
+OGRDAMENGResultLayer::~OGRDAMENGResultLayer()
 
 {
     CPLFree(pszRawStatement);
@@ -100,7 +104,7 @@ OGRDMResultLayer::~OGRDMResultLayer()
 /*                      BuildFullQueryStatement()                       */
 /************************************************************************/
 
-void OGRDMResultLayer::BuildFullQueryStatement()
+void OGRDAMENGResultLayer::BuildFullQueryStatement()
 
 {
     if (pszQueryStatement != nullptr)
@@ -116,7 +120,7 @@ void OGRDMResultLayer::BuildFullQueryStatement()
         strcpy(pszQueryStatement, pszRawStatement);
     else
         snprintf(pszQueryStatement, nLen,
-                 "SELECT * FROM (%s) AS ogrdmsubquery %s", pszRawStatement,
+                 "SELECT * FROM (%s) AS ogrdamengsubquery %s", pszRawStatement,
                  osWHERE.c_str());
 }
 
@@ -124,29 +128,29 @@ void OGRDMResultLayer::BuildFullQueryStatement()
 /*                            ResetReading()                            */
 /************************************************************************/
 
-void OGRDMResultLayer::ResetReading()
+void OGRDAMENGResultLayer::ResetReading()
 
 {
-    OGRDMLayer::ResetReading();
+    OGRDAMENGLayer::ResetReading();
 }
 
 /************************************************************************/
 /*                          GetFeatureCount()                           */
 /************************************************************************/
 
-GIntBig OGRDMResultLayer::GetFeatureCount(int bForce)
+GIntBig OGRDAMENGResultLayer::GetFeatureCount(int bForce)
 
 {
     if (TestCapability(OLCFastFeatureCount) == FALSE)
-        return OGRDMLayer::GetFeatureCount(bForce);
+        return OGRDAMENGLayer::GetFeatureCount(bForce);
 
-    OGRDMConn *hDMConn = poDS->GetDMConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     char **hResult = nullptr;
-    OGRDMStatement oCommand(hDMConn);
+    OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLString osCommand;
     int nCount = 0;
 
-    osCommand.Printf("SELECT count(*) FROM (%s) AS ogrdmcount",
+    osCommand.Printf("SELECT count(*) FROM (%s) AS ogrdamengcount",
                      pszQueryStatement);
 
     CPLErr rt = oCommand.Execute(osCommand.c_str());
@@ -154,7 +158,7 @@ GIntBig OGRDMResultLayer::GetFeatureCount(int bForce)
     if (rt == CE_None && hResult != nullptr)
         nCount = atoi(hResult[0]);
     else
-        CPLDebug("DM", "%s; failed.", osCommand.c_str());
+        CPLDebug("DAMENG", "%s; failed.", osCommand.c_str());
 
     return nCount;
 }
@@ -163,7 +167,7 @@ GIntBig OGRDMResultLayer::GetFeatureCount(int bForce)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRDMResultLayer::TestCapability(const char *pszCap)
+int OGRDAMENGResultLayer::TestCapability(const char *pszCap)
 
 {
     GetLayerDefn();
@@ -171,34 +175,34 @@ int OGRDMResultLayer::TestCapability(const char *pszCap)
     if (EQUAL(pszCap, OLCFastFeatureCount) ||
         EQUAL(pszCap, OLCFastSetNextByIndex))
     {
-        OGRDMGeomFieldDefn *poGeomFieldDefn = nullptr;
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
         if (poFeatureDefn->GetGeomFieldCount() > 0)
             poGeomFieldDefn =
                 poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
         return (m_poFilterGeom == nullptr || poGeomFieldDefn == nullptr ||
-                poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY ||
-                poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY) &&
+                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY) &&
                m_poAttrQuery == nullptr;
     }
     else if (EQUAL(pszCap, OLCFastSpatialFilter))
     {
-        OGRDMGeomFieldDefn *poGeomFieldDefn = nullptr;
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
         if (poFeatureDefn->GetGeomFieldCount() > 0) 
             poGeomFieldDefn =
                 poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
         return (poGeomFieldDefn == nullptr ||
-                poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY ||
-                poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY) &&
+                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY) &&
                m_poAttrQuery == nullptr;
     }
 
     else if (EQUAL(pszCap, OLCFastGetExtent))
     {
-        OGRDMGeomFieldDefn *poGeomFieldDefn = nullptr;
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
         if (poFeatureDefn->GetGeomFieldCount() > 0)
             poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(0);
         return (poGeomFieldDefn == nullptr ||
-                poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY) &&
+                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY) &&
                m_poAttrQuery == nullptr;
     }
     else if (EQUAL(pszCap, OLCStringsAsUTF8))
@@ -212,10 +216,10 @@ int OGRDMResultLayer::TestCapability(const char *pszCap)
 /*                           GetNextFeature()                           */
 /************************************************************************/
 
-OGRFeature *OGRDMResultLayer::GetNextFeature()
+OGRFeature *OGRDAMENGResultLayer::GetNextFeature()
 
 {
-    OGRDMGeomFieldDefn *poGeomFieldDefn = nullptr;
+    OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
     if (poFeatureDefn->GetGeomFieldCount() != 0)
         poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
 
@@ -226,8 +230,8 @@ OGRFeature *OGRDMResultLayer::GetNextFeature()
             return nullptr;
 
         if ((m_poFilterGeom == nullptr || poGeomFieldDefn == nullptr ||
-             poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY ||
-             poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY ||
+             poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+             poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY ||
              FilterGeometry(poFeature->GetGeomFieldRef(m_iGeomFieldFilter))) &&
             (m_poAttrQuery == nullptr || m_poAttrQuery->Evaluate(poFeature)))
             return poFeature;
@@ -240,7 +244,7 @@ OGRFeature *OGRDMResultLayer::GetNextFeature()
 /*                          SetSpatialFilter()                          */
 /************************************************************************/
 
-void OGRDMResultLayer::SetSpatialFilter(int iGeomField,
+void OGRDAMENGResultLayer::SetSpatialFilter(int iGeomField,
                                         OGRGeometry *poGeomIn)
 
 {
@@ -257,11 +261,11 @@ void OGRDMResultLayer::SetSpatialFilter(int iGeomField,
     }
     m_iGeomFieldFilter = iGeomField;
 
-    OGRDMGeomFieldDefn *poGeomFieldDefn =
+    OGRDAMENGGeomFieldDefn *poGeomFieldDefn =
         poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
     if (InstallFilter(poGeomIn))
     {
-        if (poGeomFieldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY)
+        if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY)
         {
             if (m_poFilterGeom != nullptr)
             {
@@ -284,7 +288,11 @@ void OGRDMResultLayer::SetSpatialFilter(int iGeomField,
                                "DMGEO2.ST_BOXCONTAINS(dmgeo2.st_geomfromtext('"
                                "POLYGON(( %s, %s, %s, %s, %s))'), %s);",
                                szBox3D_1, szBox3D_2, szBox3D_3, szBox3D_4,
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengresultlayer.cpp
+                               szBox3D_1, OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef())
+=======
                                szBox3D_1, OGRDMEscapeColumnName(poGeomFieldDefn->GetNameRef())
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmresultlayer.cpp
                                     .c_str());
             }
             else
@@ -303,33 +311,33 @@ void OGRDMResultLayer::SetSpatialFilter(int iGeomField,
 /*                            ResolveSRID()                             */
 /************************************************************************/
 
-void OGRDMResultLayer::ResolveSRID(const OGRDMGeomFieldDefn *poGFldDefn)
+void OGRDAMENGResultLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn)
 
 {
     /* We have to get the SRID of the geometry column, so to be able */
     /* to do spatial filtering */
     int nSRSId = UNDETERMINED_SRID;
-    OGRDMConn *hDMConn = poDS->GetDMConn();
-    OGRDMStatement oCommand(hDMConn);
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGStatement oCommand(hDAMENGConn);
 
     if (nSRSId == UNDETERMINED_SRID &&
-        (poGFldDefn->eDMGeoType == GEOM_TYPE_GEOMETRY ||
-         poGFldDefn->eDMGeoType == GEOM_TYPE_GEOGRAPHY))
+        (poGFldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+         poGFldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY))
     {
         if (pszGeomTableName != nullptr)
         {
             CPLString osName(pszGeomTableSchemaName);
             osName += ".";
             osName += pszGeomTableName;
-            OGRDMLayer *poBaseLayer =
-                cpl::down_cast<OGRDMLayer *>(poDS->GetLayerByName(osName));
+            OGRDAMENGLayer *poBaseLayer =
+                cpl::down_cast<OGRDAMENGLayer *>(poDS->GetLayerByName(osName));
             if (poBaseLayer)
             {
                 int iBaseIdx = poBaseLayer->GetLayerDefn()->GetGeomFieldIndex(
                     poGFldDefn->GetNameRef());
                 if (iBaseIdx >= 0)
                 {
-                    const OGRDMGeomFieldDefn *poBaseGFldDefn =
+                    const OGRDAMENGGeomFieldDefn *poBaseGFldDefn =
                         poBaseLayer->GetLayerDefn()->GetGeomFieldDefn(iBaseIdx);
                     poBaseGFldDefn
                         ->GetSpatialRef(); /* To make sure nSRSId is resolved */
@@ -352,11 +360,19 @@ void OGRDMResultLayer::ResolveSRID(const OGRDMGeomFieldDefn *poGFldDefn)
                 osGetSRID += "SELECT ";
                 osGetSRID += psGetSRIDFct;
                 osGetSRID += "(";
+<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengresultlayer.cpp
+                osGetSRID += OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
+                osGetSRID += ") FROM (";
+                osGetSRID += pszRawStatement;
+                osGetSRID += ") AS ogrdamenggetsrid WHERE (";
+                osGetSRID += OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
+=======
                 osGetSRID += OGRDMEscapeColumnName(poGFldDefn->GetNameRef());
                 osGetSRID += ") FROM (";
                 osGetSRID += pszRawStatement;
                 osGetSRID += ") AS ogrdmgetsrid WHERE (";
                 osGetSRID += OGRDMEscapeColumnName(poGFldDefn->GetNameRef());
+>>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmresultlayer.cpp
                 osGetSRID += " IS NOT NULL) LIMIT 1";
 
                 CPLErr err = oCommand.Execute(osGetSRID.c_str());
