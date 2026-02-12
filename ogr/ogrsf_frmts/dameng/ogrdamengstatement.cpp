@@ -1,11 +1,7 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengstatement.cpp
  * Purpose:  Implements OGRDAMENGStatement class.
-=======
- * Purpose:  Implements OGRDMStatement class.
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmstatement.cpp
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
@@ -30,15 +26,9 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengstatement.cpp
 #include "ogr_dameng.h"
-=======
-#include "ogr_dm.h"
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmstatement.cpp
 #include "cpl_conv.h"
 #include <ogr_p.h>
-
-CPL_CVSID("$Id$")
 
 OGRDAMENGStatement::OGRDAMENGStatement(OGRDAMENGConn *poConnIn)
 
@@ -484,7 +474,7 @@ CPLErr OGRDAMENGStatement::Execute_for_insert(OGRDAMENGFeatureDefn* params,
     for (int num = 0; num < valuesnum; num++)
     {
 
-        OGRFeatureDefn *poFeatureDefn = poFeature->GetDefnRef();
+        const OGRFeatureDefn *poFeatureDefn = poFeature->GetDefnRef();
         OGRFieldType nOGRFieldType = poFeatureDefn->GetFieldDefn(i)->GetType();
         char s[100];
         strncpy(s, poFeatureDefn->GetFieldDefn(i)->GetNameRef(), 100);

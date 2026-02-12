@@ -26,13 +26,7 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdriver.cpp
 #include "ogr_dameng.h"
-=======
-#include "ogr_dm.h"
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdriver.cpp
-
-CPL_CVSID("$Id$")
 
 /************************************************************************/
 /*                         OGRDAMENGDriverIdentify()                        */
@@ -76,7 +70,7 @@ static GDALDataset *OGRDAMENGDriverCreate(const char *pszName,
                                       CPL_UNUSED int nXSize,
                                       CPL_UNUSED int nYSize,
                                       CPL_UNUSED GDALDataType eDT,
-                                      char **papszOptions)
+                                      CSLConstList papszOptions)
 
 {
     OGRDAMENGDataSource *poDS;
@@ -103,11 +97,7 @@ static GDALDataset *OGRDAMENGDriverCreate(const char *pszName,
 void RegisterOGRDAMENG()
 
 {
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdriver.cpp
     if (!GDAL_CHECK_VERSION("OGR/DAMENG driver"))
-=======
-    if (!GDAL_CHECK_VERSION("OGR/DM driver"))
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdriver.cpp
         return;
 
     if (GDALGetDriverByName("DAMENG") != nullptr)
@@ -115,11 +105,7 @@ void RegisterOGRDAMENG()
 
     GDALDriver *poDriver = new GDALDriver();
 
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdriver.cpp
     poDriver->SetDescription("DAMENG");
-=======
-    poDriver->SetDescription("DM");
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdriver.cpp
     poDriver->SetMetadataItem(GDAL_DCAP_VECTOR, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_LAYER, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_DELETE_LAYER, "YES");
@@ -186,19 +172,11 @@ void RegisterOGRDAMENG()
     poDriver->SetMetadataItem(GDAL_DCAP_DEFAULT_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_GEOMFIELDS, "YES");
 
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdriver.cpp
     poDriver->pfnIdentify = OGRDAMENGDriverIdentify;
     poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
     poDriver->pfnOpen = OGRDAMENGDriverOpen;
     poDriver->pfnCreate = OGRDAMENGDriverCreate;
-=======
-    poDriver->pfnIdentify = OGRDMDriverIdentify;
-    poDriver->SetMetadataItem(GDAL_DCAP_OPEN, "YES");
-    poDriver->SetMetadataItem(GDAL_DCAP_CREATE, "YES");
-    poDriver->pfnOpen = OGRDMDriverOpen;
-    poDriver->pfnCreate = OGRDMDriverCreate;
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdriver.cpp
 
     GetGDALDriverManager()->RegisterDriver(poDriver);
 }

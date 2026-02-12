@@ -1,11 +1,7 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
  * Purpose:  Implements OGRDAMENGDataSource class.
-=======
- * Purpose:  Implements OGRDMDataSource class.
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
@@ -37,9 +33,6 @@
 #include "cpl_hash_set.h"
 #include <cctype>
 #include <set>
-
-CPL_CVSID("$Id$")
-
 
 int ogr_DM_insertnum = FORCED_INSERT_NUM;
 /*
@@ -86,8 +79,10 @@ static unsigned long OGRDAMENGHashTableEntry(const void *_psTableEntry)
 {
     const DAMENGTableEntry *psTableEntry =
         static_cast<const DAMENGTableEntry *>(_psTableEntry);
-    return CPLHashSetHashStr(CPLString().Printf(
-        "%s.%s", psTableEntry->pszSchemaName, psTableEntry->pszTableName));
+    return CPLHashSetHashStr(CPLString()
+                                .Printf("%s.%s", psTableEntry->pszSchemaName,
+                                        psTableEntry->pszTableName)
+                                .c_str());
 }
 
 static int OGRDAMENGEqualTableEntry(const void *_psTableEntry1,
@@ -153,7 +148,7 @@ static void OGRDAMENGTableEntryAddGeomColumn(DAMENGTableEntry *psTableEntry,
 int OGRDAMENGDataSource::Open(const char *pszNewName,
                           int bUpdate,
                           int bTestOpen,
-                          char **papszOpenOptionsIn)
+                          CSLConstList papszOpenOptionsIn)
 
 {
     CPLAssert(nLayers == 0);
@@ -486,7 +481,7 @@ OGRDAMENGTableLayer *OGRDAMENGDataSource::OpenTable(CPLString &osCurrentSchemaIn
 /*                           GetLayerCount()                            */
 /************************************************************************/
 
-int OGRDAMENGDataSource::GetLayerCount()
+int OGRDAMENGDataSource::GetLayerCount() const
 {
     return nLayers;
 }
@@ -526,13 +521,8 @@ OGRErr OGRDAMENGDataSource::DeleteLayer(int iLayer)
     OGRDAMENGStatement oCommand(poSession);
 
     osCommand.Printf("DROP TABLE %s.%s",
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
                      OGRDAMENGEscapeColumnName(osSchemaName).c_str(),
                      OGRDAMENGEscapeColumnName(osTableName).c_str());
-=======
-                     OGRDMEscapeColumnName(osSchemaName).c_str(),
-                     OGRDMEscapeColumnName(osTableName).c_str());
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
     CPLErr rt = oCommand.Execute(osCommand.c_str());
     if (rt != CE_None)
         return OGRERR_FAILURE;
@@ -605,11 +595,7 @@ OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
         else
             osFIDColumnName += pszFIDColumnNameIn;
     }
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
     CPLString osFIDColumnNameEscaped = OGRDAMENGEscapeColumnName(osFIDColumnName);
-=======
-    CPLString osFIDColumnNameEscaped = OGRDMEscapeColumnName(osFIDColumnName);
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
 
     if (STARTS_WITH(pszLayerName, "dameng"))
     {
@@ -826,22 +812,13 @@ OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
         CPLFree(pszSchemaName);
         pszSchemaName = CPLStrdup("dm_temp_1");
         osCreateTable.Printf("CREATE global TEMPORARY TABLE %s",
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
                              OGRDAMENGEscapeColumnName(pszTableName).c_str());
-=======
-                             OGRDMEscapeColumnName(pszTableName).c_str());
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
     }
     else
     {
         osCreateTable.Printf("CREATE TABLE %s.%s",
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
                              OGRDAMENGEscapeColumnName(pszSchemaName).c_str(),
                              OGRDAMENGEscapeColumnName(pszTableName).c_str());
-=======
-                             OGRDMEscapeColumnName(pszSchemaName).c_str(),
-                             OGRDMEscapeColumnName(pszTableName).c_str());
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
     }
 
     const char *suffix = nullptr;
@@ -862,11 +839,7 @@ OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
         osCommand.Printf("%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geography "
                          "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
                          osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
                          pszSerialType, OGRDAMENGEscapeColumnName(pszGFldName).c_str(),
-=======
-                         pszSerialType, OGRDMEscapeColumnName(pszGFldName).c_str(),
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
                          pszGeometryType, suffix,
                          nSRSId, osFIDColumnNameEscaped.c_str());
     }
@@ -875,11 +848,7 @@ OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
         osCommand.Printf("%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geometry "
                          "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
                          osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
                          pszSerialType, OGRDAMENGEscapeColumnName(pszGFldName).c_str(),
-=======
-                         pszSerialType, OGRDMEscapeColumnName(pszGFldName).c_str(),
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
                          pszGeometryType, suffix,
                          nSRSId, osFIDColumnNameEscaped.c_str());
     }
@@ -954,7 +923,7 @@ OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRDAMENGDataSource::TestCapability(const char *pszCap)
+int OGRDAMENGDataSource::TestCapability(const char *pszCap) const
 
 {
     if (EQUAL(pszCap, ODsCCreateLayer) || EQUAL(pszCap, ODsCDeleteLayer) ||
@@ -976,7 +945,7 @@ int OGRDAMENGDataSource::TestCapability(const char *pszCap)
 /*                              GetLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRDAMENGDataSource::GetLayer(int iLayer)
+const OGRLayer *OGRDAMENGDataSource::GetLayer(int iLayer) const
 
 {
     /* Force loading of all registered tables */
@@ -1405,13 +1374,8 @@ OGRLayer *OGRDAMENGDataSource::ExecuteSQL(const char *pszSQLCommand,
         CPLErr rt = oCommand.Execute(pszSQLCommand);
         if (rt == CE_None)
         {
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengdatasource.cpp
             OGRDAMENGResultLayer *poLayer =
                 new OGRDAMENGResultLayer(this, pszSQLCommand, &oCommand);
-=======
-            OGRDMResultLayer *poLayer =
-                new OGRDMResultLayer(this, pszSQLCommand, &oCommand);
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmdatasource.cpp
 
             if (poSpatialFilter != nullptr)
                 poLayer->SetSpatialFilter(poSpatialFilter);

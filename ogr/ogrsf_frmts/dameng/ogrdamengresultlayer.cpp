@@ -1,11 +1,7 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengresultlayer.cpp
  * Purpose:  Implements OGRDAMENGResultLayer class.
-=======
- * Purpose:  Implements OGRDMResultLayer class.
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmresultlayer.cpp
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
@@ -32,8 +28,6 @@
 
 #include "cpl_conv.h"
 #include "ogr_dameng.h"
-
-CPL_CVSID("$Id$")
 
 /************************************************************************/
 /*                          OGRDAMENGResultLayer()                          */
@@ -167,7 +161,7 @@ GIntBig OGRDAMENGResultLayer::GetFeatureCount(int bForce)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRDAMENGResultLayer::TestCapability(const char *pszCap)
+int OGRDAMENGResultLayer::TestCapability(const char *pszCap) const
 
 {
     GetLayerDefn();
@@ -244,8 +238,8 @@ OGRFeature *OGRDAMENGResultLayer::GetNextFeature()
 /*                          SetSpatialFilter()                          */
 /************************************************************************/
 
-void OGRDAMENGResultLayer::SetSpatialFilter(int iGeomField,
-                                        OGRGeometry *poGeomIn)
+OGRErr OGRDAMENGResultLayer::ISetSpatialFilter(int iGeomField,
+                                               const OGRGeometry *poGeomIn)
 
 {
     if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount() ||
@@ -257,7 +251,7 @@ void OGRDAMENGResultLayer::SetSpatialFilter(int iGeomField,
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Invalid geometry field index : %d", iGeomField);
         }
-        return;
+        return OGRERR_NONE;
     }
     m_iGeomFieldFilter = iGeomField;
 
@@ -288,11 +282,7 @@ void OGRDAMENGResultLayer::SetSpatialFilter(int iGeomField,
                                "DMGEO2.ST_BOXCONTAINS(dmgeo2.st_geomfromtext('"
                                "POLYGON(( %s, %s, %s, %s, %s))'), %s);",
                                szBox3D_1, szBox3D_2, szBox3D_3, szBox3D_4,
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengresultlayer.cpp
                                szBox3D_1, OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef())
-=======
-                               szBox3D_1, OGRDMEscapeColumnName(poGeomFieldDefn->GetNameRef())
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmresultlayer.cpp
                                     .c_str());
             }
             else
@@ -305,6 +295,7 @@ void OGRDAMENGResultLayer::SetSpatialFilter(int iGeomField,
 
         ResetReading();
     }
+    return OGRERR_NONE;
 }
 
 /************************************************************************/
@@ -360,19 +351,11 @@ void OGRDAMENGResultLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn)
                 osGetSRID += "SELECT ";
                 osGetSRID += psGetSRIDFct;
                 osGetSRID += "(";
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengresultlayer.cpp
                 osGetSRID += OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
                 osGetSRID += ") FROM (";
                 osGetSRID += pszRawStatement;
                 osGetSRID += ") AS ogrdamenggetsrid WHERE (";
                 osGetSRID += OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
-=======
-                osGetSRID += OGRDMEscapeColumnName(poGFldDefn->GetNameRef());
-                osGetSRID += ") FROM (";
-                osGetSRID += pszRawStatement;
-                osGetSRID += ") AS ogrdmgetsrid WHERE (";
-                osGetSRID += OGRDMEscapeColumnName(poGFldDefn->GetNameRef());
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmresultlayer.cpp
                 osGetSRID += " IS NOT NULL) LIMIT 1";
 
                 CPLErr err = oCommand.Execute(osGetSRID.c_str());

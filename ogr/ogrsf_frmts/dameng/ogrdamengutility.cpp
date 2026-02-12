@@ -26,14 +26,8 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengutility.cpp
 #include "ogr_dameng.h"
-=======
-#include "ogr_dm.h"
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmutility.cpp
 #include "cpl_conv.h"
-
-CPL_CVSID("$Id$")
 
 #include <stdarg.h>
 #include <math.h>
