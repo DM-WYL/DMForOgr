@@ -1,11 +1,7 @@
 /******************************************************************************
  *
  * Project:  OpenGIS Simple Features Reference Implementation
-<<<<<<< HEAD:ogr/ogrsf_frmts/dameng/ogrdamengconnection.cpp
  * Purpose:  Implements OGRDAMENGConnection class.
-=======
- * Purpose:  Implements OGRDMConnection class.
->>>>>>> 6015c004732898cb338d85f612307863e8cb27b0:ogr/ogrsf_frmts/dm/ogrdmconnection.cpp
  * Author:   YiLun Wu, wuyilun@dameng.com
  *
  ******************************************************************************
@@ -117,7 +113,7 @@ int OGRDAMENGConn::EstablishConn(const char* pszUseridIn,
     if (strlen(pszSchemaName))
     {
         rt = dpi_set_con_attr(hCon, DSQL_ATTR_CURRENT_SCHEMA,
-                              (sdbyte *)pszSchemaName, strlen(pszSchemaName));
+                              (sdbyte *)pszSchemaName, (sdint4)strlen(pszSchemaName));
         if (!DSQL_SUCCEEDED(rt))
         {
             CPLError(CE_Failure, CPLE_AppDefined, "failed to set con_attr");

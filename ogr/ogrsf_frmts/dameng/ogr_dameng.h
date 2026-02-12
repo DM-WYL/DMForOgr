@@ -298,27 +298,21 @@ class OGRDAMENGLayer CPL_NON_FINAL : public OGRLayer
 
   public:
     OGRDAMENGLayer();
-    virtual ~OGRDAMENGLayer();
+    ~OGRDAMENGLayer() override;
 
-    virtual void ResetReading() override;
+    void ResetReading() override;
 
     static char *GByteArrayToBlob(const GByte *pabyData,
                                   size_t nLen);
-    virtual OGRDAMENGFeatureDefn *GetLayerDefn() override
+    const OGRDAMENGFeatureDefn *GetLayerDefn() const override
     {
         return poFeatureDefn;
     }
 
-    virtual OGRErr GetExtent(int iGeomField,
-                             OGREnvelope *psExtent,
-                             int bForce) override;
-    virtual OGRErr GetExtent(OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return GetExtent(0, psExtent, bForce);
-    }
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
-    virtual const char *GetFIDColumn() override;
+    const char *GetFIDColumn() const override;
 
     //virtual OGRErr SetNextByIndex(GIntBig nIndex) override;
 
@@ -417,41 +411,30 @@ class OGRDAMENGTableLayer final : public OGRDAMENGLayer
     void SetGeometryInformation(DMGeomColumnDesc *pasDesc,
                                 int nGeomFieldCount);
 
-    virtual OGRFeature *GetFeature(GIntBig nFeatureId) override;
-    virtual void ResetReading() override;
-    virtual OGRFeature *GetNextFeature() override;
-    virtual GIntBig GetFeatureCount(int) override;
+    OGRFeature *GetFeature(GIntBig nFeatureId) override;
+    void ResetReading() override;
+    OGRFeature *GetNextFeature() override;
+    GIntBig GetFeatureCount(int) override;
 
-    virtual void SetSpatialFilter(OGRGeometry *poGeom) override
-    {
-        SetSpatialFilter(0, poGeom);
-    }
-    virtual void SetSpatialFilter(int iGeomField,
-                                  OGRGeometry *poGeom) override;
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
-    virtual OGRErr SetAttributeFilter(const char *) override;
+    OGRErr SetAttributeFilter(const char *) override;
 
-    virtual OGRErr ISetFeature(OGRFeature *poFeature) override;
-    virtual OGRErr DeleteFeature(GIntBig nFID) override;
-    virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
+    OGRErr ISetFeature(OGRFeature *poFeature) override;
+    OGRErr DeleteFeature(GIntBig nFID) override;
+    OGRErr ICreateFeature(OGRFeature *poFeature) override;
 
     virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = TRUE) override;
     virtual OGRErr CreateGeomField(const OGRGeomFieldDefn *poGeomField,
                                    int bApproxOK = TRUE) override;
-    virtual OGRErr DeleteField(int iField) override;
-    virtual OGRErr AlterFieldDefn(int iField,
-                                  OGRFieldDefn *poNewFieldDefn,
-                                  int nFlags) override;
-    virtual int TestCapability(const char *) override;
-    virtual OGRErr GetExtent(OGREnvelope *psExtent,
-                             int bForce) override
-    {
-        return GetExtent(0, psExtent, bForce);
-    }
-    virtual OGRErr GetExtent(int iGeomField,
-                             OGREnvelope *psExtent,
-                             int bForce) override;
+    OGRErr DeleteField(int iField) override;
+    virtual OGRErr AlterFieldDefn(int iField, OGRFieldDefn *poNewFieldDefn,
+                          int nFlags) override;
+    int TestCapability(const char *) const override;
+    OGRErr IGetExtent(int iGeomField, OGREnvelope *psExtent,
+                      bool bForce) override;
 
     const char *GetTableName()
     {
@@ -462,19 +445,17 @@ class OGRDAMENGTableLayer final : public OGRDAMENGLayer
         return pszSchemaName;
     }
 
-    virtual const char *GetFIDColumn() override;
+    const char *GetFIDColumn() const override;
 
-    virtual char **GetMetadataDomainList() override;
-    virtual char **GetMetadata(const char *pszDomain = "") override;
+    char **GetMetadataDomainList() override;
+    CSLConstList GetMetadata(const char *pszDomain = "") override;
     virtual const char *GetMetadataItem(const char *pszName,
                                         const char *pszDomain = "") override;
-    virtual CPLErr SetMetadata(char **papszMD,
-                               const char *pszDomain = "") override;
-    virtual CPLErr SetMetadataItem(const char *pszName,
-                                   const char *pszValue,
-                                   const char *pszDomain = "") override;
+    CPLErr SetMetadata(CSLConstList, const char *pszDomain = "") override;
+    CPLErr SetMetadataItem(const char *pszName, const char *pszValue,
+                           const char *pszDomain = "") override;
 
-    virtual OGRErr Rename(const char *pszNewName) override;
+    OGRErr Rename(const char *pszNewName) override;
 
     // follow methods are not base class overrides
     void SetLaunderFlag(int bFlag)
@@ -508,8 +489,7 @@ class OGRDAMENGTableLayer final : public OGRDAMENGLayer
     {
         nForcedGeometryTypeFlags = GeometryTypeFlagsIn;
     }
-    void SetCreateSpatialIndex(bool bFlag,
-                               const char *pszSpatialIndexType)
+    void SetCreateSpatialIndex(bool bFlag, const char *pszSpatialIndexType)
     {
         bCreateSpatialIndexFlag = bFlag;
         osSpatialIndexType = pszSpatialIndexType;
@@ -522,7 +502,7 @@ class OGRDAMENGTableLayer final : public OGRDAMENGLayer
 
     void SetDeferredCreation(CPLString osCreateTable);
 
-    virtual void ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn) override;
+    void ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn) override;
 };
 
 class OGRDAMENGResultLayer final : public OGRDAMENGLayer
@@ -545,26 +525,26 @@ class OGRDAMENGResultLayer final : public OGRDAMENGLayer
     }
 
   public:
-    OGRDAMENGResultLayer(OGRDAMENGDataSource *,
-                     const char *pszRawStatement,
-                     OGRDAMENGStatement *hInitialResult);
-    virtual ~OGRDAMENGResultLayer();
+    OGRDAMENGResultLayer(OGRDAMENGDataSource *, const char *pszRawStatement,
+                         OGRDAMENGStatement *hInitialResult);
+    ~OGRDAMENGResultLayer() override;
 
-    virtual void ResetReading() override;
-    virtual GIntBig GetFeatureCount(int) override;
+    void ResetReading() override;
+    GIntBig GetFeatureCount(int) override;
 
-    virtual void SetSpatialFilter(OGRGeometry *poGeom) override
-    {
-        SetSpatialFilter(0, poGeom);
-    }
-    virtual void SetSpatialFilter(int iGeomField,
-                                  OGRGeometry *poGeom) override;
-    virtual int TestCapability(const char *) override;
+    OGRErr ISetSpatialFilter(int iGeomField,
+                             const OGRGeometry *poGeom) override;
 
-    virtual OGRFeature *GetNextFeature() override;
+    int TestCapability(const char *) const override;
 
-    virtual void ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn) override;
+    OGRFeature *GetNextFeature() override;
+
+    void ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn) override;
 };
+
+/************************************************************************/
+/*                           OGRDAMENGDataSource                        */
+/************************************************************************/
 
 class OGRDAMENGDataSource final : public OGRDataSource
 {
@@ -647,7 +627,7 @@ class OGRDAMENGDataSource final : public OGRDataSource
     int Open(const char *,
              int bUpdate,
              int bTestOpen,
-             char **papszOpenOptions);
+             CSLConstList papszOpenOptions);
     OGRDAMENGTableLayer *OpenTable(CPLString &osCurrentSchema,
                                const char *pszTableName,
                                const char *pszSchemaName,
@@ -660,15 +640,15 @@ class OGRDAMENGDataSource final : public OGRDataSource
     {
         return pszName;
     }
-    int GetLayerCount() override;
-    OGRLayer *GetLayer(int) override;
+    int GetLayerCount() const override;
+    const OGRLayer *GetLayer(int) const override;
     OGRLayer *GetLayerByName(const char *pszName) override;
 
     OGRLayer *ICreateLayer(const char *pszName,
                            const OGRGeomFieldDefn *poGeomFieldDefn,
                            CSLConstList papszOptions) override;
 
-    int TestCapability(const char *) override;
+    int TestCapability(const char *) const override;
 
     virtual OGRLayer *ExecuteSQL(const char *pszSQLCommand,
                                  OGRGeometry *poSpatialFilter,
@@ -689,11 +669,6 @@ CPLString OGRDAMENGCommonLayerGetType(OGRFieldDefn &oField,
                                   bool bApproxOK);
 
 char *strToupper(char *str);
-
-bool OGRDAMENGCommonLayerSetType(OGRFieldDefn &oField,
-                             const char *pszType,
-                             int nWidth,
-                             int sclar);
 
 OGRwkbGeometryType OGRDAMENGCheckType(int typid);
 
