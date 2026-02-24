@@ -13,3 +13,6 @@ find_library(DAMENG_LIBRARY NAMES libdmdpi dmdpi PATHS
     "${DM_HOME}/drivers/dpi" # for windows
     NO_DEFAULT_PATH
 )
+
+set(DAMENG_LIBRARIES ${DAMENG_LIBRARY})
+set(DAMENG_INCLUDE_DIRS ${DAMENG_INCLUDE_DIRS})
