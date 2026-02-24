@@ -25,7 +25,7 @@ mv meta.yaml recipe/meta.yaml
 
 cat > recipe/recipe_clobber.yaml <<EOL
 source:
-  path: ../../../gdal
+  path: ../../..
   url:
   sha256:
   patches:
