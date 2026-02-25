@@ -133,7 +133,7 @@ include(parquet/driver_declaration.cmake)
 include(arrow/driver_declaration.cmake)
 
 ogr_dependent_driver(gtfs "GTFS" "OGR_ENABLE_DRIVER_CSV")
-ogr_dependent_driver(dameng DAMENG "OGR_ENABLE_DRIVER_DAMENG")
+ogr_dependent_driver(dameng DAMENG "GDAL_USE_DAMENG")
 
 # ######################################################################################################################
 # proprietary libraries
