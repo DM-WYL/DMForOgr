@@ -76,7 +76,6 @@ ogr_optional_driver(adbc ADBC)
 if( NOT WORDS_BIGENDIAN )
     ogr_optional_driver(miramon "MiraMonVector")
 endif()
-ogr_optional_driver(dameng DAMENG)
 
 ogr_optional_driver(aivector AIVector)
 
@@ -134,6 +133,7 @@ include(parquet/driver_declaration.cmake)
 include(arrow/driver_declaration.cmake)
 
 ogr_dependent_driver(gtfs "GTFS" "OGR_ENABLE_DRIVER_CSV")
+ogr_dependent_driver(dameng DAMENG "OGR_ENABLE_DRIVER_DAMENG")
 
 # ######################################################################################################################
 # proprietary libraries
