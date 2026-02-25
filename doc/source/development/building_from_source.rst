@@ -559,21 +559,17 @@ Dameng
 The Dameng client library <http://www.dameng.com/>_ is required for the :ref:vector.dameng driver.
 To enable detection, the DM_HOME environment variable must be set to the Dameng installation root directory (containing include and lib or bin subdirectories) before running CMake.
 
-.. option:: DM_HOME
-
-Environment variable pointing to the Dameng installation root. The build system will search for headers in ``$DM_HOME/include`` and libraries in ``$DM_HOME/lib``, ``$DM_HOME/lib64``, or ``$DM_HOME/bin``.
-
 .. option:: Dameng_INCLUDE_DIR
 
-Path to an include directory with the ``DPI.h`` header file. Automatically detected if ``DM_HOME`` is set.
+    Path to an include directory with the ``DPI.h`` header file.
 
 .. option:: Dameng_LIBRARY
 
-Path to the Dameng client library file (e.g., ``dmdpi``, ``libdmdpi``, or ``dmclient``). Automatically detected if ``DM_HOME`` is set.
+Path to the Dameng client library file (e.g., ``dmdpi``, ``libdmdpi``, or ``dmclient``).
 
 .. option:: GDAL_USE_DAMENG=ON/OFF
 
-Control whether to use Dameng. Defaults to OFF. Must be explicitly set to ``ON`` to enable the driver, unless ``GDAL_USE_EXTERNAL_LIBS=ON`` is specified.
+    Control whether to use Dameng. Defaults to OFF.
 
 
 Deflate

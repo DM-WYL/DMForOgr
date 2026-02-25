@@ -517,6 +517,7 @@ cvs
 Cxx
 Cygwin
 dall
+Dameng
 Damerau
 dan
 DanB
@@ -683,6 +684,7 @@ dll
 dlopen
 dlsym
 dm
+dmdpi
 Dmitry
 dmorissette
 dnf
@@ -1575,6 +1577,7 @@ libcrypto
 libcsf
 libcurl
 libCurl
+libdmdpi
 libdav
 libde
 libdeflate

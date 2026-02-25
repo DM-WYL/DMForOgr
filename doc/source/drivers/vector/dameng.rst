@@ -15,7 +15,7 @@ Basic Format: DAMENG:"username/password@host:port"
 
 Schema Selection: Append ?schema_name to the end of the connection string to specify the target schema.
 
-Example: DAMENG:"SYSDBA/Hust4400@localhost:5236?MY_SCHEMA"
+Example: DAMENG:"SYSDBA/Password_123@localhost:5236?MY_SCHEMA"
 
 Batch Insert Size: Append ;batch_size after the port (or after the schema if specified) to enable batch insertion.(default 1)
 Syntax: ...@host:port;N or ...@host:port?schema;N
@@ -23,9 +23,9 @@ Syntax: ...@host:port;N or ...@host:port?schema;N
 Where N is the number of rows to insert in a single batch.
 Note: Enabling batch insertion significantly improves data loading efficiency but requires sufficient server memory and CPU resources. If the machine performance is insufficient, reducing the batch size or disabling this feature is recommended.
 
-Example (Batch of 1000 rows): DAMENG:"SYSDBA/Hust4400@localhost:5236;1000"
+Example (Batch of 1000 rows): DAMENG:"SYSDBA/Password_123@localhost:5236;1000"
 
-Example (Schema + Batch): DAMENG:"SYSDBA/Hust4400@localhost:5236?MY_SCHEMA;500"
+Example (Schema + Batch): DAMENG:"SYSDBA/Password_123@localhost:5236?MY_SCHEMA;500"
 
 If no schema is specified, the default schema associated with the user login is used.
 
@@ -56,7 +56,7 @@ Caveats
     named "OGC_FID" or those that are defined as NOT NULL, are a PRIMARY
     KEY, and are an integer-like field will be assumed to be the FID.
 -   Geometry fields are read from Dameng using standard WKB or DM specific binary formats.
--   The OGR_FID column, which can be overridden with the DAMENG_FID layer
+-   The OGR_FID column, which can be overridden with the FID layer
     creation option, is typically implemented as an IDENTITY or auto-incrementing integer field.
 -   The geometry column, which defaults to SHAPE (or GEOMETRY) and can be overridden
     with the :lco:`GEOMETRY_NAME` layer creation option.
@@ -132,28 +132,28 @@ The following layer creation options are supported:
 ------------
 
 The following example datasource name opens the database with username *SYSDBA*,
-password *Hust4400* on localhost port *5236*, targeting the *TEST_SCHEMA* schema,
+password *Password_123* on localhost port *5236*, targeting the *TEST_SCHEMA* schema,
 and enabling batch insertion of 1000 rows at a time.
 
 ::
 
-   DAMENG:"SYSDBA/Hust4400@localhost:5236?TEST_SCHEMA;1000"
+   DAMENG:"SYSDBA/Password_123@localhost:5236?TEST_SCHEMA;1000"
 
 The following example uses ogr2ogr to copy the world_borders layer from a shapefile
 into a Dameng table. It targets the default schema, overwrites the existing table
-*borders_dm*, and sets the geometry column name to *GEOM*. Note that batch insertion
+*borders_dm*, and sets the geometry column name to *GEOMETRY*. Note that batch insertion
 is controlled via the datasource name, not the ogr2ogr flags.
 
 ::
 
-   ogr2ogr -f "Dameng" "DAMENG:SYSDBA/Hust4400@localhost:5236;500" world_borders.shp -nln borders_dm -update -overwrite -lco GEOMETRY_NAME=GEOM
+   ogr2ogr -f "Dameng" "DAMENG:SYSDBA/Password_123@localhost:5236;500" world_borders.shp -nln borders_dm -update -overwrite -lco GEOMETRY_NAME=GEOMETRY
 
 The following example uses ogrinfo to return summary information about the
 *borders_dm* layer located in the *DATA_SCHEMA* schema.
 
 ::
 
-   ogrinfo "DAMENG:SYSDBA/Hust4400@localhost:5236?DATA_SCHEMA" borders_dm -so
+   ogrinfo "DAMENG:SYSDBA/Password_123@localhost:5236?DATA_SCHEMA" borders_dm -so
 
        Layer name: borders_dm
        Geometry: Polygon
@@ -166,9 +166,10 @@ The following example uses ogrinfo to return summary information about the
            PRIMEM["Greenwich",0],
            UNIT["Degree",0.017453292519943295]]
        FID Column = OGR_FID
-       Geometry Column = GEOM
+       Geometry Column = GEOMETRY
        cat: Real (0.0)
        fips_cntry: String (80.0)
        cntry_name: String (80.0)
        area: Real (15.2)
        pop_cntry: Real (15.2)
+
