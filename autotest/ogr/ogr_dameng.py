@@ -28,18 +28,20 @@
 
 import os
 
-import pytest
 import gdaltest
 import ogrtest
+import pytest
 
 from osgeo import gdal, ogr, osr
 
 pytestmark = [
     pytest.mark.skipif(
         "DAMENG_CONNECTION_STRING" not in os.environ,
-        reason="DAMENG_CONNECTION_STRING not specified;"),
-    pytest.mark.require_driver("DAMENG")
+        reason="DAMENG_CONNECTION_STRING not specified;",
+    ),
+    pytest.mark.require_driver("DAMENG"),
 ]
+
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_and_cleanup():
@@ -60,17 +62,29 @@ def setup_and_cleanup():
     gdaltest.dm_ds = None
     gdaltest.shp_ds = None
 
+
 def cleanup_tables():
     """Drop tables created during testing"""
     if gdaltest.dm_ds is None:
         return
 
     tables_to_drop = [
-        "\"tpoly\"", "\"xpoly\"", "\"testsrs\"", "\"testsrs2\"",
-        "\"geom_test\"", "\"testdate\"", "\"dm_test_20\"", "\"dm_test_21\"",
-        "\"test_POINT\"", "\"test_LINESTRING\"", "\"test_POLYGON\"",
-        "\"test_MULTIPOINT\"", "\"test_MULTILINESTRING\"",
-        "\"test_MULTIPOLYGON\"", "\"test_GEOMETRYCOLLECTION\"", "\"test_NONE\""
+        '"tpoly"',
+        '"xpoly"',
+        '"testsrs"',
+        '"testsrs2"',
+        '"geom_test"',
+        '"testdate"',
+        '"dm_test_20"',
+        '"dm_test_21"',
+        '"test_POINT"',
+        '"test_LINESTRING"',
+        '"test_POLYGON"',
+        '"test_MULTIPOINT"',
+        '"test_MULTILINESTRING"',
+        '"test_MULTIPOLYGON"',
+        '"test_GEOMETRYCOLLECTION"',
+        '"test_NONE"',
     ]
 
     for table in tables_to_drop:
@@ -97,11 +111,7 @@ def test_dameng_1_create_table_and_import():
     # Define fields
     ogrtest.quick_create_layer_def(
         gdaltest.dm_lyr,
-        [
-            ("AREA", ogr.OFTReal),
-            ("EAS_ID", ogr.OFTInteger),
-            ("PRFEDEA", ogr.OFTString)
-        ]
+        [("AREA", ogr.OFTReal), ("EAS_ID", ogr.OFTInteger), ("PRFEDEA", ogr.OFTString)],
     )
 
     # Import poly.shp data
@@ -139,6 +149,7 @@ def test_dameng_1_create_table_and_import():
 ###############################################################################
 # 2. Verify imported data
 
+
 def test_dameng_2_verify_imported_data():
     """Verify data imported into the Dameng table"""
 
@@ -148,9 +159,7 @@ def test_dameng_2_verify_imported_data():
     gdaltest.dm_lyr.SetAttributeFilter("EAS_ID < 170")
 
     # Verify attribute values
-    ogrtest.check_features_against_list(
-        gdaltest.dm_lyr, "EAS_ID", expected_ids
-    )
+    ogrtest.check_features_against_list(gdaltest.dm_lyr, "EAS_ID", expected_ids)
 
     gdaltest.dm_lyr.SetAttributeFilter(None)
 
@@ -162,14 +171,13 @@ def test_dameng_2_verify_imported_data():
         # Verify geometry
         ref_geom = orig_feat.GetGeometryRef()
         ref_geom.SetCoordinateDimension(2)
-        ogrtest.check_feature_geometry(
-            read_feat, ref_geom, max_error=0.000000001
-        )
+        ogrtest.check_feature_geometry(read_feat, ref_geom, max_error=0.000000001)
 
         # Verify attributes
         for fld in range(3):
-            assert orig_feat.GetField(fld) == read_feat.GetField(fld), \
-                f"Field {fld} value mismatch"
+            assert orig_feat.GetField(fld) == read_feat.GetField(
+                fld
+            ), f"Field {fld} value mismatch"
 
     gdaltest.poly_feat = None
     gdaltest.shp_ds = None
@@ -177,6 +185,7 @@ def test_dameng_2_verify_imported_data():
 
 ###############################################################################
 # 3. Test various geometry types
+
 
 def test_dameng_3_geometry_types():
     """Test writing and reading various WKT geometry types"""
@@ -204,13 +213,14 @@ def test_dameng_3_geometry_types():
 ###############################################################################
 # 4. Test SQL queries
 
+
 def test_dameng_4_sql_queries():
     """Test SQL query functionality in Dameng database"""
 
     expect = [None, 179, 173, 172, 171, 170, 169, 168, 166, 165, 158]
 
     sql_lyr = gdaltest.dm_ds.ExecuteSQL(
-        "SELECT DISTINCT eas_id FROM \"tpoly\" ORDER BY eas_id DESC"
+        'SELECT DISTINCT eas_id FROM "tpoly" ORDER BY eas_id DESC'
     )
     assert sql_lyr.GetLayerDefn().GetGeomFieldCount() == 0
 
@@ -222,6 +232,7 @@ def test_dameng_4_sql_queries():
 ###############################################################################
 # 5. Test spatial SQL queries
 
+
 def test_dameng_5_sql_queries_with_geometry():
     """Test SQL queries with geometry in Dameng database"""
 
@@ -229,20 +240,22 @@ def test_dameng_5_sql_queries_with_geometry():
     assert sql_lyr.GetLayerDefn().GetGeomFieldCount() == 1
 
     try:
-        ogrtest.check_features_against_list(sql_lyr, "PRFEDEA", ['2'])
+        ogrtest.check_features_against_list(sql_lyr, "PRFEDEA", ["2"])
         sql_lyr.ResetReading()
         feat_read = sql_lyr.GetNextFeature()
         geom = feat_read.GetGeometryRef()
         ogrtest.check_feature_geometry(
             geom,
             "MULTILINESTRING ((5.00121349 2.99853132,5.00121349 1.99853133),(5.00121349 1.99853133,5.00121349 0.99853133),(3.00121351 1.99853127,5.00121349 1.99853133),(5.00121349 1.99853133,6.00121348 1.99853135))",
-            max_error = 1e-3,
-            )
+            max_error=1e-3,
+        )
     finally:
         gdaltest.dm_ds.ReleaseResultSet(sql_lyr)
 
+
 ###############################################################################
 # 6. Test spatial filtering
+
 
 def test_dameng_6_spatial_filter():
     """Test spatial filtering functionality in Dameng database"""
@@ -263,11 +276,14 @@ def test_dameng_6_spatial_filter():
 
     # Verify all features can be retrieved after reset
     total_count = gdaltest.dm_lyr.GetFeatureCount()
-    assert total_count >= filtered_count, "Feature count should increase after resetting filter"
+    assert (
+        total_count >= filtered_count
+    ), "Feature count should increase after resetting filter"
 
 
 ###############################################################################
 # 7. Test coordinate system support
+
 
 def test_dameng_7_coordinate_systems():
     """Test coordinate system support in Dameng database"""
@@ -283,17 +299,11 @@ def test_dameng_7_coordinate_systems():
 
     # Create layer with spatial reference
     dm_lyr2 = gdaltest.dm_ds.CreateLayer(
-        "testsrs",
-        srs=srs,
-        geom_type=ogr.wkbPoint,
-        options=["OVERWRITE=YES"]
+        "testsrs", srs=srs, geom_type=ogr.wkbPoint, options=["OVERWRITE=YES"]
     )
 
     # Create fields
-    ogrtest.quick_create_layer_def(
-        dm_lyr2,
-        [("name", ogr.OFTString)]
-    )
+    ogrtest.quick_create_layer_def(dm_lyr2, [("name", ogr.OFTString)])
 
     # Add test feature
     feat = ogr.Feature(dm_lyr2.GetLayerDefn())
@@ -309,11 +319,14 @@ def test_dameng_7_coordinate_systems():
     # For Dameng, specific EPSG codes might be required
     wkt1 = srs.ExportToWkt()
     wkt2 = srs2.ExportToWkt()
-    assert srs2.IsSame(srs), f"Spatial references do not match\n Original: {wkt1}\n Read: {wkt2}"
+    assert srs2.IsSame(
+        srs
+    ), f"Spatial references do not match\n Original: {wkt1}\n Read: {wkt2}"
 
 
 ###############################################################################
 # 8. Test date/time fields
+
 
 def test_dameng_8_datetime_fields():
     """Test date/time field support in Dameng database"""
@@ -324,9 +337,7 @@ def test_dameng_8_datetime_fields():
 
     # Create layer with date fields
     lyr = gdaltest.dm_ds.CreateLayer(
-        "testdate",
-        geom_type=ogr.wkbNone,
-        options=["OVERWRITE=YES"]
+        "testdate", geom_type=ogr.wkbNone, options=["OVERWRITE=YES"]
     )
 
     # Add various date fields
@@ -356,6 +367,7 @@ def test_dameng_8_datetime_fields():
 ###############################################################################
 # 9. Test NOT NULL constraints and default values
 
+
 def test_dameng_9_constraints_and_defaults():
     """Test field constraints and default values in Dameng database"""
 
@@ -367,7 +379,7 @@ def test_dameng_9_constraints_and_defaults():
     lyr = gdaltest.dm_ds.CreateLayer(
         "dm_test_20",
         geom_type=ogr.wkbPoint,
-        options=["OVERWRITE=YES", "GEOMETRY_NULLABLE=NO"]
+        options=["OVERWRITE=YES", "GEOMETRY_NULLABLE=NO"],
     )
 
     # Create NOT NULL field
@@ -413,12 +425,15 @@ def test_dameng_10_error_handling():
 
     # Test invalid connection
     with gdal.quiet_errors():
-        invalid_ds = ogr.Open("DM:invalid_user/invalid_password@invalid_host:invalid_port")
+        invalid_ds = ogr.Open(
+            "DM:invalid_user/invalid_password@invalid_host:invalid_port"
+        )
     assert invalid_ds is None, "Invalid connection should return None."
 
 
 ###############################################################################
 # 11. Comprehensive test: Create, Read, Update, Delete (CRUD)
+
 
 @gdaltest.disable_exceptions()
 def test_dameng_11_crud_operations():
@@ -430,9 +445,7 @@ def test_dameng_11_crud_operations():
 
     # 1. Create table
     crud_lyr = gdaltest.dm_ds.CreateLayer(
-        "crud_test",
-        geom_type=ogr.wkbPoint,
-        options=["OVERWRITE=YES"]
+        "crud_test", geom_type=ogr.wkbPoint, options=["OVERWRITE=YES"]
     )
 
     crud_lyr.CreateField(ogr.FieldDefn("NAME", ogr.OFTString))
@@ -466,7 +479,9 @@ def test_dameng_11_crud_operations():
 
         # Verify update
         updated_feat = crud_lyr.GetFeature(fid)
-        assert updated_feat.GetField("name") == "updated_name", "SetFeature() seems to have had no effect."
+        assert (
+            updated_feat.GetField("name") == "updated_name"
+        ), "SetFeature() seems to have had no effect."
 
     # 5. Delete data
     if test_features:
@@ -476,4 +491,3 @@ def test_dameng_11_crud_operations():
         # Verify deletion
         deleted_feat = crud_lyr.GetFeature(test_features[0])
         assert deleted_feat is None, "DeleteFeature() seems to have had no effect."
-

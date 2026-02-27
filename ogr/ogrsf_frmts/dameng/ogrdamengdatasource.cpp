@@ -52,13 +52,13 @@ OGRDAMENGDataSource::~OGRDAMENGDataSource()
 
     for (int i = 0; i < nLayers; i++)
         delete papoLayers[i];
-    
+
     CPLFree(papoLayers);
 
     for (int i = 0; i < nKnownSRID; i++)
     {
-        if (papoSRS[i] != nullptr)//
-            papoSRS[i]->Release();//
+        if (papoSRS[i] != nullptr)  //
+            papoSRS[i]->Release();  //
     }
     CPLFree(panSRID);
     CPLFree(papoSRS);
@@ -80,13 +80,13 @@ static unsigned long OGRDAMENGHashTableEntry(const void *_psTableEntry)
     const DAMENGTableEntry *psTableEntry =
         static_cast<const DAMENGTableEntry *>(_psTableEntry);
     return CPLHashSetHashStr(CPLString()
-                                .Printf("%s.%s", psTableEntry->pszSchemaName,
-                                        psTableEntry->pszTableName)
-                                .c_str());
+                                 .Printf("%s.%s", psTableEntry->pszSchemaName,
+                                         psTableEntry->pszTableName)
+                                 .c_str());
 }
 
 static int OGRDAMENGEqualTableEntry(const void *_psTableEntry1,
-                                const void *_psTableEntry2)
+                                    const void *_psTableEntry2)
 {
     const DAMENGTableEntry *psTableEntry1 =
         static_cast<const DAMENGTableEntry *>(_psTableEntry1);
@@ -100,7 +100,8 @@ static int OGRDAMENGEqualTableEntry(const void *_psTableEntry1,
 
 static void OGRDAMENGFreeTableEntry(void *_psTableEntry)
 {
-    DAMENGTableEntry *psTableEntry = static_cast<DAMENGTableEntry *>(_psTableEntry);
+    DAMENGTableEntry *psTableEntry =
+        static_cast<DAMENGTableEntry *>(_psTableEntry);
     CPLFree(psTableEntry->pszTableName);
     CPLFree(psTableEntry->pszSchemaName);
     CPLFree(psTableEntry->pszDescription);
@@ -113,13 +114,11 @@ static void OGRDAMENGFreeTableEntry(void *_psTableEntry)
     CPLFree(psTableEntry);
 }
 
-static void OGRDAMENGTableEntryAddGeomColumn(DAMENGTableEntry *psTableEntry,
-                                         const char *pszName,
-                                         const char *pszGeomType = nullptr,
-                                         int GeometryTypeFlags = 0,
-                                         int nSRID = UNDETERMINED_SRID,
-                                         DMGeoType eDAMENGType = GEOM_TYPE_UNKNOWN,
-                                         int bNullable = TRUE)
+static void OGRDAMENGTableEntryAddGeomColumn(
+    DAMENGTableEntry *psTableEntry, const char *pszName,
+    const char *pszGeomType = nullptr, int GeometryTypeFlags = 0,
+    int nSRID = UNDETERMINED_SRID, DMGeoType eDAMENGType = GEOM_TYPE_UNKNOWN,
+    int bNullable = TRUE)
 {
     psTableEntry->pasGeomColumns = static_cast<DMGeomColumnDesc *>(CPLRealloc(
         psTableEntry->pasGeomColumns,
@@ -134,8 +133,8 @@ static void OGRDAMENGTableEntryAddGeomColumn(DAMENGTableEntry *psTableEntry,
     /* the SRID is truly set to 0, but also when there's no constraint */
     psTableEntry->pasGeomColumns[psTableEntry->nGeomColumnCount].nSRID =
         nSRID > 0 ? nSRID : UNDETERMINED_SRID;
-    psTableEntry->pasGeomColumns[psTableEntry->nGeomColumnCount].eDAMENGGeoType =
-        eDAMENGType;
+    psTableEntry->pasGeomColumns[psTableEntry->nGeomColumnCount]
+        .eDAMENGGeoType = eDAMENGType;
     psTableEntry->pasGeomColumns[psTableEntry->nGeomColumnCount].bNullable =
         bNullable;
     psTableEntry->nGeomColumnCount++;
@@ -145,10 +144,8 @@ static void OGRDAMENGTableEntryAddGeomColumn(DAMENGTableEntry *psTableEntry,
 /*                                Open()                                */
 /************************************************************************/
 
-int OGRDAMENGDataSource::Open(const char *pszNewName,
-                          int bUpdate,
-                          int bTestOpen,
-                          CSLConstList papszOpenOptionsIn)
+int OGRDAMENGDataSource::Open(const char *pszNewName, int bUpdate,
+                              int bTestOpen, CSLConstList papszOpenOptionsIn)
 
 {
     CPLAssert(nLayers == 0);
@@ -227,9 +224,7 @@ int OGRDAMENGDataSource::Open(const char *pszNewName,
             pszDatabase = pszUserid + i;
         }
 
-        for (;
-             pszUserid[i] != '\0' && pszUserid[i] != '?';
-             i++)
+        for (; pszUserid[i] != '\0' && pszUserid[i] != '?'; i++)
         {
         }
 
@@ -238,7 +233,7 @@ int OGRDAMENGDataSource::Open(const char *pszNewName,
             pszUserid[i++] = '\0';
             if (strnicmp("SCHEMA", pszUserid + i, 6) == 0)
             {
-                if (pszUserid[i + 6] == '=' && pszUserid[i + 6] != '\0')
+                if (pszUserid[i + 6] == '=' && pszUserid[i + 7] != '\0')
                 {
                     pszSchemaName = pszUserid + i + 6 + 1;
                     osCurrentSchema = pszSchemaName;
@@ -247,6 +242,9 @@ int OGRDAMENGDataSource::Open(const char *pszNewName,
                 {
                     CPLError(CE_Failure, CPLE_AppDefined,
                              "ERROR Param Of SchemaName.\n");
+                    CPLFree(pszUserid);
+                    CSLDestroy(papszTableList);
+                    return FALSE;
                 }
             }
             else
@@ -258,14 +256,14 @@ int OGRDAMENGDataSource::Open(const char *pszNewName,
         {
             osCurrentSchema = pszUserid;
         }
-
     }
 
     /* -------------------------------------------------------------------- */
     /*      Try to establish connection.                                    */
     /* -------------------------------------------------------------------- */
 
-    poSession = OGRGetDAMENGConnection(pszUserid, pszPassword, pszDatabase, osCurrentSchema);
+    poSession = OGRGetDAMENGConnection(pszUserid, pszPassword, pszDatabase,
+                                       osCurrentSchema);
 
     if (poSession == nullptr)
     {
@@ -345,13 +343,14 @@ int OGRDAMENGDataSource::Open(const char *pszNewName,
                         pszGeomColumnName[len - 1] = '\0';
                 }
 
-                papsTables = static_cast<DAMENGTableEntry **>(CPLRealloc(
-                    papsTables, sizeof(DAMENGTableEntry *) * (nTableCount + 1)));
+                papsTables = static_cast<DAMENGTableEntry **>(
+                    CPLRealloc(papsTables,
+                               sizeof(DAMENGTableEntry *) * (nTableCount + 1)));
                 papsTables[nTableCount] = static_cast<DAMENGTableEntry *>(
                     CPLCalloc(1, sizeof(DAMENGTableEntry)));
                 if (pszGeomColumnName)
                     OGRDAMENGTableEntryAddGeomColumn(papsTables[nTableCount],
-                                                 pszGeomColumnName);
+                                                     pszGeomColumnName);
 
                 if (nParts == 2)
                 {
@@ -375,8 +374,9 @@ int OGRDAMENGDataSource::Open(const char *pszNewName,
         CSLDestroy(papszTableList);
     }
 
-    hSetTables = CPLHashSetNew(OGRDAMENGHashTableEntry, OGRDAMENGEqualTableEntry,
-                               OGRDAMENGFreeTableEntry);
+    hSetTables =
+        CPLHashSetNew(OGRDAMENGHashTableEntry, OGRDAMENGEqualTableEntry,
+                      OGRDAMENGFreeTableEntry);
     for (int iRecord = 0; iRecord < nTableCount; iRecord++)
     {
         const DAMENGTableEntry *psEntry = static_cast<DAMENGTableEntry *>(
@@ -446,21 +446,18 @@ int OGRDAMENGDataSource::Open(const char *pszNewName,
 /*                             OpenTable()                              */
 /************************************************************************/
 
-OGRDAMENGTableLayer *OGRDAMENGDataSource::OpenTable(CPLString &osCurrentSchemaIn,
-                                            const char *pszNewName,
-                                            const char *pszSchemaName,
-                                            const char *pszDescription,
-                                            const char *pszGeomColumnForced,
-                                            int bUpdate,
-                                            int bTestOpen)
+OGRDAMENGTableLayer *OGRDAMENGDataSource::OpenTable(
+    CPLString &osCurrentSchemaIn, const char *pszNewName,
+    const char *pszSchemaName, const char *pszDescription,
+    const char *pszGeomColumnForced, int bUpdate, int bTestOpen)
 
 {
     /* -------------------------------------------------------------------- */
     /*      Create the layer object.                                        */
     /* -------------------------------------------------------------------- */
-    OGRDAMENGTableLayer *poLayer =
-        new OGRDAMENGTableLayer(this, osCurrentSchemaIn, pszNewName, pszSchemaName,
-                            pszDescription, pszGeomColumnForced, bUpdate);
+    OGRDAMENGTableLayer *poLayer = new OGRDAMENGTableLayer(
+        this, osCurrentSchemaIn, pszNewName, pszSchemaName, pszDescription,
+        pszGeomColumnForced, bUpdate);
     if (bTestOpen && !(poLayer->ReadTableDefinition()))
     {
         delete poLayer;
@@ -487,7 +484,7 @@ int OGRDAMENGDataSource::GetLayerCount() const
 }
 
 /************************************************************************/
-/*                           DeleteLayer()                            */
+/*                            DeleteLayer()                             */
 /************************************************************************/
 OGRErr OGRDAMENGDataSource::DeleteLayer(int iLayer)
 
@@ -531,11 +528,11 @@ OGRErr OGRDAMENGDataSource::DeleteLayer(int iLayer)
 }
 
 /************************************************************************/
-/*                         OGRDAMENGCommonLaunderName()                     */
+/*                     OGRDAMENGCommonLaunderName()                     */
 /************************************************************************/
 
 char *OGRDAMENGCommonLaunderName(const char *pszSrcName,
-                             const char *pszDebugPrefix)
+                                 const char *pszDebugPrefix)
 
 {
     char *pszSafeName = CPLStrdup(pszSrcName);
@@ -558,12 +555,13 @@ char *OGRDAMENGCommonLaunderName(const char *pszSrcName,
 }
 
 /************************************************************************/
-/*                           ICreateLayer()                             */
+/*                            ICreateLayer()                            */
 /************************************************************************/
 
-OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
-                                        const OGRGeomFieldDefn *poGeomFieldDefn,
-                                        CSLConstList papszOptions)
+OGRLayer *
+OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
+                                  const OGRGeomFieldDefn *poGeomFieldDefn,
+                                  CSLConstList papszOptions)
 
 {
     CPLString osCommand;
@@ -595,13 +593,15 @@ OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
         else
             osFIDColumnName += pszFIDColumnNameIn;
     }
-    CPLString osFIDColumnNameEscaped = OGRDAMENGEscapeColumnName(osFIDColumnName);
+    CPLString osFIDColumnNameEscaped =
+        OGRDAMENGEscapeColumnName(osFIDColumnName);
 
     if (STARTS_WITH(pszLayerName, "dameng"))
     {
-        CPLError(CE_Warning, CPLE_AppDefined,
-                 "The layer name should not begin by 'dameng' as it is a reserved "
-                 "prefix");
+        CPLError(
+            CE_Warning, CPLE_AppDefined,
+            "The layer name should not begin by 'dameng' as it is a reserved "
+            "prefix");
     }
 
     if (OGR_GT_HasZ(eType))
@@ -836,21 +836,21 @@ OGRLayer *OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
 
     if (eType != wkbNone && EQUAL(pszGeomType, "geography"))
     {
-        osCommand.Printf("%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geography "
-                         "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
-                         osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
-                         pszSerialType, OGRDAMENGEscapeColumnName(pszGFldName).c_str(),
-                         pszGeometryType, suffix,
-                         nSRSId, osFIDColumnNameEscaped.c_str());
+        osCommand.Printf(
+            "%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geography "
+            "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
+            osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
+            pszSerialType, OGRDAMENGEscapeColumnName(pszGFldName).c_str(),
+            pszGeometryType, suffix, nSRSId, osFIDColumnNameEscaped.c_str());
     }
     else if (eType != wkbNone && !EQUAL(pszGeomType, "geography"))
     {
-        osCommand.Printf("%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geometry "
-                         "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
-                         osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
-                         pszSerialType, OGRDAMENGEscapeColumnName(pszGFldName).c_str(),
-                         pszGeometryType, suffix,
-                         nSRSId, osFIDColumnNameEscaped.c_str());
+        osCommand.Printf(
+            "%s ( %s %s identity(1,1), %s SYSGEO2.ST_Geometry "
+            "check(type=%s%s) check(srid = %d) , PRIMARY KEY (%s)",
+            osCreateTable.c_str(), osFIDColumnNameEscaped.c_str(),
+            pszSerialType, OGRDAMENGEscapeColumnName(pszGFldName).c_str(),
+            pszGeometryType, suffix, nSRSId, osFIDColumnNameEscaped.c_str());
     }
     else
     {
@@ -1296,17 +1296,17 @@ int OGRDAMENGDataSource::FetchSRSId(const OGRSpatialReference *poSRS)
     CPLFree(pszWKT);
     pszWKT = nullptr;  // CM:  Added
 
-    rt = oCommand.Execute(osCommand.c_str());
+    oCommand.Execute(osCommand.c_str());
 
     return nSRSId;
 }
 
 /************************************************************************/
-/*                           GetMetadataItem()                          */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
 const char *OGRDAMENGDataSource::GetMetadataItem(const char *pszKey,
-                                             const char *pszDomain)
+                                                 const char *pszDomain)
 {
     /* Only used by ogr_dm.py to check inner working */
     if (pszDomain != nullptr && EQUAL(pszDomain, "_debug_") &&
@@ -1323,8 +1323,8 @@ const char *OGRDAMENGDataSource::GetMetadataItem(const char *pszKey,
 /************************************************************************/
 
 OGRLayer *OGRDAMENGDataSource::ExecuteSQL(const char *pszSQLCommand,
-                                      OGRGeometry *poSpatialFilter,
-                                      const char *pszDialect)
+                                          OGRGeometry *poSpatialFilter,
+                                          const char *pszDialect)
 
 {
     /* Skip leading whitespace characters */

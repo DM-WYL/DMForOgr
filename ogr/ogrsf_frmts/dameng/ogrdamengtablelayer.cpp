@@ -34,22 +34,23 @@
 #include <thread>
 
 /************************************************************************/
-/*                        OGRDAMENGTableFeatureDefn                         */
+/*                      OGRDAMENGTableFeatureDefn                       */
 /************************************************************************/
 
 class OGRDAMENGTableFeatureDefn final : public OGRDAMENGFeatureDefn
 {
-private:
-    OGRDAMENGTableFeatureDefn(const OGRDAMENGTableFeatureDefn&) = delete;
-    OGRDAMENGTableFeatureDefn& operator=(const OGRDAMENGTableFeatureDefn&) = delete;
+  private:
+    OGRDAMENGTableFeatureDefn(const OGRDAMENGTableFeatureDefn &) = delete;
+    OGRDAMENGTableFeatureDefn &
+    operator=(const OGRDAMENGTableFeatureDefn &) = delete;
 
-    OGRDAMENGTableLayer* poLayer = nullptr;
+    OGRDAMENGTableLayer *poLayer = nullptr;
 
     void SolveFields() const;
 
-public:
-    explicit OGRDAMENGTableFeatureDefn(OGRDAMENGTableLayer* poLayerIn,
-        const char* pszName = nullptr)
+  public:
+    explicit OGRDAMENGTableFeatureDefn(OGRDAMENGTableLayer *poLayerIn,
+                                       const char *pszName = nullptr)
         : OGRDAMENGFeatureDefn(pszName), poLayer(poLayerIn)
     {
     }
@@ -59,35 +60,41 @@ public:
         SolveFields();
         return OGRDAMENGFeatureDefn::GetFieldCount();
     }
-    virtual OGRFieldDefn* GetFieldDefn(int i) override
+
+    virtual OGRFieldDefn *GetFieldDefn(int i) override
     {
         SolveFields();
         return OGRDAMENGFeatureDefn::GetFieldDefn(i);
     }
-    virtual const OGRFieldDefn* GetFieldDefn(int i) const override
+
+    virtual const OGRFieldDefn *GetFieldDefn(int i) const override
     {
         SolveFields();
         return OGRDAMENGFeatureDefn::GetFieldDefn(i);
     }
+
     virtual int GetGeomFieldCount() const override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();
         return OGRDAMENGFeatureDefn::GetGeomFieldCount();
     }
-    virtual OGRDAMENGGeomFieldDefn* GetGeomFieldDefn(int i) override
+
+    virtual OGRDAMENGGeomFieldDefn *GetGeomFieldDefn(int i) override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();
         return OGRDAMENGFeatureDefn::GetGeomFieldDefn(i);
     }
-    virtual const OGRDAMENGGeomFieldDefn* GetGeomFieldDefn(int i) const override
+
+    virtual const OGRDAMENGGeomFieldDefn *GetGeomFieldDefn(int i) const override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();
         return OGRDAMENGFeatureDefn::GetGeomFieldDefn(i);
     }
-    virtual int GetGeomFieldIndex(const char* pszName) const override
+
+    virtual int GetGeomFieldIndex(const char *pszName) const override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();
@@ -108,10 +115,10 @@ void OGRDAMENGTableFeatureDefn::SolveFields() const
 /*                            GetFIDColumn()                            */
 /************************************************************************/
 
-const char* OGRDAMENGTableLayer::GetFIDColumn() const
+const char *OGRDAMENGTableLayer::GetFIDColumn() const
 
 {
-    const_cast<OGRDAMENGTableLayer*>(this)->ReadTableDefinition();
+    const_cast<OGRDAMENGTableLayer *>(this)->ReadTableDefinition();
 
     if (pszFIDColumn != nullptr)
         return pszFIDColumn;
@@ -120,23 +127,20 @@ const char* OGRDAMENGTableLayer::GetFIDColumn() const
 }
 
 /************************************************************************/
-/*                          OGRDAMENGTableLayer()                           */
+/*                        OGRDAMENGTableLayer()                         */
 /************************************************************************/
 
-OGRDAMENGTableLayer::OGRDAMENGTableLayer(OGRDAMENGDataSource* poDSIn,
-    CPLString& osCurrentSchema,
-    const char* pszTableNameIn,
-    const char* pszSchemaNameIn,
-    const char* pszDescriptionIn,
-    const char* pszGeomColForcedIn,
-    int bUpdateIn)
+OGRDAMENGTableLayer::OGRDAMENGTableLayer(
+    OGRDAMENGDataSource *poDSIn, CPLString &osCurrentSchema,
+    const char *pszTableNameIn, const char *pszSchemaNameIn,
+    const char *pszDescriptionIn, const char *pszGeomColForcedIn, int bUpdateIn)
     : bUpdate(bUpdateIn), pszTableName(CPLStrdup(pszTableNameIn)),
-    pszSchemaName(CPLStrdup(pszSchemaNameIn ? pszSchemaNameIn
-        : osCurrentSchema.c_str())),
-    m_pszTableDescription(pszDescriptionIn ? CPLStrdup(pszDescriptionIn)
-        : nullptr),
-    pszGeomColForced(pszGeomColForcedIn ? CPLStrdup(pszGeomColForcedIn)
-        : nullptr)
+      pszSchemaName(CPLStrdup(pszSchemaNameIn ? pszSchemaNameIn
+                                              : osCurrentSchema.c_str())),
+      m_pszTableDescription(pszDescriptionIn ? CPLStrdup(pszDescriptionIn)
+                                             : nullptr),
+      pszGeomColForced(pszGeomColForcedIn ? CPLStrdup(pszGeomColForcedIn)
+                                          : nullptr)
 {
     poDS = poDSIn;
     pszQueryStatement = nullptr;
@@ -172,7 +176,7 @@ OGRDAMENGTableLayer::OGRDAMENGTableLayer(OGRDAMENGDataSource* poDSIn,
 }
 
 /************************************************************************/
-/*                          ~OGRDAMENGTableLayer()                          */
+/*                        ~OGRDAMENGTableLayer()                        */
 /************************************************************************/
 
 OGRDAMENGTableLayer::~OGRDAMENGTableLayer()
@@ -190,10 +194,10 @@ OGRDAMENGTableLayer::~OGRDAMENGTableLayer()
 }
 
 /************************************************************************/
-/*                          GetMetadataDomainList()                     */
+/*                       GetMetadataDomainList()                        */
 /************************************************************************/
 
-char** OGRDAMENGTableLayer::GetMetadataDomainList()
+char **OGRDAMENGTableLayer::GetMetadataDomainList()
 {
     if (m_pszTableDescription == nullptr)
         GetMetadata();
@@ -203,30 +207,30 @@ char** OGRDAMENGTableLayer::GetMetadataDomainList()
 }
 
 /************************************************************************/
-/*                              GetMetadata()                           */
+/*                            GetMetadata()                             */
 /************************************************************************/
 
-CSLConstList OGRDAMENGTableLayer::GetMetadata(const char* pszDomain)
+CSLConstList OGRDAMENGTableLayer::GetMetadata(const char *pszDomain)
 {
     if ((pszDomain == nullptr || EQUAL(pszDomain, "")) &&
         m_pszTableDescription == nullptr)
     {
-        OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+        OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
         OGRDAMENGStatement oCommand(hDAMENGConn);
         CPLString osCommand;
         osCommand.Printf("SELECT COMMENTS FROM ALL_TAB_COMMENTS "
-            "WHERE TABLE_NAME = '%s' AND OWNER = '%s'",
-            pszTableName, pszSchemaName);
+                         "WHERE TABLE_NAME = '%s' AND OWNER = '%s'",
+                         pszTableName, pszSchemaName);
         CPLErr eErr = oCommand.Execute(osCommand);
         if (eErr != CE_None)
         {
             CPLDebug("DM", "Could not Get Metadata of the table %s",
-                pszTableName);
+                     pszTableName);
             return nullptr;
         }
 
-        const char* pszDesc = nullptr;
-        char** hResult = oCommand.SimpleFetchRow();
+        const char *pszDesc = nullptr;
+        char **hResult = oCommand.SimpleFetchRow();
         if (hResult)
         {
             pszDesc = hResult[0];
@@ -240,22 +244,22 @@ CSLConstList OGRDAMENGTableLayer::GetMetadata(const char* pszDomain)
 }
 
 /************************************************************************/
-/*                            GetMetadataItem()                         */
+/*                          GetMetadataItem()                           */
 /************************************************************************/
 
-const char* OGRDAMENGTableLayer::GetMetadataItem(const char* pszName,
-    const char* pszDomain)
+const char *OGRDAMENGTableLayer::GetMetadataItem(const char *pszName,
+                                                 const char *pszDomain)
 {
     GetMetadata(pszDomain);
     return OGRLayer::GetMetadataItem(pszName, pszDomain);
 }
 
 /************************************************************************/
-/*                              SetMetadata()                           */
+/*                            SetMetadata()                             */
 /************************************************************************/
 
 CPLErr OGRDAMENGTableLayer::SetMetadata(CSLConstList papszMD,
-    const char* pszDomain)
+                                        const char *pszDomain)
 {
     OGRLayer::SetMetadata(papszMD, pszDomain);
     if (!osForcedDescription.empty() &&
@@ -266,20 +270,20 @@ CPLErr OGRDAMENGTableLayer::SetMetadata(CSLConstList papszMD,
 
     if (!bDeferredCreation && (pszDomain == nullptr || EQUAL(pszDomain, "")))
     {
-        const char* pszDescription = OGRLayer::GetMetadataItem("DESCRIPTION");
+        const char *pszDescription = OGRLayer::GetMetadataItem("DESCRIPTION");
         if (pszDescription == nullptr)
             pszDescription = "";
-        OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+        OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
         OGRDAMENGStatement oCommand(hDAMENGConn);
         CPLString osCommand;
 
         osCommand.Printf("COMMENT ON TABLE %s IS %s", pszSqlTableName,
-            pszDescription[0] != '\0' ? pszDescription : "''");
+                         pszDescription[0] != '\0' ? pszDescription : "''");
         CPLErr eErr = oCommand.Execute(osCommand);
         if (eErr != CE_None)
         {
             CPLDebug("DM", "Could not Set Metadata of the table %s",
-                pszTableName);
+                     pszTableName);
             return CE_Warning;
         }
         CPLFree(m_pszTableDescription);
@@ -290,12 +294,12 @@ CPLErr OGRDAMENGTableLayer::SetMetadata(CSLConstList papszMD,
 }
 
 /************************************************************************/
-/*                            SetMetadataItem()                         */
+/*                          SetMetadataItem()                           */
 /************************************************************************/
 
-CPLErr OGRDAMENGTableLayer::SetMetadataItem(const char* pszName,
-    const char* pszValue,
-    const char* pszDomain)
+CPLErr OGRDAMENGTableLayer::SetMetadataItem(const char *pszName,
+                                            const char *pszValue,
+                                            const char *pszDomain)
 {
     if ((pszDomain == nullptr || EQUAL(pszDomain, "")) && pszName != nullptr &&
         EQUAL(pszName, "DESCRIPTION") && !osForcedDescription.empty())
@@ -312,10 +316,10 @@ CPLErr OGRDAMENGTableLayer::SetMetadataItem(const char* pszName,
 }
 
 /************************************************************************/
-/*                      SetForcedDescription()                          */
+/*                        SetForcedDescription()                        */
 /************************************************************************/
 
-void OGRDAMENGTableLayer::SetForcedDescription(const char* pszDescriptionIn)
+void OGRDAMENGTableLayer::SetForcedDescription(const char *pszDescriptionIn)
 {
     osForcedDescription = pszDescriptionIn;
     CPLFree(m_pszTableDescription);
@@ -324,11 +328,11 @@ void OGRDAMENGTableLayer::SetForcedDescription(const char* pszDescriptionIn)
 }
 
 /************************************************************************/
-/*                      SetGeometryInformation()                        */
+/*                       SetGeometryInformation()                       */
 /************************************************************************/
 
-void OGRDAMENGTableLayer::SetGeometryInformation(DMGeomColumnDesc* pasDesc,
-    int nGeomFieldCount)
+void OGRDAMENGTableLayer::SetGeometryInformation(DMGeomColumnDesc *pasDesc,
+                                                 int nGeomFieldCount)
 {
     for (int i = 0; i < nGeomFieldCount; i++)
     {
@@ -346,7 +350,7 @@ void OGRDAMENGTableLayer::SetGeometryInformation(DMGeomColumnDesc* pasDesc,
                 (eGeomType != wkbUnknown))
                 eGeomType = wkbSetZ(eGeomType);
             if ((poGeomFieldDefn->GeometryTypeFlags &
-                OGRGeometry::OGR_G_MEASURED) &&
+                 OGRGeometry::OGR_G_MEASURED) &&
                 (eGeomType != wkbUnknown))
                 eGeomType = wkbSetM(eGeomType);
             poGeomFieldDefn->SetType(eGeomType);
@@ -365,7 +369,7 @@ void OGRDAMENGTableLayer::SetGeometryInformation(DMGeomColumnDesc* pasDesc,
 int OGRDAMENGTableLayer::ReadTableDefinition()
 
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
 
     if (bTableDefinitionValid >= 0)
         return bTableDefinitionValid;
@@ -377,19 +381,19 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
 
     CPLString osCommand;
     OGRDAMENGStatement oCommand(hDAMENGConn);
-    osCommand.Printf("SELECT id FROM SYSOBJECTS  "
+    osCommand.Printf(
+        "SELECT id FROM SYSOBJECTS  "
         "WHERE NAME = '%s' AND SCHID = ( "
         "SELECT id FROM SYSOBJECTS WHERE TYPE$ = 'SCH' AND NAME = '%s')",
         pszTableName, pszSchemaName);
     CPLErr eErr = oCommand.Execute(osCommand);
     if (eErr != CE_None)
     {
-        CPLDebug("DM", "Could not Get the OID of the table %s",
-            pszTableName);
+        CPLDebug("DM", "Could not Get the OID of the table %s", pszTableName);
         return FALSE;
     }
     unsigned int nTableOID = 0;
-    char** hResult = oCommand.SimpleFetchRow();
+    char **hResult = oCommand.SimpleFetchRow();
 
     if (hResult)
     {
@@ -399,7 +403,7 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
             if (oCommand.SimpleFetchRow())
             {
                 CPLDebug("DM", "Could not retrieve table oid for %s",
-                    pszTableName);
+                         pszTableName);
                 return FALSE;
             }
         }
@@ -413,15 +417,15 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
     /*      Identify the integer primary key.                               */
     /* -------------------------------------------------------------------- */
 
-    const char* pszTypnameEqualAnyClause =
+    const char *pszTypnameEqualAnyClause =
         "ANY('INT', 'BIGINT', 'SMALLINT', 'INTEGER')";
 
     osCommand.Printf("SELECT c.NAME, c.COLID, c.TYPE$ "
-        "FROM SYSCOLUMNS c "
-        "JOIN SYSOBJECTS o ON o.ID = c.ID "
-        "WHERE c.ID = %u AND c.TYPE$ = %s "
-        "ORDER BY c.COLID",
-        nTableOID, pszTypnameEqualAnyClause);
+                     "FROM SYSCOLUMNS c "
+                     "JOIN SYSOBJECTS o ON o.ID = c.ID "
+                     "WHERE c.ID = %u AND c.TYPE$ = %s "
+                     "ORDER BY c.COLID",
+                     nTableOID, pszTypnameEqualAnyClause);
 
     eErr = oCommand.Execute(osCommand);
     hResult = oCommand.SimpleFetchRow();
@@ -431,20 +435,20 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
         if (hResult[0])
         {
             osPrimaryKey.Printf("%s", hResult[0]);
-            const char* pszFIDType = hResult[2];
+            const char *pszFIDType = hResult[2];
             CPLDebug("DM", "Primary key name (FID): %s, type : %s",
-                osPrimaryKey.c_str(), pszFIDType);
+                     osPrimaryKey.c_str(), pszFIDType);
             if (oCommand.SimpleFetchRow())
                 CPLError(CE_Warning, CPLE_AppDefined,
-                    "Multi-column primary key in \'%s\' detected but not "
-                    "supported.",
-                    pszTableName);
+                         "Multi-column primary key in \'%s\' detected but not "
+                         "supported.",
+                         pszTableName);
         }
     }
     else
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "Identify the integer primary key Failed");
+                 "Identify the integer primary key Failed");
     }
 
     /* -------------------------------------------------------------------- */
@@ -460,16 +464,21 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
         "ORDER BY c.COLID",
         nTableOID);
 
-    eErr = oCommand.Execute(osCommand);
-    hResult = oCommand.SimpleFetchRow();
-    if (!hResult || eErr != CE_None)
+    if (oCommand.Execute(osCommand) != CE_None)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "Fire off commands to get back the columns of the table "
-            "Failed!");
+                 "Fire off commands to get back the columns of the table "
+                 "Failed!");
         return bTableDefinitionValid;
     }
-
+    hResult = oCommand.SimpleFetchRow();
+    if (!hResult)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "Fire off commands to get back the columns of the table "
+                 "Failed!");
+        return bTableDefinitionValid;
+    }
     /* -------------------------------------------------------------------- */
     /*      Parse the returned table information.                           */
     /* -------------------------------------------------------------------- */
@@ -477,9 +486,9 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
     for (int iRecord = 0; hResult; iRecord++)
     {
         OGRFieldDefn oField(hResult[0], OFTString);
-        const char* type = hResult[1];
+        const char *type = hResult[1];
         typid = atoi(type + 5);
-        const char* pszType;
+        const char *pszType;
         if (typid >= NDCT_CLSID_GEO2_ST_GEOMETRY &&
             typid <= NDCT_CLSID_GEO2_ST_TIN)
             pszType = "geometry";
@@ -487,9 +496,9 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
             pszType = "geography";
         else
             pszType = type;
-        const char* pszNotNull = hResult[2];
-        const char* pszDefault = hResult[3];
-        const char* pszIsUnique = hResult[4] ? nullptr : hResult[4];
+        const char *pszNotNull = hResult[2];
+        const char *pszDefault = hResult[3];
+        const char *pszIsUnique = hResult[4] ? nullptr : hResult[4];
         if (pszNotNull && EQUAL(pszNotNull, "Y"))
             oField.SetNullable(FALSE);
         if (pszIsUnique && EQUAL(pszIsUnique, "UNIQUE"))
@@ -499,43 +508,43 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
         {
             pszFIDColumn = CPLStrdup(oField.GetNameRef());
             CPLDebug("DM", "Using column '%s' as FID for table '%s'",
-                pszFIDColumn, pszTableName);
+                     pszFIDColumn, pszTableName);
             hResult = oCommand.SimpleFetchRow();
             continue;
         }
         else if (EQUAL(pszType, "geometry") || EQUAL(pszType, "geography"))
         {
             const auto InitGeomField =
-                [this, &pszType, &oField](OGRDAMENGGeomFieldDefn* poGeomFieldDefn)
+                [this, &pszType,
+                 &oField](OGRDAMENGGeomFieldDefn *poGeomFieldDefn)
+            {
+                if (EQUAL(pszType, "geometry"))
+                    poGeomFieldDefn->eDAMENGGeoType = GEOM_TYPE_GEOMETRY;
+                else if (EQUAL(pszType, "geography"))
                 {
-                    if (EQUAL(pszType, "geometry"))
-                        poGeomFieldDefn->eDAMENGGeoType = GEOM_TYPE_GEOMETRY;
-                    else if (EQUAL(pszType, "geography"))
-                    {
-                        poGeomFieldDefn->eDAMENGGeoType = GEOM_TYPE_GEOGRAPHY;
-                        poGeomFieldDefn->nSRSId = 4326;
-                    }
-                    poGeomFieldDefn->SetNullable(oField.IsNullable());
-                };
+                    poGeomFieldDefn->eDAMENGGeoType = GEOM_TYPE_GEOGRAPHY;
+                    poGeomFieldDefn->nSRSId = 4326;
+                }
+                poGeomFieldDefn->SetNullable(oField.IsNullable());
+            };
             if (!bGeometryInformationSet)
             {
                 if (pszGeomColForced == nullptr ||
                     EQUAL(pszGeomColForced, oField.GetNameRef()))
                 {
-                    auto poGeomFieldDefn = std::make_unique<OGRDAMENGGeomFieldDefn>(
-                        this, oField.GetNameRef());
+                    auto poGeomFieldDefn =
+                        std::make_unique<OGRDAMENGGeomFieldDefn>(
+                            this, oField.GetNameRef());
                     InitGeomField(poGeomFieldDefn.get());
                     poFeatureDefn->AddGeomFieldDefn(std::move(poGeomFieldDefn));
                 }
             }
             else
             {
-                int idx =
-                    poFeatureDefn->GetGeomFieldIndex(oField.GetNameRef());
+                int idx = poFeatureDefn->GetGeomFieldIndex(oField.GetNameRef());
                 if (idx >= 0)
                 {
-                    auto poGeomFieldDefn =
-                        poFeatureDefn->GetGeomFieldDefn(idx);
+                    auto poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(idx);
                     InitGeomField(poGeomFieldDefn);
                 }
             }
@@ -564,7 +573,7 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
     // get layer geometry type
     for (int iField = 0; iField < poFeatureDefn->GetGeomFieldCount(); iField++)
     {
-        OGRDAMENGGeomFieldDefn* poGeomFieldDefn =
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn =
             poFeatureDefn->GetGeomFieldDefn(iField);
 
         /* Get the geometry type and dimensions from the table, or */
@@ -577,10 +586,10 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
         {
             eErr = CheckINI(&checkINI);
             osCommand.Printf("SELECT type, coord_dimension, srid FROM %s WHERE "
-                "f_table_name = '%s'",
-                (bHasGeometry) ? "sysgeo2.geometry_columns"
-                : "sysgeo2.geography_columns",
-                pszTableName);
+                             "f_table_name = '%s'",
+                             (bHasGeometry) ? "sysgeo2.geometry_columns"
+                                            : "sysgeo2.geography_columns",
+                             pszTableName);
 
             osCommand += CPLString().Printf(
                 " AND %s='%s'",
@@ -595,7 +604,7 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
 
             if (hResult && hResult[0] && !oCommand.SimpleFetchRow())
             {
-                const char* pszType = hResult[0] + 3;
+                const char *pszType = hResult[0] + 3;
                 int dim = atoi(hResult[1]);
                 bool bHasM = pszType[strlen(pszType) - 1] == 'M';
                 int GeometryTypeFlags = 0;
@@ -608,15 +617,17 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
                 }
                 else if (dim == 4)
                     GeometryTypeFlags |=
-                    OGRGeometry::OGR_G_3D | OGRGeometry::OGR_G_MEASURED;
+                        OGRGeometry::OGR_G_3D | OGRGeometry::OGR_G_MEASURED;
 
                 int nSRSId = atoi(hResult[2]);
 
                 poGeomFieldDefn->GeometryTypeFlags = GeometryTypeFlags;
                 if (nSRSId == 0)
                 {
-                    osCommand.Printf("SELECT DMGEO2.ST_SRID(\"%s\") FROM \"%s\".\"%s\" LIMIT 1",
-                        poGeomFieldDefn->GetNameRef(), pszSchemaName, pszTableName);
+                    osCommand.Printf("SELECT DMGEO2.ST_SRID(\"%s\") FROM "
+                                     "\"%s\".\"%s\" LIMIT 1",
+                                     poGeomFieldDefn->GetNameRef(),
+                                     pszSchemaName, pszTableName);
                     eErr = oCommand.Execute(osCommand);
                     hResult = oCommand.SimpleFetchRow();
                     if (hResult && hResult[0] && !oCommand.SimpleFetchRow())
@@ -629,11 +640,11 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
                 else
                     eGeomType = OGRDAMENGCheckType(typid);
                 if (poGeomFieldDefn->GeometryTypeFlags &
-                    OGRGeometry::OGR_G_3D &&
+                        OGRGeometry::OGR_G_3D &&
                     eGeomType != wkbUnknown)
                     eGeomType = wkbSetZ(eGeomType);
                 if (poGeomFieldDefn->GeometryTypeFlags &
-                    OGRGeometry::OGR_G_MEASURED &&
+                        OGRGeometry::OGR_G_MEASURED &&
                     eGeomType != wkbUnknown)
                     eGeomType = wkbSetM(eGeomType);
                 poGeomFieldDefn->SetType(eGeomType);
@@ -644,11 +655,10 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
             {
                 /* Fetch the name of the parent table */
                 osCommand.Printf("SELECT o.NAME FROM SYSOBJECTS o WHERE ID = "
-                    "(SELECT o.PID FROM SYSOBJECTS o "
-                    "JOIN DBA_TABLES t ON c.NAME=t.TABLE_NAME "
-                    "WHERE o.NAME = '%s' AND t.OWNER = '%s') ",
-                    pszTableName,
-                    pszSchemaName);
+                                 "(SELECT o.PID FROM SYSOBJECTS o "
+                                 "JOIN DBA_TABLES t ON c.NAME=t.TABLE_NAME "
+                                 "WHERE o.NAME = '%s' AND t.OWNER = '%s') ",
+                                 pszTableName, pszSchemaName);
 
                 eErr = oCommand.Execute(osCommand);
                 hResult = oCommand.SimpleFetchRow();
@@ -674,12 +684,11 @@ int OGRDAMENGTableLayer::ReadTableDefinition()
 /*                         SetTableDefinition()                         */
 /************************************************************************/
 
-void OGRDAMENGTableLayer::SetTableDefinition(const char* pszFIDColumnName,
-    const char* pszGFldName,
-    OGRwkbGeometryType eType,
-    const char* pszGeomType,
-    int nSRSId,
-    int GeometryTypeFlags)
+void OGRDAMENGTableLayer::SetTableDefinition(const char *pszFIDColumnName,
+                                             const char *pszGFldName,
+                                             OGRwkbGeometryType eType,
+                                             const char *pszGeomType,
+                                             int nSRSId, int GeometryTypeFlags)
 {
     bTableDefinitionValid = TRUE;
     bGeometryInformationSet = TRUE;
@@ -715,7 +724,7 @@ void OGRDAMENGTableLayer::SetTableDefinition(const char* pszFIDColumnName,
 /************************************************************************/
 
 OGRErr OGRDAMENGTableLayer::ISetSpatialFilter(int iGeomField,
-    const OGRGeometry* poGeomIn)
+                                              const OGRGeometry *poGeomIn)
 
 {
     if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount() ||
@@ -724,7 +733,7 @@ OGRErr OGRDAMENGTableLayer::ISetSpatialFilter(int iGeomField,
         if (iGeomField != 0)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
-                "Invalid geometry field index : %d", iGeomField);
+                     "Invalid geometry field index : %d", iGeomField);
         }
         return OGRERR_NONE;
     }
@@ -750,14 +759,13 @@ void OGRDAMENGTableLayer::BuildWhere()
 
 {
     osWHERE = "";
-    OGRDAMENGGeomFieldDefn* poGeomFieldDefn = nullptr;
+    OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
     if (poFeatureDefn->GetGeomFieldCount() != 0)
-        poGeomFieldDefn =
-        poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
+        poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
 
     if (m_poFilterGeom != nullptr && poGeomFieldDefn != nullptr &&
         (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
-            poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY))
+         poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY))
     {
         char szBox3D_1[128];
         char szBox3D_2[128];
@@ -791,19 +799,22 @@ void OGRDAMENGTableLayer::BuildWhere()
         }
 
         CPLsnprintf(szBox3D_1, sizeof(szBox3D_1), "%.18g %.18g", sEnvelope.MinX,
-            sEnvelope.MinY);
+                    sEnvelope.MinY);
         CPLsnprintf(szBox3D_2, sizeof(szBox3D_2), "%.18g %.18g", sEnvelope.MinX,
-            sEnvelope.MaxY);
+                    sEnvelope.MaxY);
         CPLsnprintf(szBox3D_3, sizeof(szBox3D_2), "%.18g %.18g", sEnvelope.MaxX,
-            sEnvelope.MaxY);
+                    sEnvelope.MaxY);
         CPLsnprintf(szBox3D_4, sizeof(szBox3D_1), "%.18g %.18g", sEnvelope.MaxX,
-            sEnvelope.MinY);
+                    sEnvelope.MinY);
         if (poGeomFieldDefn->nSRSId < 0)
             poGeomFieldDefn->nSRSId = 0;
-        osWHERE.Printf("WHERE DMGEO2.ST_CoveredBy"
-            "(%s, DMGEO2.ST_GEOMFROMTEXT('SRID=%d;POLYGON((%s, %s, %s, %s, %s))')) ",
-            OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(), poGeomFieldDefn->nSRSId,
-            szBox3D_1, szBox3D_2, szBox3D_3, szBox3D_4, szBox3D_1);
+        osWHERE.Printf(
+            "WHERE DMGEO2.ST_CoveredBy"
+            "(%s, DMGEO2.ST_GEOMFROMTEXT('SRID=%d;POLYGON((%s, %s, %s, %s, "
+            "%s))')) ",
+            OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
+            poGeomFieldDefn->nSRSId, szBox3D_1, szBox3D_2, szBox3D_3, szBox3D_4,
+            szBox3D_1);
     }
 
     if (!osQuery.empty())
@@ -836,12 +847,12 @@ void OGRDAMENGTableLayer::BuildFullQueryStatement()
         CPLFree(pszQueryStatement);
         pszQueryStatement = nullptr;
     }
-    pszQueryStatement = static_cast<char*>(CPLMalloc(
+    pszQueryStatement = static_cast<char *>(CPLMalloc(
         osFields.size() + osWHERE.size() + strlen(pszSqlTableName) + 40));
     snprintf(pszQueryStatement,
-        osFields.size() + osWHERE.size() + strlen(pszSqlTableName) + 40,
-        "SELECT %s FROM %s %s", osFields.c_str(), pszSqlTableName,
-        osWHERE.c_str());
+             osFields.size() + osWHERE.size() + strlen(pszSqlTableName) + 40,
+             "SELECT %s FROM %s %s", osFields.c_str(), pszSqlTableName,
+             osWHERE.c_str());
 }
 
 /************************************************************************/
@@ -866,21 +877,20 @@ void OGRDAMENGTableLayer::ResetReading()
 /*                           GetNextFeature()                           */
 /************************************************************************/
 
-OGRFeature* OGRDAMENGTableLayer::GetNextFeature()
+OGRFeature *OGRDAMENGTableLayer::GetNextFeature()
 
 {
     if (pszQueryStatement == nullptr)
         ResetReading();
 
-    OGRDAMENGGeomFieldDefn* poGeomFieldDefn = nullptr;
+    OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
     if (poFeatureDefn->GetGeomFieldCount() != 0)
-        poGeomFieldDefn =
-        poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
+        poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
     poFeatureDefn->GetFieldCount();
 
     while (true)
     {
-        OGRFeature* poFeature = GetNextRawFeature();
+        OGRFeature *poFeature = GetNextRawFeature();
         if (poFeature == nullptr)
             return nullptr;
 
@@ -896,7 +906,7 @@ OGRFeature* OGRDAMENGTableLayer::GetNextFeature()
             if (iFIDAsRegularColumnIndex >= 0)
             {
                 poFeature->SetField(iFIDAsRegularColumnIndex,
-                    poFeature->GetFID());
+                                    poFeature->GetFID());
             }
             return poFeature;
         }
@@ -928,7 +938,7 @@ CPLString OGRDAMENGTableLayer::BuildFields()
 
     for (i = 0; i < poFeatureDefn->GetGeomFieldCount(); i++)
     {
-        OGRDAMENGGeomFieldDefn* poGeomFieldDefn =
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn =
             poFeatureDefn->GetGeomFieldDefn(i);
         CPLString osEscapedGeom =
             OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str();
@@ -974,7 +984,7 @@ CPLString OGRDAMENGTableLayer::BuildFields()
 
     for (i = 0; i < poFeatureDefn->GetFieldCount(); i++)
     {
-        const char* pszName = poFeatureDefn->GetFieldDefn(i)->GetNameRef();
+        const char *pszName = poFeatureDefn->GetFieldDefn(i)->GetNameRef();
 
         if (!osFieldList.empty())
             osFieldList += ", ";
@@ -989,7 +999,7 @@ CPLString OGRDAMENGTableLayer::BuildFields()
 /*                         SetAttributeFilter()                         */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::SetAttributeFilter(const char* pszQuery)
+OGRErr OGRDAMENGTableLayer::SetAttributeFilter(const char *pszQuery)
 
 {
     CPLFree(m_pszAttrQueryString);
@@ -1014,7 +1024,7 @@ OGRErr OGRDAMENGTableLayer::SetAttributeFilter(const char* pszQuery)
 OGRErr OGRDAMENGTableLayer::DeleteFeature(GIntBig nFID)
 
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLString osCommand;
 
@@ -1029,10 +1039,10 @@ OGRErr OGRDAMENGTableLayer::DeleteFeature(GIntBig nFID)
     if (pszFIDColumn == nullptr)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "DeleteFeature(" CPL_FRMT_GIB
-            ") failed.  Unable to delete features in tables without\n"
-            "a recognised FID column.",
-            nFID);
+                 "DeleteFeature(" CPL_FRMT_GIB
+                 ") failed.  Unable to delete features in tables without\n"
+                 "a recognised FID column.",
+                 nFID);
         return OGRERR_FAILURE;
     }
 
@@ -1040,7 +1050,7 @@ OGRErr OGRDAMENGTableLayer::DeleteFeature(GIntBig nFID)
     /*      Form the statement to drop the record.                          */
     /* -------------------------------------------------------------------- */
     osCommand.Printf("DELETE FROM %s WHERE %s = " CPL_FRMT_GIB, pszSqlTableName,
-        OGRDAMENGEscapeColumnName(pszFIDColumn).c_str(), nFID);
+                     OGRDAMENGEscapeColumnName(pszFIDColumn).c_str(), nFID);
 
     /* -------------------------------------------------------------------- */
     /*      Execute the delete.                                             */
@@ -1054,7 +1064,7 @@ OGRErr OGRDAMENGTableLayer::DeleteFeature(GIntBig nFID)
     if (!DSQL_SUCCEEDED(rt))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "DeleteFeature() DELETE statement failed.");
+                 "DeleteFeature() DELETE statement failed.");
         eErr = OGRERR_FAILURE;
     }
     else
@@ -1069,13 +1079,13 @@ OGRErr OGRDAMENGTableLayer::DeleteFeature(GIntBig nFID)
 }
 
 /************************************************************************/
-/*                             CheckINI()                               */
+/*                              CheckINI()                              */
 /************************************************************************/
 
-CPLErr OGRDAMENGTableLayer::CheckINI(int* checkini)
+CPLErr OGRDAMENGTableLayer::CheckINI(int *checkini)
 
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLString osCommand;
 
@@ -1083,20 +1093,21 @@ CPLErr OGRDAMENGTableLayer::CheckINI(int* checkini)
     CPLErr eErr = oCommand.Execute(osCommand);
     if (eErr == CE_None)
     {
-        char** hResult = oCommand.SimpleFetchRow();
+        char **hResult = oCommand.SimpleFetchRow();
         *checkini = atoi(hResult[0]);
     }
     return eErr;
 }
+
 /************************************************************************/
 /*                             ISetFeature()                             */
 /*                                                                      */
 /*      SetFeature() is implemented by an UPDATE SQL command            */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
+OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature *poFeature)
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLString osCommand;
     sdint8 row = 0;
@@ -1109,22 +1120,22 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
     if (nullptr == poFeature)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "NULL pointer to OGRFeature passed to SetFeature().");
+                 "NULL pointer to OGRFeature passed to SetFeature().");
         return eErr;
     }
 
     if (poFeature->GetFID() == OGRNullFID)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "FID required on features given to SetFeature().");
+                 "FID required on features given to SetFeature().");
         return eErr;
     }
 
     if (pszFIDColumn == nullptr)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "Unable to update features in tables without\n"
-            "a recognised FID column.");
+                 "Unable to update features in tables without\n"
+                 "a recognised FID column.");
         return eErr;
     }
 
@@ -1133,10 +1144,10 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
     {
         if (!poFeature->IsFieldSetAndNotNull(iFIDAsRegularColumnIndex) ||
             poFeature->GetFieldAsInteger64(iFIDAsRegularColumnIndex) !=
-            poFeature->GetFID())
+                poFeature->GetFID())
         {
             CPLError(CE_Failure, CPLE_AppDefined,
-                "Inconsistent values of FID and field of same name");
+                     "Inconsistent values of FID and field of same name");
             return OGRERR_FAILURE;
         }
     }
@@ -1149,9 +1160,9 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
     /* Set the geometry */
     for (i = 0; i < poFeatureDefn->GetGeomFieldCount(); i++)
     {
-        OGRDAMENGGeomFieldDefn* poGeomFieldDefn =
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn =
             poFeatureDefn->GetGeomFieldDefn(i);
-        OGRGeometry* poGeom = poFeature->GetGeomFieldRef(i);
+        OGRGeometry *poGeom = poFeature->GetGeomFieldRef(i);
         if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_WKB)
         {
             if (bNeedComma)
@@ -1160,11 +1171,12 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
                 bNeedComma = TRUE;
 
             osCommand +=
-                OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str();
+                OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef())
+                    .c_str();
             osCommand += " = ";
             if (poGeom != nullptr)
             {
-                char* pszBytea = GeometryToBlob(poGeom);
+                char *pszBytea = GeometryToBlob(poGeom);
 
                 if (pszBytea != nullptr)
                 {
@@ -1178,7 +1190,7 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
                 osCommand += "NULL";
         }
         else if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY ||
-            poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY)
+                 poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY)
         {
             if (bNeedComma)
                 osCommand += ", ";
@@ -1186,22 +1198,23 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
                 bNeedComma = TRUE;
 
             osCommand +=
-                OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str();
+                OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef())
+                    .c_str();
             osCommand += " = ";
             if (poGeom != nullptr)
             {
                 poGeom->closeRings();
                 poGeom->set3D(poGeomFieldDefn->GeometryTypeFlags &
-                    OGRGeometry::OGR_G_3D);
+                              OGRGeometry::OGR_G_3D);
                 poGeom->setMeasured(poGeomFieldDefn->GeometryTypeFlags &
-                    OGRGeometry::OGR_G_MEASURED);
+                                    OGRGeometry::OGR_G_MEASURED);
             }
 
             if (!CPLTestBool(CPLGetConfigOption("DM_USE_TEXT", "NO")))
             {
                 if (poGeom != nullptr)
                 {
-                    char* pszHexEWKB = OGRGeometryToHexEWKB(
+                    char *pszHexEWKB = OGRGeometryToHexEWKB(
                         poGeom, poGeomFieldDefn->nSRSId, 3, 3);
                     if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY)
                         osCommand += CPLString().Printf(
@@ -1216,7 +1229,7 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
             }
             else
             {
-                char* pszWKT = nullptr;
+                char *pszWKT = nullptr;
 
                 if (poGeom != nullptr)
                     poGeom->exportToWkt(&pszWKT, wkbVariantIso);
@@ -1254,8 +1267,11 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
         else
             bNeedComma = TRUE;
 
-        osCommand =
-            osCommand + OGRDAMENGEscapeColumnName(poFeatureDefn->GetFieldDefn(i)->GetNameRef()).c_str() + " = ";
+        osCommand = osCommand +
+                    OGRDAMENGEscapeColumnName(
+                        poFeatureDefn->GetFieldDefn(i)->GetNameRef())
+                        .c_str() +
+                    " = ";
 
         if (poFeature->IsFieldNull(i))
         {
@@ -1267,7 +1283,7 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
             // e.g. 0000-00-00 - there is no year 0
             bool bIsDateNull = false;
 
-            const char* pszStrValue = poFeature->GetFieldAsString(i);
+            const char *pszStrValue = poFeature->GetFieldAsString(i);
 
             // Check if date is NULL: 0000-00-00
             if (poFeatureDefn->GetFieldDefn(i)->GetType() == OFTDate)
@@ -1288,10 +1304,11 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
                     pszStrValue = (dfVal > 0) ? "'Infinity'" : "'-Infinity'";
             }
             else if ((poFeatureDefn->GetFieldDefn(i)->GetType() == OFTInteger ||
-                poFeatureDefn->GetFieldDefn(i)->GetType() == OFTInteger64) &&
-                poFeatureDefn->GetFieldDefn(i)->GetSubType() == OFSTBoolean)
+                      poFeatureDefn->GetFieldDefn(i)->GetType() ==
+                          OFTInteger64) &&
+                     poFeatureDefn->GetFieldDefn(i)->GetSubType() ==
+                         OFSTBoolean)
                 pszStrValue = poFeature->GetFieldAsInteger(i) ? "'t'" : "'f'";
-
 
             if (poFeatureDefn->GetFieldDefn(i)->GetType() != OFTInteger &&
                 poFeatureDefn->GetFieldDefn(i)->GetType() != OFTInteger64 &&
@@ -1311,7 +1328,8 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
 
     /* Add the WHERE clause */
     osCommand += " WHERE ";
-    osCommand = osCommand + OGRDAMENGEscapeColumnName(pszFIDColumn).c_str() + " =  ";
+    osCommand =
+        osCommand + OGRDAMENGEscapeColumnName(pszFIDColumn).c_str() + " =  ";
     osCommand += CPLString().Printf(CPL_FRMT_GIB, poFeature->GetFID());
 
     /* -------------------------------------------------------------------- */
@@ -1323,9 +1341,9 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
     if (!DSQL_SUCCEEDED(rt))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "UPDATE command for feature " CPL_FRMT_GIB
-            " failed.\nCommand: %s",
-            poFeature->GetFID(), osCommand.c_str());
+                 "UPDATE command for feature " CPL_FRMT_GIB
+                 " failed.\nCommand: %s",
+                 poFeature->GetFID(), osCommand.c_str());
 
         return OGRERR_FAILURE;
     }
@@ -1338,17 +1356,17 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature* poFeature)
 }
 
 /************************************************************************/
-/*                           ICreateFeature()                            */
+/*                           ICreateFeature()                           */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::ICreateFeature(OGRFeature* poFeature)
+OGRErr OGRDAMENGTableLayer::ICreateFeature(OGRFeature *poFeature)
 {
     GetLayerDefn()->GetFieldCount();
 
     if (nullptr == poFeature)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "NULL pointer to OGRFeature passed to CreateFeature().");
+                 "NULL pointer to OGRFeature passed to CreateFeature().");
         return OGRERR_FAILURE;
     }
 
@@ -1360,19 +1378,18 @@ OGRErr OGRDAMENGTableLayer::ICreateFeature(OGRFeature* poFeature)
         {
             if (poFeature->IsFieldSetAndNotNull(iFIDAsRegularColumnIndex))
             {
-                poFeature->SetFID(poFeature->GetFieldAsInteger64(
-                    iFIDAsRegularColumnIndex));
+                poFeature->SetFID(
+                    poFeature->GetFieldAsInteger64(iFIDAsRegularColumnIndex));
             }
         }
         else
         {
             if (!poFeature->IsFieldSetAndNotNull(iFIDAsRegularColumnIndex) ||
                 poFeature->GetFieldAsInteger64(iFIDAsRegularColumnIndex) !=
-                nFID)
+                    nFID)
             {
-                CPLError(
-                    CE_Failure, CPLE_AppDefined,
-                    "Inconsistent values of FID and field of same name");
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Inconsistent values of FID and field of same name");
                 return OGRERR_FAILURE;
             }
         }
@@ -1383,7 +1400,7 @@ OGRErr OGRDAMENGTableLayer::ICreateFeature(OGRFeature* poFeature)
         bFirstInsertion = FALSE;
         if (CPLTestBool(CPLGetConfigOption("OGR_TRUNCATE", "NO")))
         {
-            OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+            OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
             OGRDAMENGStatement oCommand(hDAMENGConn);
             CPLString osCommand;
             CPLErr rt;
@@ -1405,10 +1422,10 @@ OGRErr OGRDAMENGTableLayer::ICreateFeature(OGRFeature* poFeature)
 }
 
 /************************************************************************/
-/*                       OGRDAMENGEscapeColumnName( )                       */
+/*                     OGRDAMENGEscapeColumnName( )                     */
 /************************************************************************/
 
-CPLString OGRDAMENGEscapeColumnName(const char* pszColumnName)
+CPLString OGRDAMENGEscapeColumnName(const char *pszColumnName)
 {
     CPLString osStr = "\"";
 
@@ -1429,10 +1446,10 @@ CPLString OGRDAMENGEscapeColumnName(const char* pszColumnName)
 /*                       CreateFeatureViaInsert()                       */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::CreateFeatureViaInsert(OGRFeature* poFeature)
+OGRErr OGRDAMENGTableLayer::CreateFeatureViaInsert(OGRFeature *poFeature)
 
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     int bNeedComma = FALSE;
     CPLString sql;
@@ -1444,17 +1461,17 @@ OGRErr OGRDAMENGTableLayer::CreateFeatureViaInsert(OGRFeature* poFeature)
     {
 
         sql.Printf("SELECT NAME FROM SYSCOLUMNS WHERE ID = ("
-            "SELECT o.id FROM SYSOBJECTS o JOIN DBA_TABLES t ON "
-            "o.NAME = t.TABLE_NAME WHERE o.NAME = '%s' AND t.OWNER = "
-            "'%s' AND TYPE$='SCHOBJ' LIMIT 1) ORDER BY COLID; ",
-            pszTableName, pszSchemaName);
+                   "SELECT o.id FROM SYSOBJECTS o JOIN DBA_TABLES t ON "
+                   "o.NAME = t.TABLE_NAME WHERE o.NAME = '%s' AND t.OWNER = "
+                   "'%s' AND TYPE$='SCHOBJ' LIMIT 1) ORDER BY COLID; ",
+                   pszTableName, pszSchemaName);
         CPLErr eErr = oCommand.Execute(sql);
         if (eErr != CE_None)
         {
             CPLError(CE_Failure, CPLE_AppDefined, "Can't find columns' name");
             return OGRERR_FAILURE;
         }
-        char** hResult = oCommand.SimpleFetchRow();
+        char **hResult = oCommand.SimpleFetchRow();
         hResult = oCommand.SimpleFetchRow();  //skip ogc_fid
         InsertStatement = new OGRDAMENGStatement(hDAMENGConn);
         InsertSQL += " INSERT INTO ";
@@ -1490,18 +1507,20 @@ OGRErr OGRDAMENGTableLayer::CreateFeatureViaInsert(OGRFeature* poFeature)
 /*                           TestCapability()                           */
 /************************************************************************/
 
-int OGRDAMENGTableLayer::TestCapability(const char* pszCap) const
+int OGRDAMENGTableLayer::TestCapability(const char *pszCap) const
 
 {
     if (bUpdate)
     {
-        if (EQUAL(pszCap, OLCSequentialWrite) || EQUAL(pszCap, OLCCreateField) ||
-            EQUAL(pszCap, OLCCreateGeomField) || EQUAL(pszCap, OLCDeleteField) ||
-            EQUAL(pszCap, OLCAlterFieldDefn) ||
+        if (EQUAL(pszCap, OLCSequentialWrite) ||
+            EQUAL(pszCap, OLCCreateField) ||
+            EQUAL(pszCap, OLCCreateGeomField) ||
+            EQUAL(pszCap, OLCDeleteField) || EQUAL(pszCap, OLCAlterFieldDefn) ||
             EQUAL(pszCap, OLCAlterGeomFieldDefn) || EQUAL(pszCap, OLCRename))
             return TRUE;
-        else if (EQUAL(pszCap, OLCRandomWrite) || EQUAL(pszCap, OLCUpdateFeature) ||
-            EQUAL(pszCap, OLCDeleteFeature))
+        else if (EQUAL(pszCap, OLCRandomWrite) ||
+                 EQUAL(pszCap, OLCUpdateFeature) ||
+                 EQUAL(pszCap, OLCDeleteFeature))
         {
             GetLayerDefn()->GetFieldCount();
             return pszFIDColumn != nullptr;
@@ -1514,38 +1533,38 @@ int OGRDAMENGTableLayer::TestCapability(const char* pszCap) const
     }
 
     else if (EQUAL(pszCap, OLCFastFeatureCount) ||
-        EQUAL(pszCap, OLCFastSetNextByIndex))
+             EQUAL(pszCap, OLCFastSetNextByIndex))
     {
         if (m_poFilterGeom == nullptr)
             return TRUE;
-        OGRDAMENGGeomFieldDefn* poGeomFieldDefn = nullptr;
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
         if (poFeatureDefn->GetGeomFieldCount() > 0)
             poGeomFieldDefn =
-            poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
+                poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
         return poGeomFieldDefn == nullptr ||
-            ((poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
-                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY));
+               ((poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+                 poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY));
     }
 
     else if (EQUAL(pszCap, OLCFastSpatialFilter))
     {
-        OGRDAMENGGeomFieldDefn* poGeomFieldDefn = nullptr;
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
         if (poFeatureDefn->GetGeomFieldCount() > 0)
             poGeomFieldDefn =
-            poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
+                poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
         return poGeomFieldDefn == nullptr ||
-            ((poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
-                poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY));
+               ((poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+                 poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY));
     }
 
     else if (EQUAL(pszCap, OLCFastGetExtent) ||
-        EQUAL(pszCap, OLCFastGetExtent3D))
+             EQUAL(pszCap, OLCFastGetExtent3D))
     {
-        OGRDAMENGGeomFieldDefn* poGeomFieldDefn = nullptr;
+        OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
         if (poFeatureDefn->GetGeomFieldCount() > 0)
             poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(0);
         return poGeomFieldDefn != nullptr &&
-            poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY;
+               poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY;
     }
 
     else if (EQUAL(pszCap, OLCStringsAsUTF8))
@@ -1568,11 +1587,11 @@ int OGRDAMENGTableLayer::TestCapability(const char* pszCap) const
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::CreateField(const OGRFieldDefn* poFieldIn,
-    int bApproxOK)
+OGRErr OGRDAMENGTableLayer::CreateField(const OGRFieldDefn *poFieldIn,
+                                        int bApproxOK)
 
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     CPLString osCommand;
     CPLString osFieldType;
     OGRFieldDefn oField(poFieldIn);
@@ -1583,11 +1602,11 @@ OGRErr OGRDAMENGTableLayer::CreateField(const OGRFieldDefn* poFieldIn,
         oField.GetType() != OFTInteger && oField.GetType() != OFTInteger64)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "Wrong field type for %s",
-            oField.GetNameRef());
+                 oField.GetNameRef());
         return OGRERR_FAILURE;
     }
 
-    const char* pszOverrideType =
+    const char *pszOverrideType =
         CSLFetchNameValue(papszOverrideColumnTypes, oField.GetNameRef());
     if (pszOverrideType != nullptr)
         osFieldType = pszOverrideType;
@@ -1614,8 +1633,8 @@ OGRErr OGRDAMENGTableLayer::CreateField(const OGRFieldDefn* poFieldIn,
     /*      Create the new field.                                           */
     /* -------------------------------------------------------------------- */
     osCommand.Printf("ALTER TABLE %s ADD COLUMN %s %s", pszSqlTableName,
-        OGRDAMENGEscapeColumnName(oField.GetNameRef()).c_str(),
-        osFieldType.c_str());
+                     OGRDAMENGEscapeColumnName(oField.GetNameRef()).c_str(),
+                     osFieldType.c_str());
     osCommand += osConstraints;
 
     OGRDAMENGStatement oCommand(hDAMENGConn);
@@ -1623,8 +1642,7 @@ OGRErr OGRDAMENGTableLayer::CreateField(const OGRFieldDefn* poFieldIn,
 
     if (eErr != CE_None)
     {
-        CPLError(CE_Failure, CPLE_AppDefined, "%s Failed!",
-            osCommand.c_str());
+        CPLError(CE_Failure, CPLE_AppDefined, "%s Failed!", osCommand.c_str());
         return OGRERR_FAILURE;
     }
 
@@ -1642,28 +1660,28 @@ OGRErr OGRDAMENGTableLayer::CreateField(const OGRFieldDefn* poFieldIn,
 /*                        RunAddGeometryColumn()                        */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::RunAddGeometryColumn(const OGRDAMENGGeomFieldDefn* poGeomField)
+OGRErr OGRDAMENGTableLayer::RunAddGeometryColumn(
+    const OGRDAMENGGeomFieldDefn *poGeomField)
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
 
-    const char* pszGeometryType = OGRToOGCGeomType(poGeomField->GetType());
-    const char* suffix = "";
-    int dim = 2;
-    if ((poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_3D) &&
-        (poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_MEASURED))
-        dim = 4;
-    else if ((poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_MEASURED))
+    const char *pszGeometryType = OGRToOGCGeomType(poGeomField->GetType());
+    const char *suffix = "";
+    if (!(wkbFlatten(poGeomField->GetType()) == wkbUnknown))
     {
-        if (!(wkbFlatten(poGeomField->GetType()) == wkbUnknown))
+        if ((poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_3D) &&
+            (poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_MEASURED))
+            suffix = "ZM";
+        else if ((poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_MEASURED))
             suffix = "M";
-        dim = 3;
+        else if (poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_3D)
+            suffix = "Z";
     }
-    else if (poGeomField->GeometryTypeFlags & OGRGeometry::OGR_G_3D)
-        dim = 3;
 
     CPLString osCommand;
-    osCommand.Printf("ALTER TABLE \"%s\".\"%s\" ADD COLUMN %s "
+    osCommand.Printf(
+        "ALTER TABLE \"%s\".\"%s\" ADD COLUMN %s "
         "SYSGEO2.ST_GEOMETRY CHECK(SRID=%d) CHECK(TYPE=%s%s)",
         pszSchemaName, pszTableName,
         OGRDAMENGEscapeColumnName(poGeomField->GetNameRef()).c_str(),
@@ -1673,41 +1691,43 @@ OGRErr OGRDAMENGTableLayer::RunAddGeometryColumn(const OGRDAMENGGeomFieldDefn* p
     if (eErr != CE_None)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "AddGeometryColumn failed for layer %s.", GetName());
+                 "AddGeometryColumn failed for layer %s.", GetName());
 
         return OGRERR_FAILURE;
     }
     if (!poGeomField->IsNullable())
     {
-        osCommand.Printf("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL", pszSqlTableName,
+        osCommand.Printf(
+            "ALTER TABLE %s ALTER COLUMN %s SET NOT NULL", pszSqlTableName,
             OGRDAMENGEscapeColumnName(poGeomField->GetNameRef()).c_str());
 
-        eErr = oCommand.Execute(osCommand);
+        oCommand.Execute(osCommand);
     }
 
     return OGRERR_NONE;
 }
 
 /************************************************************************/
-/*                           CreateGeomField()                          */
+/*                          CreateGeomField()                           */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::CreateGeomField(const OGRGeomFieldDefn* poGeomFieldIn,
-    CPL_UNUSED int bApproxOK)
+OGRErr
+OGRDAMENGTableLayer::CreateGeomField(const OGRGeomFieldDefn *poGeomFieldIn,
+                                     CPL_UNUSED int bApproxOK)
 {
     OGRwkbGeometryType eType = poGeomFieldIn->GetType();
     if (eType == wkbNone)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
-            "Cannot create geometry field of type wkbNone");
+                 "Cannot create geometry field of type wkbNone");
         return OGRERR_FAILURE;
     }
 
     // Check if GEOMETRY_NAME layer creation option was set, but no initial
     // column was created in ICreateLayer()
     CPLString osGeomFieldName = (m_osFirstGeometryFieldName.size())
-        ? m_osFirstGeometryFieldName
-        : CPLString(poGeomFieldIn->GetNameRef());
+                                    ? m_osFirstGeometryFieldName
+                                    : CPLString(poGeomFieldIn->GetNameRef());
     m_osFirstGeometryFieldName = "";  // reset for potential next geom columns
 
     auto poGeomField =
@@ -1729,7 +1749,7 @@ OGRErr OGRDAMENGTableLayer::CreateGeomField(const OGRGeomFieldDefn* poGeomFieldI
         l_poSRS->Release();
     }
 
-    const OGRSpatialReference* poSRS = poGeomField->GetSpatialRef();
+    const OGRSpatialReference *poSRS = poGeomField->GetSpatialRef();
     int nSRSId = poDS->GetUndefinedSRID();
     if (nForcedSRSId != UNDETERMINED_SRID)
         nSRSId = nForcedSRSId;
@@ -1746,7 +1766,7 @@ OGRErr OGRDAMENGTableLayer::CreateGeomField(const OGRGeomFieldDefn* poGeomFieldI
         GeometryTypeFlags = nForcedGeometryTypeFlags;
         eType =
             OGR_GT_SetModifier(eType, GeometryTypeFlags & OGRGeometry::OGR_G_3D,
-                GeometryTypeFlags & OGRGeometry::OGR_G_MEASURED);
+                               GeometryTypeFlags & OGRGeometry::OGR_G_MEASURED);
     }
     poGeomField->SetType(eType);
     poGeomField->SetNullable(poGeomFieldIn->IsNullable());
@@ -1776,7 +1796,7 @@ OGRErr OGRDAMENGTableLayer::CreateGeomField(const OGRGeomFieldDefn* poGeomFieldI
 
 OGRErr OGRDAMENGTableLayer::DeleteField(int iField)
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLErr eErr;
     CPLString osCommand;
@@ -1790,8 +1810,9 @@ OGRErr OGRDAMENGTableLayer::DeleteField(int iField)
     }
 
     osCommand.Printf("ALTER TABLE %s DROP COLUMN %s", pszSqlTableName,
-        OGRDAMENGEscapeColumnName(poFeatureDefn->GetFieldDefn(iField)->GetNameRef())
-        .c_str());
+                     OGRDAMENGEscapeColumnName(
+                         poFeatureDefn->GetFieldDefn(iField)->GetNameRef())
+                         .c_str());
     eErr = oCommand.Execute(osCommand);
     if (eErr != CE_None)
     {
@@ -1807,10 +1828,10 @@ OGRErr OGRDAMENGTableLayer::DeleteField(int iField)
 /************************************************************************/
 
 OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
-    OGRFieldDefn* poNewFieldDefn,
-    int nFlagsIn)
+                                           OGRFieldDefn *poNewFieldDefn,
+                                           int nFlagsIn)
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLErr eErr;
     CPLString osCommand;
@@ -1823,7 +1844,7 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
         return OGRERR_FAILURE;
     }
 
-    OGRFieldDefn* poFieldDefn = poFeatureDefn->GetFieldDefn(iField);
+    OGRFieldDefn *poFieldDefn = poFeatureDefn->GetFieldDefn(iField);
     OGRFieldDefn oField(poNewFieldDefn);
 
     if (!(nFlagsIn & ALTER_TYPE_FLAG))
@@ -1848,7 +1869,8 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
             return OGRERR_FAILURE;
         }
 
-        osCommand.Printf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", pszSqlTableName,
+        osCommand.Printf(
+            "ALTER TABLE %s ALTER COLUMN %s TYPE %s", pszSqlTableName,
             OGRDAMENGEscapeColumnName(poFieldDefn->GetNameRef()).c_str(),
             osFieldType.c_str());
 
@@ -1856,7 +1878,7 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
         if (eErr != CE_None)
         {
             CPLError(CE_Failure, CPLE_AppDefined, "%s Failed!",
-                osCommand.c_str());
+                     osCommand.c_str());
             return OGRERR_FAILURE;
         }
     }
@@ -1867,17 +1889,19 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
         oField.SetNullable(poNewFieldDefn->IsNullable());
 
         if (poNewFieldDefn->IsNullable())
-            osCommand.Printf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", pszSqlTableName,
+            osCommand.Printf(
+                "ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", pszSqlTableName,
                 OGRDAMENGEscapeColumnName(poFieldDefn->GetNameRef()).c_str());
         else
-            osCommand.Printf("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL", pszSqlTableName,
+            osCommand.Printf(
+                "ALTER TABLE %s ALTER COLUMN %s SET NOT NULL", pszSqlTableName,
                 OGRDAMENGEscapeColumnName(poFieldDefn->GetNameRef()).c_str());
 
         eErr = oCommand.Execute(osCommand);
         if (eErr != CE_None)
         {
             CPLError(CE_Failure, CPLE_AppDefined, "%s Failed!",
-                osCommand.c_str());
+                     osCommand.c_str());
             return OGRERR_FAILURE;
         }
     }
@@ -1888,43 +1912,46 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
     {
         oField.SetUnique(poNewFieldDefn->IsUnique());
 
-        osCommand.Printf("ALTER TABLE %s ADD UNIQUE (%s)", pszSqlTableName,
+        osCommand.Printf(
+            "ALTER TABLE %s ADD UNIQUE (%s)", pszSqlTableName,
             OGRDAMENGEscapeColumnName(poFieldDefn->GetNameRef()).c_str());
 
         eErr = oCommand.Execute(osCommand);
         if (eErr != CE_None)
         {
             CPLError(CE_Failure, CPLE_AppDefined, "%s Failed!",
-                osCommand.c_str());
+                     osCommand.c_str());
             return OGRERR_FAILURE;
         }
     }
     else if ((nFlagsIn & ALTER_UNIQUE_FLAG) && poFieldDefn->IsUnique() &&
-        !poNewFieldDefn->IsUnique())
+             !poNewFieldDefn->IsUnique())
     {
         oField.SetUnique(TRUE);
         CPLError(CE_Warning, CPLE_NotSupported,
-            "Dropping a UNIQUE constraint is not supported currently");
+                 "Dropping a UNIQUE constraint is not supported currently");
     }
 
     if ((nFlagsIn & ALTER_DEFAULT_FLAG) &&
         ((poFieldDefn->GetDefault() == nullptr &&
-            poNewFieldDefn->GetDefault() != nullptr) ||
-            (poFieldDefn->GetDefault() != nullptr &&
-                poNewFieldDefn->GetDefault() == nullptr) ||
-            (poFieldDefn->GetDefault() != nullptr &&
-                poNewFieldDefn->GetDefault() != nullptr &&
-                strcmp(poFieldDefn->GetDefault(), poNewFieldDefn->GetDefault()) !=
-                0)))
+          poNewFieldDefn->GetDefault() != nullptr) ||
+         (poFieldDefn->GetDefault() != nullptr &&
+          poNewFieldDefn->GetDefault() == nullptr) ||
+         (poFieldDefn->GetDefault() != nullptr &&
+          poNewFieldDefn->GetDefault() != nullptr &&
+          strcmp(poFieldDefn->GetDefault(), poNewFieldDefn->GetDefault()) !=
+              0)))
     {
         oField.SetDefault(poNewFieldDefn->GetDefault());
 
         if (poNewFieldDefn->GetDefault() == nullptr)
-            osCommand.Printf("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT", pszSqlTableName,
+            osCommand.Printf(
+                "ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT", pszSqlTableName,
                 OGRDAMENGEscapeColumnName(poFieldDefn->GetNameRef()).c_str());
         else
             osCommand.Printf(
-                "ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s", pszSqlTableName,
+                "ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s",
+                pszSqlTableName,
                 OGRDAMENGEscapeColumnName(poFieldDefn->GetNameRef()).c_str(),
                 poFieldDefn->GetDefault());
 
@@ -1932,7 +1959,7 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
         if (eErr != CE_None)
         {
             CPLError(CE_Failure, CPLE_AppDefined, "%s Failed!",
-                osCommand.c_str());
+                     osCommand.c_str());
             return OGRERR_FAILURE;
         }
     }
@@ -1942,21 +1969,22 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
         if (EQUAL(oField.GetNameRef(), "oid"))
         {
             CPLError(CE_Warning, CPLE_AppDefined,
-                "Renaming field 'oid' to 'oid_' to avoid conflict with "
-                "internal oid field.");
+                     "Renaming field 'oid' to 'oid_' to avoid conflict with "
+                     "internal oid field.");
             oField.SetName("oid_");
         }
 
         if (strcmp(poFieldDefn->GetNameRef(), oField.GetNameRef()) != 0)
         {
-            osCommand.Printf("ALTER TABLE %s RENAME COLUMN %s TO %s", pszSqlTableName,
+            osCommand.Printf(
+                "ALTER TABLE %s RENAME COLUMN %s TO %s", pszSqlTableName,
                 OGRDAMENGEscapeColumnName(poFieldDefn->GetNameRef()).c_str(),
                 OGRDAMENGEscapeColumnName(oField.GetNameRef()).c_str());
             eErr = oCommand.Execute(osCommand);
             if (eErr != CE_None)
             {
                 CPLError(CE_Failure, CPLE_AppDefined, "%s Failed!",
-                    osCommand.c_str());
+                         osCommand.c_str());
                 return OGRERR_FAILURE;
             }
         }
@@ -1989,7 +2017,7 @@ OGRErr OGRDAMENGTableLayer::AlterFieldDefn(int iField,
 /*                             GetFeature()                             */
 /************************************************************************/
 
-OGRFeature* OGRDAMENGTableLayer::GetFeature(GIntBig nFeatureId)
+OGRFeature *OGRDAMENGTableLayer::GetFeature(GIntBig nFeatureId)
 
 {
     GetLayerDefn()->GetFieldCount();
@@ -2000,56 +2028,60 @@ OGRFeature* OGRDAMENGTableLayer::GetFeature(GIntBig nFeatureId)
     /* -------------------------------------------------------------------- */
     /*      Issue query for a single record.                                */
     /* -------------------------------------------------------------------- */
-    OGRFeature* poFeature = nullptr;
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRFeature *poFeature = nullptr;
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLErr eErr;
     CPLString osFieldList = BuildFields();
     CPLString osCommand;
 
     osCommand.Printf("SELECT %s FROM %s WHERE %s = " CPL_FRMT_GIB,
-        osFieldList.c_str(), pszSqlTableName,
-        OGRDAMENGEscapeColumnName(pszFIDColumn).c_str(), nFeatureId);
+                     osFieldList.c_str(), pszSqlTableName,
+                     OGRDAMENGEscapeColumnName(pszFIDColumn).c_str(),
+                     nFeatureId);
 
     eErr = oCommand.Excute_for_fetchmany(osCommand);
     if (eErr == CE_None)
     {
         sdint8 g_rows = 0;
-        DPIRETURN rt;
-        rt = dpi_row_count(*(oCommand.GetStatement()), &g_rows);
-
+        if (!DSQL_SUCCEEDED(dpi_row_count(*(oCommand.GetStatement()), &g_rows)))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "DeleteFeature() DELETE statement failed.");
+            return nullptr;
+        }
         if (g_rows > 0)
         {
-            result = oCommand.Fetchmany((ulength*)&g_rows);
-            int* panTempMapFieldNameToIndex = nullptr;
-            int* panTempMapFieldNameToGeomIndex = nullptr;
+            result = oCommand.Fetchmany((ulength *)&g_rows);
+            int *panTempMapFieldNameToIndex = nullptr;
+            int *panTempMapFieldNameToGeomIndex = nullptr;
             CreateMapFromFieldNameToIndex(&oCommand, poFeatureDefn,
-                panTempMapFieldNameToIndex,
-                panTempMapFieldNameToGeomIndex);
+                                          panTempMapFieldNameToIndex,
+                                          panTempMapFieldNameToGeomIndex);
             poFeature = RecordToFeature(&oCommand, panTempMapFieldNameToIndex,
-                panTempMapFieldNameToGeomIndex, 0);
+                                        panTempMapFieldNameToGeomIndex, 0);
             CPLFree(panTempMapFieldNameToIndex);
             CPLFree(panTempMapFieldNameToGeomIndex);
             if (poFeature && iFIDAsRegularColumnIndex >= 0)
             {
                 poFeature->SetField(iFIDAsRegularColumnIndex,
-                    poFeature->GetFID());
+                                    poFeature->GetFID());
             }
 
             if (g_rows > 1)
             {
                 CPLError(CE_Warning, CPLE_AppDefined,
-                    "%d rows in response to the WHERE %s = " CPL_FRMT_GIB
-                    " clause !",
-                    g_rows, pszFIDColumn, nFeatureId);
+                         "%d rows in response to the WHERE %s = " CPL_FRMT_GIB
+                         " clause !",
+                         g_rows, pszFIDColumn, nFeatureId);
             }
         }
         else
         {
             CPLError(CE_Failure, CPLE_AppDefined,
-                "Attempt to read feature with unknown feature id "
-                "(" CPL_FRMT_GIB ").",
-                nFeatureId);
+                     "Attempt to read feature with unknown feature id "
+                     "(" CPL_FRMT_GIB ").",
+                     nFeatureId);
         }
         /*sdint2 nParams;
         rt = dpi_number_params(oCommand.GetStatement(), &nParams);
@@ -2105,16 +2137,16 @@ GIntBig OGRDAMENGTableLayer::GetFeatureCount(int bForce)
     /*      After all someone else could be adding records from another     */
     /*      application when working against a database.                    */
     /* -------------------------------------------------------------------- */
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLString osCommand;
     GIntBig nCount = 0;
 
     osCommand.Printf("SELECT count(*) FROM %s %s", pszSqlTableName,
-        osWHERE.c_str());
+                     osWHERE.c_str());
 
     CPLErr rt = oCommand.Execute(osCommand);
-    char** hResult = oCommand.SimpleFetchRow();
+    char **hResult = oCommand.SimpleFetchRow();
     if (hResult != nullptr && DSQL_SUCCEEDED(rt))
         nCount = CPLAtoGIntBig(hResult[0]);
     else
@@ -2124,16 +2156,15 @@ GIntBig OGRDAMENGTableLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                             ResolveSRID()                            */
+/*                            ResolveSRID()                             */
 /************************************************************************/
 
-void OGRDAMENGTableLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn* poGFldDefn)
+void OGRDAMENGTableLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn)
 
 {
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLString osCommand;
-    DPIRETURN rt;
     udint2 nParams;
 
     int nSRSId = poDS->GetUndefinedSRID();
@@ -2144,28 +2175,31 @@ void OGRDAMENGTableLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn* poGFldDefn)
     }
 
     osCommand.Printf("SELECT srid FROM SYSGEO2.GEOMETRY_COLUMNS "
-        "WHERE f_table_name = '%s' AND "
-        "f_geometry_column = '%s'",
-        pszTableName, poGFldDefn->GetNameRef());
+                     "WHERE f_table_name = '%s' AND "
+                     "f_geometry_column = '%s'",
+                     pszTableName, poGFldDefn->GetNameRef());
 
     osCommand +=
         CPLString().Printf(" AND f_table_schema = '%s'", pszSchemaName);
 
     CPLErr eErr = oCommand.Execute(osCommand);
-    rt = dpi_number_params(oCommand.GetStatement(), &nParams);
-    char** hResult = oCommand.SimpleFetchRow();
-
-    if (eErr == CE_None && DSQL_SUCCEEDED(rt) && nParams == 1)
+    if (eErr != CE_None ||
+        !DSQL_SUCCEEDED(dpi_number_params(oCommand.GetStatement(), &nParams)))
     {
-        nSRSId = atoi(hResult[0]);
+        CPLError(CE_Failure, CPLE_AppDefined, "failed to get params numbers");
+        return;
     }
+    char **hResult = oCommand.SimpleFetchRow();
+
+    if (nParams == 1)
+        nSRSId = atoi(hResult[0]);
 
     /* SRID = 0 can also mean that there's no constraint */
     /* so we need to fetch from values */
     /* We assume that all geometry of this column have identical SRID */
     if (nSRSId <= 0 && poGFldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY)
     {
-        const char* psGetSRIDFct = "DMGEO2.ST_SRID";
+        const char *psGetSRIDFct = "DMGEO2.ST_SRID";
 
         CPLString osGetSRID;
         osGetSRID += "SELECT ";
@@ -2178,10 +2212,16 @@ void OGRDAMENGTableLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn* poGFldDefn)
         osGetSRID += OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
         osGetSRID += " IS NOT NULL) LIMIT 1";
 
-        eErr = oCommand.Execute(osCommand);
-        rt = dpi_number_params(oCommand.GetStatement(), &nParams);
+        eErr = oCommand.Execute(osGetSRID);
+        if (eErr != CE_None || !DSQL_SUCCEEDED(dpi_number_params(
+                                   oCommand.GetStatement(), &nParams)))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "failed to get params numbers");
+            return;
+        }
         hResult = oCommand.SimpleFetchRow();
-        if (hResult && eErr == CE_None && DSQL_SUCCEEDED(rt) && nParams == 1)
+        if (hResult && nParams == 1)
         {
             nSRSId = atoi(hResult[0]);
         }
@@ -2191,11 +2231,11 @@ void OGRDAMENGTableLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn* poGFldDefn)
 }
 
 /************************************************************************/
-/*                    CheckGeomTypeCompatibility()                      */
+/*                     CheckGeomTypeCompatibility()                     */
 /************************************************************************/
 
 void OGRDAMENGTableLayer::CheckGeomTypeCompatibility(int iGeomField,
-    OGRGeometry* poGeom)
+                                                     OGRGeometry *poGeom)
 {
     if (bHasWarnedIncompatibleGeom)
         return;
@@ -2209,33 +2249,34 @@ void OGRDAMENGTableLayer::CheckGeomTypeCompatibility(int iGeomField,
 
     if (eFlatLayerGeomType == wkbGeometryCollection)
         bHasWarnedIncompatibleGeom = eFlatGeomType != wkbMultiPoint &&
-        eFlatGeomType != wkbMultiLineString &&
-        eFlatGeomType != wkbMultiPolygon &&
-        eFlatGeomType != wkbGeometryCollection;
+                                     eFlatGeomType != wkbMultiLineString &&
+                                     eFlatGeomType != wkbMultiPolygon &&
+                                     eFlatGeomType != wkbGeometryCollection;
     else
         bHasWarnedIncompatibleGeom = (eFlatGeomType != eFlatLayerGeomType);
 
     if (bHasWarnedIncompatibleGeom)
     {
         CPLError(CE_Warning, CPLE_AppDefined,
-            "Geometry to be inserted is of type %s, whereas the layer "
-            "geometry type is %s.\n"
-            "Insertion is likely to fail",
-            OGRGeometryTypeToName(poGeom->getGeometryType()),
-            OGRGeometryTypeToName(eExpectedGeomType));
+                 "Geometry to be inserted is of type %s, whereas the layer "
+                 "geometry type is %s.\n"
+                 "Insertion is likely to fail",
+                 OGRGeometryTypeToName(poGeom->getGeometryType()),
+                 OGRGeometryTypeToName(eExpectedGeomType));
     }
 }
 
 /************************************************************************/
-/*                        SetOverrideColumnTypes()                      */
+/*                       SetOverrideColumnTypes()                       */
 /************************************************************************/
 
-void OGRDAMENGTableLayer::SetOverrideColumnTypes(const char* pszOverrideColumnTypes)
+void OGRDAMENGTableLayer::SetOverrideColumnTypes(
+    const char *pszOverrideColumnTypes)
 {
     if (pszOverrideColumnTypes == nullptr)
         return;
 
-    const char* pszIter = pszOverrideColumnTypes;
+    const char *pszIter = pszOverrideColumnTypes;
     CPLString osCur;
     while (*pszIter != '\0')
     {
@@ -2269,7 +2310,7 @@ void OGRDAMENGTableLayer::SetOverrideColumnTypes(const char* pszOverrideColumnTy
     }
     if (!osCur.empty())
         papszOverrideColumnTypes =
-        CSLAddString(papszOverrideColumnTypes, osCur);
+            CSLAddString(papszOverrideColumnTypes, osCur);
 }
 
 /************************************************************************/
@@ -2279,7 +2320,7 @@ void OGRDAMENGTableLayer::SetOverrideColumnTypes(const char* pszOverrideColumnTy
 /*      if bForce == 0                                                  */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::IGetExtent(int iGeomField, OGREnvelope* psExtent,
+OGRErr OGRDAMENGTableLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
                                        bool bForce)
 {
     CPLString osCommand;
@@ -2290,12 +2331,12 @@ OGRErr OGRDAMENGTableLayer::IGetExtent(int iGeomField, OGREnvelope* psExtent,
         if (iGeomField != 0)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
-                "Invalid geometry field index : %d", iGeomField);
+                     "Invalid geometry field index : %d", iGeomField);
         }
         return OGRERR_FAILURE;
     }
 
-    OGRDAMENGGeomFieldDefn* poGeomFieldDefn =
+    OGRDAMENGGeomFieldDefn *poGeomFieldDefn =
         poFeatureDefn->GetGeomFieldDefn(iGeomField);
 
     if (bForce == 0 && poGeomFieldDefn->eDAMENGGeoType != GEOM_TYPE_GEOGRAPHY)
@@ -2316,18 +2357,18 @@ OGRErr OGRDAMENGTableLayer::IGetExtent(int iGeomField, OGREnvelope* psExtent,
 }
 
 /************************************************************************/
-/*                           Rename()                                   */
+/*                               Rename()                               */
 /************************************************************************/
 
-OGRErr OGRDAMENGTableLayer::Rename(const char* pszNewName)
+OGRErr OGRDAMENGTableLayer::Rename(const char *pszNewName)
 {
     ResetReading();
 
-    char* pszNewSqlTableName = CPLStrdup(OGRDAMENGEscapeColumnName(pszNewName));
-    OGRDAMENGConn* hDAMENGConn = poDS->GetDAMENGConn();
+    char *pszNewSqlTableName = CPLStrdup(OGRDAMENGEscapeColumnName(pszNewName));
+    OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     CPLString osCommand;
     osCommand.Printf("ALTER TABLE %s RENAME TO %s", pszSqlTableName,
-        pszNewSqlTableName);
+                     pszNewSqlTableName);
     OGRDAMENGStatement oCommand(hDAMENGConn);
     CPLErr rt = oCommand.Execute(osCommand);
 

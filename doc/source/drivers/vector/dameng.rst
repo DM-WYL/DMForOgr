@@ -1,7 +1,7 @@
 .. _vector.dameng:
 
 Dameng (DM)
-=====
+===========
 
 .. shortname:: Dameng
 
@@ -13,19 +13,19 @@ This driver implements read and write access for spatial data in
 The connection string supports specific extensions for performance tuning and schema selection:
 Basic Format: DAMENG:"username/password@host:port"
 
-Schema Selection: Append ?schema_name to the end of the connection string to specify the target schema.
+Schema Selection: Append ?SCHEMA=schema_name to the end of the connection string to specify the target schema.
 
-Example: DAMENG:"SYSDBA/Password_123@localhost:5236?MY_SCHEMA"
+Example: DAMENG:"SYSDBA/Password_123@localhost:5236?SCHEMA=MY_SCHEMA"
 
 Batch Insert Size: Append ;batch_size after the port (or after the schema if specified) to enable batch insertion.(default 1)
-Syntax: ...@host:port;N or ...@host:port?schema;N
+Syntax: ...@host:port;N or ...@host:port?SCHEMA=schema;N
 
 Where N is the number of rows to insert in a single batch.
 Note: Enabling batch insertion significantly improves data loading efficiency but requires sufficient server memory and CPU resources. If the machine performance is insufficient, reducing the batch size or disabling this feature is recommended.
 
 Example (Batch of 1000 rows): DAMENG:"SYSDBA/Password_123@localhost:5236;1000"
 
-Example (Schema + Batch): DAMENG:"SYSDBA/Password_123@localhost:5236?MY_SCHEMA;500"
+Example (Schema + Batch): DAMENG:"SYSDBA/Password_123@localhost:5236?SCHEMA=MY_SCHEMA;500"
 
 If no schema is specified, the default schema associated with the user login is used.
 
@@ -137,7 +137,7 @@ and enabling batch insertion of 1000 rows at a time.
 
 ::
 
-   DAMENG:"SYSDBA/Password_123@localhost:5236?TEST_SCHEMA;1000"
+   DAMENG:"SYSDBA/Password_123@localhost:5236?SCHEMA=TEST_SCHEMA;1000"
 
 The following example uses ogr2ogr to copy the world_borders layer from a shapefile
 into a Dameng table. It targets the default schema, overwrites the existing table
@@ -153,7 +153,7 @@ The following example uses ogrinfo to return summary information about the
 
 ::
 
-   ogrinfo "DAMENG:SYSDBA/Password_123@localhost:5236?DATA_SCHEMA" borders_dm -so
+   ogrinfo "DAMENG:SYSDBA/Password_123@localhost:5236?SCHEMA=DATA_SCHEMA" borders_dm -so
 
        Layer name: borders_dm
        Geometry: Polygon

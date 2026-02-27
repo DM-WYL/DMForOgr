@@ -30,18 +30,19 @@
 #include "cpl_conv.h"
 
 /************************************************************************/
-/*                          OGRGetDAMENGConnection()                        */
+/*                       OGRGetDAMENGConnection()                       */
 /************************************************************************/
 
-OGRDAMENGConn* OGRGetDAMENGConnection(const char* pszUserid,
-                              const char* pszPassword,
-                              const char* pszDatabase,
-                              const char *pszSchemaName)
+OGRDAMENGConn *OGRGetDAMENGConnection(const char *pszUserid,
+                                      const char *pszPassword,
+                                      const char *pszDatabase,
+                                      const char *pszSchemaName)
 {
     OGRDAMENGConn *poConnection;
 
     poConnection = new OGRDAMENGConn();
-    if (poConnection->EstablishConn(pszUserid, pszPassword, pszDatabase, pszSchemaName))
+    if (poConnection->EstablishConn(pszUserid, pszPassword, pszDatabase,
+                                    pszSchemaName))
         return poConnection;
     else
     {
@@ -51,7 +52,7 @@ OGRDAMENGConn* OGRGetDAMENGConnection(const char* pszUserid,
 }
 
 /************************************************************************/
-/*                          OGRDAMENGSession()                              */
+/*                          OGRDAMENGSession()                          */
 /************************************************************************/
 
 OGRDAMENGConn::OGRDAMENGConn()
@@ -65,14 +66,12 @@ OGRDAMENGConn::OGRDAMENGConn()
 }
 
 /************************************************************************/
-/*                          ~OGRDAMENGSession()                             */
+/*                         ~OGRDAMENGSession()                          */
 /************************************************************************/
 
 OGRDAMENGConn::~OGRDAMENGConn()
 {
-    DPIRETURN rt;
-    rt = dpi_commit(hCon);
-    if (!DSQL_SUCCEEDED(rt))
+    if (!DSQL_SUCCEEDED(dpi_commit(hCon)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to commit!");
     }
@@ -87,23 +86,19 @@ OGRDAMENGConn::~OGRDAMENGConn()
 /************************************************************************/
 /*                          EstablishSession()                          */
 /************************************************************************/
-int OGRDAMENGConn::EstablishConn(const char* pszUseridIn,
-                             const char* pszPasswordIn,
-                             const char *pszDatabaseIn,
-                             const char *pszSchemaName)
+int OGRDAMENGConn::EstablishConn(const char *pszUseridIn,
+                                 const char *pszPasswordIn,
+                                 const char *pszDatabaseIn,
+                                 const char *pszSchemaName)
 {
-    DPIRETURN rt;
-
-    rt = dpi_alloc_env(&hEnv);
-    if (!DSQL_SUCCEEDED(rt))
+    if (!DSQL_SUCCEEDED(dpi_alloc_env(&hEnv)))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "failed to alloc environment handle!");
         return FALSE;
     }
 
-    rt = dpi_alloc_con(hEnv, &hCon);
-    if (!DSQL_SUCCEEDED(rt))
+    if (!DSQL_SUCCEEDED(dpi_alloc_con(hEnv, &hCon)))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "failed to alloc connection handle");
@@ -112,24 +107,24 @@ int OGRDAMENGConn::EstablishConn(const char* pszUseridIn,
 
     if (strlen(pszSchemaName))
     {
-        rt = dpi_set_con_attr(hCon, DSQL_ATTR_CURRENT_SCHEMA,
-                              (sdbyte *)pszSchemaName, (sdint4)strlen(pszSchemaName));
-        if (!DSQL_SUCCEEDED(rt))
+        if (!DSQL_SUCCEEDED(dpi_set_con_attr(hCon, DSQL_ATTR_CURRENT_SCHEMA,
+                                             (sdbyte *)pszSchemaName,
+                                             (sdint4)strlen(pszSchemaName))))
         {
             CPLError(CE_Failure, CPLE_AppDefined, "failed to set con_attr");
             return FALSE;
         }
     }
-    
-    rt = dpi_login(hCon, (sdbyte *)pszDatabaseIn, (sdbyte *)pszUseridIn,
-                   (sdbyte *)pszPasswordIn);
-    if (!DSQL_SUCCEEDED(rt))
+
+    if (!DSQL_SUCCEEDED(dpi_login(hCon, (sdbyte *)pszDatabaseIn,
+                                  (sdbyte *)pszUseridIn,
+                                  (sdbyte *)pszPasswordIn)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to login");
         return FALSE;
     }
-    rt = dpi_set_con_attr(hCon, DSQL_ATTR_AUTOCOMMIT, DSQL_AUTOCOMMIT_OFF, 0);
-    if (!DSQL_SUCCEEDED(rt))
+    if (!DSQL_SUCCEEDED(dpi_set_con_attr(hCon, DSQL_ATTR_AUTOCOMMIT,
+                                         DSQL_AUTOCOMMIT_OFF, 0)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to set con_attr");
         return FALSE;

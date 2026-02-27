@@ -30,9 +30,8 @@
 #include "cpl_conv.h"
 #include "ogr_p.h"
 
-
 /************************************************************************/
-/*                           OGRDAMENGLayer()                               */
+/*                           OGRDAMENGLayer()                           */
 /************************************************************************/
 
 OGRDAMENGLayer::OGRDAMENGLayer()
@@ -47,7 +46,7 @@ OGRDAMENGLayer::OGRDAMENGLayer()
 }
 
 /************************************************************************/
-/*                            ~OGRDAMENGLayer()                             */
+/*                          ~OGRDAMENGLayer()                           */
 /************************************************************************/
 
 OGRDAMENGLayer::~OGRDAMENGLayer()
@@ -94,10 +93,9 @@ void OGRDAMENGLayer::ResetReading()
 /*      a feature.                                                      */
 /************************************************************************/
 
-OGRFeature *OGRDAMENGLayer::RecordToFeature(OGRDAMENGStatement *hStmt,
-                                        const int *panMapFieldNameToIndex,
-                                        const int *panMapFieldNameToGeomIndex,
-                                        int iRecord)
+OGRFeature *OGRDAMENGLayer::RecordToFeature(
+    OGRDAMENGStatement *hStmt, const int *panMapFieldNameToIndex,
+    const int *panMapFieldNameToGeomIndex, int iRecord)
 {
     OGRFeature *poFeature = new OGRFeature(poFeatureDefn);
     sdint2 rs_deci = 0;
@@ -106,7 +104,6 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(OGRDAMENGStatement *hStmt,
     sdint2 rs_type = 0;
     sdint2 rs_name_len = 0;
     sdint2 name_max = 200;
-    DPIRETURN rt;
 
     poFeature->SetFID(iNextShapeId);
     m_nFeaturesRead++;
@@ -117,13 +114,13 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(OGRDAMENGStatement *hStmt,
     for (int iField = 0; iField < hStmt->GetColCount(); iField++)
     {
         sdbyte pszFieldName[200];
-        rt = dpi_desc_column(*hStmt->GetStatement(), (sdint2)iField + 1,
-                             pszFieldName, name_max, &rs_name_len, &rs_type,
-                             &rs_size, &rs_deci, &rs_null);
-        if (!DSQL_SUCCEEDED(rt))
+
+        if (!DSQL_SUCCEEDED(dpi_desc_column(*hStmt->GetStatement(),
+                                            (sdint2)iField + 1, pszFieldName,
+                                            name_max, &rs_name_len, &rs_type,
+                                            &rs_size, &rs_deci, &rs_null)))
         {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "Error!");
+            CPLError(CE_Failure, CPLE_AppDefined, "Error!");
             return NULL;
         }
         char *pabyData = result[iField][iRecord];
@@ -199,14 +196,16 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(OGRDAMENGStatement *hStmt,
                     if (pabyData)
                     {
                         int length;
-                        GByte *pabyEWKB = OGRDAMENGGeoToHexwkb((GSERIALIZED *)pabyData, &length);
+                        GByte *pabyEWKB = OGRDAMENGGeoToHexwkb(
+                            (GSERIALIZED *)pabyData, &length);
                         if (!pabyEWKB)
                         {
                             CPLError(CE_Failure, CPLE_AppDefined,
-                                "DAMENG:Invalid Input Geometry Data!");
+                                     "DAMENG:Invalid Input Geometry Data!");
                             return NULL;
                         }
-                        poGeometry = OGRGeometryFromEWKB(pabyEWKB, length, nullptr, false);
+                        poGeometry = OGRGeometryFromEWKB(pabyEWKB, length,
+                                                         nullptr, false);
                         CPLFree(pabyEWKB);
                         if (poGeometry != nullptr)
                         {
@@ -245,12 +244,13 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(OGRDAMENGStatement *hStmt,
 }
 
 /************************************************************************/
-/*                    OGRDAMENGIsKnownGeomFuncPrefix()                      */
+/*                   OGRDAMENGIsKnownGeomFuncPrefix()                   */
 /************************************************************************/
 
 static const char *const apszKnownGeomFuncPrefixes[] = {
     "DMGEO2.ST_AsBinary", "DMGEO2.ST_AsEWKT", "DMGEO2.ST_AsEWKB",
     "DMGEO2.ST_AsText"};
+
 static int OGRDAMENGIsKnownGeomFuncPrefix(const char *pszFieldName)
 {
     for (size_t i = 0; i < sizeof(apszKnownGeomFuncPrefixes) / sizeof(char *);
@@ -264,13 +264,12 @@ static int OGRDAMENGIsKnownGeomFuncPrefix(const char *pszFieldName)
 }
 
 /************************************************************************/
-/*                CreateMapFromFieldNameToIndex()                       */
+/*                   CreateMapFromFieldNameToIndex()                    */
 /************************************************************************/
 
-void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(OGRDAMENGStatement *hStmt,
-                                                   OGRFeatureDefn *poFeatureDefn,
-                                                   int *&panMapFieldNameToIndex,
-                                                   int *&panMapFieldNameToGeomIndex)
+void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(
+    OGRDAMENGStatement *hStmt, OGRFeatureDefn *poFeatureDefn,
+    int *&panMapFieldNameToIndex, int *&panMapFieldNameToGeomIndex)
 {
     CPLFree(panMapFieldNameToIndex);
     panMapFieldNameToIndex = nullptr;
@@ -284,11 +283,9 @@ void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(OGRDAMENGStatement *hStmt,
     sdint2 rs_type = 0;
     sdint2 rs_name_len = 0;
     sdint2 name_max = 200;
-    DPIRETURN rt;
     sdint2 nColumns = 0;
 
-    rt = dpi_number_columns(*hStmt->GetStatement(), &nColumns);
-    if (DSQL_SUCCEEDED(rt))
+    if (DSQL_SUCCEEDED(dpi_number_columns(*hStmt->GetStatement(), &nColumns)))
     {
         panMapFieldNameToIndex =
             static_cast<int *>(CPLMalloc(sizeof(int) * nColumns));
@@ -296,9 +293,14 @@ void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(OGRDAMENGStatement *hStmt,
             static_cast<int *>(CPLMalloc(sizeof(int) * nColumns));
         for (int iField = 0; iField < nColumns; iField++)
         {
-            rt = dpi_desc_column(*hStmt->GetStatement(), (sdint2)iField + 1,
-                                 pszName, name_max, &rs_name_len, &rs_type,
-                                 &rs_size, &rs_deci, &rs_null);
+            if (!DSQL_SUCCEEDED(
+                    dpi_desc_column(*hStmt->GetStatement(), (sdint2)iField + 1,
+                                    pszName, name_max, &rs_name_len, &rs_type,
+                                    &rs_size, &rs_deci, &rs_null)))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined, "failed to get col_desc");
+                return;
+            }
             panMapFieldNameToIndex[iField] =
                 poFeatureDefn->GetFieldIndex((const char *)pszName);
             if (panMapFieldNameToIndex[iField] < 0)
@@ -311,8 +313,7 @@ void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(OGRDAMENGStatement *hStmt,
                         OGRDAMENGIsKnownGeomFuncPrefix((const char *)pszName);
                     if (iKnownPrefix >= 0 &&
                         pszName[strlen(
-                            apszKnownGeomFuncPrefixes[iKnownPrefix])] ==
-                            '_')
+                            apszKnownGeomFuncPrefixes[iKnownPrefix])] == '_')
                     {
                         panMapFieldNameToGeomIndex[iField] =
                             poFeatureDefn->GetGeomFieldIndex(
@@ -330,7 +331,7 @@ void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(OGRDAMENGStatement *hStmt,
 }
 
 /************************************************************************/
-/*                     SetInitialQuery()                          */
+/*                          SetInitialQuery()                           */
 /************************************************************************/
 
 void OGRDAMENGLayer::SetInitialQuery()
@@ -342,9 +343,8 @@ void OGRDAMENGLayer::SetInitialQuery()
 
     CPLAssert(pszQueryStatement != nullptr);
     osCommand.Printf("%s", pszQueryStatement);
-    CPLErr rt = poStatement->Excute_for_fetchmany(osCommand.c_str());
 
-    if (!DSQL_SUCCEEDED(rt))
+    if (!DSQL_SUCCEEDED(poStatement->Excute_for_fetchmany(osCommand.c_str())))
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "DAMENG:Execute command failure!");
@@ -377,7 +377,7 @@ OGRFeature *OGRDAMENGLayer::GetNextRawFeature()
     {
         poFeature = RecordToFeature(poStatement, m_panMapFieldNameToIndex,
                                     m_panMapFieldNameToGeomIndex,
-                                    (int)(total_rows - rows));
+                                    static_cast<int>(total_rows - rows));
         rows--;
     }
     else if (isfetchall == 0)
@@ -395,7 +395,7 @@ OGRFeature *OGRDAMENGLayer::GetNextRawFeature()
         {
             poFeature = RecordToFeature(poStatement, m_panMapFieldNameToIndex,
                                         m_panMapFieldNameToGeomIndex,
-                                        (int)(total_rows - rows));
+                                        static_cast<int>(total_rows - rows));
             rows--;
         }
     }
@@ -408,6 +408,7 @@ OGRFeature *OGRDAMENGLayer::GetNextRawFeature()
     iNextShapeId++;
     return poFeature;
 }
+
 //
 ///************************************************************************/
 ///*                           SetNextByIndex()                           */
@@ -456,13 +457,13 @@ OGRFeature *OGRDAMENGLayer::GetNextRawFeature()
 //    }
 //
 //    nResultOffset = 0;
-//    iNextShapeId = (int)nIndex;
+//    iNextShapeId = static_cast<int>nIndex;
 //
 //    return OGRERR_NONE;
 //}
 
 /************************************************************************/
-/*                        BlobToGByteArray()                           */
+/*                          BlobToGByteArray()                          */
 /************************************************************************/
 
 GByte *OGRDAMENGLayer::BlobToGByteArray(const char *pszBlob, int *pnLength)
@@ -478,10 +479,10 @@ GByte *OGRDAMENGLayer::BlobToGByteArray(const char *pszBlob, int *pnLength)
 }
 
 /************************************************************************/
-/*                          BlobToGeometry()                           */
+/*                           BlobToGeometry()                           */
 /************************************************************************/
 
-OGRGeometry* OGRDAMENGLayer::BlobToGeometry(const char* pszBlob)
+OGRGeometry *OGRDAMENGLayer::BlobToGeometry(const char *pszBlob)
 
 {
     if (pszBlob == nullptr)
@@ -499,7 +500,7 @@ OGRGeometry* OGRDAMENGLayer::BlobToGeometry(const char* pszBlob)
 }
 
 /************************************************************************/
-/*                        GByteArrayToBlob()                           */
+/*                          GByteArrayToBlob()                          */
 /************************************************************************/
 
 char *OGRDAMENGLayer::GByteArrayToBlob(const GByte *pabyData, size_t nLen)
@@ -531,7 +532,7 @@ char *OGRDAMENGLayer::GByteArrayToBlob(const GByte *pabyData, size_t nLen)
 }
 
 /************************************************************************/
-/*                          GeometryToBlob()                           */
+/*                           GeometryToBlob()                           */
 /************************************************************************/
 
 char *OGRDAMENGLayer::GeometryToBlob(const OGRGeometry *poGeometry)
@@ -565,6 +566,7 @@ char *OGRDAMENGLayer::GeometryToBlob(const OGRGeometry *poGeometry)
 
     return pszTextBuf;
 }
+
 /************************************************************************/
 /*                            GetFIDColumn()                            */
 /************************************************************************/
@@ -592,7 +594,7 @@ OGRErr OGRDAMENGLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
 
     if (iGeomField < 0 || iGeomField >= GetLayerDefn()->GetGeomFieldCount() ||
         CPLAssertNotNull(GetLayerDefn()->GetGeomFieldDefn(iGeomField))
-        ->GetType() == wkbNone)
+                ->GetType() == wkbNone)
     {
         if (iGeomField != 0)
         {
@@ -615,7 +617,9 @@ OGRErr OGRDAMENGLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
     else if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY)
     {
         osCommand.Printf(
-            "SELECT DMGEO2.ST_Extent(DMGEO2.ST_GeomFromWKB(DMGEO2.ST_AsBinary(%s))) FROM %s AS "
+            "SELECT "
+            "DMGEO2.ST_Extent(DMGEO2.ST_GeomFromWKB(DMGEO2.ST_AsBinary(%s))) "
+            "FROM %s AS "
             "ogrdamengextent",
             OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef()).c_str(),
             GetFromClauseForGetExtent().c_str());
@@ -637,15 +641,13 @@ OGRErr OGRDAMENGLayer::IGetExtent(int iGeomField, OGREnvelope *psExtent,
 /*                        RunGetExtentRequest()                         */
 /************************************************************************/
 
-OGRErr OGRDAMENGLayer::RunGetExtentRequest(OGREnvelope &sExtent,
-                                       int bForce,
-                                       CPLString osCommand,
-                                       int bErrorAsDebug)
+OGRErr OGRDAMENGLayer::RunGetExtentRequest(OGREnvelope &sExtent, int bForce,
+                                           CPLString osCommand,
+                                           int bErrorAsDebug)
 {
     OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement *hStmt = new OGRDAMENGStatement(hDAMENGConn);
-    CPLErr eErr = hStmt->Execute(osCommand);
-    if (!hStmt || eErr)
+    if (!hStmt || hStmt->Execute(osCommand))
     {
         CPLDebug("DAMENG", "Unable to get extent by DMGEO2");
         return OGRERR_FAILURE;
@@ -699,7 +701,6 @@ int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
     sdint2 rs_type = 0;
     sdint2 rs_name_len = 0;
     sdint2 name_max = 199;
-    DPIRETURN rt;
     dhdesc desc;
 
     poFeatureDefn = new OGRDAMENGFeatureDefn("sql_statement");
@@ -709,56 +710,59 @@ int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
 
     sdint2 nColumns = 0;
 
-    rt = dpi_number_columns(*hStmt->GetStatement(), &nColumns);
-    if (rt)
+    if (!DSQL_SUCCEEDED(dpi_number_columns(*hStmt->GetStatement(), &nColumns)))
     {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "failed to get col numbers");
+        CPLError(CE_Failure, CPLE_AppDefined, "failed to get col numbers");
         return FALSE;
     }
-    rt = dpi_get_stmt_attr(*hStmt->GetStatement(), DSQL_ATTR_IMP_ROW_DESC,
-                           &desc, sizeof(desc), NULL);
+    if (!DSQL_SUCCEEDED(dpi_get_stmt_attr(*hStmt->GetStatement(),
+                                          DSQL_ATTR_IMP_ROW_DESC, &desc,
+                                          sizeof(desc), NULL)))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "failed to get row_desc");
+        return CE_Failure;
+    }
     for (int iRawField = 0; iRawField < nColumns; iRawField++)
     {
         sdint2 type = 0;
         udint4 obj_classid = 0;
         slength display_size = 0;
 
-        rt = dpi_desc_column(*hStmt->GetStatement(), (sdint2)iRawField + 1,
-                             columnName, name_max, &rs_name_len, &rs_type,
-                             &rs_size, &rs_deci, &rs_null);
-        if (!DSQL_SUCCEEDED(rt))
+        if (!DSQL_SUCCEEDED(dpi_desc_column(*hStmt->GetStatement(),
+                                            (sdint2)iRawField + 1, columnName,
+                                            name_max, &rs_name_len, &rs_type,
+                                            &rs_size, &rs_deci, &rs_null)))
         {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "failed to get col_desc");
+            CPLError(CE_Failure, CPLE_AppDefined, "failed to get col_desc");
             return FALSE;
         }
 
-        rt = dpi_get_desc_field(desc, (sdint2)iRawField + 1,
-                                DSQL_DESC_CONCISE_TYPE, &type, sizeof(sdint2),
-                                NULL);
-        if (!DSQL_SUCCEEDED(rt))
+        if (!DSQL_SUCCEEDED(dpi_get_desc_field(desc, (sdint2)iRawField + 1,
+                                               DSQL_DESC_CONCISE_TYPE, &type,
+                                               sizeof(sdint2), NULL)))
         {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "failed to get type");
+            CPLError(CE_Failure, CPLE_AppDefined, "failed to get type");
             return FALSE;
         }
 
-        rt = dpi_get_desc_field(desc, (sdint2)iRawField + 1,
-                                DSQL_DESC_DISPLAY_SIZE, &display_size,
-                                sizeof(slength), NULL);
-        if (!DSQL_SUCCEEDED(rt))
+        if (!DSQL_SUCCEEDED(dpi_get_desc_field(
+                desc, (sdint2)iRawField + 1, DSQL_DESC_DISPLAY_SIZE,
+                &display_size, sizeof(slength), NULL)))
         {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "failed to get display_size");
+            CPLError(CE_Failure, CPLE_AppDefined, "failed to get display_size");
             return FALSE;
         }
 
         if (type == DSQL_CLASS)
         {
-            rt = dpi_get_desc_field(desc, (sdint2)iRawField + 1,
-                                    DSQL_DESC_OBJ_CLASSID, &obj_classid,
-                                    sizeof(udint4), NULL);
+            if (!DSQL_SUCCEEDED(dpi_get_desc_field(
+                    desc, (sdint2)iRawField + 1, DSQL_DESC_OBJ_CLASSID,
+                    &obj_classid, sizeof(udint4), NULL)))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "failed to get display_size");
+                return FALSE;
+            }
         }
         OGRFieldDefn oField((const char *)columnName, OFTString);
         oField.SetNullable(rs_null);
@@ -776,13 +780,13 @@ int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
             pszFIDColumn = CPLStrdup(oField.GetNameRef());
             continue;
         }
-        else if ((iGeomFuncPrefix =
-                      OGRDAMENGIsKnownGeomFuncPrefix(oField.GetNameRef())) >= 0 ||
+        else if ((iGeomFuncPrefix = OGRDAMENGIsKnownGeomFuncPrefix(
+                      oField.GetNameRef())) >= 0 ||
                  (obj_classid >= NDCT_CLSID_GEO2_ST_GEOMETRY &&
                   obj_classid <= NDCT_CLSID_GEO2_ST_GEOGRAPHY))
         {
-            auto poGeomFieldDefn =
-                std::make_unique<OGRDAMENGGeomFieldDefn>(this, oField.GetNameRef());
+            auto poGeomFieldDefn = std::make_unique<OGRDAMENGGeomFieldDefn>(
+                this, oField.GetNameRef());
             if (iGeomFuncPrefix >= 0 &&
                 oField.GetNameRef()[strlen(
                     apszKnownGeomFuncPrefixes[iGeomFuncPrefix])] == '_')
@@ -827,7 +831,7 @@ int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
                  rs_type == DSQL_VARCHAR)
         {
             oField.SetType(OFTString);
-            oField.SetWidth((int)display_size);
+            oField.SetWidth(static_cast<int>(display_size));
         }
         else if (rs_type == DSQL_BIT)
         {
@@ -864,12 +868,12 @@ int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
             {
                 oField.SetType((rs_size < 10) ? OFTInteger : OFTInteger64);
                 if (rs_size < 38)
-                    oField.SetWidth((int)rs_size);
+                    oField.SetWidth(static_cast<int>(rs_size));
             }
             else
             {
                 oField.SetType(OFTReal);
-                oField.SetWidth((int)rs_size);
+                oField.SetWidth(static_cast<int>(rs_size));
                 oField.SetPrecision(rs_deci);
             }
         }
@@ -900,7 +904,7 @@ int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
 }
 
 /************************************************************************/
-/*                          GetSpatialRef()                             */
+/*                           GetSpatialRef()                            */
 /************************************************************************/
 const OGRSpatialReference *OGRDAMENGGeomFieldDefn::GetSpatialRef() const
 {
@@ -925,8 +929,7 @@ const OGRSpatialReference *OGRDAMENGGeomFieldDefn::GetSpatialRef() const
 /************************************************************************/
 
 void OGRDAMENGCommonAppendFieldValue(CPLString &osCommand,
-                                 OGRFeature *poFeature,
-                                 int i)
+                                     OGRFeature *poFeature, int i)
 {
     if (poFeature->IsFieldNull(i))
     {
@@ -938,10 +941,6 @@ void OGRDAMENGCommonAppendFieldValue(CPLString &osCommand,
     OGRFieldType nOGRFieldType = poFeatureDefn->GetFieldDefn(i)->GetType();
     OGRFieldSubType eSubType = poFeatureDefn->GetFieldDefn(i)->GetSubType();
 
-    // Flag indicating NULL or not-a-date date value
-    // e.g. 0000-00-00 - there is no year 0
-    bool bIsDateNull = false;
-
     const char *pszStrValue = poFeature->GetFieldAsString(i);
 
     // Check if date is NULL: 0000-00-00
@@ -950,7 +949,6 @@ void OGRDAMENGCommonAppendFieldValue(CPLString &osCommand,
         if (STARTS_WITH_CI(pszStrValue, "0000"))
         {
             pszStrValue = "NULL";
-            bIsDateNull = true;
         }
     }
     else if (nOGRFieldType == OFTReal)

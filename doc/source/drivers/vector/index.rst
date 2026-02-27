@@ -30,6 +30,7 @@ Vector drivers
    carto
    csv
    csw
+   dameng
    dgn
    dgnv8
    dwg

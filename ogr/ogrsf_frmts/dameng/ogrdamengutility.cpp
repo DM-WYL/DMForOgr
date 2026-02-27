@@ -47,12 +47,11 @@ char *strToupper(char *str)
 }
 
 /************************************************************************/
-/*                       OGRDAMENGCommonLayerGetType()                      */
+/*                    OGRDAMENGCommonLayerGetType()                     */
 /************************************************************************/
 
 CPLString OGRDAMENGCommonLayerGetType(OGRFieldDefn &oField,
-                                  bool bPreservePrecision,
-                                  bool bApproxOK)
+                                      bool bPreservePrecision, bool bApproxOK)
 {
     const char *pszFieldType = "";
 
@@ -133,7 +132,7 @@ CPLString OGRDAMENGCommonLayerGetType(OGRFieldDefn &oField,
 }
 
 /************************************************************************/
-/*                           OGRDAMENGCheckType()                           */
+/*                         OGRDAMENGCheckType()                         */
 /************************************************************************/
 
 OGRwkbGeometryType OGRDAMENGCheckType(int typid)

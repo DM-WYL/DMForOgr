@@ -172,6 +172,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "CURL_CA_BUNDLE", // from cpl_http.cpp
    "DGN_LINK_FORMAT", // from ogrdgnlayer.cpp
    "DISABLE_OPEN_REAL_NETCDF_FILES", // from netcdfdataset.cpp, netcdfdrivercore.cpp
+   "DM_USE_TEXT", // from ogrdamengstatement.cpp, ogrdamengtablelayer.cpp
    "DRIVER_WISHED", // from test_ogrsf.cpp
    "DTED_APPLY_PIXEL_IS_POINT", // from dteddataset.cpp
    "DTED_ASSUME_CONFORMANT", // from dted_api.c
@@ -847,7 +848,7 @@ constexpr static const char* const apszKnownConfigOptions[] =
    "OGR_TABLE_LIMIT", // from ogrgeopackagedatasource.cpp
    "OGR_TILEDB_OPTIMIZED_ATTRIBUTE_FILTER", // from tiledbsparse.cpp
    "OGR_TILEDB_WRITE_GEOMETRY_ATTRIBUTE_NAME", // from tiledbsparse.cpp
-   "OGR_TRUNCATE", // from ogrpgtablelayer.cpp
+   "OGR_TRUNCATE", // from ogrdamengtablelayer.cpp, ogrpgtablelayer.cpp
    "OGR_VFK_DB_DELETE", // from vfkreadersqlite.cpp
    "OGR_VFK_DB_NAME", // from vfkreadersqlite.cpp
    "OGR_VFK_DB_OVERWRITE", // from vfkreadersqlite.cpp

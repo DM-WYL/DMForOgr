@@ -1,15 +1,15 @@
 add_gdal_driver(
   TARGET ogr_DAMENG
   SOURCES ogrdamengdatasource.cpp
-	      ogrdamengconnection.cpp
-	      ogr_dameng.h
+          ogrdamengconnection.cpp
+          ogr_dameng.h
           ogrdamengdriver.cpp
           ogrdamenglayer.cpp
-	      ogrdamengstatement.cpp
+          ogrdamengstatement.cpp
           ogrdamengresultlayer.cpp
           ogrdamengtablelayer.cpp
           ogrdamengutility.cpp
-	      ogrdamengtransform.cpp
+          ogrdamengtransform.cpp
           PLUGIN_CAPABLE)
 gdal_standard_includes(ogr_DAMENG)
 

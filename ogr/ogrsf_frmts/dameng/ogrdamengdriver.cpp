@@ -29,7 +29,7 @@
 #include "ogr_dameng.h"
 
 /************************************************************************/
-/*                         OGRDAMENGDriverIdentify()                        */
+/*                      OGRDAMENGDriverIdentify()                       */
 /************************************************************************/
 
 static int OGRDAMENGDriverIdentify(GDALOpenInfo *poOpenInfo)
@@ -38,7 +38,7 @@ static int OGRDAMENGDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                           OGRDAMENGDriverOpen()                          */
+/*                        OGRDAMENGDriverOpen()                         */
 /************************************************************************/
 
 static GDALDataset *OGRDAMENGDriverOpen(GDALOpenInfo *poOpenInfo)
@@ -62,15 +62,13 @@ static GDALDataset *OGRDAMENGDriverOpen(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
-/*                         OGRDAMENGDriverCreate()                          */
+/*                       OGRDAMENGDriverCreate()                        */
 /************************************************************************/
 
-static GDALDataset *OGRDAMENGDriverCreate(const char *pszName,
-                                      CPL_UNUSED int nBands,
-                                      CPL_UNUSED int nXSize,
-                                      CPL_UNUSED int nYSize,
-                                      CPL_UNUSED GDALDataType eDT,
-                                      CSLConstList papszOptions)
+static GDALDataset *
+OGRDAMENGDriverCreate(const char *pszName, CPL_UNUSED int nBands,
+                      CPL_UNUSED int nXSize, CPL_UNUSED int nYSize,
+                      CPL_UNUSED GDALDataType eDT, CSLConstList papszOptions)
 
 {
     OGRDAMENGDataSource *poDS;
@@ -91,7 +89,7 @@ static GDALDataset *OGRDAMENGDriverCreate(const char *pszName,
 }
 
 /************************************************************************/
-/*                           RegisterOGRDAMENG()                            */
+/*                         RegisterOGRDAMENG()                          */
 /************************************************************************/
 
 void RegisterOGRDAMENG()
@@ -166,7 +164,8 @@ void RegisterOGRDAMENG()
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATATYPES,
                               "Integer Integer64 Real String Date DateTime "
                               "Time Binary");
-    poDriver->SetMetadataItem(GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
+    poDriver->SetMetadataItem(
+        GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
         "Name Type WidthPrecision Nullable Default Unique Comment");
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_DEFAULT_FIELDS, "YES");

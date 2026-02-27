@@ -14,6 +14,7 @@ asKnownConnectionPrefixes[] =
    {"CARTO:", "CARTO"},
    {"CSW:", "CSW"},
    {"DAAS:", "DAAS"},
+   {"DAMENG:", "DAMENG"},
    {"EEDA:", "EEDA"},
    {"EEDAI:", "EEDAI"},
    {"ES:", "Elasticsearch"},

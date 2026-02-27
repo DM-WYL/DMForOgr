@@ -30,12 +30,13 @@
 #include "ogr_dameng.h"
 
 /************************************************************************/
-/*                          OGRDAMENGResultLayer()                          */
+/*                        OGRDAMENGResultLayer()                        */
 /************************************************************************/
 
 OGRDAMENGResultLayer::OGRDAMENGResultLayer(OGRDAMENGDataSource *poDSIn,
-                                   const char *pszRawQueryIn,
-                                   OGRDAMENGStatement *hInitialResultIn) : pszRawStatement(CPLStrdup(pszRawQueryIn))
+                                           const char *pszRawQueryIn,
+                                           OGRDAMENGStatement *hInitialResultIn)
+    : pszRawStatement(CPLStrdup(pszRawQueryIn))
 {
     poDS = poDSIn;
 
@@ -83,7 +84,7 @@ OGRDAMENGResultLayer::OGRDAMENGResultLayer(OGRDAMENGDataSource *poDSIn,
 }
 
 /************************************************************************/
-/*                          ~OGRDAMENGResultLayer()                          */
+/*                       ~OGRDAMENGResultLayer()                        */
 /************************************************************************/
 
 OGRDAMENGResultLayer::~OGRDAMENGResultLayer()
@@ -181,7 +182,7 @@ int OGRDAMENGResultLayer::TestCapability(const char *pszCap) const
     else if (EQUAL(pszCap, OLCFastSpatialFilter))
     {
         OGRDAMENGGeomFieldDefn *poGeomFieldDefn = nullptr;
-        if (poFeatureDefn->GetGeomFieldCount() > 0) 
+        if (poFeatureDefn->GetGeomFieldCount() > 0)
             poGeomFieldDefn =
                 poFeatureDefn->GetGeomFieldDefn(m_iGeomFieldFilter);
         return (poGeomFieldDefn == nullptr ||
@@ -278,12 +279,13 @@ OGRErr OGRDAMENGResultLayer::ISetSpatialFilter(int iGeomField,
                             sEnvelope.MaxX, sEnvelope.MaxY);
                 CPLsnprintf(szBox3D_4, sizeof(szBox3D_2), "%.18g %.18g",
                             sEnvelope.MaxX, sEnvelope.MinY);
-                osWHERE.Printf("WHERE "
-                               "DMGEO2.ST_BOXCONTAINS(dmgeo2.st_geomfromtext('"
-                               "POLYGON(( %s, %s, %s, %s, %s))'), %s);",
-                               szBox3D_1, szBox3D_2, szBox3D_3, szBox3D_4,
-                               szBox3D_1, OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef())
-                                    .c_str());
+                osWHERE.Printf(
+                    "WHERE "
+                    "DMGEO2.ST_BOXCONTAINS(dmgeo2.st_geomfromtext('"
+                    "POLYGON(( %s, %s, %s, %s, %s))'), %s);",
+                    szBox3D_1, szBox3D_2, szBox3D_3, szBox3D_4, szBox3D_1,
+                    OGRDAMENGEscapeColumnName(poGeomFieldDefn->GetNameRef())
+                        .c_str());
             }
             else
             {
@@ -351,11 +353,13 @@ void OGRDAMENGResultLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn)
                 osGetSRID += "SELECT ";
                 osGetSRID += psGetSRIDFct;
                 osGetSRID += "(";
-                osGetSRID += OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
+                osGetSRID +=
+                    OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
                 osGetSRID += ") FROM (";
                 osGetSRID += pszRawStatement;
                 osGetSRID += ") AS ogrdamenggetsrid WHERE (";
-                osGetSRID += OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
+                osGetSRID +=
+                    OGRDAMENGEscapeColumnName(poGFldDefn->GetNameRef());
                 osGetSRID += " IS NOT NULL) LIMIT 1";
 
                 CPLErr err = oCommand.Execute(osGetSRID.c_str());

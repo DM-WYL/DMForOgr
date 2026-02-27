@@ -556,7 +556,7 @@ It is also required for the :ref:`/vsicrypt/ <vsicrypt>` virtual file system.
 Dameng
 ******
 
-The Dameng client library <http://www.dameng.com/>_ is required for the :ref:vector.dameng driver.
+The `Dameng client library <http://www.dameng.com/>`_ is required for the :ref:`vector.dameng` driver.
 To enable detection, the DM_HOME environment variable must be set to the Dameng installation root directory (containing include and lib or bin subdirectories) before running CMake.
 
 .. option:: Dameng_INCLUDE_DIR
@@ -565,7 +565,7 @@ To enable detection, the DM_HOME environment variable must be set to the Dameng 
 
 .. option:: Dameng_LIBRARY
 
-Path to the Dameng client library file (e.g., ``dmdpi``, ``libdmdpi``, or ``dmclient``).
+    Path to the Dameng client library file (e.g., ``dmdpi``, ``libdmdpi``, or ``dmclient``).
 
 .. option:: GDAL_USE_DAMENG=ON/OFF
 
