@@ -31,10 +31,9 @@
 #include <ogr_p.h>
 
 OGRDAMENGStatement::OGRDAMENGStatement(OGRDAMENGConn *poConnIn)
-
+    : hStatement(nullptr), insert_objdesc(nullptr)
 {
     poConn = poConnIn;
-    hStatement = nullptr;
     result = nullptr;
     papszCurImage = nullptr;
     pszCommandText = nullptr;
@@ -48,7 +47,6 @@ OGRDAMENGStatement::OGRDAMENGStatement(OGRDAMENGConn *poConnIn)
     nRawColumnCount = 0;
     is_fectmany = 0;
     insert_objs = nullptr;
-    insert_objdesc = nullptr;
     insert_geovalues = nullptr;
     insert_values = nullptr;
     geonum = 0;
@@ -421,8 +419,9 @@ CPLErr OGRDAMENGStatement::Execute_for_insert(OGRDAMENGFeatureDefn *params,
                     poGeom->getEnvelope(&Envelope);
                     char *pszHexEWKB =
                         OGRGeometryToHexEWKB(poGeom, nSRSId, 3, 3);
-                    insert_geovalues[num][insert_num] = OGRDAMENGGeoFromHexwkb(
-                        pszHexEWKB, &gser_length, Envelope);
+                    insert_geovalues[num][insert_num] =
+                        OGRDAMENGGeo_From_Hexwkb(pszHexEWKB, &gser_length,
+                                                 Envelope);
                     CPLFree(pszHexEWKB);
                     if (!DSQL_SUCCEEDED(dpi_set_obj_val(
                             insert_objs[num][insert_num], 1, DSQL_C_BINARY,

@@ -196,7 +196,7 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(
                     if (pabyData)
                     {
                         int length;
-                        GByte *pabyEWKB = OGRDAMENGGeoToHexwkb(
+                        GByte *pabyEWKB = OGRDAMENG_Geo_To_Hexwkb(
                             (GSERIALIZED *)pabyData, &length);
                         if (!pabyEWKB)
                         {

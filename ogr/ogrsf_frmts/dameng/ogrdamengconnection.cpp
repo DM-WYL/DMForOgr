@@ -55,11 +55,8 @@ OGRDAMENGConn *OGRGetDAMENGConnection(const char *pszUserid,
 /*                          OGRDAMENGSession()                          */
 /************************************************************************/
 
-OGRDAMENGConn::OGRDAMENGConn()
+OGRDAMENGConn::OGRDAMENGConn() : hEnv(nullptr), hRtn(0), hCon(nullptr)
 {
-    hEnv = nullptr;
-    hRtn = 0;
-    hCon = nullptr;
     pszUserid = nullptr;
     pszPassword = nullptr;
     pszDatabase = nullptr;

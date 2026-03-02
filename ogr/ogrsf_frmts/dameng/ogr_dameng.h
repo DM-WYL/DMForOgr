@@ -363,9 +363,6 @@ class OGRDAMENGTableLayer final : public OGRDAMENGLayer
 
     OGRErr CreateFeatureViaInsert(OGRFeature *poFeature);
 
-    int bHasWarnedIncompatibleGeom = false;
-    void CheckGeomTypeCompatibility(int iGeomField, OGRGeometry *poGeom);
-
     int bHasWarnedAlreadySetFID = false;
 
     char **papszOverrideColumnTypes = nullptr;
@@ -676,9 +673,9 @@ char *OGRDAMENGCommonLaunderName(const char *pszSrcName,
 void OGRDAMENGCommonAppendFieldValue(CPLString &osCommand,
                                      OGRFeature *poFeature, int i);
 
-GSERIALIZED *OGRDAMENGGeoFromHexwkb(const char *pszLEHex, size_t *size,
-                                    OGREnvelope3D sEnvelope);
+GSERIALIZED *OGRDAMENGGeo_From_Hexwkb(const char *pszLEHex, size_t *size,
+                                      OGREnvelope3D sEnvelope);
 
-GByte *OGRDAMENGGeoToHexwkb(GSERIALIZED *geom, int *size);
+GByte *OGRDAMENG_Geo_To_Hexwkb(GSERIALIZED *geom, int *size);
 
 #endif  // !OGR_DM_H_INCLUDED

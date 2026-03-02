@@ -1271,7 +1271,8 @@ OGRErr OGRDAMENGTableLayer::ISetFeature(OGRFeature *poFeature)
                     OGRDAMENGEscapeColumnName(
                         poFeatureDefn->GetFieldDefn(i)->GetNameRef())
                         .c_str() +
-                    " = ";
+                    " ="
+                    " ";
 
         if (poFeature->IsFieldNull(i))
         {
@@ -1407,6 +1408,14 @@ OGRErr OGRDAMENGTableLayer::ICreateFeature(OGRFeature *poFeature)
 
             osCommand.Printf("TRUNCATE TABLE %s", pszSqlTableName);
             rt = oCommand.Execute(osCommand.c_str());
+            if (!DSQL_SUCCEEDED(rt))
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "TRUNCATE command for table %s failed.\nCommand: %s",
+                         pszSqlTableName, osCommand.c_str());
+
+                return OGRERR_FAILURE;
+            }
         }
     }
 
@@ -2228,42 +2237,6 @@ void OGRDAMENGTableLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn)
     }
 
     poGFldDefn->nSRSId = nSRSId;
-}
-
-/************************************************************************/
-/*                     CheckGeomTypeCompatibility()                     */
-/************************************************************************/
-
-void OGRDAMENGTableLayer::CheckGeomTypeCompatibility(int iGeomField,
-                                                     OGRGeometry *poGeom)
-{
-    if (bHasWarnedIncompatibleGeom)
-        return;
-
-    OGRwkbGeometryType eExpectedGeomType =
-        poFeatureDefn->GetGeomFieldDefn(iGeomField)->GetType();
-    OGRwkbGeometryType eFlatLayerGeomType = wkbFlatten(eExpectedGeomType);
-    OGRwkbGeometryType eFlatGeomType = wkbFlatten(poGeom->getGeometryType());
-    if (eFlatLayerGeomType == wkbUnknown)
-        return;
-
-    if (eFlatLayerGeomType == wkbGeometryCollection)
-        bHasWarnedIncompatibleGeom = eFlatGeomType != wkbMultiPoint &&
-                                     eFlatGeomType != wkbMultiLineString &&
-                                     eFlatGeomType != wkbMultiPolygon &&
-                                     eFlatGeomType != wkbGeometryCollection;
-    else
-        bHasWarnedIncompatibleGeom = (eFlatGeomType != eFlatLayerGeomType);
-
-    if (bHasWarnedIncompatibleGeom)
-    {
-        CPLError(CE_Warning, CPLE_AppDefined,
-                 "Geometry to be inserted is of type %s, whereas the layer "
-                 "geometry type is %s.\n"
-                 "Insertion is likely to fail",
-                 OGRGeometryTypeToName(poGeom->getGeometryType()),
-                 OGRGeometryTypeToName(eExpectedGeomType));
-    }
 }
 
 /************************************************************************/

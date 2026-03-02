@@ -27,9 +27,9 @@
  ****************************************************************************/
 
 #include "ogr_dameng.h"
-#include <math.h>
-#include <limits.h>
-#include <float.h>
+#include <cmath>
+#include <climits>
+#include <cfloat>
 
 #define DOUBLE_SIZE 8
 #define FLOAT_SIZE 4
@@ -129,13 +129,6 @@ typedef struct
     int srid;
 } wkb_info;
 
-/******************************************************************
-*  POINTARRAY
-*  Point array abstracts a lot of the complexity of points and point lists.
-*  It handles 2d/3d translation
-*    (2d points converted to 3d will have z=0 or NaN)
-*  DO NOT MIX 2D and 3D POINTS! EVERYTHING* is either one or the other
-*/
 typedef struct
 {
     GUInt32 npoints; /* how many points we are currently storing */
@@ -162,173 +155,47 @@ typedef struct
 #define IS_BIG_ENDIAN 0
 #endif
 
-size_t gser_from_wkb_state(wkb_info *wkb_info, GByte *buf, GByte *depth);
+size_t OGRDAMENG_Gser_From_WKB(wkb_info *wkb_info, GByte *buf, GByte *depth);
 
-size_t gser_get_expected_size(wkb_info *wkb_info, GByte *depth);
+size_t OGRDAMENG_Gser_Get_Expected_Size(wkb_info *wkb_info, GByte *depth);
 
-static GByte *wkb_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
-                                          GByte has_m, size_t *g_size,
-                                          int *wkb_size, int srid);
+static GByte *OGRDAMENG_Wkb_From_Gserialized(GByte *data_ptr, GByte has_z,
+                                             GByte has_m, size_t *g_size,
+                                             int *wkb_size, int srid);
 
-void ptarray_free(POINTARRAY *pa)
+/************************************************************************/
+/*                          next_float_down()                           */
+/************************************************************************/
+
+float next_float_down(double d)
 {
-    if (pa)
-    {
-        if (pa->serialized_pointlist)
-            CPLFree(pa->serialized_pointlist);
-        CPLFree(pa);
-    }
+    float result;
+    result = DoubleToFloatClamp(d);
+
+    if ((static_cast<double>(result)) <= d)
+        return result;
+
+    return nextafterf(result, -1 * FLT_MAX);
 }
 
-/************************************************************************
-Name:
-ptarray_construct
-Purpose:
-    construct empty ptarray
-**************************************************************************/
-POINTARRAY *ptarray_construct_empty(GUInt32 ndims, GUInt32 npoints)
+/************************************************************************/
+/*                           next_float_up()                            */
+/************************************************************************/
+
+float next_float_up(double d)
 {
-    POINTARRAY *pa = (POINTARRAY *)CPLMalloc(sizeof(POINTARRAY));
-    if (!pa)
-        return NULL;
+    float result;
+    result = DoubleToFloatClamp(d);
 
-    pa->serialized_pointlist = NULL;
+    if ((static_cast<double>(result)) <= d)
+        return result;
 
-    /* We will be allocating a bit of room */
-    pa->npoints = npoints;
-
-    /* Allocate the coordinate array */
-    if (npoints > 0)
-    {
-        /*
-        * Size of point represeneted in the POINTARRAY
-        * 16 for 2d, 24 for 3d, 32 for 4d
-        */
-        pa->serialized_pointlist =
-            (GByte *)CPLMalloc(npoints * sizeof(double) * ndims);
-        if (!pa->serialized_pointlist)
-        {
-            CPLFree(pa);
-            return NULL;
-        }
-    }
-    else
-        pa->serialized_pointlist = NULL;
-
-    return pa;
+    return nextafterf(result, FLT_MAX);
 }
 
-/************************************************************
-Name:
-ptarray_construct
-Purpose:
-    construct a ptarray,and write in point.
-************************************************************/
-POINTARRAY *ptarray_construct(GUInt32 ndims, GUInt32 npoints)
-{
-    POINTARRAY *pa = ptarray_construct_empty(ndims, npoints);
-
-    pa->npoints = npoints;
-
-    return pa;
-}
-
-POINTARRAY *ptarray_construct_copy_data(GUInt32 ndims, GUInt32 npoints,
-                                        GByte *ptlist)
-{
-    POINTARRAY *pa = (POINTARRAY *)CPLMalloc(sizeof(POINTARRAY));
-
-    pa->npoints = npoints;
-
-    if (npoints > 0)
-    {
-        pa->serialized_pointlist =
-            (GByte *)CPLMalloc(sizeof(double) * ndims * npoints);
-        memcpy(pa->serialized_pointlist, ptlist,
-               sizeof(double) * ndims * npoints);
-    }
-    else
-    {
-        pa->serialized_pointlist = NULL;
-    }
-
-    return pa;
-}
-
-/*
- * Get a pointer to Nth point of a POINTARRAY
- * You'll need to cast it to appropriate dimensioned point.
- * Note that if you cast to a higher dimensional point you'll
- * possibly corrupt the POINTARRAY.
- *
- * Casting to returned pointer to POINT2D* should be safe,
- * as gserialized format always keeps the POINTARRAY pointer
- * aligned to double boundary.
- *
- * WARNING: Don't cast this to a POINT!
- * it would not be reliable due to memory alignment constraints
- */
-static inline GByte *getPoint_internal(GUInt32 ndims, POINTARRAY *pa, GUInt32 n)
-{
-    size_t size;
-    GByte *ptr;
-
-    size = sizeof(double) * ndims;
-    ptr = pa->serialized_pointlist + size * n;
-
-    return ptr;
-}
-
-int ptarray_is_closed_2d(POINTARRAY *in)
-{
-    if (!in)
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "ptarray_is_closed_2d: called with null point array");
-        return 0;
-    }
-    if (in->npoints <= 1)
-        return in->npoints; /* single-point are closed, empty not closed */
-
-    return 0 == memcmp(getPoint_internal(2, in, 0),
-                       getPoint_internal(2, in, in->npoints - 1),
-                       sizeof(POINT2D));
-}
-
-int ptarray_is_closed_3d(POINTARRAY *in)
-{
-    if (!in)
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "ptarray_is_closed_3d: called with null point array");
-        return 0;
-    }
-    if (in->npoints <= 1)
-        return in->npoints; /* single-point are closed, empty not closed */
-
-    return 0 == memcmp(getPoint_internal(3, in, 0),
-                       getPoint_internal(3, in, in->npoints - 1),
-                       sizeof(POINT3D));
-}
-
-int ptarray_is_closed_z(GInt8 has_z, POINTARRAY *in)
-{
-    if (has_z)
-        return ptarray_is_closed_3d(in);
-    else
-        return ptarray_is_closed_2d(in);
-}
-
-static GInt8 wkb_parse_check(wkb_info *wkb_info, size_t next)
-{
-    if ((wkb_info->pos + next) > (wkb_info->wkb + wkb_info->wkb_size))
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "WKB structure does not match expected size!");
-        return TRUE;
-    }
-    return FALSE;
-}
+/************************************************************************/
+/*                            swap_values()                             */
+/************************************************************************/
 
 void swap_values(GByte *value, int size)
 {
@@ -344,32 +211,209 @@ void swap_values(GByte *value, int size)
     return;
 }
 
-/**
-* Int32
-* Read 4-byte integer and advance the parse state forward.
-*/
-static GUInt32 integer_from_wkb(wkb_info *wkb_info)
+/************************************************************************/
+/*                       OGRDAMENG_Ptarray_Free()                       */
+/************************************************************************/
+
+void OGRDAMENG_Ptarray_Free(POINTARRAY *pa)
+{
+    if (pa)
+    {
+        if (pa->serialized_pointlist)
+            CPLFree(pa->serialized_pointlist);
+        CPLFree(pa);
+    }
+}
+
+/************************************************************************/
+/*                 OGRDAMENG_Ptarray_Construct_Empty()                  */
+/************************************************************************/
+
+POINTARRAY *OGRDAMENG_Ptarray_Construct_Empty(GUInt32 ndims, GUInt32 npoints)
+{
+    POINTARRAY *pa =
+        reinterpret_cast<POINTARRAY *>(CPLMalloc(sizeof(POINTARRAY)));
+    if (!pa)
+        return NULL;
+
+    pa->serialized_pointlist = NULL;
+
+    /* We will be allocating a bit of room */
+    pa->npoints = npoints;
+
+    /* Allocate the coordinate array */
+    if (npoints > 0)
+    {
+        /*
+        * Size of point represeneted in the POINTARRAY
+        * 16 for 2d, 24 for 3d, 32 for 4d
+        */
+        pa->serialized_pointlist = reinterpret_cast<GByte *>(
+            CPLMalloc(npoints * sizeof(double) * ndims));
+        if (!pa->serialized_pointlist)
+        {
+            CPLFree(pa);
+            return NULL;
+        }
+    }
+    else
+        pa->serialized_pointlist = NULL;
+
+    return pa;
+}
+
+/************************************************************************/
+/*                    OGRDAMENG_Ptarray_Construct()                     */
+/************************************************************************/
+
+POINTARRAY *OGRDAMENG_Ptarray_Construct(GUInt32 ndims, GUInt32 npoints)
+{
+    POINTARRAY *pa = OGRDAMENG_Ptarray_Construct_Empty(ndims, npoints);
+
+    pa->npoints = npoints;
+
+    return pa;
+}
+
+/************************************************************************/
+/*               OGRDAMENG_Ptarray_Construct_Copy_Data()                */
+/************************************************************************/
+
+POINTARRAY *OGRDAMENG_Ptarray_Construct_Copy_Data(GUInt32 ndims,
+                                                  GUInt32 npoints,
+                                                  GByte *ptlist)
+{
+    POINTARRAY *pa =
+        reinterpret_cast<POINTARRAY *>(CPLMalloc(sizeof(POINTARRAY)));
+
+    pa->npoints = npoints;
+
+    if (npoints > 0)
+    {
+        pa->serialized_pointlist = reinterpret_cast<GByte *>(
+            CPLMalloc(sizeof(double) * ndims * npoints));
+        memcpy(pa->serialized_pointlist, ptlist,
+               sizeof(double) * ndims * npoints);
+    }
+    else
+    {
+        pa->serialized_pointlist = NULL;
+    }
+
+    return pa;
+}
+
+/************************************************************************/
+/*                    OGRDAMENG_GetPoint_Internal()                     */
+/************************************************************************/
+
+static inline GByte *OGRDAMENG_GetPoint_Internal(GUInt32 ndims, POINTARRAY *pa,
+                                                 GUInt32 n)
+{
+    size_t size;
+    GByte *ptr;
+
+    size = sizeof(double) * ndims;
+    ptr = pa->serialized_pointlist + size * n;
+
+    return ptr;
+}
+
+/************************************************************************/
+/*                   OGRDAMENG_Ptarray_Is_Closed_2D()                   */
+/************************************************************************/
+
+int OGRDAMENG_Ptarray_Is_Closed_2D(POINTARRAY *in)
+{
+    if (!in)
+    {
+        CPLError(
+            CE_Failure, CPLE_AppDefined,
+            "OGRDAMENG_Ptarray_Is_Closed_2D: called with null point array");
+        return 0;
+    }
+    if (in->npoints <= 1)
+        return in->npoints; /* single-point are closed, empty not closed */
+
+    return 0 == memcmp(OGRDAMENG_GetPoint_Internal(2, in, 0),
+                       OGRDAMENG_GetPoint_Internal(2, in, in->npoints - 1),
+                       sizeof(POINT2D));
+}
+
+/************************************************************************/
+/*                   OGRDAMENG_Ptarray_Is_Closed_3D()                   */
+/************************************************************************/
+
+int OGRDAMENG_Ptarray_Is_Closed_3D(POINTARRAY *in)
+{
+    if (!in)
+    {
+        CPLError(
+            CE_Failure, CPLE_AppDefined,
+            "OGRDAMENG_Ptarray_Is_Closed_3D: called with null point array");
+        return 0;
+    }
+    if (in->npoints <= 1)
+        return in->npoints; /* single-point are closed, empty not closed */
+
+    return 0 == memcmp(OGRDAMENG_GetPoint_Internal(3, in, 0),
+                       OGRDAMENG_GetPoint_Internal(3, in, in->npoints - 1),
+                       sizeof(POINT3D));
+}
+
+/************************************************************************/
+/*                    OGRDAMENG_Ptarray_Is_Closed()                     */
+/************************************************************************/
+
+int OGRDAMENG_Ptarray_Is_Closed(GInt8 has_z, POINTARRAY *in)
+{
+    if (has_z)
+        return OGRDAMENG_Ptarray_Is_Closed_3D(in);
+    else
+        return OGRDAMENG_Ptarray_Is_Closed_2D(in);
+}
+
+/************************************************************************/
+/*                     OGRDAMENG_WKB_Parse_Check()                      */
+/************************************************************************/
+
+static GInt8 OGRDAMENG_WKB_Parse_Check(wkb_info *wkb_info, size_t next)
+{
+    if ((wkb_info->pos + next) > (wkb_info->wkb + wkb_info->wkb_size))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "WKB structure does not match expected size!");
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/************************************************************************/
+/*                     OGRDAMENG_Integer_From_WKB()                     */
+/************************************************************************/
+
+static GUInt32 OGRDAMENG_Integer_From_WKB(wkb_info *wkb_info)
 {
     GUInt32 int_value = 0;
 
-    if (wkb_parse_check(wkb_info, INT_SIZE))
+    if (OGRDAMENG_WKB_Parse_Check(wkb_info, INT_SIZE))
         return 0;
 
     memcpy(&int_value, wkb_info->pos, INT_SIZE);
 
     /* Swap? Copy into a stack-allocated integer. */
     if (wkb_info->swap_bytes)
-        swap_values((GByte *)&int_value, INT_SIZE);
+        CPL_SWAP32(int_value);
 
     wkb_info->pos += INT_SIZE;
     return int_value;
 }
 
-/**
-* Double
-* Read an 8-byte double and advance the parse state forward.
-*/
-static double double_from_wkb(wkb_info *wkb_info)
+/************************************************************************/
+/*                     OGRDAMENG_Double_From_WKB()                      */
+/************************************************************************/
+
+static double OGRDAMENG_Double_From_WKB(wkb_info *wkb_info)
 {
     double double_value = 0;
 
@@ -377,13 +421,17 @@ static double double_from_wkb(wkb_info *wkb_info)
 
     /* Swap? Copy into a stack-allocated integer. */
     if (wkb_info->swap_bytes)
-        swap_values((GByte *)&double_value, DOUBLE_SIZE);
+        CPL_SWAPDOUBLE(&double_value);
 
     wkb_info->pos += DOUBLE_SIZE;
     return double_value;
 }
 
-GByte *gser_head_from_wkb_state(GByte *loc, GUInt32 type, GUInt32 ngeom)
+/************************************************************************/
+/*                    OGRDAMENG_Gser_Head_From_WKB()                    */
+/************************************************************************/
+
+GByte *OGRDAMENG_Gser_Head_From_WKB(GByte *loc, GUInt32 type, GUInt32 ngeom)
 {
     /* Write in the type. */
     memcpy(loc, &type, sizeof(GUInt32));
@@ -395,19 +443,18 @@ GByte *gser_head_from_wkb_state(GByte *loc, GUInt32 type, GUInt32 ngeom)
     return loc;
 }
 
-/**
-* POINTARRAY
-* Read a dynamically sized point array and advance the parse state forward.
-* First read the number of points, then read the points.
-*/
-static POINTARRAY *ptarray_from_wkb(wkb_info *wkb_info)
+/************************************************************************/
+/*                     OGRDAMENG_Ptarray_From_WKB()                     */
+/************************************************************************/
+
+static POINTARRAY *OGRDAMENG_Ptarray_From_WKB(wkb_info *wkb_info)
 {
     POINTARRAY *pa = NULL;
     size_t pa_size;
     GUInt32 npoints = 0;
 
     /* Calculate the size of this point array. */
-    npoints = integer_from_wkb(wkb_info);
+    npoints = OGRDAMENG_Integer_From_WKB(wkb_info);
 
     if (npoints > UINT_MAX / DOUBLE_SIZE / 4)
     {
@@ -420,17 +467,17 @@ static POINTARRAY *ptarray_from_wkb(wkb_info *wkb_info)
 
     /* Empty! */
     if (npoints == 0)
-        return ptarray_construct(wkb_info->ndims, npoints);
+        return OGRDAMENG_Ptarray_Construct(wkb_info->ndims, npoints);
 
     /* Does the data we want to read exist? */
-    if (wkb_parse_check(wkb_info, pa_size))
+    if (OGRDAMENG_WKB_Parse_Check(wkb_info, pa_size))
         return NULL;
 
     /* If we're in a native endianness, we can just copy the data directly! */
     if (!wkb_info->swap_bytes)
     {
-        pa = ptarray_construct_copy_data(wkb_info->ndims, npoints,
-                                         (GByte *)wkb_info->pos);
+        pa = OGRDAMENG_Ptarray_Construct_Copy_Data(
+            wkb_info->ndims, npoints, reinterpret_cast<GByte *>(wkb_info->pos));
         wkb_info->pos += pa_size;
     }
     /* Otherwise we have to read each double, separately. */
@@ -438,18 +485,22 @@ static POINTARRAY *ptarray_from_wkb(wkb_info *wkb_info)
     {
         GUInt32 i = 0;
         double *dlist;
-        pa = ptarray_construct(wkb_info->ndims, npoints);
-        dlist = (double *)(pa->serialized_pointlist);
+        pa = OGRDAMENG_Ptarray_Construct(wkb_info->ndims, npoints);
+        dlist = reinterpret_cast<double *>(pa->serialized_pointlist);
         for (i = 0; i < npoints * wkb_info->ndims; i++)
         {
-            dlist[i] = double_from_wkb(wkb_info);
+            dlist[i] = OGRDAMENG_Double_From_WKB(wkb_info);
         }
     }
 
     return pa;
 }
 
-size_t gser_point_size_from_wkb_state(wkb_info *wkb_info)
+/************************************************************************/
+/*                 OGRDAMENG_GserPoint_Size_From_WKB()                  */
+/************************************************************************/
+
+size_t OGRDAMENG_GserPoint_Size_From_WKB(wkb_info *wkb_info)
 {
     size_t expected_size = INT_SIZE; /* Type number. */
     double x;
@@ -457,10 +508,10 @@ size_t gser_point_size_from_wkb_state(wkb_info *wkb_info)
     /* Number of points. */
     expected_size += INT_SIZE;
     /* Does the data we want to read exist? */
-    if (wkb_parse_check(wkb_info, wkb_info->ndims * DOUBLE_SIZE))
+    if (OGRDAMENG_WKB_Parse_Check(wkb_info, wkb_info->ndims * DOUBLE_SIZE))
         return expected_size;
 
-    x = double_from_wkb(wkb_info);
+    x = OGRDAMENG_Double_From_WKB(wkb_info);
     wkb_info->pos += (wkb_info->ndims - 1) * DOUBLE_SIZE;
 
     if (isnan(x))
@@ -471,7 +522,11 @@ size_t gser_point_size_from_wkb_state(wkb_info *wkb_info)
     return expected_size;
 }
 
-static size_t gser_point_from_wkb_state(wkb_info *wkb_info, GByte *buf)
+/************************************************************************/
+/*                    OGRDAMENG_GserPoint_From_WKB()                    */
+/************************************************************************/
+
+static size_t OGRDAMENG_GserPoint_From_WKB(wkb_info *wkb_info, GByte *buf)
 {
     POINTARRAY *pa = NULL;
     size_t pa_size;
@@ -482,14 +537,14 @@ static size_t gser_point_from_wkb_state(wkb_info *wkb_info, GByte *buf)
     pa_size = wkb_info->ndims * DOUBLE_SIZE;
 
     /* Does the data we want to read exist? */
-    if (wkb_parse_check(wkb_info, pa_size))
+    if (OGRDAMENG_WKB_Parse_Check(wkb_info, pa_size))
         return NULL;
 
     /* If we're in a native endianness, we can just copy the data directly! */
     if (!wkb_info->swap_bytes)
     {
-        pa = ptarray_construct_copy_data(wkb_info->ndims, 1,
-                                         (GByte *)wkb_info->pos);
+        pa = OGRDAMENG_Ptarray_Construct_Copy_Data(
+            wkb_info->ndims, 1, reinterpret_cast<GByte *>(wkb_info->pos));
         wkb_info->pos += pa_size;
     }
     /* Otherwise we have to read each double, separately */
@@ -497,47 +552,53 @@ static size_t gser_point_from_wkb_state(wkb_info *wkb_info, GByte *buf)
     {
         GInt32 i = 0;
         double *dlist;
-        pa = ptarray_construct(wkb_info->ndims, 1);
-        dlist = (double *)(pa->serialized_pointlist);
+        pa = OGRDAMENG_Ptarray_Construct(wkb_info->ndims, 1);
+        dlist = reinterpret_cast<double *>(pa->serialized_pointlist);
         for (i = 0; i < wkb_info->ndims; i++)
         {
-            dlist[i] = double_from_wkb(wkb_info);
+            dlist[i] = OGRDAMENG_Double_From_WKB(wkb_info);
         }
     }
 
     /* Check for POINT(NaN NaN) ==> POINT EMPTY */
-    pt = (POINT2D *)getPoint_internal(2, pa, 0);
+    pt = reinterpret_cast<POINT2D *>(OGRDAMENG_GetPoint_Internal(2, pa, 0));
     if (isnan(pt->x) && isnan(pt->y))
     {
-        ptarray_free(pa);
-        pa = ptarray_construct(wkb_info->ndims, 0);
+        OGRDAMENG_Ptarray_Free(pa);
+        pa = OGRDAMENG_Ptarray_Construct(wkb_info->ndims, 0);
     }
 
     ptsize = sizeof(double) * wkb_info->ndims;
 
     loc = buf;
 
-    loc = gser_head_from_wkb_state(loc, DM_POINT, pa->npoints);
+    loc = OGRDAMENG_Gser_Head_From_WKB(loc, DM_POINT, pa->npoints);
 
     /* Copy in the ordinates. */
     if (pa->npoints > 0)
     {
-        memcpy(loc, getPoint_internal(wkb_info->ndims, pa, 0), ptsize);
+        memcpy(loc, OGRDAMENG_GetPoint_Internal(wkb_info->ndims, pa, 0),
+               ptsize);
         loc += ptsize;
     }
-    ptarray_free(pa);
+    OGRDAMENG_Ptarray_Free(pa);
     return static_cast<size_t>(loc - buf);
 }
 
-size_t gser_line_size_from_wkb_state(wkb_info *wkb_info)
+/************************************************************************/
+/*                  OGRDAMENG_GserLine_Size_From_WKB()                  */
+/************************************************************************/
+
+size_t OGRDAMENG_GserLine_Size_From_WKB(wkb_info *wkb_info)
 {
     size_t expected_size = INT_SIZE; /* Type number. */
-    GUInt32 npoints = integer_from_wkb(wkb_info);
+    GUInt32 npoints = OGRDAMENG_Integer_From_WKB(wkb_info);
 
     /* Number of points. */
     expected_size += INT_SIZE;
     /* Does the data we want to read exist? */
-    if (wkb_parse_check(wkb_info, npoints * wkb_info->ndims * DOUBLE_SIZE))
+    if (OGRDAMENG_WKB_Parse_Check(wkb_info,
+                                  npoints * wkb_info->ndims * DOUBLE_SIZE))
         return expected_size;
 
     wkb_info->pos += npoints * wkb_info->ndims * DOUBLE_SIZE;
@@ -546,12 +607,15 @@ size_t gser_line_size_from_wkb_state(wkb_info *wkb_info)
     return expected_size;
 }
 
-static size_t gser_line_from_wkb_state(wkb_info *wkb_info, GByte *buf)
+/************************************************************************/
+/*                    OGRDAMENG_GserLine_From_WKB()                     */
+/************************************************************************/
+
+static size_t OGRDAMENG_GserLine_From_WKB(wkb_info *wkb_info, GByte *buf)
 {
     GByte *loc;
-    size_t ptsize;
     size_t size;
-    POINTARRAY *pa = ptarray_from_wkb(wkb_info);
+    POINTARRAY *pa = OGRDAMENG_Ptarray_From_WKB(wkb_info);
 
     if (pa == NULL)
         return NULL;
@@ -559,8 +623,8 @@ static size_t gser_line_from_wkb_state(wkb_info *wkb_info, GByte *buf)
     if (pa->npoints == 0)
     {
         loc = buf;
-        loc = gser_head_from_wkb_state(loc, DM_LINE, 0);
-        ptarray_free(pa);
+        loc = OGRDAMENG_Gser_Head_From_WKB(loc, DM_LINE, 0);
+        OGRDAMENG_Ptarray_Free(pa);
         return static_cast<size_t>(loc - buf);
     }
 
@@ -570,29 +634,28 @@ static size_t gser_line_from_wkb_state(wkb_info *wkb_info, GByte *buf)
         return NULL;
     }
 
-    ptsize = sizeof(double) * wkb_info->ndims;
-
     loc = buf;
 
-    loc = gser_head_from_wkb_state(loc, DM_LINE, pa->npoints);
+    loc = OGRDAMENG_Gser_Head_From_WKB(loc, DM_LINE, pa->npoints);
 
     /* Copy in the ordinates. */
-    if (pa->npoints > 0)
-    {
-        size = pa->npoints * ptsize;
-        memcpy(loc, getPoint_internal(wkb_info->ndims, pa, 0), size);
-        loc += size;
-    }
-    ptarray_free(pa);
+    size = pa->npoints * wkb_info->ndims * sizeof(double);
+    memcpy(loc, OGRDAMENG_GetPoint_Internal(wkb_info->ndims, pa, 0), size);
+    loc += size;
+
+    OGRDAMENG_Ptarray_Free(pa);
     return static_cast<size_t>(loc - buf);
 }
 
-static size_t gser_circstring_from_wkb_state(wkb_info *wkb_info, GByte *buf)
+/************************************************************************/
+/*                 OGRDAMENG_GserCircstring_From_WKB()                  */
+/************************************************************************/
+
+static size_t OGRDAMENG_GserCircstring_From_WKB(wkb_info *wkb_info, GByte *buf)
 {
     GByte *loc;
-    size_t ptsize;
     size_t size;
-    POINTARRAY *pa = ptarray_from_wkb(wkb_info);
+    POINTARRAY *pa = OGRDAMENG_Ptarray_From_WKB(wkb_info);
 
     if (pa == NULL)
         return NULL;
@@ -600,8 +663,8 @@ static size_t gser_circstring_from_wkb_state(wkb_info *wkb_info, GByte *buf)
     if (pa->npoints == 0)
     {
         loc = buf;
-        loc = gser_head_from_wkb_state(loc, DM_CIRCSTRING, 0);
-        ptarray_free(pa);
+        loc = OGRDAMENG_Gser_Head_From_WKB(loc, DM_CIRCSTRING, 0);
+        OGRDAMENG_Ptarray_Free(pa);
         return static_cast<size_t>(loc - buf);
     }
 
@@ -619,28 +682,28 @@ static size_t gser_circstring_from_wkb_state(wkb_info *wkb_info, GByte *buf)
         return NULL;
     }
 
-    ptsize = sizeof(double) * wkb_info->ndims;
     loc = buf;
 
-    loc = gser_head_from_wkb_state(loc, DM_CIRCSTRING, pa->npoints);
+    loc = OGRDAMENG_Gser_Head_From_WKB(loc, DM_CIRCSTRING, pa->npoints);
 
     /* Copy in the ordinates. */
-    if (pa->npoints > 0)
-    {
-        size = pa->npoints * ptsize;
-        memcpy(loc, getPoint_internal(wkb_info->ndims, pa, 0), size);
-        loc += size;
-    }
+    size = pa->npoints * wkb_info->ndims * sizeof(double);
+    memcpy(loc, OGRDAMENG_GetPoint_Internal(wkb_info->ndims, pa, 0), size);
+    loc += size;
 
-    ptarray_free(pa);
+    OGRDAMENG_Ptarray_Free(pa);
     return static_cast<size_t>(loc - buf);
 }
 
-size_t gser_poly_size_from_wkb_state(wkb_info *wkb_info)
+/************************************************************************/
+/*                  OGRDAMENG_GserPoly_Size_From_WKB()                  */
+/************************************************************************/
+
+size_t OGRDAMENG_GserPoly_Size_From_WKB(wkb_info *wkb_info)
 {
     size_t expected_size = INT_SIZE; /* Type number. */
     GUInt32 i;
-    GUInt32 nrings = integer_from_wkb(wkb_info);
+    GUInt32 nrings = OGRDAMENG_Integer_From_WKB(wkb_info);
     GUInt32 npoints;
 
     /* Number of rings */
@@ -653,11 +716,12 @@ size_t gser_poly_size_from_wkb_state(wkb_info *wkb_info)
         {
             /* Number of points */
             expected_size += INT_SIZE;
-            if (wkb_parse_check(wkb_info, INT_SIZE))
+            if (OGRDAMENG_WKB_Parse_Check(wkb_info, INT_SIZE))
                 return expected_size;
-            npoints = integer_from_wkb(wkb_info);
+            npoints = OGRDAMENG_Integer_From_WKB(wkb_info);
 
-            if (wkb_parse_check(wkb_info, wkb_info->ndims * DOUBLE_SIZE))
+            if (OGRDAMENG_WKB_Parse_Check(wkb_info,
+                                          wkb_info->ndims * DOUBLE_SIZE))
                 return expected_size;
             expected_size += npoints * wkb_info->ndims * DOUBLE_SIZE;
             wkb_info->pos += npoints * wkb_info->ndims * DOUBLE_SIZE;
@@ -666,31 +730,34 @@ size_t gser_poly_size_from_wkb_state(wkb_info *wkb_info)
     return expected_size;
 }
 
-static size_t gser_poly_from_wkb_state(wkb_info *wkb_info, GByte *buf)
+/************************************************************************/
+/*                    OGRDAMENG_GserPoly_From_WKB()                     */
+/************************************************************************/
+
+static size_t OGRDAMENG_GserPoly_From_WKB(wkb_info *wkb_info, GByte *buf)
 {
     GUInt32 i, j;
     GByte *loc;
-    int ptsize;
-    GUInt32 nrings = integer_from_wkb(wkb_info);
+    GUInt32 nrings = OGRDAMENG_Integer_From_WKB(wkb_info);
     POINTARRAY **pas = NULL;
 
-    ptsize = sizeof(double) * wkb_info->ndims;
     loc = buf;
 
-    loc = gser_head_from_wkb_state(loc, DM_POLYGON, nrings);
+    loc = OGRDAMENG_Gser_Head_From_WKB(loc, DM_POLYGON, nrings);
 
-    pas = (POINTARRAY **)CPLMalloc(sizeof(POINTARRAY *) * nrings);
+    pas = reinterpret_cast<POINTARRAY **>(
+        CPLMalloc(sizeof(POINTARRAY *) * nrings));
 
     /* Empty polygon? */
     if (nrings != 0)
     {
         for (i = 0; i < nrings; i++)
         {
-            pas[i] = ptarray_from_wkb(wkb_info);
+            pas[i] = OGRDAMENG_Ptarray_From_WKB(wkb_info);
             if (pas[i] == NULL)
             {
                 for (j = 0; j < i; j++)
-                    ptarray_free(pas[j]);
+                    OGRDAMENG_Ptarray_Free(pas[j]);
                 CPLFree(pas);
                 return NULL;
             }
@@ -699,7 +766,7 @@ static size_t gser_poly_from_wkb_state(wkb_info *wkb_info, GByte *buf)
             if (pas[i]->npoints < 4)
             {
                 for (j = 0; j < i; j++)
-                    ptarray_free(pas[j]);
+                    OGRDAMENG_Ptarray_Free(pas[j]);
                 CPLFree(pas);
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "must have at least four points in each ring");
@@ -707,10 +774,10 @@ static size_t gser_poly_from_wkb_state(wkb_info *wkb_info, GByte *buf)
             }
 
             /* Check that first and last points are the same. */
-            if (!ptarray_is_closed_z(wkb_info->has_z, pas[i]))
+            if (!OGRDAMENG_Ptarray_Is_Closed(wkb_info->has_z, pas[i]))
             {
                 for (j = 0; j < i; j++)
-                    ptarray_free(pas[j]);
+                    OGRDAMENG_Ptarray_Free(pas[j]);
                 CPLFree(pas);
                 CPLError(CE_Failure, CPLE_AppDefined, "must have closed rings");
                 return NULL;
@@ -734,100 +801,107 @@ static size_t gser_poly_from_wkb_state(wkb_info *wkb_info, GByte *buf)
     {
         size_t pasize;
 
-        pasize = pas[i]->npoints * ptsize;
+        pasize = pas[i]->npoints * wkb_info->ndims * sizeof(double);
         if (pas[i]->npoints > 0)
-            memcpy(loc, getPoint_internal(wkb_info->ndims, pas[i], 0), pasize);
+            memcpy(loc, OGRDAMENG_GetPoint_Internal(wkb_info->ndims, pas[i], 0),
+                   pasize);
         loc += pasize;
     }
     for (i = 0; i < nrings; i++)
-        ptarray_free(pas[i]);
+        OGRDAMENG_Ptarray_Free(pas[i]);
     CPLFree(pas);
     return static_cast<size_t>(loc - buf);
 }
 
-static size_t gser_triangle_from_wkb_state(wkb_info *wkb_info, GByte *buf)
+/************************************************************************/
+/*                  OGRDAMENG_GserTriangle_From_WKB()                   */
+/************************************************************************/
+
+static size_t OGRDAMENG_GserTriangle_From_WKB(wkb_info *wkb_info, GByte *buf)
 {
     GByte *loc;
-    size_t ptsize;
     size_t size;
-    GUInt32 nrings = integer_from_wkb(wkb_info);
-    POINTARRAY *pa = NULL;
+    GUInt32 nrings = OGRDAMENG_Integer_From_WKB(wkb_info);
+    POINTARRAY *pa = nullptr;
 
-    /* Empty triangle? */
-    if (nrings == 0)
-        pa = ptarray_construct_empty(wkb_info->ndims, 1);
-
-    /* Should be only one ring. */
-    if (nrings != 1)
+    if (nrings == 0) /* Empty triangle? */
+        pa = OGRDAMENG_Ptarray_Construct_Empty(wkb_info->ndims, 1);
+    else if (nrings != 1) /* Should be only one ring. */
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Triangle has wrong number of rings: %d", nrings);
+        return 0;
     }
-
-    /* There's only one ring, we hope? */
-    pa = ptarray_from_wkb(wkb_info);
+    else
+        pa = OGRDAMENG_Ptarray_From_WKB(wkb_info);
 
     /* If there's no points, return an empty triangle. */
-    if (pa == NULL)
-        pa = ptarray_construct_empty(wkb_info->ndims, 1);
+    if (pa == nullptr)
+        pa = OGRDAMENG_Ptarray_Construct_Empty(wkb_info->ndims, 1);
 
     /* Check for at least four points. */
     if (pa->npoints < 4)
     {
-        ptarray_free(pa);
+        OGRDAMENG_Ptarray_Free(pa);
         CPLError(CE_Failure, CPLE_AppDefined, "must have at least four points");
-        return NULL;
+        return 0;
     }
 
-    if (!ptarray_is_closed_z(wkb_info->has_z, pa))
+    if (!OGRDAMENG_Ptarray_Is_Closed(wkb_info->has_z, pa))
     {
-        ptarray_free(pa);
+        OGRDAMENG_Ptarray_Free(pa);
         CPLError(CE_Failure, CPLE_AppDefined, "must have closed rings");
-        return NULL;
+        return 0;
     }
-
-    ptsize = sizeof(double) * wkb_info->ndims;
 
     loc = buf;
 
-    loc = gser_head_from_wkb_state(loc, DM_TRIANGLE, pa->npoints);
+    loc = OGRDAMENG_Gser_Head_From_WKB(loc, DM_TRIANGLE, pa->npoints);
 
     /* Copy in the ordinates. */
     if (pa->npoints > 0)
     {
-        size = pa->npoints * ptsize;
-        memcpy(loc, getPoint_internal(wkb_info->ndims, pa, 0), size);
+        size = pa->npoints * wkb_info->ndims * sizeof(double);
+        memcpy(loc, OGRDAMENG_GetPoint_Internal(wkb_info->ndims, pa, 0), size);
         loc += size;
     }
-    ptarray_free(pa);
+    OGRDAMENG_Ptarray_Free(pa);
     return static_cast<size_t>(loc - buf);
 }
 
-static size_t gser_curvepoly_from_wkb_state(wkb_info *wkb_info, GByte *buf,
-                                            GByte *depth)
+/************************************************************************/
+/*                  OGRDAMENG_GserCurvepoly_From_WKB()                  */
+/************************************************************************/
+
+static size_t OGRDAMENG_GserCurvepoly_From_WKB(wkb_info *wkb_info, GByte *buf,
+                                               GByte *depth)
 {
     GByte *loc;
     GUInt32 i;
-    GUInt32 ngeoms = integer_from_wkb(wkb_info);
+    GUInt32 ngeoms = OGRDAMENG_Integer_From_WKB(wkb_info);
 
     loc = buf;
 
-    loc = gser_head_from_wkb_state(loc, wkb_info->type, ngeoms);
+    loc = OGRDAMENG_Gser_Head_From_WKB(loc, wkb_info->type, ngeoms);
 
     (*depth)++;
     /* Serialize subgeoms. */
     for (i = 0; i < ngeoms; i++)
-        loc += gser_from_wkb_state(wkb_info, loc, depth);
+        loc += OGRDAMENG_Gser_From_WKB(wkb_info, loc, depth);
 
     (*depth)--;
     return static_cast<size_t>(loc - buf);
 }
 
-size_t gser_collection_size_from_wkb_state(wkb_info *wkb_info, GByte *depth)
+/************************************************************************/
+/*              OGRDAMENG_GserCollection__Size_From_WKB()               */
+/************************************************************************/
+
+size_t OGRDAMENG_GserCollection__Size_From_WKB(wkb_info *wkb_info, GByte *depth)
 {
     size_t expected_size = INT_SIZE; /* Type number. */
     GUInt32 i;
-    GUInt32 ngeoms = integer_from_wkb(wkb_info);
+    GUInt32 ngeoms = OGRDAMENG_Integer_From_WKB(wkb_info);
 
     (*depth)++;
     /* Number of geoms */
@@ -835,19 +909,23 @@ size_t gser_collection_size_from_wkb_state(wkb_info *wkb_info, GByte *depth)
     if (ngeoms != 0)
     {
         for (i = 0; i < ngeoms; i++)
-            expected_size += gser_get_expected_size(wkb_info, depth);
+            expected_size += OGRDAMENG_Gser_Get_Expected_Size(wkb_info, depth);
     }
     (*depth)--;
     return expected_size;
 }
 
-static size_t gser_collection_from_wkb_state(wkb_info *wkb_info, GByte *buf,
-                                             GByte *depth)
+/************************************************************************/
+/*                 OGRDAMENG_GserCollection_From_WKB()                  */
+/************************************************************************/
+
+static size_t OGRDAMENG_GserCollection_From_WKB(wkb_info *wkb_info, GByte *buf,
+                                                GByte *depth)
 {
-    size_t subsize = 0;
+    size_t subsize;
     GByte *loc;
     GUInt32 i;
-    GUInt32 ngeoms = integer_from_wkb(wkb_info);
+    GUInt32 ngeoms = OGRDAMENG_Integer_From_WKB(wkb_info);
 
     (*depth)++;
     if (*depth >= MAX_DEPTH)
@@ -858,28 +936,29 @@ static size_t gser_collection_from_wkb_state(wkb_info *wkb_info, GByte *buf,
     }
     loc = buf;
 
-    loc = gser_head_from_wkb_state(loc, wkb_info->type, ngeoms);
+    loc = OGRDAMENG_Gser_Head_From_WKB(loc, wkb_info->type, ngeoms);
 
     /* Serialize subgeoms. */
     for (i = 0; i < ngeoms; i++)
     {
-        subsize = gser_from_wkb_state(wkb_info, loc, depth);
+        subsize = OGRDAMENG_Gser_From_WKB(wkb_info, loc, depth);
         loc += subsize;
     }
     (*depth)--;
     return static_cast<size_t>(loc - buf);
 }
 
-int clamp_srid(int srid)
+/************************************************************************/
+/*                         OGRDAMENG_Fix_SRID()                         */
+/************************************************************************/
+
+int OGRDAMENG_Fix_SRID(int srid)
 {
     int newsrid = srid;
 
-    if (newsrid <= 0)
+    if (newsrid < 0)
     {
-        if (newsrid != SRID_UNKNOWN)
-        {
-            newsrid = SRID_UNKNOWN;
-        }
+        newsrid = SRID_UNKNOWN;
     }
     else if (srid > SRID_MAXIMUM)
     {
@@ -892,7 +971,11 @@ int clamp_srid(int srid)
     return newsrid;
 }
 
-CPLErr type_from_wkb_state(wkb_info *wkb_info)
+/************************************************************************/
+/*                   OGRDAMENG_Type_From_WKB_State()                    */
+/************************************************************************/
+
+CPLErr OGRDAMENG_Type_From_WKB_State(wkb_info *wkb_info)
 {
     GUInt32 wkb_simple_type;
     GUInt32 wkb_type;
@@ -900,14 +983,14 @@ CPLErr type_from_wkb_state(wkb_info *wkb_info)
     int srid;
 
     /* Fail when handed incorrect starting byte */
-    if (wkb_parse_check(wkb_info, INT_SIZE))
+    if (OGRDAMENG_WKB_Parse_Check(wkb_info, INT_SIZE))
         return CE_Failure;
 
     memcpy(&wkb_type, wkb_info->pos, INT_SIZE);
 
     /* Swap? Copy into a stack-allocated integer. */
     if (wkb_info->swap_bytes)
-        CPL_SWAP32(wkb_type);
+        wkb_type = CPL_SWAP32(wkb_type);
 
     /* If any of the higher bits are set, this is probably an extended type. */
     if (wkb_type & 0xF0000000)
@@ -956,7 +1039,7 @@ CPLErr type_from_wkb_state(wkb_info *wkb_info)
     /* Read the SRID, if necessary */
     if (has_srid)
     {
-        if (wkb_parse_check(wkb_info, INT_SIZE))
+        if (OGRDAMENG_WKB_Parse_Check(wkb_info, INT_SIZE))
             return CE_Failure;
 
         memcpy(&srid, wkb_info->pos, INT_SIZE);
@@ -966,7 +1049,7 @@ CPLErr type_from_wkb_state(wkb_info *wkb_info)
             srid = CPL_SWAP32(srid);
 
         wkb_info->pos += INT_SIZE;
-        wkb_info->srid = clamp_srid(srid);
+        wkb_info->srid = OGRDAMENG_Fix_SRID(srid);
         if (srid == SRID_UNKNOWN)
             wkb_info->srid = 0;
     }
@@ -1049,30 +1132,12 @@ CPLErr type_from_wkb_state(wkb_info *wkb_info)
     return CE_Failure;
 }
 
-float next_float_down(double d)
-{
-    float result;
-    result = DoubleToFloatClamp(d);
+/************************************************************************/
+/*                      OGRDAMENG_Gser_From_GBox()                      */
+/************************************************************************/
 
-    if ((static_cast<double>(result)) <= d)
-        return result;
-
-    return nextafterf(result, -1 * FLT_MAX);
-}
-
-float next_float_up(double d)
-{
-    float result;
-    result = DoubleToFloatClamp(d);
-
-    if ((static_cast<double>(result)) <= d)
-        return result;
-
-    return nextafterf(result, FLT_MAX);
-}
-
-size_t gser_from_gbox(OGREnvelope3D *sEnvelope, GByte *buf, GInt8 has_z,
-                      GInt8 has_m)
+size_t OGRDAMENG_Gser_From_GBox(OGREnvelope3D *sEnvelope, GByte *buf,
+                                GInt8 has_z, GInt8 has_m)
 {
     GByte *loc = buf;
     float *f;
@@ -1097,10 +1162,14 @@ size_t gser_from_gbox(OGREnvelope3D *sEnvelope, GByte *buf, GInt8 has_z,
     return return_size;
 }
 
-CPLErr update_wkb_info(wkb_info *wkb_info)
+/************************************************************************/
+/*                     OGRDAMENG_Update_WKB_Info()                      */
+/************************************************************************/
+
+CPLErr OGRDAMENG_Update_WKB_Info(wkb_info *wkb_info)
 {
     char wkb_little_endian;
-    if (wkb_parse_check(wkb_info, BYTE_SIZE))
+    if (OGRDAMENG_WKB_Parse_Check(wkb_info, BYTE_SIZE))
         return CE_Failure;
 
     wkb_little_endian = wkb_info->pos[0];
@@ -1120,34 +1189,38 @@ CPLErr update_wkb_info(wkb_info *wkb_info)
     else if ((!IS_BIG_ENDIAN) && (!wkb_little_endian))
         wkb_info->swap_bytes = TRUE;
 
-    return type_from_wkb_state(wkb_info);
+    return OGRDAMENG_Type_From_WKB_State(wkb_info);
 }
 
-size_t gser_from_wkb_state(wkb_info *wkb_info, GByte *buf, GByte *depth)
+/************************************************************************/
+/*                      OGRDAMENG_Gser_From_WKB()                       */
+/************************************************************************/
+
+size_t OGRDAMENG_Gser_From_WKB(wkb_info *wkb_info, GByte *buf, GByte *depth)
 {
     if (*depth != 1)
-        update_wkb_info(wkb_info);
+        OGRDAMENG_Update_WKB_Info(wkb_info);
 
     /* Do the right thing */
     switch (wkb_info->type)
     {
         case DM_POINT:
-            return gser_point_from_wkb_state(wkb_info, buf);
+            return OGRDAMENG_GserPoint_From_WKB(wkb_info, buf);
             break;
         case DM_LINE:
-            return gser_line_from_wkb_state(wkb_info, buf);
+            return OGRDAMENG_GserLine_From_WKB(wkb_info, buf);
             break;
         case DM_CIRCSTRING:
-            return gser_circstring_from_wkb_state(wkb_info, buf);
+            return OGRDAMENG_GserCircstring_From_WKB(wkb_info, buf);
             break;
         case DM_POLYGON:
-            return gser_poly_from_wkb_state(wkb_info, buf);
+            return OGRDAMENG_GserPoly_From_WKB(wkb_info, buf);
             break;
         case DM_TRIANGLE:
-            return gser_triangle_from_wkb_state(wkb_info, buf);
+            return OGRDAMENG_GserTriangle_From_WKB(wkb_info, buf);
             break;
         case DM_CURVEPOLY:
-            return gser_curvepoly_from_wkb_state(wkb_info, buf, depth);
+            return OGRDAMENG_GserCurvepoly_From_WKB(wkb_info, buf, depth);
             break;
         case DM_MULTIPOINT:
         case DM_MULTILINE:
@@ -1158,7 +1231,7 @@ size_t gser_from_wkb_state(wkb_info *wkb_info, GByte *buf, GByte *depth)
         case DM_POLYHEDRALSURFACE:
         case DM_TIN:
         case DM_COLLECTION:
-            return gser_collection_from_wkb_state(wkb_info, buf, depth);
+            return OGRDAMENG_GserCollection_From_WKB(wkb_info, buf, depth);
             break;
 
             /* Unknown type! */
@@ -1168,23 +1241,27 @@ size_t gser_from_wkb_state(wkb_info *wkb_info, GByte *buf, GByte *depth)
     return NULL;
 }
 
-size_t gser_get_expected_size(wkb_info *wkb_info, GByte *depth)
+/************************************************************************/
+/*                  OGRDAMENG_Gser_Get_Expected_Size()                  */
+/************************************************************************/
+
+size_t OGRDAMENG_Gser_Get_Expected_Size(wkb_info *wkb_info, GByte *depth)
 {
     if (*depth != 1)
-        update_wkb_info(wkb_info);
+        OGRDAMENG_Update_WKB_Info(wkb_info);
 
     switch (wkb_info->type)
     {
         case DM_POINT:
-            return gser_point_size_from_wkb_state(wkb_info);
+            return OGRDAMENG_GserPoint_Size_From_WKB(wkb_info);
             break;
         case DM_LINE:
         case DM_CIRCSTRING:
         case DM_TRIANGLE:
-            return gser_line_size_from_wkb_state(wkb_info);
+            return OGRDAMENG_GserLine_Size_From_WKB(wkb_info);
             break;
         case DM_POLYGON:
-            return gser_poly_size_from_wkb_state(wkb_info);
+            return OGRDAMENG_GserPoly_Size_From_WKB(wkb_info);
             break;
         case DM_CURVEPOLY:
         case DM_MULTIPOINT:
@@ -1196,7 +1273,7 @@ size_t gser_get_expected_size(wkb_info *wkb_info, GByte *depth)
         case DM_POLYHEDRALSURFACE:
         case DM_TIN:
         case DM_COLLECTION:
-            return gser_collection_size_from_wkb_state(wkb_info, depth);
+            return OGRDAMENG_GserCollection__Size_From_WKB(wkb_info, depth);
             break;
             /* Unknown type! */
         default:
@@ -1205,8 +1282,13 @@ size_t gser_get_expected_size(wkb_info *wkb_info, GByte *depth)
     return 1;
 }
 
-CPLErr get_wkb_info_from_wkb(wkb_info *wkb_info, GByte *wkb, size_t wkb_size,
-                             OGREnvelope3D *sEnvelope)
+/************************************************************************/
+/*                  OGRDAMENG_Get_WKB_Info_From_WKB()                   */
+/************************************************************************/
+
+CPLErr OGRDAMENG_Get_WKB_Info_From_WKB(wkb_info *wkb_info, GByte *wkb,
+                                       size_t wkb_size,
+                                       OGREnvelope3D *sEnvelope)
 {
     wkb_info->wkb = wkb;
     wkb_info->wkb_size = wkb_size;
@@ -1224,11 +1306,16 @@ CPLErr get_wkb_info_from_wkb(wkb_info *wkb_info, GByte *wkb, size_t wkb_size,
     else
         wkb_info->need_box = 0;
 
-    return update_wkb_info(wkb_info);
+    return OGRDAMENG_Update_WKB_Info(wkb_info);
 }
 
-GSERIALIZED *gserialized_from_wkb(GByte *wkb, size_t wkb_size, size_t *size,
-                                  OGREnvelope3D *sEnvelope)
+/************************************************************************/
+/*                   OGRDAMENG_Gserialized_From_WKB()                   */
+/************************************************************************/
+
+GSERIALIZED *OGRDAMENG_Gserialized_From_WKB(GByte *wkb, size_t wkb_size,
+                                            size_t *size,
+                                            OGREnvelope3D *sEnvelope)
 {
     size_t expected_size = 0;
     size_t return_size = 0;
@@ -1238,7 +1325,8 @@ GSERIALIZED *gserialized_from_wkb(GByte *wkb, size_t wkb_size, size_t *size,
     GByte *ptr = NULL;
     GSERIALIZED *g = NULL;
 
-    if (get_wkb_info_from_wkb(&wkbinfo, wkb, wkb_size, sEnvelope) == CE_Failure)
+    if (OGRDAMENG_Get_WKB_Info_From_WKB(&wkbinfo, wkb, wkb_size, sEnvelope) ==
+        CE_Failure)
         return NULL;
 
     origin_info = wkbinfo;
@@ -1248,11 +1336,11 @@ GSERIALIZED *gserialized_from_wkb(GByte *wkb, size_t wkb_size, size_t *size,
     if (wkbinfo.need_box)
         expected_size += 2 * (2 + wkbinfo.has_z + wkbinfo.has_m) * FLOAT_SIZE;
     /* get expected size of gserialized without head. */
-    expected_size += gser_get_expected_size(&wkbinfo, &depth);
+    expected_size += OGRDAMENG_Gser_Get_Expected_Size(&wkbinfo, &depth);
     /* reset wkb_info. */
     wkbinfo = origin_info;
 
-    ptr = (GByte *)CPLMalloc(expected_size);
+    ptr = reinterpret_cast<GByte *>(CPLMalloc(expected_size));
     g = (GSERIALIZED *)(ptr);
 
     g->gflags = 0;
@@ -1269,21 +1357,26 @@ GSERIALIZED *gserialized_from_wkb(GByte *wkb, size_t wkb_size, size_t *size,
     {
         DM_SET_BBOX(((GSERIALIZED *)g)->gflags, 1);
         ptr += 8;
-        ptr += gser_from_gbox(sEnvelope, ptr, wkbinfo.has_z, wkbinfo.has_m);
+        ptr += OGRDAMENG_Gser_From_GBox(sEnvelope, ptr, wkbinfo.has_z,
+                                        wkbinfo.has_m);
     }
     else
         ptr += 8;
 
     /* Write in the serialized form of the geometry. */
-    ptr += gser_from_wkb_state(&wkbinfo, ptr, &depth);
+    ptr += OGRDAMENG_Gser_From_WKB(&wkbinfo, ptr, &depth);
 
     /* Calculate size as returned by data processing functions. */
-    return_size = ptr - (GByte *)g;
+    return_size = ptr - reinterpret_cast<GByte *>(g);
 
     /* Realloc serialized. */
     DM_SIZE_SET(g->size, return_size);
     if (expected_size != return_size)
-        g = (GSERIALIZED *)CPLRealloc(g, return_size);
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Error in expected_size!");
+        CPLFree(g);
+        return nullptr;
+    }
 
     /* Return the output size. */
     *size = return_size;
@@ -1291,11 +1384,11 @@ GSERIALIZED *gserialized_from_wkb(GByte *wkb, size_t wkb_size, size_t *size,
 }
 
 /************************************************************************/
-/*                       OGRDAMENGGeoFromHexwkb()                       */
+/*                      OGRDAMENGGeo_From_Hexwkb()                      */
 /************************************************************************/
 
-GSERIALIZED *OGRDAMENGGeoFromHexwkb(const char *pszLEHex, size_t *size,
-                                    OGREnvelope3D sEnvelope)
+GSERIALIZED *OGRDAMENGGeo_From_Hexwkb(const char *pszLEHex, size_t *size,
+                                      OGREnvelope3D sEnvelope)
 {
     if (pszLEHex == nullptr)
         return nullptr;
@@ -1303,15 +1396,19 @@ GSERIALIZED *OGRDAMENGGeoFromHexwkb(const char *pszLEHex, size_t *size,
     int nWKBLength;
     GByte *pabyBin = CPLHexToBinary(pszLEHex, &nWKBLength);
     GSERIALIZED *result =
-        gserialized_from_wkb(pabyBin, nWKBLength, size, &sEnvelope);
+        OGRDAMENG_Gserialized_From_WKB(pabyBin, nWKBLength, size, &sEnvelope);
 
     CPLFree(pabyBin);
 
     return result;
 }
 
-static GUInt32 get_wkb_type(GByte type, GByte has_z, GByte has_m,
-                            GByte has_srid)
+/************************************************************************/
+/*                       OGRDAMENG_Get_WKB_Type()                       */
+/************************************************************************/
+
+static GUInt32 OGRDAMENG_Get_WKB_Type(GByte type, GByte has_z, GByte has_m,
+                                      GByte has_srid)
 {
     GUInt32 wkb_type = 0;
 
@@ -1377,20 +1474,12 @@ static GUInt32 get_wkb_type(GByte type, GByte has_z, GByte has_m,
     return wkb_type;
 }
 
-POINTARRAY *ptarray_construct_reference_data(char hasz, char hasm,
-                                             GUInt32 npoints, GByte *ptlist)
-{
-    POINTARRAY *pa = (POINTARRAY *)CPLMalloc(sizeof(POINTARRAY));
-    if (!pa)
-        return NULL;
+/************************************************************************/
+/*                    OGRDAMENG_Get_Point_Internal()                    */
+/************************************************************************/
 
-    pa->npoints = npoints;
-    pa->serialized_pointlist = ptlist;
-
-    return pa;
-}
-
-static GByte *get_point_internal(GByte *ptlist, GUInt32 n, GByte ndims)
+static GByte *OGRDAMENG_Get_Point_Internal(GByte *ptlist, GUInt32 n,
+                                           GByte ndims)
 {
     size_t size;
     GByte *ptr;
@@ -1401,9 +1490,13 @@ static GByte *get_point_internal(GByte *ptlist, GUInt32 n, GByte ndims)
     return ptr;
 }
 
-static GByte *integer_to_wkb_buf(GUInt32 ival, GByte *buf)
+/************************************************************************/
+/*                    OGRDAMENG_Integer_To_WKB_Buf()                    */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Integer_To_WKB_Buf(GUInt32 ival, GByte *buf)
 {
-    GByte *iptr = (GByte *)(&ival);
+    GByte *iptr = reinterpret_cast<GByte *>(&ival);
     int i = 0;
 
     if (IS_BIG_ENDIAN)
@@ -1421,9 +1514,13 @@ static GByte *integer_to_wkb_buf(GUInt32 ival, GByte *buf)
     return buf + INT_SIZE;
 }
 
-static GByte *double_to_wkb_buf(double d, GByte *buf)
+/************************************************************************/
+/*                    OGRDAMENG_Double_To_WKB_Buf()                     */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Double_To_WKB_Buf(double d, GByte *buf)
 {
-    GByte *dptr = (GByte *)(&d);
+    GByte *dptr = reinterpret_cast<GByte *>(&d);
 
     /* Machine/request arch mismatch, so flip byte order */
     if (IS_BIG_ENDIAN)
@@ -1442,28 +1539,34 @@ static GByte *double_to_wkb_buf(double d, GByte *buf)
     return buf + DOUBLE_SIZE;
 }
 
-static GByte *ptarray_to_wkb_buf(GByte *ptlist, GUInt32 npoints, GByte *buf,
-                                 GByte ndims, GByte need_npoints)
+/************************************************************************/
+/*                    OGRDAMENG_Ptarray_To_WKB_Buf()                    */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Ptarray_To_WKB_Buf(GByte *ptlist, GUInt32 npoints,
+                                           GByte *buf, GByte ndims,
+                                           GByte need_npoints)
 {
     double *dbl_ptr;
 
     if (need_npoints)
-        buf = integer_to_wkb_buf(npoints, buf);
+        buf = OGRDAMENG_Integer_To_WKB_Buf(npoints, buf);
 
     if (npoints && IS_BIG_ENDIAN)
     {
         size_t size = npoints * ndims * DOUBLE_SIZE;
-        memcpy(buf, get_point_internal(ptlist, 0, ndims), size);
+        memcpy(buf, OGRDAMENG_Get_Point_Internal(ptlist, 0, ndims), size);
         buf += size;
     }
     else
     {
         for (int i = 0; i < static_cast<int>(npoints); i++)
         {
-            dbl_ptr = (double *)get_point_internal(ptlist, i, ndims);
+            dbl_ptr = reinterpret_cast<double *>(
+                OGRDAMENG_Get_Point_Internal(ptlist, i, ndims));
             for (int j = 0; j < ndims; j++)
             {
-                buf = double_to_wkb_buf(dbl_ptr[j], buf);
+                buf = OGRDAMENG_Double_To_WKB_Buf(dbl_ptr[j], buf);
             }
         }
     }
@@ -1471,7 +1574,12 @@ static GByte *ptarray_to_wkb_buf(GByte *ptlist, GUInt32 npoints, GByte *buf,
     return buf;
 }
 
-static size_t empty_to_wkb_size(GByte type, GByte ndims, GByte has_srid)
+/************************************************************************/
+/*                    OGRDAMENG_Empty_To_WKB_Size()                     */
+/************************************************************************/
+
+static size_t OGRDAMENG_Empty_To_WKB_Size(GByte type, GByte ndims,
+                                          GByte has_srid)
 {
     size_t size = BYTE_SIZE + INT_SIZE;
 
@@ -1490,78 +1598,109 @@ static size_t empty_to_wkb_size(GByte type, GByte ndims, GByte has_srid)
     return size;
 }
 
-static size_t ptarray_to_wkb_size(GUInt32 npoints, GByte dims,
-                                  GByte need_npoints)
+/************************************************************************/
+/*                   OGRDAMENG_Ptarray_To_WKB_Size()                    */
+/************************************************************************/
+
+static size_t OGRDAMENG_Ptarray_To_WKB_Size(GUInt32 npoints, GByte dims,
+                                            GByte need_npoints)
 {
     size_t size = (need_npoints ? INT_SIZE : 0) + npoints * dims * DOUBLE_SIZE;
 
     return size;
 }
 
-static size_t point_to_wkb_size(GUInt32 npoints, GByte ndims, GByte has_srid)
+/************************************************************************/
+/*                    OGRDAMENG_Point_To_WKB_Size()                     */
+/************************************************************************/
+
+static size_t OGRDAMENG_Point_To_WKB_Size(GUInt32 npoints, GByte ndims,
+                                          GByte has_srid)
 {
     size_t size = BYTE_SIZE + INT_SIZE;
     if (npoints < 1)
-        return empty_to_wkb_size(DM_POINT, ndims, has_srid);
+        return OGRDAMENG_Empty_To_WKB_Size(DM_POINT, ndims, has_srid);
 
     if (has_srid)
         size += INT_SIZE;
 
-    size += ptarray_to_wkb_size(npoints, ndims, 0);
+    size += OGRDAMENG_Ptarray_To_WKB_Size(npoints, ndims, 0);
     return size;
 }
 
-static size_t line_to_wkb_size(GUInt32 npoints, GByte ndims, GByte has_srid)
+/************************************************************************/
+/*                     OGRDAMENG_Line_To_WKB_Size()                     */
+/************************************************************************/
+
+static size_t OGRDAMENG_Line_To_WKB_Size(GUInt32 npoints, GByte ndims,
+                                         GByte has_srid)
 {
     size_t size = BYTE_SIZE + INT_SIZE;
     if (npoints < 1)
-        return empty_to_wkb_size(DM_LINE, ndims, has_srid);
+        return OGRDAMENG_Empty_To_WKB_Size(DM_LINE, ndims, has_srid);
 
     if (has_srid)
         size += INT_SIZE;
 
-    size += ptarray_to_wkb_size(npoints, ndims, 1);
+    size += OGRDAMENG_Ptarray_To_WKB_Size(npoints, ndims, 1);
     return size;
 }
 
-static size_t poly_to_wkb_size(GUInt32 allpoints, GUInt32 nrings, GByte ndims,
-                               GByte has_srid)
+/************************************************************************/
+/*                     OGRDAMENG_Poly_To_WKB_Size()                     */
+/************************************************************************/
+
+static size_t OGRDAMENG_Poly_To_WKB_Size(GUInt32 allpoints, GUInt32 nrings,
+                                         GByte ndims, GByte has_srid)
 {
     size_t size = BYTE_SIZE + INT_SIZE + INT_SIZE;
 
     if (nrings < 1 || allpoints < 1)
-        return empty_to_wkb_size(DM_POLYGON, ndims, has_srid);
+        return OGRDAMENG_Empty_To_WKB_Size(DM_POLYGON, ndims, has_srid);
 
     if (has_srid)
         size += INT_SIZE;
 
     size += nrings * INT_SIZE;
 
-    size += ptarray_to_wkb_size(allpoints, ndims, 0);
+    size += OGRDAMENG_Ptarray_To_WKB_Size(allpoints, ndims, 0);
 
     return size;
 }
 
-static size_t triangle_to_wkb_size(GUInt32 npoints, GByte ndims, GByte has_srid)
+/************************************************************************/
+/*                   OGRDAMENG_Triangle_To_WKB_Size()                   */
+/************************************************************************/
+
+static size_t OGRDAMENG_Triangle_To_WKB_Size(GUInt32 npoints, GByte ndims,
+                                             GByte has_srid)
 {
     size_t size = BYTE_SIZE + INT_SIZE;
     if (npoints < 1)
-        return empty_to_wkb_size(DM_TRIANGLE, ndims, has_srid);
+        return OGRDAMENG_Empty_To_WKB_Size(DM_TRIANGLE, ndims, has_srid);
 
     if (has_srid)
         size += INT_SIZE;
 
-    size += ptarray_to_wkb_size(npoints, ndims, 1);
+    size += OGRDAMENG_Ptarray_To_WKB_Size(npoints, ndims, 1);
     return size;
 }
 
-static GByte *endian_to_wkb_buf(GByte *buf)
+/************************************************************************/
+/*                    OGRDAMENG_Endian_To_WKB_Buf()                     */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Endian_To_WKB_Buf(GByte *buf)
 {
     buf[0] = (IS_BIG_ENDIAN ? 0 : 1);
     return buf + 1;
 }
 
-static GByte *double_nan_to_wkb_buf(GByte *buf)
+/************************************************************************/
+/*                  OGRDAMENG_Double_NAN_To_WKB_Buf()                   */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Double_NAN_To_WKB_Buf(GByte *buf)
 {
 #define NAN_SIZE 8
     const GByte ndr_nan[NAN_SIZE] = {0x00, 0x00, 0x00, 0x00,
@@ -1578,44 +1717,57 @@ static GByte *double_nan_to_wkb_buf(GByte *buf)
     return buf + NAN_SIZE;
 }
 
-static GByte *empty_to_wkb_buf(GByte type, GByte has_z, GByte has_m, int srid,
-                               GByte *buf)
+/************************************************************************/
+/*                     OGRDAMENG_Empty_To_WKB_Buf()                     */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Empty_To_WKB_Buf(GByte type, GByte has_z, GByte has_m,
+                                         int srid, GByte *buf)
 {
-    GUInt32 wkb_type = get_wkb_type(type, has_z, has_m, srid != SRID_UNKNOWN);
+    GUInt32 wkb_type =
+        OGRDAMENG_Get_WKB_Type(type, has_z, has_m, srid != SRID_UNKNOWN);
     int i;
 
-    buf = endian_to_wkb_buf(buf);
-    buf = integer_to_wkb_buf(wkb_type, buf);
+    buf = OGRDAMENG_Endian_To_WKB_Buf(buf);
+    buf = OGRDAMENG_Integer_To_WKB_Buf(wkb_type, buf);
     if (srid != SRID_UNKNOWN)
-        buf = integer_to_wkb_buf(srid, buf);
+        buf = OGRDAMENG_Integer_To_WKB_Buf(srid, buf);
 
     if (type == DM_POINT)
     {
         for (i = 0; i < (2 + has_z + has_m); i++)
-            buf = double_nan_to_wkb_buf(buf);
+            buf = OGRDAMENG_Double_NAN_To_WKB_Buf(buf);
     }
     else
     {
-        buf = integer_to_wkb_buf(0, buf);
+        buf = OGRDAMENG_Integer_To_WKB_Buf(0, buf);
     }
 
     return buf;
 }
 
-static GByte *header_to_wkb_buf(GByte type, GByte has_z, GByte has_m, int srid,
-                                GByte *buf)
+/************************************************************************/
+/*                    OGRDAMENG_Header_To_WKB_Buf()                     */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Header_To_WKB_Buf(GByte type, GByte has_z, GByte has_m,
+                                          int srid, GByte *buf)
 {
-    buf = endian_to_wkb_buf(buf);
-    buf = integer_to_wkb_buf(
-        get_wkb_type(type, has_z, has_m, srid != SRID_UNKNOWN), buf);
+    buf = OGRDAMENG_Endian_To_WKB_Buf(buf);
+    buf = OGRDAMENG_Integer_To_WKB_Buf(
+        OGRDAMENG_Get_WKB_Type(type, has_z, has_m, srid != SRID_UNKNOWN), buf);
     if (srid != SRID_UNKNOWN)
-        buf = integer_to_wkb_buf(srid, buf);
+        buf = OGRDAMENG_Integer_To_WKB_Buf(srid, buf);
     return buf;
 }
 
-static GByte *wkb_point_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
-                                                GByte has_m, size_t *g_size,
-                                                int *wkb_size, int srid)
+/************************************************************************/
+/*                OGRDAMENG_WKBPoint_From_Gserialized()                 */
+/************************************************************************/
+
+static GByte *OGRDAMENG_WKBPoint_From_Gserialized(GByte *data_ptr, GByte has_z,
+                                                  GByte has_m, size_t *g_size,
+                                                  int *wkb_size, int srid)
 {
     GByte *start_ptr = data_ptr;
     GByte *buffer;
@@ -1624,12 +1776,13 @@ static GByte *wkb_point_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     GUInt32 npoints = 0;
     size_t size = 0;
 
-    data_ptr += INT_SIZE;               /* Skip past the type. */
-    npoints = *((GUInt32 *)(data_ptr)); /* Zero => empty geometry */
-    data_ptr += INT_SIZE;               /* Skip past the npoints. */
+    data_ptr += INT_SIZE; /* Skip past the type. */
+    npoints =
+        *reinterpret_cast<GUInt32 *>(data_ptr); /* Zero => empty geometry */
+    data_ptr += INT_SIZE;                       /* Skip past the npoints. */
 
-    size = point_to_wkb_size(npoints, ndims, srid != SRID_UNKNOWN);
-    buffer = (GByte *)CPLMalloc(size);
+    size = OGRDAMENG_Point_To_WKB_Size(npoints, ndims, srid != SRID_UNKNOWN);
+    buffer = reinterpret_cast<GByte *>(CPLMalloc(size));
 
     if (!buffer)
         return NULL;
@@ -1637,12 +1790,14 @@ static GByte *wkb_point_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     start_buffer = buffer;
 
     if (npoints < 1)
-        buffer = empty_to_wkb_buf(DM_POINT, has_z, has_m, srid, buffer);
+        buffer =
+            OGRDAMENG_Empty_To_WKB_Buf(DM_POINT, has_z, has_m, srid, buffer);
     else
     {
-        buffer = header_to_wkb_buf(DM_POINT, has_z, has_m, srid, buffer);
-        buffer = ptarray_to_wkb_buf(data_ptr, npoints, buffer,
-                                    (2 + has_z + has_m), 0);
+        buffer =
+            OGRDAMENG_Header_To_WKB_Buf(DM_POINT, has_z, has_m, srid, buffer);
+        buffer = OGRDAMENG_Ptarray_To_WKB_Buf(data_ptr, npoints, buffer,
+                                              (2 + has_z + has_m), 0);
     }
 
     *wkb_size = static_cast<int>(buffer - start_buffer);
@@ -1657,9 +1812,13 @@ static GByte *wkb_point_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     return start_buffer;
 }
 
-static GByte *wkb_line_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
-                                               GByte has_m, size_t *g_size,
-                                               int *wkb_size, int srid)
+/************************************************************************/
+/*                 OGRDAMENG_WKBLine_From_Gserialized()                 */
+/************************************************************************/
+
+static GByte *OGRDAMENG_WKBLine_From_Gserialized(GByte *data_ptr, GByte has_z,
+                                                 GByte has_m, size_t *g_size,
+                                                 int *wkb_size, int srid)
 {
     GByte *start_ptr = data_ptr;
     GByte *buffer;
@@ -1668,12 +1827,13 @@ static GByte *wkb_line_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     GUInt32 npoints = 0;
     size_t size = 0;
 
-    data_ptr += INT_SIZE;               /* Skip past the type. */
-    npoints = *((GUInt32 *)(data_ptr)); /* Zero => empty geometry */
-    data_ptr += INT_SIZE;               /* Skip past the npoints. */
+    data_ptr += INT_SIZE; /* Skip past the type. */
+    npoints =
+        *reinterpret_cast<GUInt32 *>(data_ptr); /* Zero => empty geometry */
+    data_ptr += INT_SIZE;                       /* Skip past the npoints. */
 
-    size = line_to_wkb_size(npoints, ndims, srid != SRID_UNKNOWN);
-    buffer = (GByte *)CPLMalloc(size);
+    size = OGRDAMENG_Line_To_WKB_Size(npoints, ndims, srid != SRID_UNKNOWN);
+    buffer = reinterpret_cast<GByte *>(CPLMalloc(size));
 
     if (!buffer)
         return NULL;
@@ -1681,12 +1841,14 @@ static GByte *wkb_line_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     start_buffer = buffer;
 
     if (npoints < 1)
-        buffer = empty_to_wkb_buf(DM_LINE, has_z, has_m, srid, buffer);
+        buffer =
+            OGRDAMENG_Empty_To_WKB_Buf(DM_LINE, has_z, has_m, srid, buffer);
     else
     {
-        buffer = header_to_wkb_buf(DM_LINE, has_z, has_m, srid, buffer);
-        buffer = ptarray_to_wkb_buf(data_ptr, npoints, buffer,
-                                    (2 + has_z + has_m), 1);
+        buffer =
+            OGRDAMENG_Header_To_WKB_Buf(DM_LINE, has_z, has_m, srid, buffer);
+        buffer = OGRDAMENG_Ptarray_To_WKB_Buf(data_ptr, npoints, buffer,
+                                              (2 + has_z + has_m), 1);
     }
 
     *wkb_size = static_cast<int>(buffer - start_buffer);
@@ -1701,10 +1863,14 @@ static GByte *wkb_line_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     return start_buffer;
 }
 
-static GByte *wkb_circstring_from_gserialized_buffer(GByte *data_ptr,
-                                                     GByte has_z, GByte has_m,
-                                                     size_t *g_size,
-                                                     int *wkb_size, int srid)
+/************************************************************************/
+/*              OGRDAMENG_WKBCircstring_From_Gserialized()              */
+/************************************************************************/
+
+static GByte *OGRDAMENG_WKBCircstring_From_Gserialized(GByte *data_ptr,
+                                                       GByte has_z, GByte has_m,
+                                                       size_t *g_size,
+                                                       int *wkb_size, int srid)
 {
     GByte *start_ptr = data_ptr;
     GByte *buffer;
@@ -1713,23 +1879,26 @@ static GByte *wkb_circstring_from_gserialized_buffer(GByte *data_ptr,
     GUInt32 npoints = 0;
     size_t size = 0;
 
-    data_ptr += INT_SIZE;               /* Skip past the type. */
-    npoints = *((GUInt32 *)(data_ptr)); /* Zero => empty geometry */
-    data_ptr += INT_SIZE;               /* Skip past the npoints. */
+    data_ptr += INT_SIZE; /* Skip past the type. */
+    npoints =
+        *reinterpret_cast<GUInt32 *>(data_ptr); /* Zero => empty geometry */
+    data_ptr += INT_SIZE;                       /* Skip past the npoints. */
 
-    size = line_to_wkb_size(npoints, ndims, srid != SRID_UNKNOWN);
-    buffer = (GByte *)CPLMalloc(size);
+    size = OGRDAMENG_Line_To_WKB_Size(npoints, ndims, srid != SRID_UNKNOWN);
+    buffer = reinterpret_cast<GByte *>(CPLMalloc(size));
     if (!buffer)
         return NULL;
     start_buffer = buffer;
 
     if (npoints < 1)
-        buffer = empty_to_wkb_buf(DM_CIRCSTRING, has_z, has_m, srid, buffer);
+        buffer = OGRDAMENG_Empty_To_WKB_Buf(DM_CIRCSTRING, has_z, has_m, srid,
+                                            buffer);
     else
     {
-        buffer = header_to_wkb_buf(DM_CIRCSTRING, has_z, has_m, srid, buffer);
-        buffer = ptarray_to_wkb_buf(data_ptr, npoints, buffer,
-                                    (2 + has_z + has_m), 1);
+        buffer = OGRDAMENG_Header_To_WKB_Buf(DM_CIRCSTRING, has_z, has_m, srid,
+                                             buffer);
+        buffer = OGRDAMENG_Ptarray_To_WKB_Buf(data_ptr, npoints, buffer,
+                                              (2 + has_z + has_m), 1);
     }
 
     *wkb_size = static_cast<int>(buffer - start_buffer);
@@ -1744,9 +1913,13 @@ static GByte *wkb_circstring_from_gserialized_buffer(GByte *data_ptr,
     return start_buffer;
 }
 
-static GByte *wkb_poly_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
-                                               GByte has_m, size_t *g_size,
-                                               int *wkb_size, int srid)
+/************************************************************************/
+/*                 OGRDAMENG_WKBPoly_From_Gserialized()                 */
+/************************************************************************/
+
+static GByte *OGRDAMENG_WKBPoly_From_Gserialized(GByte *data_ptr, GByte has_z,
+                                                 GByte has_m, size_t *g_size,
+                                                 int *wkb_size, int srid)
 {
     GByte *start_ptr = data_ptr;
     GByte *buffer;
@@ -1758,20 +1931,22 @@ static GByte *wkb_poly_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     GUInt32 i = 0;
     size_t size = 0;
 
-    data_ptr += INT_SIZE;              /* Skip past the type. */
-    nrings = *((GUInt32 *)(data_ptr)); /* Zero => empty geometry */
-    data_ptr += INT_SIZE;              /* Skip past the npoints. */
+    data_ptr += INT_SIZE; /* Skip past the type. */
+    nrings =
+        *reinterpret_cast<GUInt32 *>(data_ptr); /* Zero => empty geometry */
+    data_ptr += INT_SIZE;                       /* Skip past the npoints. */
 
     /* Move past all the npoints values.If there is padding, move past that too. */
     ordinate_ptr = data_ptr + nrings * 4 + ((nrings % 2) ? 4 : 0);
 
     for (i = 0; i < nrings; i++)
     {
-        allpoints += *((GUInt32 *)(data_ptr));
+        allpoints += *reinterpret_cast<GUInt32 *>(data_ptr);
     }
 
-    size = poly_to_wkb_size(allpoints, nrings, ndims, srid != SRID_UNKNOWN);
-    buffer = (GByte *)CPLMalloc(size);
+    size = OGRDAMENG_Poly_To_WKB_Size(allpoints, nrings, ndims,
+                                      srid != SRID_UNKNOWN);
+    buffer = reinterpret_cast<GByte *>(CPLMalloc(size));
 
     if (!buffer)
         return NULL;
@@ -1779,23 +1954,25 @@ static GByte *wkb_poly_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     start_buffer = buffer;
 
     if (allpoints < 1)
-        buffer = empty_to_wkb_buf(DM_POLYGON, has_z, has_m, srid, buffer);
+        buffer =
+            OGRDAMENG_Empty_To_WKB_Buf(DM_POLYGON, has_z, has_m, srid, buffer);
     else
     {
-        buffer = header_to_wkb_buf(DM_POLYGON, has_z, has_m, srid, buffer);
-        buffer = integer_to_wkb_buf(nrings, buffer);
+        buffer =
+            OGRDAMENG_Header_To_WKB_Buf(DM_POLYGON, has_z, has_m, srid, buffer);
+        buffer = OGRDAMENG_Integer_To_WKB_Buf(nrings, buffer);
 
         for (i = 0; i < nrings; i++)
         {
             GUInt32 npoints = 0;
 
             /* Read in the number of points. */
-            npoints = *((GUInt32 *)(data_ptr));
-            buffer = integer_to_wkb_buf(npoints, buffer);
+            npoints = *reinterpret_cast<GUInt32 *>(data_ptr);
+            buffer = OGRDAMENG_Integer_To_WKB_Buf(npoints, buffer);
             data_ptr += 4;
 
-            buffer = ptarray_to_wkb_buf(ordinate_ptr, npoints, buffer,
-                                        (2 + has_z + has_m), 0);
+            buffer = OGRDAMENG_Ptarray_To_WKB_Buf(ordinate_ptr, npoints, buffer,
+                                                  (2 + has_z + has_m), 0);
 
             ordinate_ptr += sizeof(double) * ndims * npoints;
         }
@@ -1811,9 +1988,14 @@ static GByte *wkb_poly_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     return start_buffer;
 }
 
-static GByte *wkb_triangle_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
-                                                   GByte has_m, size_t *g_size,
-                                                   int *wkb_size, int srid)
+/************************************************************************/
+/*               OGRDAMENG_WKBTriangle_From_Gserialized()               */
+/************************************************************************/
+
+static GByte *OGRDAMENG_WKBTriangle_From_Gserialized(GByte *data_ptr,
+                                                     GByte has_z, GByte has_m,
+                                                     size_t *g_size,
+                                                     int *wkb_size, int srid)
 {
     GByte *start_ptr = data_ptr;
     GByte *buffer;
@@ -1822,12 +2004,13 @@ static GByte *wkb_triangle_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     GUInt32 npoints = 0;
     size_t size = 0;
 
-    data_ptr += INT_SIZE;               /* Skip past the type. */
-    npoints = *((GUInt32 *)(data_ptr)); /* Zero => empty geometry */
-    data_ptr += INT_SIZE;               /* Skip past the npoints. */
+    data_ptr += INT_SIZE; /* Skip past the type. */
+    npoints =
+        *reinterpret_cast<GUInt32 *>(data_ptr); /* Zero => empty geometry */
+    data_ptr += INT_SIZE;                       /* Skip past the npoints. */
 
-    size = triangle_to_wkb_size(npoints, ndims, srid != SRID_UNKNOWN);
-    buffer = (GByte *)CPLMalloc(size);
+    size = OGRDAMENG_Triangle_To_WKB_Size(npoints, ndims, srid != SRID_UNKNOWN);
+    buffer = reinterpret_cast<GByte *>(CPLMalloc(size));
 
     if (!buffer)
         return NULL;
@@ -1835,13 +2018,15 @@ static GByte *wkb_triangle_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     start_buffer = buffer;
 
     if (npoints < 1)
-        buffer = empty_to_wkb_buf(DM_TRIANGLE, has_z, has_m, srid, buffer);
+        buffer =
+            OGRDAMENG_Empty_To_WKB_Buf(DM_TRIANGLE, has_z, has_m, srid, buffer);
     else
     {
-        buffer = header_to_wkb_buf(DM_TRIANGLE, has_z, has_m, srid, buffer);
-        buffer = integer_to_wkb_buf(1, buffer);
-        buffer = ptarray_to_wkb_buf(data_ptr, npoints, buffer,
-                                    (2 + has_z + has_m), 1);
+        buffer = OGRDAMENG_Header_To_WKB_Buf(DM_TRIANGLE, has_z, has_m, srid,
+                                             buffer);
+        buffer = OGRDAMENG_Integer_To_WKB_Buf(1, buffer);
+        buffer = OGRDAMENG_Ptarray_To_WKB_Buf(data_ptr, npoints, buffer,
+                                              (2 + has_z + has_m), 1);
     }
 
     *wkb_size = static_cast<int>(buffer - start_buffer);
@@ -1854,7 +2039,11 @@ static GByte *wkb_triangle_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
     return buffer;
 }
 
-int collection_allows_subtype(int collectiontype, int subtype)
+/************************************************************************/
+/*                OGRDAMENG_Collection_Allows_Subtype()                 */
+/************************************************************************/
+
+int OGRDAMENG_Collection_Allows_Subtype(int collectiontype, int subtype)
 {
     if (collectiontype == DM_COLLECTION)
         return TRUE;
@@ -1887,44 +2076,54 @@ int collection_allows_subtype(int collectiontype, int subtype)
     return FALSE;
 }
 
-static GByte *wkb_collection_from_gserialized_buffer(GByte *data_ptr,
-                                                     GByte has_z, GByte has_m,
-                                                     size_t *g_size,
-                                                     int *wkb_size, int srid)
+/************************************************************************/
+/*              OGRDAMENG_WKBCollection_From_Gserialized()              */
+/************************************************************************/
+
+static GByte *OGRDAMENG_WKBCollection_From_Gserialized(GByte *data_ptr,
+                                                       GByte has_z, GByte has_m,
+                                                       size_t *g_size,
+                                                       int *wkb_size, int srid)
 {
     GUInt32 type;
-    GByte *buffer = NULL;
-    GByte *header = NULL;
+    GByte *buffer = nullptr;
+    GByte *header = nullptr;
     GUInt32 ngeoms = 0;
     int size = BYTE_SIZE + INT_SIZE + INT_SIZE;
     GUInt32 i;
 
-    type = *((GUInt32 *)(data_ptr));
+    type = *reinterpret_cast<GUInt32 *>(data_ptr);
     data_ptr += INT_SIZE; /* Skip past the type. */
-    ngeoms = *((GUInt32 *)(data_ptr));
+    ngeoms = *reinterpret_cast<GUInt32 *>(data_ptr);
     data_ptr += INT_SIZE; /* Skip past the ngeoms. */
 
     if (srid)
         size += INT_SIZE;
 
-    buffer = (GByte *)CPLMalloc(size);
+    buffer = reinterpret_cast<GByte *>(CPLMalloc(size));
     header = buffer;
-    header = header_to_wkb_buf((GByte)type, has_z, has_m, srid, header);
-    integer_to_wkb_buf(ngeoms, header);
+    header =
+        OGRDAMENG_Header_To_WKB_Buf((GByte)type, has_z, has_m, srid, header);
+    OGRDAMENG_Integer_To_WKB_Buf(ngeoms, header);
 
     for (i = 0; i < ngeoms; i++)
     {
-        GUInt32 subtype = *((GUInt32 *)(data_ptr));
+        GUInt32 subtype = *reinterpret_cast<GUInt32 *>(data_ptr);
         size_t subsize = 0;
-        GByte *subbuffer = NULL;
+        GByte *subbuffer = nullptr;
+        GByte *tmp_buffer = nullptr;
         int subwritten_size = 0;
 
-        if (!collection_allows_subtype(type, subtype))
+        if (!OGRDAMENG_Collection_Allows_Subtype(type, subtype))
         {
-            break;
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Error subtype in collection!");
+            if (buffer)
+                CPLFree(buffer);
+            return NULL;
         }
-        subbuffer = wkb_from_gserialized_buffer(data_ptr, has_z, has_m,
-                                                &subsize, &subwritten_size, 0);
+        subbuffer = OGRDAMENG_Wkb_From_Gserialized(
+            data_ptr, has_z, has_m, &subsize, &subwritten_size, 0);
         if (!subbuffer)
         {
             if (buffer)
@@ -1932,9 +2131,15 @@ static GByte *wkb_collection_from_gserialized_buffer(GByte *data_ptr,
             return NULL;
         }
 
-        buffer = (GByte *)CPLRealloc(buffer, size + subwritten_size);
-        if (!buffer)
+        tmp_buffer = reinterpret_cast<GByte *>(
+            CPLRealloc(buffer, size + subwritten_size));
+        if (!tmp_buffer)
+        {
+            CPLFree(buffer);
             return NULL;
+        }
+        else
+            buffer = tmp_buffer;
         memcpy(buffer + size, subbuffer, subwritten_size);
         size += subwritten_size;
         data_ptr += subsize;
@@ -1946,31 +2151,35 @@ static GByte *wkb_collection_from_gserialized_buffer(GByte *data_ptr,
     return buffer;
 }
 
-static GByte *wkb_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
-                                          GByte has_m, size_t *g_size,
-                                          int *wkb_size, int srid)
+/************************************************************************/
+/*                   OGRDAMENG_Wkb_From_Gserialized()                   */
+/************************************************************************/
+
+static GByte *OGRDAMENG_Wkb_From_Gserialized(GByte *data_ptr, GByte has_z,
+                                             GByte has_m, size_t *g_size,
+                                             int *wkb_size, int srid)
 {
     GUInt32 type;
 
-    type = *((GUInt32 *)(data_ptr));
+    type = *reinterpret_cast<GUInt32 *>(data_ptr);
 
     switch (type)
     {
         case DM_POINT:
-            return wkb_point_from_gserialized_buffer(data_ptr, has_z, has_m,
-                                                     g_size, wkb_size, srid);
+            return OGRDAMENG_WKBPoint_From_Gserialized(data_ptr, has_z, has_m,
+                                                       g_size, wkb_size, srid);
         case DM_LINE:
-            return wkb_line_from_gserialized_buffer(data_ptr, has_z, has_m,
-                                                    g_size, wkb_size, srid);
+            return OGRDAMENG_WKBLine_From_Gserialized(data_ptr, has_z, has_m,
+                                                      g_size, wkb_size, srid);
         case DM_CIRCSTRING:
-            return wkb_circstring_from_gserialized_buffer(
+            return OGRDAMENG_WKBCircstring_From_Gserialized(
                 data_ptr, has_z, has_m, g_size, wkb_size, srid);
         case DM_POLYGON:
-            return wkb_poly_from_gserialized_buffer(data_ptr, has_z, has_m,
-                                                    g_size, wkb_size, srid);
+            return OGRDAMENG_WKBPoly_From_Gserialized(data_ptr, has_z, has_m,
+                                                      g_size, wkb_size, srid);
         case DM_TRIANGLE:
-            return wkb_triangle_from_gserialized_buffer(data_ptr, has_z, has_m,
-                                                        g_size, wkb_size, srid);
+            return OGRDAMENG_WKBTriangle_From_Gserialized(
+                data_ptr, has_z, has_m, g_size, wkb_size, srid);
         case DM_MULTIPOINT:
         case DM_MULTILINE:
         case DM_MULTIPOLYGON:
@@ -1981,14 +2190,18 @@ static GByte *wkb_from_gserialized_buffer(GByte *data_ptr, GByte has_z,
         case DM_POLYHEDRALSURFACE:
         case DM_TIN:
         case DM_COLLECTION:
-            return wkb_collection_from_gserialized_buffer(
+            return OGRDAMENG_WKBCollection_From_Gserialized(
                 data_ptr, has_z, has_m, g_size, wkb_size, srid);
         default:
             return NULL;
     }
 }
 
-GByte *gser_to_wkb_buffer(GSERIALIZED *gser, int *b_size)
+/************************************************************************/
+/*                    OGRDAMENG_Gser_To_Wkb_Buffer()                    */
+/************************************************************************/
+
+GByte *OGRDAMENG_Gser_To_Wkb_Buffer(GSERIALIZED *gser, int *b_size)
 {
     size_t xflags = 0;
     int srid = 0;
@@ -2013,7 +2226,7 @@ GByte *gser_to_wkb_buffer(GSERIALIZED *gser, int *b_size)
     if (DM_GET_EXTENDED(gser->gflags))
         memcpy(&xflags, gser->data, sizeof(size_t));
 
-    data_ptr = (GByte *)gser->data;
+    data_ptr = reinterpret_cast<GByte *>(gser->data);
     if (DM_GET_EXTENDED(gser->gflags))
         data_ptr += sizeof(size_t);
 
@@ -2025,21 +2238,22 @@ GByte *gser_to_wkb_buffer(GSERIALIZED *gser, int *b_size)
             data_ptr += (2 + has_z + has_m) * 2 * sizeof(float);
     }
 
-    return wkb_from_gserialized_buffer(data_ptr, has_z, has_m, 0, b_size, srid);
+    return OGRDAMENG_Wkb_From_Gserialized(data_ptr, has_z, has_m, 0, b_size,
+                                          srid);
 }
 
 /************************************************************************/
-/*                        OGRDAMENGGeoToHexwkb()                        */
+/*                      OGRDAMENG_Geo_To_Hexwkb()                       */
 /************************************************************************/
 
-GByte *OGRDAMENGGeoToHexwkb(GSERIALIZED *geom, int *size)
+GByte *OGRDAMENG_Geo_To_Hexwkb(GSERIALIZED *geom, int *size)
 {
     GByte *wkb;
 
     if (!geom)
         return NULL;
 
-    wkb = gser_to_wkb_buffer(geom, size);
+    wkb = OGRDAMENG_Gser_To_Wkb_Buffer(geom, size);
 
     return wkb;
 }
