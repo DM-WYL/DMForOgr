@@ -313,9 +313,8 @@ void OGRDAMENGResultLayer::ResolveSRID(const OGRDAMENGGeomFieldDefn *poGFldDefn)
     OGRDAMENGConn *hDAMENGConn = poDS->GetDAMENGConn();
     OGRDAMENGStatement oCommand(hDAMENGConn);
 
-    if (nSRSId == UNDETERMINED_SRID &&
-        (poGFldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
-         poGFldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY))
+    if (poGFldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
+        poGFldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY)
     {
         if (pszGeomTableName != nullptr)
         {

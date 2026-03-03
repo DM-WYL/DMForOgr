@@ -29,6 +29,7 @@
 #include "ogr_dameng.h"
 #include "cpl_conv.h"
 #include <ogr_p.h>
+#include <cmath>
 
 OGRDAMENGStatement::OGRDAMENGStatement(OGRDAMENGConn *poConnIn)
     : hStatement(nullptr), insert_objdesc(nullptr)
@@ -69,8 +70,9 @@ void OGRDAMENGStatement::Clean()
 {
     if (insert_num > 0)
     {
-        if (!DSQL_SUCCEEDED(dpi_set_stmt_attr(
-                hStatement, DSQL_ATTR_PARAMSET_SIZE, (dpointer)insert_num, 0)))
+        if (!DSQL_SUCCEEDED(
+                dpi_set_stmt_attr(hStatement, DSQL_ATTR_PARAMSET_SIZE,
+                                  reinterpret_cast<dpointer>(insert_num), 0)))
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "failed to set stmt paramset size");
@@ -271,7 +273,8 @@ CPLErr OGRDAMENGStatement::Prepare(const char *pszSQLstatement)
         }
     }
 
-    if (!DSQL_SUCCEEDED(dpi_prepare(hStatement, (sdbyte *)pszCommandText)))
+    if (!DSQL_SUCCEEDED(dpi_prepare(
+            hStatement, reinterpret_cast<sdbyte *>(pszCommandText))))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to prepare, %s",
                  pszSQLstatement);
@@ -298,14 +301,15 @@ CPLErr OGRDAMENGStatement::Execute_for_insert(OGRDAMENGFeatureDefn *params,
             return CE_Failure;
         }
 
-        if (!DSQL_SUCCEEDED(
-                dpi_number_params(hStatement, (udint2 *)&param_nums)))
+        if (!DSQL_SUCCEEDED(dpi_number_params(
+                hStatement, reinterpret_cast<udint2 *>(&param_nums))))
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "failed to get params numbers");
             return CE_Failure;
         }
-        paramdescs = (DmColDesc *)CPLCalloc(sizeof(DmColDesc), param_nums);
+        paramdescs = reinterpret_cast<DmColDesc *>(
+            CPLCalloc(sizeof(DmColDesc), param_nums));
         for (udint2 iparam = 0; iparam < param_nums; iparam++)
         {
             if (!DSQL_SUCCEEDED(dpi_desc_param(
@@ -322,11 +326,11 @@ CPLErr OGRDAMENGStatement::Execute_for_insert(OGRDAMENGFeatureDefn *params,
         }
 
         geonum = i;
-        insert_objs = (dhobj **)CPLCalloc(sizeof(dhobj *), i);
+        insert_objs = reinterpret_cast<dhobj **>(CPLCalloc(sizeof(dhobj *), i));
         for (int num = 0; num < i; num++)
         {
-            insert_objs[num] =
-                (dhobj *)CPLCalloc(sizeof(dhobj), FORCED_INSERT_NUM);
+            insert_objs[num] = reinterpret_cast<dhobj *>(
+                CPLCalloc(sizeof(dhobj), FORCED_INSERT_NUM));
         }
         if (i > 0)
         {
@@ -368,21 +372,23 @@ CPLErr OGRDAMENGStatement::Execute_for_insert(OGRDAMENGFeatureDefn *params,
                 }
             }
         }
-        insert_geovalues =
-            (GSERIALIZED ***)CPLCalloc(sizeof(GSERIALIZED **), i);
+        insert_geovalues = reinterpret_cast<GSERIALIZED ***>(
+            CPLCalloc(sizeof(GSERIALIZED **), i));
         for (int iparam = 0; iparam < i; iparam++)
         {
-            insert_geovalues[iparam] = (GSERIALIZED **)CPLCalloc(
-                sizeof(GSERIALIZED *), FORCED_INSERT_NUM);
+            insert_geovalues[iparam] = reinterpret_cast<GSERIALIZED **>(
+                CPLCalloc(sizeof(GSERIALIZED *), FORCED_INSERT_NUM));
         }
 
         valuesnum = param_nums - i;
-        insert_values = (char ***)CPLCalloc(sizeof(char **), valuesnum);
+        insert_values =
+            reinterpret_cast<char ***>(CPLCalloc(sizeof(char **), valuesnum));
         for (int iparam = 0; iparam < valuesnum; iparam++)
         {
-            insert_values[iparam] =
-                (char **)CPLCalloc(sizeof(char *), FORCED_INSERT_NUM);
-            char *date = (char *)CPLMalloc(8192 * FORCED_INSERT_NUM);
+            insert_values[iparam] = reinterpret_cast<char **>(
+                CPLCalloc(sizeof(char *), FORCED_INSERT_NUM));
+            char *date =
+                reinterpret_cast<char *>(CPLMalloc(8192 * FORCED_INSERT_NUM));
             for (int num = 0; num < FORCED_INSERT_NUM; num++)
             {
                 insert_values[iparam][num] = date + 8192 * num;
@@ -570,7 +576,9 @@ CPLErr OGRDAMENGStatement::ExecuteInsert(const char *pszSQLStatement, int nMode)
         return CE_Failure;
     }
 
-    if (!DSQL_SUCCEEDED(dpi_exec_direct(hStatement, (sdbyte *)pszSQLStatement)))
+    if (!DSQL_SUCCEEDED(dpi_exec_direct(
+            hStatement,
+            reinterpret_cast<sdbyte *>(const_cast<char *>(pszSQLStatement)))))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to exectue");
         return CE_Failure;
@@ -609,9 +617,9 @@ CPLErr OGRDAMENGStatement::Execute(const char *pszSQLStatement, int nMode)
     sdint4 nStmtType;
     slength len;
 
-    if (!DSQL_SUCCEEDED(dpi_get_diag_field(DSQL_HANDLE_STMT, hStatement, 0,
-                                           DSQL_DIAG_DYNAMIC_FUNCTION_CODE,
-                                           (dpointer)&nStmtType, 0, &len)))
+    if (!DSQL_SUCCEEDED(dpi_get_diag_field(
+            DSQL_HANDLE_STMT, hStatement, 0, DSQL_DIAG_DYNAMIC_FUNCTION_CODE,
+            reinterpret_cast<dpointer>(&nStmtType), 0, &len)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to get stmt_type");
         return CE_Failure;
@@ -637,19 +645,25 @@ CPLErr OGRDAMENGStatement::Execute(const char *pszSQLStatement, int nMode)
     }
 
     nRawColumnCount = column_count;
-    object_index = (int *)CPLCalloc(sizeof(int), column_count);
-    lob_index = (int *)CPLCalloc(sizeof(int), column_count);
-    lob = (dhloblctr *)CPLCalloc(sizeof(dhloblctr), column_count);
-    obj = (dhobj *)CPLCalloc(sizeof(dhobj), column_count);
-    objdesc = (dhobjdesc *)CPLCalloc(sizeof(dhobjdesc), column_count);
-    blob_len = (int *)CPLCalloc(sizeof(int), column_count);
-    col_len = (slength **)CPLCalloc(sizeof(slength *), column_count + 1);
-    result = (char **)CPLCalloc(sizeof(char *), nRawColumnCount + 1);
+    object_index =
+        reinterpret_cast<int *>(CPLCalloc(sizeof(int), column_count));
+    lob_index = reinterpret_cast<int *>(CPLCalloc(sizeof(int), column_count));
+    lob = reinterpret_cast<dhloblctr *>(
+        CPLCalloc(sizeof(dhloblctr), column_count));
+    obj = reinterpret_cast<dhobj *>(CPLCalloc(sizeof(dhobj), column_count));
+    objdesc = reinterpret_cast<dhobjdesc *>(
+        CPLCalloc(sizeof(dhobjdesc), column_count));
+    blob_len = reinterpret_cast<int *>(CPLCalloc(sizeof(int), column_count));
+    col_len = reinterpret_cast<slength **>(
+        CPLCalloc(sizeof(slength *), column_count + 1));
+    result = reinterpret_cast<char **>(
+        CPLCalloc(sizeof(char *), nRawColumnCount + 1));
 
     dhdesc hdesc_col;
     sdint4 val_len;
-    if (!DSQL_SUCCEEDED(dpi_get_stmt_attr(hStatement, DSQL_ATTR_IMP_ROW_DESC,
-                                          (dpointer)&hdesc_col, 0, &val_len)))
+    if (!DSQL_SUCCEEDED(dpi_get_stmt_attr(
+            hStatement, DSQL_ATTR_IMP_ROW_DESC,
+            reinterpret_cast<dpointer>(&hdesc_col), 0, &val_len)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to get row_desc");
         return CE_Failure;
@@ -671,7 +685,8 @@ CPLErr OGRDAMENGStatement::Execute(const char *pszSQLStatement, int nMode)
         {
             if (!DSQL_SUCCEEDED(dpi_get_desc_field(
                     hdesc_col, (sdint2)iParam + 1, DSQL_DESC_OBJ_DESCRIPTOR,
-                    (dpointer)&objdesc[iParam], sizeof(dhobjdesc), NULL)))
+                    reinterpret_cast<dpointer>(&objdesc[iParam]),
+                    sizeof(dhobjdesc), NULL)))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "failed to get object descriptor");
@@ -723,7 +738,8 @@ CPLErr OGRDAMENGStatement::Execute(const char *pszSQLStatement, int nMode)
         {
             if (!DSQL_SUCCEEDED(dpi_get_desc_field(
                     hdesc_col, (sdint2)iParam + 1, DSQL_DESC_DISPLAY_SIZE,
-                    (dpointer)&coldesc.display_size, 0, &val_len)))
+                    reinterpret_cast<dpointer>(&coldesc.display_size), 0,
+                    &val_len)))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "failed to get col display_size");
@@ -737,8 +753,8 @@ CPLErr OGRDAMENGStatement::Execute(const char *pszSQLStatement, int nMode)
 
             if (!DSQL_SUCCEEDED(dpi_bind_col(
                     hStatement, (udint2)iParam + 1, DSQL_C_NCHAR,
-                    (dpointer)result[iParam], coldesc.display_size + 1,
-                    &col_len[iParam][0])))
+                    reinterpret_cast<dpointer>(result[iParam]),
+                    coldesc.display_size + 1, &col_len[iParam][0])))
             {
                 CPLError(CE_Failure, CPLE_AppDefined, "failed to bind col");
                 return CE_Failure;
@@ -773,7 +789,8 @@ CPLErr OGRDAMENGStatement::Excute_for_fetchmany(const char *pszSQLStatement)
     }
 
     if (!DSQL_SUCCEEDED(dpi_set_stmt_attr(hStatement, DSQL_ATTR_ROW_ARRAY_SIZE,
-                                          (void *)fetchnum, 0)))
+                                          reinterpret_cast<void *>(fetchnum),
+                                          0)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to set stmt attr");
         return CE_Failure;
@@ -781,15 +798,16 @@ CPLErr OGRDAMENGStatement::Excute_for_fetchmany(const char *pszSQLStatement)
 
     sdint4 nStmtType;
     slength len;
-    if (!DSQL_SUCCEEDED(dpi_set_stmt_attr(hStatement, DSQL_ATTR_CURSOR_TYPE,
-                                          (dpointer)DSQL_CURSOR_DYNAMIC, 0)))
+    if (!DSQL_SUCCEEDED(dpi_set_stmt_attr(
+            hStatement, DSQL_ATTR_CURSOR_TYPE,
+            reinterpret_cast<dpointer>(DSQL_CURSOR_DYNAMIC), 0)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to set stmt attr");
         return CE_Failure;
     }
-    if (!DSQL_SUCCEEDED(dpi_get_diag_field(DSQL_HANDLE_STMT, hStatement, 0,
-                                           DSQL_DIAG_DYNAMIC_FUNCTION_CODE,
-                                           (dpointer)&nStmtType, 0, &len)))
+    if (!DSQL_SUCCEEDED(dpi_get_diag_field(
+            DSQL_HANDLE_STMT, hStatement, 0, DSQL_DIAG_DYNAMIC_FUNCTION_CODE,
+            reinterpret_cast<dpointer>(&nStmtType), 0, &len)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to get diag field");
         return CE_Failure;
@@ -814,28 +832,40 @@ CPLErr OGRDAMENGStatement::Excute_for_fetchmany(const char *pszSQLStatement)
     }
     is_fectmany = 1;
     nRawColumnCount = column_count;
-    object_index = (int *)CPLCalloc(sizeof(int), column_count);
-    lob_index = (int *)CPLCalloc(sizeof(int), column_count);
-    results = (char ***)CPLCalloc(sizeof(char **), column_count + 1);
-    lobs = (dhloblctr **)CPLCalloc(sizeof(dhloblctr *), column_count);
-    objs = (dhobj **)CPLCalloc(sizeof(dhobj *), column_count);
-    blob_lens = (int **)CPLCalloc(sizeof(int *), column_count);
-    col_len = (slength **)CPLCalloc(sizeof(slength *), column_count + 1);
-    objdescs = (dhobjdesc **)CPLCalloc(sizeof(dhobjdesc *), column_count);
+    object_index =
+        reinterpret_cast<int *>(CPLCalloc(sizeof(int), column_count));
+    lob_index = reinterpret_cast<int *>(CPLCalloc(sizeof(int), column_count));
+    results = reinterpret_cast<char ***>(
+        CPLCalloc(sizeof(char **), column_count + 1));
+    lobs = reinterpret_cast<dhloblctr **>(
+        CPLCalloc(sizeof(dhloblctr *), column_count));
+    objs = reinterpret_cast<dhobj **>(CPLCalloc(sizeof(dhobj *), column_count));
+    blob_lens =
+        reinterpret_cast<int **>(CPLCalloc(sizeof(int *), column_count));
+    col_len = reinterpret_cast<slength **>(
+        CPLCalloc(sizeof(slength *), column_count + 1));
+    objdescs = reinterpret_cast<dhobjdesc **>(
+        CPLCalloc(sizeof(dhobjdesc *), column_count));
     for (int i = 0; i < column_count; i++)
     {
-        results[i] = (char **)CPLCalloc(sizeof(char *), fetchnum);
-        col_len[i] = (slength *)CPLCalloc(sizeof(slength), fetchnum);
-        blob_lens[i] = (int *)CPLCalloc(sizeof(int), fetchnum);
-        lobs[i] = (dhloblctr *)CPLCalloc(sizeof(dhloblctr), fetchnum);
-        objs[i] = (dhobj *)CPLCalloc(sizeof(dhobj), fetchnum);
-        objdescs[i] = (dhobjdesc *)CPLCalloc(sizeof(dhobjdesc), fetchnum);
+        results[i] =
+            reinterpret_cast<char **>(CPLCalloc(sizeof(char *), fetchnum));
+        col_len[i] =
+            reinterpret_cast<slength *>(CPLCalloc(sizeof(slength), fetchnum));
+        blob_lens[i] =
+            reinterpret_cast<int *>(CPLCalloc(sizeof(int), fetchnum));
+        lobs[i] = reinterpret_cast<dhloblctr *>(
+            CPLCalloc(sizeof(dhloblctr), fetchnum));
+        objs[i] = reinterpret_cast<dhobj *>(CPLCalloc(sizeof(dhobj), fetchnum));
+        objdescs[i] = reinterpret_cast<dhobjdesc *>(
+            CPLCalloc(sizeof(dhobjdesc), fetchnum));
     }
 
     dhdesc hdesc_col;
     sdint4 val_len;
-    if (!DSQL_SUCCEEDED(dpi_get_stmt_attr(hStatement, DSQL_ATTR_IMP_ROW_DESC,
-                                          (dpointer)&hdesc_col, 0, &val_len)))
+    if (!DSQL_SUCCEEDED(dpi_get_stmt_attr(
+            hStatement, DSQL_ATTR_IMP_ROW_DESC,
+            reinterpret_cast<dpointer>(&hdesc_col), 0, &val_len)))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to get row_desc");
         return CE_Failure;
@@ -921,7 +951,8 @@ CPLErr OGRDAMENGStatement::Excute_for_fetchmany(const char *pszSQLStatement)
         {
             if (!DSQL_SUCCEEDED(dpi_get_desc_field(
                     hdesc_col, (sdint2)iParam + 1, DSQL_DESC_DISPLAY_SIZE,
-                    (dpointer)&coldesc.display_size, 0, &val_len)))
+                    reinterpret_cast<dpointer>(&coldesc.display_size), 0,
+                    &val_len)))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "failed to get col display_size");
@@ -932,7 +963,8 @@ CPLErr OGRDAMENGStatement::Excute_for_fetchmany(const char *pszSQLStatement)
 
             if (coldesc.prec > 0)
                 nbufwidth = static_cast<int>(coldesc.display_size) + 3;
-            char *date = (char *)CPLMalloc((nbufwidth + 2) * fetchnum);
+            char *date =
+                reinterpret_cast<char *>(CPLMalloc((nbufwidth + 2) * fetchnum));
             memset(date, 0, (nbufwidth + 2) * fetchnum);
             for (int i = 0; i < fetchnum; i++)
             {
@@ -941,8 +973,8 @@ CPLErr OGRDAMENGStatement::Excute_for_fetchmany(const char *pszSQLStatement)
             }
             if (!DSQL_SUCCEEDED(
                     dpi_bind_col(hStatement, (udint2)iParam + 1, DSQL_C_NCHAR,
-                                 (dpointer)results[iParam][0], nbufwidth + 2,
-                                 &col_len[iParam][0])))
+                                 reinterpret_cast<dpointer>(results[iParam][0]),
+                                 nbufwidth + 2, &col_len[iParam][0])))
             {
                 CPLError(CE_Failure, CPLE_AppDefined, "failed to bind col");
                 return CE_Failure;
@@ -959,7 +991,8 @@ char **OGRDAMENGStatement::SimpleFetchRow()
     int i;
     if (papszCurImage == nullptr)
     {
-        papszCurImage = (char **)CPLCalloc(sizeof(char *), nRawColumnCount + 1);
+        papszCurImage = reinterpret_cast<char **>(
+            CPLCalloc(sizeof(char *), nRawColumnCount + 1));
     }
     ulength rows;
     if (dpi_fetch(hStatement, &rows) == DSQL_NO_DATA)
@@ -984,11 +1017,12 @@ char ***OGRDAMENGStatement::Fetchmany(ulength *rows)
 
     if (papszCurImages == nullptr)
     {
-        papszCurImages =
-            (char ***)CPLCalloc(sizeof(char **), nRawColumnCount + 1);
+        papszCurImages = reinterpret_cast<char ***>(
+            CPLCalloc(sizeof(char **), nRawColumnCount + 1));
         for (int i = 0; i < nRawColumnCount; i++)
         {
-            papszCurImages[i] = (char **)CPLCalloc(sizeof(char *), fetchnum);
+            papszCurImages[i] =
+                reinterpret_cast<char **>(CPLCalloc(sizeof(char *), fetchnum));
         }
     }
 
@@ -1022,12 +1056,13 @@ char ***OGRDAMENGStatement::Fetchmany(ulength *rows)
                 }
                 if (!results[i][num])
                 {
-                    results[i][num] = (char *)CPLMalloc(1000);
+                    results[i][num] = reinterpret_cast<char *>(CPLMalloc(1000));
                 }
                 if (real_len > 1000)
                 {
                     CPLFree(results[i][num]);
-                    results[i][num] = (char *)CPLMalloc(real_len);
+                    results[i][num] =
+                        reinterpret_cast<char *>(CPLMalloc(real_len));
                 }
                 else
                 {
@@ -1067,7 +1102,8 @@ char ***OGRDAMENGStatement::Fetchmany(ulength *rows)
                 {
                     CPLFree(results[i][num]);
                 }
-                char *objvalue = (char *)CPLMalloc(real_len + 3);
+                char *objvalue =
+                    reinterpret_cast<char *>(CPLMalloc(real_len + 3));
                 if (lob_index[i] == 2)
                 {
                     if (!DSQL_SUCCEEDED(dpi_lob_read((dhloblctr)lobs[i][num], 1,

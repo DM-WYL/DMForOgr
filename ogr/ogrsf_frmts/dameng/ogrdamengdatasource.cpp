@@ -862,7 +862,6 @@ OGRDAMENGDataSource::ICreateLayer(const char *pszLayerName,
 
     //bool bCreateSpatialIndex = FALSE;
     //const char *pszSpatialIndexType = "SPGIST";
-    osCommand = osCreateTable;
     osCommand += " )";
 
     OGRDAMENGStatement oCommand(poSession);
@@ -1029,7 +1028,7 @@ OGRLayer *OGRDAMENGDataSource::GetLayerByName(const char *pszNameIn)
     {
         CPLString osTableName(pszTableName);
         CPLString osTableNameLower(pszTableName);
-        osTableNameLower.tolower();
+        osTableNameLower = osTableNameLower.tolower();
         if (osTableName != osTableNameLower)
             CPLPushErrorHandler(CPLQuietErrorHandler);
         poLayer = OpenTable(osCurrentSchema, pszTableName, pszSchemaName,

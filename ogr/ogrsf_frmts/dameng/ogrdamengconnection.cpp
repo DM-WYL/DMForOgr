@@ -104,18 +104,20 @@ int OGRDAMENGConn::EstablishConn(const char *pszUseridIn,
 
     if (strlen(pszSchemaName))
     {
-        if (!DSQL_SUCCEEDED(dpi_set_con_attr(hCon, DSQL_ATTR_CURRENT_SCHEMA,
-                                             (sdbyte *)pszSchemaName,
-                                             (sdint4)strlen(pszSchemaName))))
+        if (!DSQL_SUCCEEDED(dpi_set_con_attr(
+                hCon, DSQL_ATTR_CURRENT_SCHEMA,
+                reinterpret_cast<sdbyte *>(const_cast<char *>(pszSchemaName)),
+                static_cast<sdint4>(strlen(pszSchemaName)))))
         {
             CPLError(CE_Failure, CPLE_AppDefined, "failed to set con_attr");
             return FALSE;
         }
     }
 
-    if (!DSQL_SUCCEEDED(dpi_login(hCon, (sdbyte *)pszDatabaseIn,
-                                  (sdbyte *)pszUseridIn,
-                                  (sdbyte *)pszPasswordIn)))
+    if (!DSQL_SUCCEEDED(dpi_login(
+            hCon, reinterpret_cast<sdbyte *>(const_cast<char *>(pszDatabaseIn)),
+            reinterpret_cast<sdbyte *>(const_cast<char *>(pszUseridIn)),
+            reinterpret_cast<sdbyte *>(const_cast<char *>(pszPasswordIn)))))
     {
         CPLError(CE_Failure, CPLE_AppDefined, "failed to login");
         return FALSE;

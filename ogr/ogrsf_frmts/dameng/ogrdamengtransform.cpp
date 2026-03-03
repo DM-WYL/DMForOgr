@@ -1016,16 +1016,16 @@ CPLErr OGRDAMENG_Type_From_WKB_State(wkb_info *wkb_info)
     wkb_simple_type = wkb_type % 1000;
 
     /* Extract the Z/M information from ISO style numbers */
-    if (wkb_type >= 3000 && wkb_type < 4000)
+    if (wkb_type >= 3000)
     {
         wkb_info->has_z = TRUE;
         wkb_info->has_m = TRUE;
     }
-    else if (wkb_type >= 2000 && wkb_type < 3000)
+    else if (wkb_type >= 2000)
     {
         wkb_info->has_m = TRUE;
     }
-    else if (wkb_type >= 1000 && wkb_type < 2000)
+    else if (wkb_type >= 1000)
     {
         wkb_info->has_z = TRUE;
     }
@@ -1497,11 +1497,10 @@ static GByte *OGRDAMENG_Get_Point_Internal(GByte *ptlist, GUInt32 n,
 static GByte *OGRDAMENG_Integer_To_WKB_Buf(GUInt32 ival, GByte *buf)
 {
     GByte *iptr = reinterpret_cast<GByte *>(&ival);
-    int i = 0;
 
     if (IS_BIG_ENDIAN)
     {
-        for (i = 0; i < INT_SIZE; i++)
+        for (int i = 0; i < INT_SIZE; i++)
         {
             buf[i] = iptr[INT_SIZE - 1 - i];
         }

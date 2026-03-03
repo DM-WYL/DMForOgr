@@ -29,6 +29,8 @@
 #include "ogr_dameng.h"
 #include "cpl_conv.h"
 #include "ogr_p.h"
+#include <limits>
+#include <cmath>
 
 /************************************************************************/
 /*                           OGRDAMENGLayer()                           */
@@ -125,7 +127,7 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(
         }
         char *pabyData = result[iField][iRecord];
         if (pszFIDColumn != nullptr &&
-            EQUAL((const char *)pszFieldName, pszFIDColumn))
+            EQUAL(reinterpret_cast<const char *>(pszFieldName), pszFIDColumn))
         {
             if (pabyData)
                 poFeature->SetFID(CPLAtoGIntBig(pabyData));
@@ -148,22 +150,24 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(
             (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
              poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY))
         {
-            if (STARTS_WITH_CI((const char *)pszFieldName,
+            if (STARTS_WITH_CI(reinterpret_cast<const char *>(pszFieldName),
                                "DMGEO2.ST_AsBinary"))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "We cannot handle binary type!");
                 return NULL;
             }
-            else if (STARTS_WITH_CI((const char *)pszFieldName,
-                                    "DMGEO2.ST_AsEWKB"))
+            else if (STARTS_WITH_CI(
+                         reinterpret_cast<const char *>(pszFieldName),
+                         "DMGEO2.ST_AsEWKB"))
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "We cannot handle binary type!");
                 return NULL;
             }
-            else if (STARTS_WITH_CI((const char *)pszFieldName,
-                                    "DMGEO2.ST_ASTEXT"))
+            else if (STARTS_WITH_CI(
+                         reinterpret_cast<const char *>(pszFieldName),
+                         "DMGEO2.ST_ASTEXT"))
             {
                 /* Handle WKT */
                 const char *pszWKT = pabyData;
@@ -188,39 +192,35 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(
             }
             else
             {
-                if (poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOMETRY ||
-                    poGeomFieldDefn->eDAMENGGeoType == GEOM_TYPE_GEOGRAPHY)
+                OGRGeometry *poGeometry = nullptr;
+                pabyData = result[iField][iRecord];
+                if (pabyData)
                 {
-                    OGRGeometry *poGeometry = nullptr;
-                    pabyData = result[iField][iRecord];
-                    if (pabyData)
+                    int length;
+                    GByte *pabyEWKB = OGRDAMENG_Geo_To_Hexwkb(
+                        reinterpret_cast<GSERIALIZED *>(pabyData), &length);
+                    if (!pabyEWKB)
                     {
-                        int length;
-                        GByte *pabyEWKB = OGRDAMENG_Geo_To_Hexwkb(
-                            (GSERIALIZED *)pabyData, &length);
-                        if (!pabyEWKB)
-                        {
-                            CPLError(CE_Failure, CPLE_AppDefined,
-                                     "DAMENG:Invalid Input Geometry Data!");
-                            return NULL;
-                        }
-                        poGeometry = OGRGeometryFromEWKB(pabyEWKB, length,
-                                                         nullptr, false);
-                        CPLFree(pabyEWKB);
-                        if (poGeometry != nullptr)
-                        {
-                            poGeometry->assignSpatialReference(
-                                poGeomFieldDefn->GetSpatialRef());
-                            poFeature->SetGeomFieldDirectly(iOGRGeomField,
-                                                            poGeometry);
-                        }
-                        continue;
+                        CPLError(CE_Failure, CPLE_AppDefined,
+                                 "DAMENG:Invalid Input Geometry Data!");
+                        return NULL;
                     }
-                    else
+                    poGeometry =
+                        OGRGeometryFromEWKB(pabyEWKB, length, nullptr, false);
+                    CPLFree(pabyEWKB);
+                    if (poGeometry != nullptr)
                     {
-                        poGeometry = nullptr;
-                        continue;
+                        poGeometry->assignSpatialReference(
+                            poGeomFieldDefn->GetSpatialRef());
+                        poFeature->SetGeomFieldDirectly(iOGRGeomField,
+                                                        poGeometry);
                     }
+                    continue;
+                }
+                else
+                {
+                    poGeometry = nullptr;
+                    continue;
                 }
             }
         }
@@ -243,13 +243,13 @@ OGRFeature *OGRDAMENGLayer::RecordToFeature(
     return poFeature;
 }
 
-/************************************************************************/
-/*                   OGRDAMENGIsKnownGeomFuncPrefix()                   */
-/************************************************************************/
-
 static const char *const apszKnownGeomFuncPrefixes[] = {
     "DMGEO2.ST_AsBinary", "DMGEO2.ST_AsEWKT", "DMGEO2.ST_AsEWKB",
     "DMGEO2.ST_AsText"};
+
+/************************************************************************/
+/*                   OGRDAMENGIsKnownGeomFuncPrefix()                   */
+/************************************************************************/
 
 static int OGRDAMENGIsKnownGeomFuncPrefix(const char *pszFieldName)
 {
@@ -301,23 +301,24 @@ void OGRDAMENGLayer::CreateMapFromFieldNameToIndex(
                 CPLError(CE_Failure, CPLE_AppDefined, "failed to get col_desc");
                 return;
             }
-            panMapFieldNameToIndex[iField] =
-                poFeatureDefn->GetFieldIndex((const char *)pszName);
+            panMapFieldNameToIndex[iField] = poFeatureDefn->GetFieldIndex(
+                reinterpret_cast<const char *>(pszName));
             if (panMapFieldNameToIndex[iField] < 0)
             {
                 panMapFieldNameToGeomIndex[iField] =
-                    poFeatureDefn->GetGeomFieldIndex((const char *)pszName);
+                    poFeatureDefn->GetGeomFieldIndex(
+                        reinterpret_cast<const char *>(pszName));
                 if (panMapFieldNameToGeomIndex[iField] < 0)
                 {
-                    int iKnownPrefix =
-                        OGRDAMENGIsKnownGeomFuncPrefix((const char *)pszName);
+                    int iKnownPrefix = OGRDAMENGIsKnownGeomFuncPrefix(
+                        reinterpret_cast<const char *>(pszName));
                     if (iKnownPrefix >= 0 &&
                         pszName[strlen(
                             apszKnownGeomFuncPrefixes[iKnownPrefix])] == '_')
                     {
                         panMapFieldNameToGeomIndex[iField] =
                             poFeatureDefn->GetGeomFieldIndex(
-                                (const char *)pszName +
+                                reinterpret_cast<const char *>(pszName) +
                                 strlen(
                                     apszKnownGeomFuncPrefixes[iKnownPrefix]) +
                                 1);
@@ -764,7 +765,8 @@ int OGRDAMENGLayer::ReadResultDefinition(OGRDAMENGStatement *hInitialResultIn)
                 return FALSE;
             }
         }
-        OGRFieldDefn oField((const char *)columnName, OFTString);
+        OGRFieldDefn oField(reinterpret_cast<const char *>(columnName),
+                            OFTString);
         oField.SetNullable(rs_null);
 
         int iGeomFuncPrefix = 0;
