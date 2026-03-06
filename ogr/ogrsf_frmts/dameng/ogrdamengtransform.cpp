@@ -1144,7 +1144,7 @@ size_t OGRDAMENG_Gser_From_GBox(OGREnvelope3D *sEnvelope, GByte *buf,
     GByte i = 0;
     size_t return_size;
 
-    f = (float *)buf;
+    f = reinterpret_cast<float *>(buf);
     f[i++] = next_float_down(sEnvelope->MinX);
     f[i++] = next_float_up(sEnvelope->MaxX);
     f[i++] = next_float_down(sEnvelope->MinY);
@@ -1341,21 +1341,21 @@ GSERIALIZED *OGRDAMENG_Gserialized_From_WKB(GByte *wkb, size_t wkb_size,
     wkbinfo = origin_info;
 
     ptr = reinterpret_cast<GByte *>(CPLMalloc(expected_size));
-    g = (GSERIALIZED *)(ptr);
+    g = reinterpret_cast<GSERIALIZED *>(ptr);
 
     g->gflags = 0;
 
-    DM_SET_Z(((GSERIALIZED *)g)->gflags, wkbinfo.has_z);
-    DM_SET_M(((GSERIALIZED *)g)->gflags, wkbinfo.has_m);
-    DM_SET_VERSION(((GSERIALIZED *)g)->gflags, 1);
+    DM_SET_Z(g->gflags, wkbinfo.has_z);
+    DM_SET_M(g->gflags, wkbinfo.has_m);
+    DM_SET_VERSION(g->gflags, 1);
 
-    ((GSERIALIZED *)g)->srid[0] = (GByte)((wkbinfo.srid & 0x001F0000) >> 16);
-    ((GSERIALIZED *)g)->srid[1] = (GByte)((wkbinfo.srid & 0x0000FF00) >> 8);
-    ((GSERIALIZED *)g)->srid[2] = (GByte)((wkbinfo.srid & 0x000000FF));
+    g->srid[0] = static_cast<GByte>((wkbinfo.srid & 0x001F0000) >> 16);
+    g->srid[1] = static_cast<GByte>((wkbinfo.srid & 0x0000FF00) >> 8);
+    g->srid[2] = static_cast<GByte>((wkbinfo.srid & 0x000000FF));
 
     if (wkbinfo.need_box)
     {
-        DM_SET_BBOX(((GSERIALIZED *)g)->gflags, 1);
+        DM_SET_BBOX(g->gflags, 1);
         ptr += 8;
         ptr += OGRDAMENG_Gser_From_GBox(sEnvelope, ptr, wkbinfo.has_z,
                                         wkbinfo.has_m);
@@ -2101,8 +2101,8 @@ static GByte *OGRDAMENG_WKBCollection_From_Gserialized(GByte *data_ptr,
 
     buffer = reinterpret_cast<GByte *>(CPLMalloc(size));
     header = buffer;
-    header =
-        OGRDAMENG_Header_To_WKB_Buf((GByte)type, has_z, has_m, srid, header);
+    header = OGRDAMENG_Header_To_WKB_Buf(static_cast<GByte>(type), has_z, has_m,
+                                         srid, header);
     OGRDAMENG_Integer_To_WKB_Buf(ngeoms, header);
 
     for (i = 0; i < ngeoms; i++)

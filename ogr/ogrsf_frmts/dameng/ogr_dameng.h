@@ -139,7 +139,7 @@ class OGRDAMENGGeomFieldDefn final : public OGRGeomFieldDefn
     {
     }
 
-    virtual const OGRSpatialReference *GetSpatialRef() const override;
+    const OGRSpatialReference *GetSpatialRef() const override;
 
     void UnsetLayer()
     {
@@ -313,8 +313,6 @@ class OGRDAMENGLayer CPL_NON_FINAL : public OGRLayer
 
     const char *GetFIDColumn() const override;
 
-    //virtual OGRErr SetNextByIndex(GIntBig nIndex) override;
-
     OGRDAMENGDataSource *GetDS()
     {
         return poDS;
@@ -385,7 +383,7 @@ class OGRDAMENGTableLayer final : public OGRDAMENGLayer
 
     int checkINI = 0;
 
-    virtual CPLString GetFromClauseForGetExtent() override
+    CPLString GetFromClauseForGetExtent() override
     {
         return pszSqlTableName;
     }
@@ -517,7 +515,7 @@ class OGRDAMENGResultLayer final : public OGRDAMENGLayer
 
     CPLString osWHERE{};
 
-    virtual CPLString GetFromClauseForGetExtent() override
+    CPLString GetFromClauseForGetExtent() override
     {
         return pszRawStatement;
     }
@@ -645,13 +643,13 @@ class OGRDAMENGDataSource final : public OGRDataSource
 
     int TestCapability(const char *) const override;
 
-    virtual OGRLayer *ExecuteSQL(const char *pszSQLCommand,
-                                 OGRGeometry *poSpatialFilter,
-                                 const char *pszDialect) override;
-    virtual void ReleaseResultSet(OGRLayer *poLayer) override;
+    OGRLayer *ExecuteSQL(const char *pszSQLCommand,
+                         OGRGeometry *poSpatialFilter,
+                         const char *pszDialect) override;
+    void ReleaseResultSet(OGRLayer *poLayer) override;
 
-    virtual const char *GetMetadataItem(const char *pszKey,
-                                        const char *pszDomain) override;
+    const char *GetMetadataItem(const char *pszKey,
+                                const char *pszDomain) override;
 };
 
 OGRDAMENGConn CPL_DLL *OGRGetDAMENGConnection(const char *pszUserid,

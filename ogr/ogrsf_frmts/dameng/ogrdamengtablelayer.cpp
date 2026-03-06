@@ -57,46 +57,46 @@ class OGRDAMENGTableFeatureDefn final : public OGRDAMENGFeatureDefn
     {
     }
 
-    virtual int GetFieldCount() const override
+    int GetFieldCount() const override
     {
         SolveFields();
         return OGRDAMENGFeatureDefn::GetFieldCount();
     }
 
-    virtual OGRFieldDefn *GetFieldDefn(int i) override
+    OGRFieldDefn *GetFieldDefn(int i) override
     {
         SolveFields();
         return OGRDAMENGFeatureDefn::GetFieldDefn(i);
     }
 
-    virtual const OGRFieldDefn *GetFieldDefn(int i) const override
+    const OGRFieldDefn *GetFieldDefn(int i) const override
     {
         SolveFields();
         return OGRDAMENGFeatureDefn::GetFieldDefn(i);
     }
 
-    virtual int GetGeomFieldCount() const override
+    int GetGeomFieldCount() const override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();
         return OGRDAMENGFeatureDefn::GetGeomFieldCount();
     }
 
-    virtual OGRDAMENGGeomFieldDefn *GetGeomFieldDefn(int i) override
+    OGRDAMENGGeomFieldDefn *GetGeomFieldDefn(int i) override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();
         return OGRDAMENGFeatureDefn::GetGeomFieldDefn(i);
     }
 
-    virtual const OGRDAMENGGeomFieldDefn *GetGeomFieldDefn(int i) const override
+    const OGRDAMENGGeomFieldDefn *GetGeomFieldDefn(int i) const override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();
         return OGRDAMENGFeatureDefn::GetGeomFieldDefn(i);
     }
 
-    virtual int GetGeomFieldIndex(const char *pszName) const override
+    int GetGeomFieldIndex(const char *pszName) const override
     {
         if (poLayer != nullptr && !poLayer->HasGeometryInformation())
             SolveFields();

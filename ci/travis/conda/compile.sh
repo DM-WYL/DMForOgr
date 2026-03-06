@@ -25,7 +25,17 @@ elif grep -q "macos-15-intel" <<< "$GHA_CI_PLATFORM"; then
     ARCH="64"
 fi
 
-conda build recipe --clobber-file recipe/recipe_clobber.yaml --output-folder packages -m ".ci_support/${CONDA_PLAT}_${ARCH}_.yaml"
+export CONDA_BLD_PATH_TEMP="/tmp/conda-bld-${GHA_CI_PLATFORM}-$$"
+mkdir -p "$CONDA_BLD_PATH_TEMP"
+
+conda build recipe \
+    --croot "$CONDA_BLD_PATH_TEMP" \
+    --clobber-file recipe/recipe_clobber.yaml \
+    --output-folder packages \
+    -m ".ci_support/${CONDA_PLAT}_${ARCH}_.yaml"
+
+rm -rf "$CONDA_BLD_PATH_TEMP"
+
 conda create -y -n test -c ./packages/${CONDA_PLAT}-${ARCH} python libgdal gdal
 conda deactivate
 

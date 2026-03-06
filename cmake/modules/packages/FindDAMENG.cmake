@@ -12,15 +12,16 @@ find_library(DAMENG_LIBRARY NAMES libdmdpi dmdpi PATHS
 )
 
 include(FindPackageHandleStandardArgs)
-if(DAMENG_LIBRARY AND DAMENG_INCLUDE_DIR)
-    set(DAMENG_FOUND TRUE)
-    set(DAMENG_LIBRARIES ${DAMENG_LIBRARY})
-    set(DAMENG_INCLUDE_DIRS ${DAMENG_INCLUDE_DIR})
-    mark_as_advanced(DAMENG_INCLUDE_DIR DAMENG_LIBRARY)
-    message(STATUS "Found Dameng: ${DAMENG_LIBRARY}")
-else()
-    set(DAMENG_FOUND FALSE)
-    set(DAMENG_LIBRARIES "")
-    set(DAMENG_INCLUDE_DIRS "")
-    message(STATUS "Dameng not found (set DM_HOME to enable Dameng support)")
+find_package_handle_standard_args(DAMENG
+    REQUIRED_VARS DAMENG_LIBRARY DAMENG_INCLUDE_DIR
+)
+
+if(DAMENG_FOUND AND NOT TARGET Dameng::Dameng)
+    add_library(Dameng::Dameng UNKNOWN IMPORTED)
+    set_target_properties(Dameng::Dameng PROPERTIES
+        IMPORTED_LOCATION "${DAMENG_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${DAMENG_INCLUDE_DIR}"
+    )
 endif()
+
+mark_as_advanced(DAMENG_INCLUDE_DIR DAMENG_LIBRARY)

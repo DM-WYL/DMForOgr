@@ -70,9 +70,10 @@ void OGRDAMENGStatement::Clean()
 {
     if (insert_num > 0)
     {
-        if (!DSQL_SUCCEEDED(
-                dpi_set_stmt_attr(hStatement, DSQL_ATTR_PARAMSET_SIZE,
-                                  reinterpret_cast<dpointer>(insert_num), 0)))
+        if (!DSQL_SUCCEEDED(dpi_set_stmt_attr(
+                hStatement, DSQL_ATTR_PARAMSET_SIZE,
+                reinterpret_cast<dpointer>(static_cast<uintptr_t>(insert_num)),
+                0)))
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "failed to set stmt paramset size");

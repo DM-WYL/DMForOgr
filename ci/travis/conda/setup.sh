@@ -23,9 +23,15 @@ cd gdal-feedstock
 sed 's/version = "\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)"/version = "\1.\2.99"/' < recipe/meta.yaml > meta.yaml
 mv meta.yaml recipe/meta.yaml
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+echo "Project Root detected as: $PROJECT_ROOT"
+
 cat > recipe/recipe_clobber.yaml <<EOL
 source:
-  path: ../../../../..
+  path: ${PROJECT_ROOT}
   url:
   sha256:
   patches:
